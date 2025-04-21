@@ -1,4 +1,10 @@
-# tldw_tui
-TUI Front-End app designed primarily for tldw
+# tldw TUI README
 
-Serves as a standalone repo for the package itself, as it can do more than just be a frontend for tldw.
+# tldw TUI
+
+Current status: Not-working.
+
+Crashes when selecting a new tab.Need to actually review things/do things manually.
+Need to modify call args to chat.py
+
+Launch: `python3 -m app`
