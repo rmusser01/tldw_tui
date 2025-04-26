@@ -16,6 +16,8 @@ Default `config.toml` stored at/read from `~/.config/tldw_cli/config.toml`
 
 Default user DB stored at `~/.share/tldw_cli/` (Planned)
 
+Screenshot:
+![Screenshot.PNG](./Screenshot.PNG)
 
 Inspiration
 - https://github.com/darrenburns/elia/tree/main/elia_chat
