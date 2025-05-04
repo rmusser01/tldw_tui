@@ -34,7 +34,7 @@ from .config import get_setting, get_providers_and_models, get_log_file_path, DE
     DEFAULT_CONFIG_PATH, CONFIG_TOML_CONTENT
 from .Widgets.chat_message import ChatMessage
 from .Widgets.settings_sidebar import create_settings_sidebar
-
+from .Widgets.titlebar import TitleBar
 # Adjust the path based on your project structure
 try:
     # Import from the new 'api' directory
@@ -130,7 +130,7 @@ LOCAL_PROVIDERS = {
     "Ollama": ["ollama/llama3:latest", "ollama/mistral:latest"], "vLLM": ["vllm-model-z"],
     "TabbyAPI": ["tabby-model"], "Aphrodite": ["aphrodite-engine"], "Custom-2": ["custom-model-gamma"],
     "Groq": ["llama3-70b-8192", "mixtral-8x7b-32768"], "Cohere": ["command-r-plus", "command-r"],
-    "OpenRouter": ["meta-llama/llama-3-70b-instruct"], "HuggingFace": ["mistralai/Mixtral-8x7B-Instruct-v0.1"],
+    "OpenRouter": ["meta-llama/Llama-3.1-8B-Instruct"], "HuggingFace": ["mistralai/Mixtral-8x7B-Instruct-v0.1"],
     "DeepSeek": ["deepseek-chat"],
 }
 ALL_API_MODELS = {**API_MODELS_BY_PROVIDER, **LOCAL_PROVIDERS}
@@ -246,7 +246,7 @@ logging.info("Initial basic logging configured.")
 # --- Main App ---
 class TldwCli(App[None]): # Specify return type for run() if needed, None is common
     """A Textual app for interacting with LLMs."""
-
+    TITLE = "🧠📝🔍  tldw CLI"
     # Use forward slashes for paths, works cross-platform
     CSS_PATH = "css/tldw_cli.tcss"
     BINDINGS = [ Binding("ctrl+q", "quit", "Quit App", show=True) ]
@@ -257,7 +257,7 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
     # Add state to hold the currently streaming AI message widget
     current_ai_message_widget: Optional[ChatMessage] = None
 
-    # --- ADD REACTIVES FOR PROVIDER SELECTS ---
+    # --- REACTIVES FOR PROVIDER SELECTS ---
     # Initialize with a dummy value or fetch default from config here
     # Ensure the initial value matches what's set in compose/settings_sidebar
     # Fetching default provider from config:
@@ -266,8 +266,9 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
 
     chat_api_provider_value: reactive[Optional[str]] = reactive(_default_chat_provider)
     character_api_provider_value: reactive[Optional[str]] = reactive(_default_character_provider)
-    # --- END ADD REACTIVES ---
 
+    # Reactives for sidebar
+    chat_sidebar_collapsed: reactive[bool] = reactive(False, layout=True)
 
     def __init__(self):
         super().__init__()
@@ -395,6 +396,8 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
     def compose(self) -> ComposeResult:
         logging.debug("App composing UI...")
         yield Header()
+        # Set up the main title bar with a static title
+        yield TitleBar()
         yield from self.compose_tabs()
         yield from self.compose_content_area()
         yield Footer()
@@ -423,6 +426,7 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
                     # *** Use VerticalScroll for ChatMessages ***
                     yield VerticalScroll(id="chat-log")
                     with Horizontal(id="chat-input-area"):
+                        yield Button("☰", id="toggle-chat-sidebar", classes="sidebar-toggle")
                         yield TextArea(id="chat-input", classes="chat-input")
                         yield Button("🎤", id="mic-chat", classes="mic-button")
                         yield Button("Send", id="send-chat", classes="send-button")
@@ -638,6 +642,14 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
 
         print(">>> DEBUG: watch_current_tab finished.")
 
+    def watch_chat_sidebar_collapsed(self, collapsed: bool) -> None:
+        """Hide or show the chat sidebar."""
+        try:
+            sidebar = self.query_one("#chat-sidebar")  # id from create_settings_sidebar
+            sidebar.display = not collapsed  # True → visible
+        except QueryError:
+            logging.error("Chat sidebar widget not found.")
+
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses for tabs, sending messages, and message actions."""
         button = event.button
@@ -656,6 +668,12 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
             else:
                 print(f">>> DEBUG: Already on tab '{new_tab_id}'. Ignoring.")
                 logging.debug(f"Already on tab '{new_tab_id}'. Ignoring.")
+            return
+
+        # ── sidebar toggle ────────────────────────────────────────────
+        if button_id == "toggle-chat-sidebar":
+            self.chat_sidebar_collapsed = not self.chat_sidebar_collapsed
+            logging.debug("Sidebar now %s", "collapsed" if self.chat_sidebar_collapsed else "expanded")
             return
 
         # --- Send Message ---
@@ -888,14 +906,75 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
             message_text = action_widget.message_text
             message_role = action_widget.role
 
+            # ───────────── existing branches above this point … ─────────────
             if "edit-button" in button_classes:
-                logging.info(f"Action: Edit clicked for {message_role} message: '{message_text[:50]}...'")
-                try:
-                    # Query for Static specifically
-                    text_widget = action_widget.query_one(".message-text", Static)
-                    text_widget.update(Text(f"[EDITING...] {message_text}"))
-                except QueryError:
-                    logging.error("Could not find .message-text Static widget for editing.")
+                """
+                First click  → switch the message into an editable TextArea.
+                Second click → save the edits, restore the Static, and reset the button.
+                """
+                logging.info(
+                    "Action: Edit clicked for %s message: '%s…'",
+                    message_role,
+                    message_text[:50],
+                )
+
+                # A private flag stored on the ChatMessage
+                is_editing = getattr(action_widget, "_editing", False)
+
+                if not is_editing:
+                    # ── START EDITING ────────────────────────────────────────────────
+                    static_text: Static = action_widget.query_one(".message-text", Static)
+
+                    # Current text (Rich.Text exposes `.plain`; fall back to str())
+                    current = (
+                        static_text.renderable.plain
+                        if hasattr(static_text.renderable, "plain")
+                        else str(static_text.renderable)
+                    )
+
+                    # Hide the Static and mount a TextArea in its place
+                    static_text.display = False
+                    editor = TextArea(
+                        text=current,  # <-- TextArea’s ctor uses *text*
+                        id="edit-area",
+                        classes="edit-area",
+                    )
+                    editor.styles.width = "100%"
+                    await action_widget.mount(editor, before=static_text)
+                    editor.focus()
+
+                    # Set flag & button label
+                    action_widget._editing = True  # type: ignore[attr-defined]
+                    button.label = "Stop editing"
+                    logging.debug("Editing started.")
+
+                else:
+                    # ── STOP EDITING & SAVE ─────────────────────────────────────────
+                    try:
+                        editor: TextArea = action_widget.query_one("#edit-area", TextArea)
+                        new_text = editor.text.strip()  # <-- property is .text
+                    except QueryError:
+                        logging.error("Edit TextArea not found when stopping edit.")
+                        new_text = message_text
+
+                    # Remove the TextArea
+                    try:
+                        await editor.remove()
+                    except Exception:
+                        pass
+
+                    # Restore the Static with updated content
+                    static_text: Static = action_widget.query_one(".message-text", Static)
+                    static_text.update(new_text)
+                    static_text.display = True
+
+                    # Update the ChatMessage’s own copy for later operations
+                    action_widget.message_text = new_text
+
+                    # Clear flag & reset button label
+                    action_widget._editing = False  # type: ignore[attr-defined]
+                    button.label = "✏️"
+                    logging.debug("Editing finished. New length: %d", len(new_text))
 
             elif "copy-button" in button_classes:
                 logging.info(
@@ -1451,6 +1530,35 @@ ChatMessage.-ai .message-actions.-generating {
 .mic-button:hover {
     background: $surface;
     color: $text;
+}
+.sidebar-toggle {
+    width: 3;
+    height: 3;
+    margin-right: 1;
+    border: none;
+    background: $surface-darken-1;
+    color: $text;
+}
+.sidebar-toggle:hover {
+    background: $surface;
+}
+
+/* collapsed side-bar; width zero and no border */
+.sidebar.collapsed {
+    width: 0 !important;
+    border-right: none !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    display: none;          /* ensures it doesn’t grab focus */
+}
+#app-titlebar {
+    dock: top;
+    height: 1;                 /* single line */
+    background: $accent;       /* or any colour */
+    color: $text;
+    text-align: center;
+    text-style: bold;
+    padding: 0 1;
 }
     """
 

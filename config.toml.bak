@@ -1,5 +1,22 @@
 # tldw_cli/config.toml
 [general]
+default_tab = "chat"
+log_level = "DEBUG"
+
+[logging]
+log_filename = "tldw_cli_app.log"
+file_log_level = "INFO"
+log_max_bytes = 10485760
+log_backup_count = 5
+
+[database]
+path = "~/.local/share/tldw_cli/tldw_cli_data.db"
+
+[providers]
+# Only include a couple for testing
+OpenAI = ["gpt-4o", "gpt-3.5-turbo"]
+Ollama = ["llama3:latest"]
+[general]
 default_tab = "chat"  # "chat", "character", "logs", "media", "search", "ingest", "stats"
 log_level = "DEBUG" # TUI Log Level: DEBUG, INFO, WARNING, ERROR, CRITICAL
 
@@ -128,7 +145,7 @@ Aphrodite = ["aphrodite-engine"]
 
     [api_settings.openrouter]
     api_key_env_var = "OPENROUTER_API_KEY"
-    model = "meta-llama/Llama-3.1-8B-Instruct"
+    model = "meta-llama/llama-3-70b-instruct"
     temperature = 0.7
     top_p = 1.0 # OpenRouter uses top_p
     top_k = 0   # OpenRouter uses top_k
