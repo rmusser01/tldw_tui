@@ -19,8 +19,9 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.logging import TextualHandler
 from textual.widgets import (
-    Static, Button, Input, Header, Footer, RichLog, TextArea, Select
+    Static, Button, Input, Header, Footer, RichLog, TextArea, Select, ListView
 )
+from textual.widgets.list_view import ListItem # Specific import for ListItem
 from textual.containers import Horizontal, Container, VerticalScroll
 from textual.reactive import reactive
 from textual.worker import Worker, WorkerState
@@ -32,9 +33,13 @@ from textual.css.query import QueryError # For specific error handling
 from .Chat.Chat_Functions import chat
 from .config import get_setting, get_providers_and_models, get_log_file_path, DEFAULT_CONFIG, load_config, \
     DEFAULT_CONFIG_PATH, CONFIG_TOML_CONTENT
+from .Notes.Notes_Library import NotesInteropService
+from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
 from .Widgets.chat_message import ChatMessage
 from .Widgets.settings_sidebar import create_settings_sidebar
 from .Widgets.character_sidebar import create_character_sidebar # Import for character sidebar
+from .Widgets.notes_sidebar_left import NotesSidebarLeft
+from .Widgets.notes_sidebar_right import NotesSidebarRight
 from .Widgets.titlebar import TitleBar
 # Adjust the path based on your project structure
 try:
@@ -114,8 +119,8 @@ else:
 
 # --- Constants ---
 TAB_CHAT = "chat"; TAB_CHARACTER = "character"; TAB_MEDIA = "media"; TAB_SEARCH = "search"
-TAB_INGEST = "ingest"; TAB_LOGS = "logs"; TAB_STATS = "stats"
-ALL_TABS = [ TAB_CHAT, TAB_CHARACTER, TAB_MEDIA, TAB_SEARCH, TAB_INGEST, TAB_LOGS, TAB_STATS ]
+TAB_INGEST = "ingest"; TAB_LOGS = "logs"; TAB_STATS = "stats"; TAB_NOTES = "notes"
+ALL_TABS = [ TAB_CHAT, TAB_CHARACTER, TAB_MEDIA, TAB_SEARCH, TAB_INGEST, TAB_LOGS, TAB_STATS, TAB_NOTES ]
 
 # --- Define API Models (Combined Cloud & Local) ---
 # (Keep your existing API_MODELS_BY_PROVIDER and LOCAL_PROVIDERS dictionaries)
@@ -271,11 +276,36 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
     # Reactives for sidebar
     chat_sidebar_collapsed: reactive[bool] = reactive(False, layout=True)
     character_sidebar_collapsed: reactive[bool] = reactive(False, layout=True) # For character sidebar
+    notes_sidebar_left_collapsed: reactive[bool] = reactive(False, layout=True)
+    notes_sidebar_right_collapsed: reactive[bool] = reactive(False, layout=True)
+
+    # Reactive variables for selected note details
+    current_selected_note_id: reactive[Optional[str]] = reactive(None)
+    current_selected_note_version: reactive[Optional[int]] = reactive(None)
+    current_selected_note_title: reactive[Optional[str]] = reactive(None)
+    current_selected_note_content: reactive[Optional[str]] = reactive("")
 
     def __init__(self):
         super().__init__()
         # Load config ONCE
         self.app_config = load_config() # Ensure this is called
+
+        # --- Initialize NotesInteropService ---
+        self.notes_user_id = "default_tui_user" # Or any default user ID string
+        notes_db_base_dir = Path.home() / ".config/tldw_cli/user_notes"
+        try:
+            self.notes_service = NotesInteropService(
+                base_db_directory=notes_db_base_dir,
+                api_client_id="tldw_tui_client" # Client ID for operations done by the TUI
+            )
+            logging.info(f"NotesInteropService initialized for user '{self.notes_user_id}' at {notes_db_base_dir}")
+        except CharactersRAGDBError as e:
+            logging.error(f"Failed to initialize NotesInteropService: {e}", exc_info=True)
+            self.notes_service = None
+        except Exception as e: # Catch any other unexpected error during init
+            logging.error(f"An unexpected error occurred during NotesInteropService initialization: {e}", exc_info=True)
+            self.notes_service = None
+        
         logging.debug("__INIT__: Attempting to get providers and models...")
         try:
             # Call the function from the config module
@@ -465,9 +495,28 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
 
             # --- Other Placeholder Windows ---
             for tab_id in ALL_TABS:
-                if tab_id not in [TAB_CHAT, TAB_CHARACTER, TAB_LOGS]:
+                if tab_id not in [TAB_CHAT, TAB_CHARACTER, TAB_LOGS, TAB_NOTES]: # Exclude TAB_NOTES
                     with Container(id=f"{tab_id}-window", classes="window placeholder-window"):
                          yield Static(f"{tab_id.replace('_', ' ').capitalize()} Window Placeholder")
+            
+            # --- Notes Tab Window ---
+            with Container(id=f"{TAB_NOTES}-window", classes="window"):
+                # Instantiate the left sidebar (ensure it has a unique ID for the watcher)
+                yield NotesSidebarLeft(id="notes-sidebar-left", classes="sidebar")
+
+                # Main content area for notes (editor and toggles)
+                with Container(id="notes-main-content"): # Similar to chat-main-content
+                    yield TextArea(id="notes-editor-area", classes="notes-editor") # Make it take up 1fr height
+                    # Container for toggle buttons, similar to chat-input-area
+                    with Horizontal(id="notes-controls-area"):
+                        yield Button("☰ L", id="toggle-notes-sidebar-left", classes="sidebar-toggle")
+                        yield Static() # Spacer
+                        yield Button("Save Note", id="notes-save-button", variant="primary")
+                        yield Static() # Spacer
+                        yield Button("R ☰", id="toggle-notes-sidebar-right", classes="sidebar-toggle")
+
+                # Instantiate the right sidebar (ensure it has a unique ID for the watcher)
+                yield NotesSidebarRight(id="notes-sidebar-right", classes="sidebar")
 
     # --- Add explicit methods to update reactives from Select changes ---
     def update_chat_provider_reactive(self, new_value: Optional[str]) -> None:
@@ -656,6 +705,10 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
 
         print(">>> DEBUG: watch_current_tab finished.")
 
+        # If the new tab is TAB_NOTES, load the notes
+        if new_tab == TAB_NOTES:
+            self.call_later(self.load_and_display_notes)
+
     def watch_chat_sidebar_collapsed(self, collapsed: bool) -> None:
         """Hide or show the chat sidebar."""
         try:
@@ -671,6 +724,96 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
             sidebar.display = not collapsed
         except QueryError:
             logging.error("Character sidebar widget (#character-sidebar) not found.")
+
+    def watch_notes_sidebar_left_collapsed(self, collapsed: bool) -> None:
+        """Hide or show the notes left sidebar."""
+        try:
+            sidebar = self.query_one("#notes-sidebar-left", NotesSidebarLeft)
+            sidebar.display = not collapsed
+            # Optional: adjust layout of notes-main-content if needed
+        except QueryError:
+            logging.error("Notes left sidebar widget (#notes-sidebar-left) not found.")
+
+    def watch_notes_sidebar_right_collapsed(self, collapsed: bool) -> None:
+        """Hide or show the notes right sidebar."""
+        try:
+            sidebar = self.query_one("#notes-sidebar-right", NotesSidebarRight)
+            sidebar.display = not collapsed
+            # Optional: adjust layout of notes-main-content if needed
+        except QueryError:
+            logging.error("Notes right sidebar widget (#notes-sidebar-right) not found.")
+
+    async def save_current_note(self) -> bool:
+        """Saves the currently selected note's title and content to the database."""
+        if not self.notes_service or not self.current_selected_note_id or self.current_selected_note_version is None:
+            logging.warning("No note selected or service unavailable. Cannot save.")
+            # Optionally: self.notify("No note selected to save.", severity="warning")
+            return False
+
+        try:
+            editor = self.query_one("#notes-editor-area", TextArea)
+            title_input = self.query_one("#notes-title-input", Input)
+            current_content = editor.text
+            current_title = title_input.value
+
+            # Check if title or content actually changed to avoid unnecessary saves.
+            # This requires storing the original loaded title/content if not already done by reactives.
+            # For now, we save unconditionally if a note is selected.
+            # A more advanced check could compare with self.current_selected_note_title and self.current_selected_note_content
+
+            logging.info(f"Attempting to save note ID: {self.current_selected_note_id}, Version: {self.current_selected_note_version}")
+            success = self.notes_service.update_note(
+                user_id=self.notes_user_id,
+                note_id=self.current_selected_note_id,
+                update_data={'title': current_title, 'content': current_content},
+                expected_version=self.current_selected_note_version
+            )
+            if success:
+                logging.info(f"Note {self.current_selected_note_id} saved successfully.")
+                # Update version and potentially title/content reactive vars if update_note returns new state
+                # For now, we re-fetch to get the new version.
+                updated_note_details = self.notes_service.get_note_by_id(
+                    user_id=self.notes_user_id,
+                    note_id=self.current_selected_note_id
+                )
+                if updated_note_details:
+                    self.current_selected_note_version = updated_note_details.get('version')
+                    self.current_selected_note_title = updated_note_details.get('title') # Update reactive
+                    # self.current_selected_note_content = updated_note_details.get('content') # Update reactive
+
+                    # Refresh the list in the left sidebar to reflect title changes and update item version
+                    await self.load_and_display_notes()
+                    # self.notify("Note saved!", severity="information") # If notifications are setup
+                else:
+                    # Note might have been deleted by another client after our successful update, though unlikely.
+                    logging.warning(f"Note {self.current_selected_note_id} not found after presumably successful save.")
+                    # self.notify("Note saved, but failed to refresh details.", severity="warning")
+
+                return True
+            else:
+                # This path should ideally not be reached if update_note raises exceptions on failure.
+                logging.warning(f"notes_service.update_note for {self.current_selected_note_id} returned False without raising error.")
+                # self.notify("Failed to save note (unknown reason).", severity="error")
+                return False
+
+        except ConflictError as e:
+            logging.error(f"Conflict saving note {self.current_selected_note_id}: {e}", exc_info=True)
+            # self.notify(f"Save conflict: {e}. Please reload the note.", severity="error")
+            # Optionally, offer to reload the note or overwrite. For now, just log.
+            # await self.handle_save_conflict() # A new method to manage this
+            return False
+        except CharactersRAGDBError as e:
+            logging.error(f"Database error saving note {self.current_selected_note_id}: {e}", exc_info=True)
+            # self.notify("Error saving note to database.", severity="error")
+            return False
+        except QueryError as e:
+            logging.error(f"UI component not found while saving note: {e}", exc_info=True)
+            # self.notify("UI error while saving note.", severity="error")
+            return False
+        except Exception as e:
+            logging.error(f"Unexpected error saving note {self.current_selected_note_id}: {e}", exc_info=True)
+            # self.notify("Unexpected error saving note.", severity="error")
+            return False
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses for tabs, sending messages, and message actions."""
@@ -701,6 +844,189 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
         if button_id == "toggle-character-sidebar":
             self.character_sidebar_collapsed = not self.character_sidebar_collapsed
             logging.debug("Character sidebar now %s", "collapsed" if self.character_sidebar_collapsed else "expanded")
+            return
+        
+        if button_id == "toggle-notes-sidebar-left":
+            self.notes_sidebar_left_collapsed = not self.notes_sidebar_left_collapsed
+            logging.debug("Notes left sidebar now %s", "collapsed" if self.notes_sidebar_left_collapsed else "expanded")
+            return
+
+        if button_id == "toggle-notes-sidebar-right":
+            self.notes_sidebar_right_collapsed = not self.notes_sidebar_right_collapsed
+            logging.debug("Notes right sidebar now %s", "collapsed" if self.notes_sidebar_right_collapsed else "expanded")
+            return
+
+        if button_id == "notes-new-button":
+            if not self.notes_service:
+                logging.error("Notes service not available, cannot create new note.")
+                # TODO: Show user error
+                return
+            try:
+                new_note_title = "New Note"
+                # Ensure a unique title if many "New Note"s exist, or let user rename immediately
+                # For now, simple title.
+                new_note_id = self.notes_service.add_note(
+                    user_id=self.notes_user_id,
+                    title=new_note_title,
+                    content="" # Start with empty content
+                )
+                if new_note_id:
+                    logging.info(f"New note created with ID: {new_note_id}")
+                    await self.load_and_display_notes() # Refresh list
+                    # Optionally, select the new note automatically:
+                    # self.current_selected_note_id = new_note_id
+                    # new_note_details = self.notes_service.get_note_by_id(self.notes_user_id, new_note_id)
+                    # if new_note_details:
+                    #    self.current_selected_note_version = new_note_details.get('version')
+                    #    self.current_selected_note_title = new_note_details.get('title')
+                    #    self.current_selected_note_content = new_note_details.get('content', "")
+                    #    self.query_one("#notes-editor-area", TextArea).text = self.current_selected_note_content
+                    #    self.query_one("#notes-title-input", Input).value = self.current_selected_note_title
+                else:
+                    logging.error("Failed to create new note (ID was None).")
+            except CharactersRAGDBError as e:
+                logging.error(f"Database error creating new note: {e}", exc_info=True)
+                # TODO: Show user error
+            except Exception as e:
+                logging.error(f"Unexpected error creating new note: {e}", exc_info=True)
+            return
+
+        if button_id == "notes-save-button":
+            await self.save_current_note()
+            return
+
+        if button_id == "notes-delete-button":
+            if not self.notes_service or not self.current_selected_note_id or self.current_selected_note_version is None:
+                logging.warning("No note selected to delete.")
+                # self.notify("No note selected to delete.", severity="warning")
+                return
+
+            # Basic confirmation (logging only, no UI dialog for this subtask)
+            logging.info(f"Attempting to delete note ID: {self.current_selected_note_id}, Version: {self.current_selected_note_version}")
+
+            # TODO: Implement a proper confirmation dialog here in a future step.
+            # confirmed = await self.app.push_screen_wait(ConfirmDeleteDialog(self.current_selected_note_title or "this note"))
+            # if not confirmed: return
+
+            try:
+                success = self.notes_service.soft_delete_note(
+                    user_id=self.notes_user_id,
+                    note_id=self.current_selected_note_id,
+                    expected_version=self.current_selected_note_version
+                )
+                if success:
+                    logging.info(f"Note {self.current_selected_note_id} soft-deleted successfully.")
+                    # self.notify("Note deleted.", severity="information")
+
+                    # Clear selection and UI
+                    self.current_selected_note_id = None
+                    self.current_selected_note_version = None
+                    self.current_selected_note_title = "" # Update reactive
+                    self.current_selected_note_content = "" # Update reactive
+
+                    self.query_one("#notes-editor-area", TextArea).text = ""
+                    self.query_one("#notes-title-input", Input).value = ""
+                    self.query_one("#notes-keywords-area", TextArea).text = "" # Clear keywords too
+
+                    await self.load_and_display_notes() # Refresh list in left sidebar
+                else:
+                    # This path should ideally not be reached if soft_delete_note raises exceptions on failure.
+                    logging.warning(f"notes_service.soft_delete_note for {self.current_selected_note_id} returned False.")
+                    # self.notify("Failed to delete note (unknown reason).", severity="error")
+
+            except ConflictError as e:
+                logging.error(f"Conflict deleting note {self.current_selected_note_id}: {e}", exc_info=True)
+                # self.notify(f"Delete conflict: {e}. Note may have been changed or deleted by another process.", severity="error")
+                # Potentially refresh list if conflict occurred
+                await self.load_and_display_notes()
+            except CharactersRAGDBError as e:
+                logging.error(f"Database error deleting note {self.current_selected_note_id}: {e}", exc_info=True)
+                # self.notify("Error deleting note from database.", severity="error")
+            except QueryError as e:
+                logging.error(f"UI component not found while deleting note: {e}", exc_info=True)
+                # self.notify("UI error while deleting note.", severity="error")
+            except Exception as e:
+                logging.error(f"Unexpected error deleting note {self.current_selected_note_id}: {e}", exc_info=True)
+                # self.notify("Unexpected error deleting note.", severity="error")
+            return
+
+        if button_id == "notes-save-keywords-button":
+            if not self.notes_service or not self.current_selected_note_id:
+                logging.warning("No note selected or service unavailable. Cannot save keywords.")
+                # self.notify("No note selected to save keywords for.", severity="warning")
+                return
+
+            try:
+                keywords_area = self.query_one("#notes-keywords-area", TextArea)
+                input_keyword_texts = {kw.strip().lower() for kw in keywords_area.text.split(',') if kw.strip()}
+                
+                logging.info(f"Attempting to save keywords for note {self.current_selected_note_id}. Input: {input_keyword_texts}")
+
+                # Get existing keyword links for the note
+                existing_linked_keywords_data = self.notes_service.get_keywords_for_note(
+                    user_id=self.notes_user_id,
+                    note_id=self.current_selected_note_id
+                )
+                existing_linked_keyword_map = {kw['keyword'].lower(): kw['id'] for kw in existing_linked_keywords_data}
+
+                processed_keyword_ids = set()
+
+                # Process input keywords: get/create IDs
+                for kw_text in input_keyword_texts:
+                    if not kw_text: continue # Skip empty strings after split/strip
+                    
+                    keyword_detail = self.notes_service.get_keyword_by_text(self.notes_user_id, kw_text)
+                    if not keyword_detail: # Keyword doesn't exist globally for this user
+                        logging.debug(f"Keyword '{kw_text}' not found globally, creating it.")
+                        new_kw_id = self.notes_service.add_keyword(self.notes_user_id, kw_text)
+                        if new_kw_id is None: # Should not happen if add_keyword raises on error
+                            logging.error(f"Failed to create new keyword '{kw_text}', skipping.")
+                            continue
+                        processed_keyword_ids.add(new_kw_id)
+                        logging.info(f"Created new keyword '{kw_text}' with ID {new_kw_id}.")
+                    else: # Keyword exists globally
+                        processed_keyword_ids.add(keyword_detail['id'])
+                
+                # Link new keywords
+                for kw_id in processed_keyword_ids:
+                    # Check if this keyword_id is among those already linked (by comparing IDs, not text)
+                    is_already_linked = any(existing_kw_data['id'] == kw_id for existing_kw_data in existing_linked_keywords_data)
+                    if not is_already_linked:
+                        self.notes_service.link_note_to_keyword(
+                            user_id=self.notes_user_id,
+                            note_id=self.current_selected_note_id,
+                            keyword_id=kw_id
+                        )
+                        logging.debug(f"Linked keyword ID {kw_id} to note {self.current_selected_note_id}")
+
+                # Unlink keywords that were removed
+                for existing_kw_text, existing_kw_id in existing_linked_keyword_map.items():
+                    if existing_kw_text not in input_keyword_texts: # Compare by lowercased text
+                        self.notes_service.unlink_note_from_keyword(
+                            user_id=self.notes_user_id,
+                            note_id=self.current_selected_note_id,
+                            keyword_id=existing_kw_id
+                        )
+                        logging.debug(f"Unlinked keyword ID {existing_kw_id} ('{existing_kw_text}') from note {self.current_selected_note_id}")
+                
+                # Refresh the displayed keywords
+                refreshed_keywords_data = self.notes_service.get_keywords_for_note(
+                    user_id=self.notes_user_id,
+                    note_id=self.current_selected_note_id
+                )
+                keywords_area.text = ", ".join([kw['keyword'] for kw in refreshed_keywords_data])
+                # self.notify("Keywords saved successfully!", severity="information")
+                logging.info(f"Keywords for note {self.current_selected_note_id} updated and refreshed.")
+
+            except CharactersRAGDBError as e:
+                logging.error(f"Database error saving keywords for note {self.current_selected_note_id}: {e}", exc_info=True)
+                # self.notify("Error saving keywords.", severity="error")
+            except QueryError as e:
+                logging.error(f"UI component #notes-keywords-area not found: {e}", exc_info=True)
+                # self.notify("UI error while saving keywords.", severity="error")
+            except Exception as e:
+                logging.error(f"Unexpected error saving keywords for note {self.current_selected_note_id}: {e}", exc_info=True)
+                # self.notify("Unexpected error saving keywords.", severity="error")
             return
 
         # --- Send Message ---
@@ -1243,6 +1569,155 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
             )
             ai_message_widget.mark_generation_complete()
             self.current_ai_message_widget = None
+
+    async def load_and_display_notes(self) -> None:
+        """Loads notes from the database and populates the left sidebar list."""
+        if not self.notes_service:
+            logging.error("Notes service not available, cannot load notes.")
+            # Optionally, display an error in the UI
+            return
+        try:
+            notes_list = self.notes_service.list_notes(user_id=self.notes_user_id, limit=200) # Increased limit
+            sidebar_left = self.query_one("#notes-sidebar-left", NotesSidebarLeft)
+            await sidebar_left.populate_notes_list(notes_list)
+            logging.info(f"Loaded {len(notes_list)} notes into the sidebar.")
+        except CharactersRAGDBError as e:
+            logging.error(f"Database error loading notes: {e}", exc_info=True)
+        except QueryError:
+            logging.error("Failed to find notes-sidebar-left to populate notes.")
+        except Exception as e:
+            logging.error(f"Unexpected error loading notes: {e}", exc_info=True)
+
+    async def on_list_view_selected(self, event: ListView.Selected) -> None:
+        """Handles selecting a note from the list in the left sidebar."""
+        # Check if the event comes from the notes list view
+        if event.list_view.id == "notes-list-view":
+            if not self.notes_service:
+                logging.error("Notes service not available, cannot load selected note.")
+                return
+
+            selected_item = event.item # This is the ListItem
+            if selected_item and hasattr(selected_item, 'note_id') and hasattr(selected_item, 'note_version'):
+                note_id = selected_item.note_id
+                note_version = selected_item.note_version
+                logging.info(f"Note selected: ID={note_id}, Version={note_version}")
+
+                try:
+                    note_details = self.notes_service.get_note_by_id(
+                        user_id=self.notes_user_id,
+                        note_id=note_id
+                    )
+                    if note_details:
+                        self.current_selected_note_id = note_id
+                        # Important: Use the version from the freshly loaded details for consistency
+                        self.current_selected_note_version = note_details.get('version')
+                        self.current_selected_note_title = note_details.get('title')
+                        self.current_selected_note_content = note_details.get('content', "")
+
+                        # Update UI elements
+                        editor = self.query_one("#notes-editor-area", TextArea)
+                        editor.text = self.current_selected_note_content
+                        # Ensure editor is focused if you want immediate typing
+                        # editor.focus()
+
+                        title_input = self.query_one("#notes-title-input", Input)
+                        title_input.value = self.current_selected_note_title or "" # Handle None title
+
+                        # Clear and update keywords area
+                        try:
+                            keywords_area = self.query_one("#notes-keywords-area", TextArea)
+                            keywords_for_note = self.notes_service.get_keywords_for_note(
+                                user_id=self.notes_user_id,
+                                note_id=note_id # note_id is available from the selection logic
+                            )
+                            
+                            if keywords_for_note:
+                                keywords_str = ", ".join([kw['keyword'] for kw in keywords_for_note])
+                                keywords_area.text = keywords_str
+                                logging.info(f"Displayed {len(keywords_for_note)} keywords for note {note_id}: '{keywords_str}'")
+                            else:
+                                keywords_area.text = "" # Clear if no keywords
+                                logging.info(f"No keywords found for note {note_id}.")
+
+                        except CharactersRAGDBError as e:
+                            logging.error(f"Database error loading keywords for note {note_id}: {e}", exc_info=True)
+                            if 'keywords_area' in locals(): keywords_area.text = "Error loading keywords."
+                        except QueryError as e:
+                            logging.error(f"UI component #notes-keywords-area not found: {e}", exc_info=True)
+                        except Exception as e:
+                            logging.error(f"Unexpected error loading keywords for note {note_id}: {e}", exc_info=True)
+                            if 'keywords_area' in locals(): keywords_area.text = "Unexpected error loading keywords."
+
+                        logging.info(f"Loaded note '{self.current_selected_note_title}' into editor.")
+                    else:
+                        logging.warning(f"Could not retrieve details for note ID: {note_id}")
+                        self.current_selected_note_id = None # Clear selection
+                        self.current_selected_note_version = None
+                        self.current_selected_note_title = None
+                        self.current_selected_note_content = ""
+                        self.query_one("#notes-editor-area", TextArea).text = ""
+                        self.query_one("#notes-title-input", Input).value = ""
+                        # Ensure keywords area is also cleared if note details fail to load
+                        try:
+                            self.query_one("#notes-keywords-area", TextArea).text = ""
+                        except QueryError:
+                            logging.error("Failed to query #notes-keywords-area for clearing on note load failure.")
+
+
+                except CharactersRAGDBError as e:
+                    logging.error(f"Database error loading note {note_id}: {e}", exc_info=True)
+                except QueryError as e:
+                    logging.error(f"UI component not found while loading note: {e}", exc_info=True)
+                except Exception as e:
+                    logging.error(f"Unexpected error loading note {note_id}: {e}", exc_info=True)
+        # Pass the event to the superclass if you have a base class that handles it
+        # Or handle other ListViews if any
+        # super().on_list_view_selected(event) # If applicable
+
+    async def on_input_changed(self, event: Input.Changed) -> None:
+        # ... (any existing Input.Changed handlers for other inputs)
+
+        if event.input.id == "notes-search-input":
+            search_term = event.value.strip()
+            logging.debug(f"Search term entered: '{search_term}'")
+
+            if not self.notes_service:
+                logging.error("Notes service not available for search.")
+                return
+
+            try:
+                sidebar_left = self.query_one("#notes-sidebar-left", NotesSidebarLeft)
+                if not search_term: # If search term is empty, load all notes
+                    await self.load_and_display_notes()
+                else:
+                    # Optional: Add a small delay or minimum character count if desired
+                    # if len(search_term) < 3: # Example: search only if term is 3+ chars
+                    #     # Clear list or keep existing if term is too short but not empty
+                    #     await sidebar_left.populate_notes_list([]) # Clear if desired
+                    #     return
+
+                    notes_list = self.notes_service.search_notes(
+                        user_id=self.notes_user_id,
+                        search_term=search_term,
+                        limit=200 # Or a suitable limit for search results
+                    )
+                    await sidebar_left.populate_notes_list(notes_list)
+                    logging.info(f"Found {len(notes_list)} notes for search term '{search_term}'.")
+
+            except CharactersRAGDBError as e:
+                logging.error(f"Database error searching notes for '{search_term}': {e}", exc_info=True)
+                # Optionally, display error in UI or clear list
+                # try:
+                #     sidebar_left = self.query_one("#notes-sidebar-left", NotesSidebarLeft)
+                #     await sidebar_left.populate_notes_list([]) # Clear list on error
+                # except QueryError: pass # Sidebar might not be available
+            except QueryError as e:
+                logging.error(f"UI component not found during note search: {e}", exc_info=True)
+            except Exception as e:
+                logging.error(f"Unexpected error during note search: {e}", exc_info=True)
+            return # Ensure this event is handled here
+        
+        # ... (any other Input.Changed handlers)
 
     # --- Helper methods ---
     def _safe_float(self, value: str, default: float, name: str) -> float:
