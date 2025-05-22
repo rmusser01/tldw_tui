@@ -19,6 +19,14 @@ from typing import Dict, Any, List, Optional
 
 # --- Default Configuration ---
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "tldw_cli" / "config.toml"
+
+# Define this list at the module level for clarity
+DEFAULT_SUPPORTED_API_PROVIDERS_LIST = [
+    "anthropic", "cohere", "deepseek", "google", "groq", "huggingface",
+    "mistral", "openai", "openrouter", "llama.cpp", "kobold", "ollama",
+    "ooba", "tabbyapi", "vllm", "local-llm", "custom-openai-api", "custom-openai-api-2"
+]
+
 DEFAULT_CONFIG = {
     "general": {"default_tab": "chat", "log_level": "INFO"},
     "logging": {
@@ -30,8 +38,12 @@ DEFAULT_CONFIG = {
     "database": {
         "path": "~/.local/share/tldw_cli/tldw_cli_data.db"
     },
-    "api_endpoints": {
-        "Ollama": "http://localhost:11434", # Minimal default
+    "api_endpoints": { # This section might be for base URLs if not in api_settings
+        "Ollama": "http://localhost:11434",
+    },
+    "api_defaults": { # New section for API related global defaults
+        "default_llm_provider": "openai", # This will be the ultimate fallback
+        "supported_providers": DEFAULT_SUPPORTED_API_PROVIDERS_LIST
     },
     # *** Keep default providers EMPTY as discussed before - let user config define it ***
     "providers": {},
@@ -46,7 +58,9 @@ DEFAULT_CONFIG = {
         "provider": "Ollama", "model": "llama3:latest", # Changed fallback
         "system_prompt": "You are a helpful character.",
         "temperature": 0.8, "top_p": 1.0, "min_p": 0.0, "top_k": 0,
-    }
+    },
+    # api_settings will be populated by user's config.toml; no defaults here needed for structure
+    "api_settings": {}
 }
 
 # --- Configuration Path ---
@@ -82,8 +96,8 @@ def load_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
     print(f"--- load_config: Does path exist? {config_path.exists()}")
 
     # Deep copy defaults FIRST
-    config = {k: v.copy() if isinstance(v, dict) else v for k, v in DEFAULT_CONFIG.items()}
-    logging.info(f"Initialized config with DEFAULTS. Default providers: {config.get('providers')}") # Log initial state
+    config = {k: v.copy() if isinstance(v, dict) else (list(v) if isinstance(v, list) else v) for k, v in DEFAULT_CONFIG.items()}
+    logging.info(f"Initialized config with DEFAULTS. Default providers: {config.get('providers')}")
 
     try:
         print(f"--- load_config: Before mkdir parent: {config_path.parent} ---")
@@ -94,7 +108,7 @@ def load_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
         if config_path.exists():
             print(f"--- load_config: INSIDE if config_path.exists() ---")
             logging.info(f"Config file FOUND at {config_path}")
-            user_config = None # Initialize before try block
+            user_config = None
             try:
                 print(f"--- load_config: Entering inner try block ---")
                 print(f"--- load_config: Attempting 'with open...' ---")
@@ -111,20 +125,25 @@ def load_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
                     # --- Merge Logic ---
                     logging.debug("Starting merge process...")
                     for section, section_config in user_config.items():
-                        # Special handling for 'providers': REPLACE the default entirely
-                        if section == "providers":
-                            # Ensure the loaded section_config is actually a dictionary
-                            if isinstance(section_config, dict):
-                                config[section] = section_config # Replace
-                                logging.info(f"MERGE: Replaced entire '{section}' section from user config.")
-                            else:
-                                logging.warning(f"MERGE: User config section '{section}' is not a dictionary. Skipping merge for this section.")
-                        # Merge other dictionary sections
-                        elif section in config and isinstance(config[section], dict) and isinstance(section_config, dict):
-                            config[section].update(section_config)
-                            logging.info(f"MERGE: Updated '{section}' section.")
-                        # Add/overwrite other sections/values
-                        else:
+                        if section in config and isinstance(config[section], dict) and isinstance(section_config, dict):
+                            if section == "providers" or section == "api_settings" or section == "api_defaults": # Sections to replace or deep merge carefully
+                                # For api_settings, we want to merge provider by provider
+                                if section == "api_settings":
+                                    for prov_key, prov_config in section_config.items():
+                                        if prov_key not in config[section]:
+                                            config[section][prov_key] = {}
+                                        if isinstance(config[section].get(prov_key), dict) and isinstance(prov_config, dict):
+                                             config[section][prov_key].update(prov_config)
+                                        else:
+                                            config[section][prov_key] = prov_config # Overwrite if types don't match for update
+                                    logging.info(f"MERGE: Deep-merged '{section}' section from user config.")
+                                else: # For 'providers' and 'api_defaults', user config replaces default section.
+                                    config[section] = section_config
+                                    logging.info(f"MERGE: Replaced entire '{section}' section from user config.")
+                            else: # Default merge for other dict sections
+                                config[section].update(section_config)
+                                logging.info(f"MERGE: Updated '{section}' section.")
+                        else: # Add/overwrite non-dict sections or new sections
                             config[section] = section_config
                             logging.info(f"MERGE: Set/added section '{section}' from user config.")
                     logging.debug("Finished merge process.")
@@ -147,7 +166,7 @@ def load_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
             # Default creation logic (keep as is)
             try:
                 with open(config_path, "w", encoding="utf-8") as f:
-                    toml.dump(DEFAULT_CONFIG, f)
+                    toml.dump(DEFAULT_CONFIG, f) # Dump the basic default structure
                 logging.info(f"Created default configuration file at: {config_path}")
             except ImportError:
                  logging.warning("`toml` library not found. Cannot write default config file.")
@@ -176,27 +195,120 @@ def get_setting(section: str, key: str, default: Any = None) -> Any:
     config = load_config()
     return config.get(section, {}).get(key, default)
 
+# --- New/Modified Config Functions ---
+
+def get_default_llm_provider() -> str:
+    """
+    Determines the default LLM provider.
+    Priority:
+    1. Environment variable "DEFAULT_LLM_PROVIDER".
+    2. Value from config file: [api_defaults].default_llm_provider.
+    3. Hardcoded default in DEFAULT_CONFIG.
+    """
+    env_provider = os.getenv("DEFAULT_LLM_PROVIDER")
+    if env_provider:
+        logging.debug(f"Using default LLM provider from env var DEFAULT_LLM_PROVIDER: {env_provider}")
+        return env_provider
+
+    # get_setting will fetch from user's toml or DEFAULT_CONFIG's default.
+    # The ultimate fallback "openai" is passed to get_setting.
+    config_provider = get_setting("api_defaults", "default_llm_provider", DEFAULT_CONFIG["api_defaults"]["default_llm_provider"])
+    logging.debug(f"Using default LLM provider from config: {config_provider}")
+    return config_provider
+
+
+def get_supported_api_providers() -> List[str]:
+    """
+    Returns the list of supported API provider names.
+    Priority:
+    1. List from config file: [api_defaults].supported_providers.
+    2. Default list defined in DEFAULT_CONFIG.
+    """
+    # get_setting will fetch from user's toml or DEFAULT_CONFIG's default.
+    # The ultimate fallback is DEFAULT_SUPPORTED_API_PROVIDERS_LIST.
+    providers_list = get_setting("api_defaults", "supported_providers", DEFAULT_CONFIG["api_defaults"]["supported_providers"])
+
+    if not providers_list or not isinstance(providers_list, list):
+        logging.warning("Supported providers list is invalid or empty in config, falling back to internal default.")
+        return DEFAULT_SUPPORTED_API_PROVIDERS_LIST.copy() # Return a copy
+
+    return providers_list
+
+
+# Mapping from canonical provider names (used in Literal) to keys in [api_settings] if they differ.
+# This helps keep the Literal names user-friendly while allowing different TOML keys if needed.
+PROVIDER_NAME_TO_API_SETTINGS_KEY_MAP = {
+    "mistral": "mistralai",           # e.g., Literal uses "mistral", config.toml has [api_settings.mistralai]
+    "custom-openai-api": "custom",    # Literal uses "custom-openai-api", config.toml has [api_settings.custom]
+    "custom-openai-api-2": "custom_2",# Literal uses "custom-openai-api-2", config.toml has [api_settings.custom_2]
+    "kobold": "koboldcpp",            # Literal uses "kobold", config.toml has [api_settings.koboldcpp]
+    "ooba": "oobabooga",              # Literal uses "ooba", config.toml has [api_settings.oobabooga]
+    # "llama.cpp" is handled by normalization: llama.cpp -> llama_cpp
+    # Add other mappings here if `DEFAULT_SUPPORTED_API_PROVIDERS_LIST` names
+    # don't directly map to `api_settings.<key>` after basic normalization.
+}
+
+def get_api_key(provider_name: str) -> Optional[str]:
+    """
+    Retrieves the API key for a given provider.
+    Checks environment variables specified in config, then direct 'api_key' in config.
+    Also checks generic environment variable names (e.g., OPENAI_API_KEY).
+    """
+    config = load_config()
+
+    # Normalize the input provider_name and check mapping for the settings key
+    base_normalized_name = provider_name.lower().replace('-', '_').replace('.', '_')
+    settings_key = PROVIDER_NAME_TO_API_SETTINGS_KEY_MAP.get(provider_name, base_normalized_name)
+
+    provider_settings = config.get("api_settings", {}).get(settings_key, {})
+
+    if not provider_settings and settings_key != base_normalized_name: # Try base normalization if mapped key yielded no settings
+        provider_settings = config.get("api_settings", {}).get(base_normalized_name, {})
+
+
+    # 1. Try fetching from environment variable specified in config (e.g., api_settings.openai.api_key_env_var)
+    env_var_name_from_config = provider_settings.get("api_key_env_var")
+    if env_var_name_from_config:
+        api_key = os.getenv(env_var_name_from_config)
+        if api_key:
+            logging.debug(f"API key for '{provider_name}' (settings key '{settings_key}') found in env var '{env_var_name_from_config}'.")
+            return api_key
+
+    # 2. Try fetching from 'api_key' field directly in config (e.g., api_settings.openai.api_key)
+    api_key_direct = provider_settings.get("api_key")
+    if api_key_direct:
+        logging.debug(f"API key for '{provider_name}' (settings key '{settings_key}') found directly in config.")
+        return api_key_direct
+
+    # 3. Fallback: Check a generic environment variable format (e.g., PROVIDER_NAME_API_KEY)
+    #    This matches the original logic in chat_request_schemas.py
+    generic_env_var_name = f"{provider_name.upper().replace('.', '_').replace('-', '_')}_API_KEY"
+    api_key_generic = os.getenv(generic_env_var_name)
+    if api_key_generic:
+        logging.debug(f"API key for '{provider_name}' found in generic env var '{generic_env_var_name}'.")
+        return api_key_generic
+
+    logging.debug(f"API key for '{provider_name}' (settings key '{settings_key}') not found in specified env var, direct config, or generic env var.")
+    return None
+
 def get_providers_and_models() -> Dict[str, List[str]]:
     """
     Loads provider and model configuration, validates it, and returns
     a dictionary of valid providers mapped to their list of models.
     """
     config = load_config()
-    providers = config.get("providers", {}) # Get the potentially merged providers
+    providers_data = config.get("providers", {})
 
-    valid_providers: Dict[str, List[str]] = {} # Initialize the dictionary to be returned
+    valid_providers: Dict[str, List[str]] = {}
 
-    if isinstance(providers, dict): # Ensure it's a dictionary first
-        for provider, models in providers.items():
-            # Validate each provider's model list
+    if isinstance(providers_data, dict):
+        for provider, models in providers_data.items():
             if isinstance(models, list) and all(isinstance(m, str) for m in models):
                 valid_providers[provider] = models
             else:
-                logging.warning(f"Invalid model list for provider '{provider}' in loaded config. Value: {models!r}. Skipping.")
+                logging.warning(f"Invalid model list for provider '{provider}' in loaded config's [providers] section. Value: {models!r}. Skipping.")
     else:
-        # Log the error, but don't return early.
-        # valid_providers remains {} which is the intended return value in this case.
-        logging.error(f"Loaded 'providers' section is not a dictionary: {providers!r}. Returning empty.")
+        logging.error(f"Loaded 'providers' section is not a dictionary: {providers_data!r}. No provider/model data available from [providers] section.")
 
     logging.debug(f"get_providers_and_models returning providers: {list(valid_providers.keys())}")
 
@@ -204,8 +316,8 @@ def get_providers_and_models() -> Dict[str, List[str]]:
 
 # (get_database_path and get_log_file_path remain the same)
 def get_database_path() -> Path:
-    config = load_config()
-    db_path_str = config.get("database", {}).get("path", DEFAULT_CONFIG["database"]["path"])
+    config = load_config() # Ensures config is loaded
+    db_path_str = get_setting("database", "path", DEFAULT_CONFIG["database"]["path"])
     db_path = Path(db_path_str).expanduser().resolve()
     try:
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -214,9 +326,10 @@ def get_database_path() -> Path:
     return db_path
 
 def get_log_file_path() -> Path:
-    db_dir = get_database_path().parent
+    # Ensure database path (and thus its parent dir) is resolved first, as log might go there.
+    db_parent_dir = get_database_path().parent
     log_filename = get_setting("logging", "log_filename", DEFAULT_CONFIG["logging"]["log_filename"])
-    return db_dir / log_filename
+    return db_parent_dir / log_filename
 
 
 

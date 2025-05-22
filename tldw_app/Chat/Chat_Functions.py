@@ -16,6 +16,7 @@ Key Features:
 # Imports
 import base64
 import json
+import logging
 import os
 import random
 import re
@@ -24,15 +25,13 @@ import time
 import warnings
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Dict, Any, Tuple, Optional, Union
+from typing import List, Dict, Any, Tuple, Optional, Union, Literal
 #
 # 3rd-party Libraries
-import requests
-import logging
-
 from loguru import logger
+import requests
+from pydantic import BaseModel, Field
 
-from .chat_request_schemas import ResponseFormat
 #
 # Local Imports
 from ..Chat.Chat_Deps import ChatBadRequestError, ChatConfigurationError, ChatAPIError, \
@@ -54,6 +53,9 @@ from ..config import load_config
 # +++ Default Character Configuration +++
 DEFAULT_CHARACTER_NAME = "Default Character"
 DEFAULT_CHARACTER_DESCRIPTION = "This is a default character created by the system."
+
+class ResponseFormat(BaseModel):
+    type: Literal["text", "json_object"] = Field("text", description="Must be one of `text` or `json_object`.")
 
 def approximate_token_count(history):
     try:
