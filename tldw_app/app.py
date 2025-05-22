@@ -34,6 +34,7 @@ from .config import get_setting, get_providers_and_models, get_log_file_path, DE
     DEFAULT_CONFIG_PATH, CONFIG_TOML_CONTENT
 from .Widgets.chat_message import ChatMessage
 from .Widgets.settings_sidebar import create_settings_sidebar
+from .Widgets.character_sidebar import create_character_sidebar # Import for character sidebar
 from .Widgets.titlebar import TitleBar
 # Adjust the path based on your project structure
 try:
@@ -269,6 +270,7 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
 
     # Reactives for sidebar
     chat_sidebar_collapsed: reactive[bool] = reactive(False, layout=True)
+    character_sidebar_collapsed: reactive[bool] = reactive(False, layout=True) # For character sidebar
 
     def __init__(self):
         super().__init__()
@@ -426,24 +428,36 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
                     # *** Use VerticalScroll for ChatMessages ***
                     yield VerticalScroll(id="chat-log")
                     with Horizontal(id="chat-input-area"):
-                        yield Button("☰", id="toggle-chat-sidebar", classes="sidebar-toggle")
+                        yield Button("☰", id="toggle-chat-sidebar", classes="sidebar-toggle") # Left sidebar toggle
                         yield TextArea(id="chat-input", classes="chat-input")
                         yield Button("🎤", id="mic-chat", classes="mic-button")
                         yield Button("Send", id="send-chat", classes="send-button")
+                        # Add toggle for the new right sidebar (character settings) for chat window
+                        yield Button("👤", id="toggle-character-sidebar", classes="sidebar-toggle")
+                
+                # Right sidebar (new character specific settings) for chat window
+                # The create_character_sidebar function will define a widget with id="character-sidebar"
+                yield from create_character_sidebar(self.app_config)
 
             # --- Character Chat Window ---
             # NOTE: This still uses Richlogging. Update if interactive messages needed.
             with Container(id=f"{TAB_CHARACTER}-window", classes="window"):
+                 # Left sidebar (existing settings)
                  yield from create_settings_sidebar(TAB_CHARACTER, self.app_config)
 
+                 # Main content area for character
                  with Container(id="character-main-content"):
                      with Horizontal(id="character-top-area"):
                          yield RichLog(id="character-log", wrap=True, highlight=True, classes="chat-log") # Still RichLog here
                          yield Static(ASCII_PORTRAIT, id="character-portrait") # Use ASCII art
                      with Horizontal(id="character-input-area"):
+                         # Removed toggle-character-sidebar from here
                          yield TextArea(id="character-input", classes="chat-input")
                          yield Button("🎤", id="mic-character", classes="mic-button")
                          yield Button("Send", id="send-character", classes="send-button")
+                
+                 # Removed character sidebar from here
+
 
             # --- Logs Window ---
             with Container(id=f"{TAB_LOGS}-window", classes="window"):
@@ -650,6 +664,14 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
         except QueryError:
             logging.error("Chat sidebar widget not found.")
 
+    def watch_character_sidebar_collapsed(self, collapsed: bool) -> None:
+        """Hide or show the character settings sidebar."""
+        try:
+            sidebar = self.query_one("#character-sidebar") # ID from create_character_sidebar
+            sidebar.display = not collapsed
+        except QueryError:
+            logging.error("Character sidebar widget (#character-sidebar) not found.")
+
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses for tabs, sending messages, and message actions."""
         button = event.button
@@ -673,7 +695,12 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
         # ── sidebar toggle ────────────────────────────────────────────
         if button_id == "toggle-chat-sidebar":
             self.chat_sidebar_collapsed = not self.chat_sidebar_collapsed
-            logging.debug("Sidebar now %s", "collapsed" if self.chat_sidebar_collapsed else "expanded")
+            logging.debug("Chat sidebar now %s", "collapsed" if self.chat_sidebar_collapsed else "expanded")
+            return
+        
+        if button_id == "toggle-character-sidebar":
+            self.character_sidebar_collapsed = not self.character_sidebar_collapsed
+            logging.debug("Character sidebar now %s", "collapsed" if self.character_sidebar_collapsed else "expanded")
             return
 
         # --- Send Message ---

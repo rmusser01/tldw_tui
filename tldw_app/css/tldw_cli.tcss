@@ -20,7 +20,46 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 .placeholder-window { align: center middle; background: $panel; }
 
 /* Sidebar Styling */
-.sidebar { width: 42; background: $boost; padding: 1 2; border-right: thick $background-darken-1; height: 100%; overflow-y: auto; overflow-x: hidden; }
+/* Existing left sidebar */
+.sidebar { 
+    width: 42; 
+    background: $boost; 
+    padding: 1 2; 
+    border-right: thick $background-darken-1; 
+    height: 100%; 
+    overflow-y: auto; 
+    overflow-x: hidden; 
+}
+/* Collapsed state for the existing left sidebar */
+.sidebar.collapsed {
+    width: 0 !important;
+    border-right: none !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    display: none; /* ensures it doesn’t grab focus */
+}
+
+/* New right sidebar (character-sidebar) */
+#character-sidebar {
+    dock: right; /* Position on the right */
+    width: 35;   /* Specific width for this sidebar */
+    background: $boost;
+    padding: 1 2;
+    border-left: thick $background-darken-1; /* Border on the left */
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Collapsed state for the new right sidebar */
+#character-sidebar.collapsed {
+    width: 0 !important;
+    border-left: none !important; /* Ensure left border is removed */
+    padding: 0 !important;
+    overflow: hidden !important;
+    display: none; /* Ensures it doesn't take space or grab focus */
+}
+
 .sidebar-title { text-style: bold underline; margin-bottom: 1; width: 100%; text-align: center; }
 .sidebar-label { margin-top: 1; text-style: bold; }
 .sidebar-input { width: 100%; margin-bottom: 1; }
@@ -172,12 +211,22 @@ ChatMessage.-ai .message-actions.-generating {
 .sidebar-toggle {
     width: 2;                /* tiny square */
     height: 3;
-    margin-right: 1;
+    /* margin-right: 1; Removed default margin, apply specific below */
     border: none;
     background: $surface-darken-1;
     color: $text;
 }
 .sidebar-toggle:hover { background: $surface; }
+
+/* Specific margins for sidebar toggles based on position */
+#toggle-chat-sidebar {
+    margin-right: 1; /* Original toggle on the left of input area */
+}
+
+#toggle-character-sidebar {
+    margin-left: 1; /* New toggle on the right of input area */
+}
+
 #app-titlebar {
     dock: top;
     height: 1;                 /* single line */
