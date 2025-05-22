@@ -11,7 +11,7 @@ from typing import Union, AnyStr
 #
 # Local Imports
 from tldw_Server_API.app.core.Utils.Utils import load_comprehensive_config, get_user_database_path
-from ..utils.Utils import PROJECT_DATABASES_DIR, log, PROJECT_ROOT_DIR, CONFIG_FILE_PATH, USER_DB_PATH, \
+from ..Utils.Utils import PROJECT_DATABASES_DIR, log, PROJECT_ROOT_DIR, CONFIG_FILE_PATH, USER_DB_PATH, \
     USER_DB_DIR
 
 
