@@ -20,7 +20,7 @@ from textual.app import App, ComposeResult
 from rich.markup import escape as escape_markup
 from textual.logging import TextualHandler
 from textual.widgets import (
-    Static, Button, Input, Header, Footer, RichLog, TextArea, Select, ListView, Checkbox, ListItem, Label
+    Static, Button, Input, Header, Footer, RichLog, TextArea, Select, ListView, Checkbox, ListItem, Label, Collapsible
 )
 from textual.containers import Horizontal, Container, VerticalScroll
 from textual.reactive import reactive
@@ -291,6 +291,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     character_sidebar_collapsed: reactive[bool] = reactive(False, layout=True)  # For character sidebar
     notes_sidebar_left_collapsed: reactive[bool] = reactive(False, layout=True)
     notes_sidebar_right_collapsed: reactive[bool] = reactive(False, layout=True)
+    conv_char_sidebar_collapsed: reactive[bool] = reactive(False, layout=True)
 
     # Reactive variables for selected note details
     current_selected_note_id: reactive[Optional[str]] = reactive(None)
@@ -500,16 +501,32 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
             # --- Conversations & Characters Window (Redesigned) ---
             with Container(id=f"{TAB_CONV_CHAR}-window", classes="window"):
+                # Toggle button for the left pane
+                yield Button("☰", id="toggle-conv-char-sidebar")
+
                 # Left Pane
                 with VerticalScroll(id="conv-char-left-pane", classes="cc-left-pane"):
                     yield Static("My Characters & Conversations",
                                  classes="sidebar-title")  # Reusing sidebar-title class
-                    yield Input(id="conv-char-search-input", placeholder="Search conversations...",
-                                classes="sidebar-input")  # Reusing sidebar-input
-                    yield ListView(
-                        id="conv-char-search-results-list")  # Will need specific styling for height if not covered
-                    yield Button("Load Selected", id="conv-char-load-button",
-                                 classes="sidebar-button")  # Reusing sidebar-button
+
+                    with Collapsible(title="Characters", id="conv-char-characters-collapsible"):
+                        yield Select(
+                            options=[("", "<placeholder>")],  # Placeholder option
+                            prompt="Select Character...",
+                            allow_blank=True,
+                            id="conv-char-character-select"
+                        )
+                        # Add other character-related buttons here later if needed
+
+                    with Collapsible(title="Conversations", id="conv-char-conversations-collapsible"):
+                        yield Input(id="conv-char-search-input", placeholder="Search conversations...",
+                                    classes="sidebar-input")  # Moved
+                        yield Button("Search", id="conv-char-conversation-search-button",
+                                     classes="sidebar-button")  # New
+                        yield ListView(
+                            id="conv-char-search-results-list")  # Moved
+                        yield Button("Load Selected", id="conv-char-load-button",
+                                     classes="sidebar-button")  # Moved
 
                 # Center Pane
                 with VerticalScroll(id="conv-char-center-pane", classes="cc-center-pane"):
@@ -679,6 +696,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         except Exception as e:
             logging.error(f"on_mount: Unexpected error populating character filter: {e}", exc_info=True)
 
+        # Populate the character select dropdown in the Conversations & Characters tab
+        self.call_later(self._populate_conv_char_character_select)
+
     async def on_shutdown_request(self, event) -> None:
         """Stop background tasks before shutdown."""
         logging.info("--- App Shutdown Requested ---")
@@ -832,6 +852,25 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         except QueryError:
             logging.error("Notes right sidebar widget (#notes-sidebar-right) not found.")
 
+    def watch_conv_char_sidebar_collapsed(self, collapsed: bool) -> None:
+        """Hide or show the Conversations & Characters left sidebar pane."""
+        try:
+            sidebar_pane = self.query_one("#conv-char-left-pane") # The ID of the VerticalScroll
+            sidebar_pane.display = not collapsed # True means visible, False means hidden
+            # Optional: you might want to set a class to control width/border as well,
+            # similar to how other sidebars might be handled, e.g., adding/removing "collapsed" class.
+            # For now, direct display toggle is simplest.
+            # If using a class:
+            # sidebar_pane.set_class(collapsed, "collapsed") # Adds "collapsed" class if true, removes if false
+
+            # Also, ensure the toggle button itself is not part of the pane being hidden.
+            # Based on Step 1, the button "toggle-conv-char-sidebar" is outside "conv-char-left-pane".
+            logging.debug(f"Conversations & Characters left pane display set to {not collapsed}")
+        except QueryError:
+            logging.error("Conversations & Characters left sidebar pane (#conv-char-left-pane) not found.")
+        except Exception as e:
+            logging.error(f"Error toggling Conversations & Characters left sidebar pane: {e}", exc_info=True)
+
     async def save_current_note(self) -> bool:
         """Saves the currently selected note's title and content to the database."""
         if not self.notes_service or not self.current_selected_note_id or self.current_selected_note_version is None:
@@ -913,6 +952,202 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         print(f"\n>>> DEBUG: on_button_pressed called! Button ID: {event.button.id}\n")
         logging.debug(f"Button pressed: {button_id}, Classes: {button.classes}")
 
+        # --- Search button in Conversations & Characters Tab ---
+        if button_id == "conv-char-conversation-search-button":
+            logging.debug("conv-char-conversation-search-button pressed. Performing search.")
+            await self._perform_conv_char_search()
+            return
+
+        elif button_id == "conv-char-load-button":
+            logging.info("conv-char-load-button pressed.")
+            try:
+                results_list_view = self.query_one("#conv-char-search-results-list", ListView)
+                highlighted_item = results_list_view.highlighted_child
+
+                if not (highlighted_item and hasattr(highlighted_item, 'details')):
+                    logging.warning("No conversation selected in conv-char list or item has no details.")
+                    # self.notify("Please select a conversation to load.", severity="warning") # If notifier is set up
+                    return
+
+                conv_details = highlighted_item.details
+                loaded_conversation_id = conv_details.get('id')
+
+                if not loaded_conversation_id:
+                    logging.error("Selected item in conv-char list is missing conversation ID.")
+                    # self.notify("Selected item is invalid.", severity="error")
+                    return
+
+                self.current_conv_char_tab_conversation_id = loaded_conversation_id
+                logging.info(f"Current conv-char tab conversation ID set to: {loaded_conversation_id}")
+
+                # Populate Right Pane
+                title_input = self.query_one("#conv-char-title-input", Input)
+                keywords_input = self.query_one("#conv-char-keywords-input", TextArea) # This is a TextArea
+
+                title_input.value = conv_details.get('title', '')
+
+                # Fetch and populate keywords
+                if self.notes_service:
+                    db_for_keywords = self.notes_service._get_db(self.notes_user_id)
+                    keywords_list = db_for_keywords.get_keywords_for_conversation(loaded_conversation_id)
+                    keywords_input.text = ", ".join([kw['keyword'] for kw in keywords_list]) if keywords_list else ""
+                    logging.info(f"Populated keywords for conversation {loaded_conversation_id} into #conv-char-keywords-input.")
+                else:
+                    keywords_input.text = "" # Clear if no service
+                    logging.warning("Notes service not available, cannot load keywords for right pane.")
+
+
+                # Populate Center Pane (Messages)
+                center_pane = self.query_one("#conv-char-center-pane", VerticalScroll)
+                await center_pane.remove_children() # Clear previous messages
+
+                if not self.notes_service:
+                    logging.error("Notes service not available, cannot load messages for center pane.")
+                    await center_pane.mount(Static("Error: Notes service unavailable. Cannot load messages."))
+                    return
+
+                db = self.notes_service._get_db(self.notes_user_id)
+                messages = db.get_messages_for_conversation(loaded_conversation_id, order_by_timestamp="ASC", limit=1000)
+
+                if not messages:
+                    await center_pane.mount(Static("No messages in this conversation."))
+                else:
+                    for msg_data in messages:
+                        # Ensure image_data is handled correctly (it might be None or bytes)
+                        image_data_for_widget = msg_data.get('image_data')
+                        chat_message_widget = ChatMessage(
+                            message=msg_data['content'],
+                            role=msg_data['sender'],
+                            timestamp=msg_data.get('timestamp'),
+                            image_data=image_data_for_widget,
+                            image_mime_type=msg_data.get('image_mime_type'),
+                            message_id=msg_data['id']
+                        )
+                        await center_pane.mount(chat_message_widget)
+
+                center_pane.scroll_end(animate=False)
+                logging.info(f"Loaded {len(messages)} messages into #conv-char-center-pane for conversation {loaded_conversation_id}.")
+
+            except QueryError as e:
+                logging.error(f"UI component not found during conv-char load: {e}", exc_info=True)
+                # Optionally, notify the user if a specific component was expected but not found
+                try:
+                    center_pane_err_fallback = self.query_one("#conv-char-center-pane", VerticalScroll)
+                    await center_pane_err_fallback.remove_children()
+                    await center_pane_err_fallback.mount(Static("Error: UI component missing for loading."))
+                except QueryError: pass # Center pane itself might be the issue
+            except CharactersRAGDBError as e:
+                logging.error(f"Database error during conv-char load: {e}", exc_info=True)
+                # self.notify("Error loading conversation data from database.", severity="error")
+                try:
+                    center_pane_db_err = self.query_one("#conv-char-center-pane", VerticalScroll)
+                    await center_pane_db_err.remove_children()
+                    await center_pane_db_err.mount(Static("Error: Database issue loading messages."))
+                except QueryError: pass
+            except Exception as e:
+                logging.error(f"Unexpected error during conv-char load: {e}", exc_info=True)
+                # self.notify("An unexpected error occurred while loading the conversation.", severity="error")
+                try:
+                    center_pane_unexp_err = self.query_one("#conv-char-center-pane", VerticalScroll)
+                    await center_pane_unexp_err.remove_children()
+                    await center_pane_unexp_err.mount(Static("Error: Unexpected issue loading conversation."))
+                except QueryError: pass
+            return
+
+        elif button_id == "conv-char-save-details-button":
+            logging.info("conv-char-save-details-button pressed.")
+            if not self.current_conv_char_tab_conversation_id:
+                logging.warning("No current conversation loaded in ConvChar tab to save details for.")
+                # self.notify("No conversation loaded.", severity="warning")
+                return
+
+            if not self.notes_service:
+                logging.error("Notes service is not available.")
+                # self.notify("Database service not available.", severity="error")
+                return
+
+            try:
+                title_input = self.query_one("#conv-char-title-input", Input)
+                keywords_widget = self.query_one("#conv-char-keywords-input", TextArea)
+
+                new_title = title_input.value.strip()
+                new_keywords_str = keywords_widget.text.strip()
+                target_conversation_id = self.current_conv_char_tab_conversation_id
+
+                db = self.notes_service._get_db(self.notes_user_id)
+                current_conv_details = db.get_conversation_by_id(target_conversation_id)
+
+                if not current_conv_details:
+                    logging.error(f"Conversation {target_conversation_id} not found in DB for saving details.")
+                    # self.notify("Error: Conversation not found.", severity="error")
+                    return
+
+                current_db_version = current_conv_details.get('version')
+                if current_db_version is None:
+                    logging.error(f"Conversation {target_conversation_id} is missing version information.")
+                    # self.notify("Error: Conversation version missing.", severity="error")
+                    return
+
+                # 1. Update Title if changed
+                title_updated = False
+                if new_title != current_conv_details.get('title'):
+                    update_payload = {'title': new_title}
+                    logging.debug(f"Attempting to update title for conv {target_conversation_id} to '{new_title}' from version {current_db_version}")
+                    # update_conversation returns True on success, or raises ConflictError/DBError
+                    db.update_conversation(conversation_id=target_conversation_id, update_data=update_payload, expected_version=current_db_version)
+                    logging.info(f"Conversation {target_conversation_id} title updated successfully. New version will be {current_db_version + 1}.")
+                    title_updated = True
+                    current_db_version += 1 # Version for the conversation row is now incremented.
+                    # Refresh the list view if title changed
+                    await self._perform_conv_char_search() # Re-run search to update list
+
+                # 2. Update Keywords
+                existing_db_keywords = db.get_keywords_for_conversation(target_conversation_id)
+                existing_keyword_texts_set = {kw['keyword'].lower() for kw in existing_db_keywords}
+
+                ui_keyword_texts_set = {kw.strip().lower() for kw in new_keywords_str.split(',') if kw.strip()}
+
+                keywords_to_add = ui_keyword_texts_set - existing_keyword_texts_set
+                keywords_to_remove_details = [kw for kw in existing_db_keywords if kw['keyword'].lower() not in ui_keyword_texts_set]
+
+                keywords_changed = False
+                for kw_text_to_add in keywords_to_add:
+                    # db.add_keyword returns keyword_id (str) for the given text (gets or creates)
+                    kw_id = db.add_keyword(user_id=self.notes_user_id, keyword_text=kw_text_to_add)
+                    if kw_id:
+                        db.link_conversation_to_keyword(conversation_id=target_conversation_id, keyword_id=kw_id)
+                        logging.debug(f"Linked keyword '{kw_text_to_add}' (ID: {kw_id}) to conv {target_conversation_id}")
+                        keywords_changed = True
+
+                for kw_detail_to_remove in keywords_to_remove_details:
+                    db.unlink_conversation_from_keyword(conversation_id=target_conversation_id, keyword_id=kw_detail_to_remove['id'])
+                    logging.debug(f"Unlinked keyword '{kw_detail_to_remove['keyword']}' (ID: {kw_detail_to_remove['id']}) from conv {target_conversation_id}")
+                    keywords_changed = True
+
+                if title_updated or keywords_changed:
+                    logging.info(f"Details saved for conversation {target_conversation_id}. Title updated: {title_updated}, Keywords changed: {keywords_changed}")
+                    # self.notify("Details saved successfully!", severity="information")
+                    # Refresh keywords in UI to reflect any casing changes from add_keyword or if some failed.
+                    final_keywords_list = db.get_keywords_for_conversation(target_conversation_id)
+                    keywords_widget.text = ", ".join([kw['keyword'] for kw in final_keywords_list]) if final_keywords_list else ""
+                else:
+                    logging.info(f"No changes detected to save for conversation {target_conversation_id}.")
+                    # self.notify("No changes to save.", severity="info")
+
+            except ConflictError as e:
+                logging.error(f"Conflict saving conversation details for {self.current_conv_char_tab_conversation_id}: {e}", exc_info=True)
+                # self.notify(f"Save conflict: {e}. Please reload.", severity="error")
+            except QueryError as e:
+                logging.error(f"UI component not found for saving conv-char details: {e}", exc_info=True)
+                # self.notify("Error accessing UI fields.", severity="error")
+            except CharactersRAGDBError as e:
+                logging.error(f"Database error saving conv-char details: {e}", exc_info=True)
+                # self.notify("Database error saving details.", severity="error")
+            except Exception as e:
+                logging.error(f"Unexpected error saving conv-char details: {e}", exc_info=True)
+                # self.notify("An unexpected error occurred.", severity="error")
+            return
+
         # --- Tab Switching --- (Keep this part as is)
         if button_id and button_id.startswith("tab-"):
             print(f">>> DEBUG: Tab button detected: {button_id}")
@@ -946,6 +1181,11 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.notes_sidebar_right_collapsed = not self.notes_sidebar_right_collapsed
             logging.debug("Notes right sidebar now %s",
                           "collapsed" if self.notes_sidebar_right_collapsed else "expanded")
+            return
+
+        if button_id == "toggle-conv-char-sidebar":
+            self.conv_char_sidebar_collapsed = not self.conv_char_sidebar_collapsed
+            logging.debug("Conversations & Characters sidebar now %s", "collapsed" if self.conv_char_sidebar_collapsed else "expanded")
             return
 
         if button_id == "notes-new-button":
@@ -2349,11 +2589,16 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     pass
 
     async def _perform_conv_char_search(self) -> None:
-        """Performs conversation search for the Conversations & Characters tab."""
+        """Performs conversation search for the Conversations & Characters tab, filtering by selected character and search term."""
         logging.debug("Performing Conversations & Characters search...")
         try:
             search_input = self.query_one("#conv-char-search-input", Input)
             search_term = search_input.value.strip()
+
+            char_select_widget = self.query_one("#conv-char-character-select", Select)
+            selected_character_id = char_select_widget.value
+            if selected_character_id == Select.BLANK: # Treat BLANK as None for filtering
+                selected_character_id = None
 
             results_list_view = self.query_one("#conv-char-search-results-list", ListView)
             await results_list_view.clear()
@@ -2364,51 +2609,85 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 return
 
             db = self.notes_service._get_db(self.notes_user_id)
-            # For now, search_conversations_by_title is used. This might need a more generic search method later.
-            # character_id=None means search all conversations, including those linked and not linked to characters.
-            conversations = db.search_conversations_by_title(title_query=search_term, character_id=None, limit=200)
+            conversations = []
+
+            if selected_character_id:
+                logging.debug(f"Filtering for character ID: {selected_character_id}")
+                if search_term:
+                    logging.debug(f"Searching with term '{search_term}' for character ID {selected_character_id}")
+                    conversations = db.search_conversations_by_title(
+                        title_query=search_term, character_id=selected_character_id, limit=200
+                    )
+                else:
+                    logging.debug(f"Getting all conversations for character ID {selected_character_id}")
+                    conversations = db.get_conversations_for_character(
+                        character_id=selected_character_id, limit=200
+                    )
+            else: # No specific character selected
+                logging.debug(f"No character selected. Searching globally with term: '{search_term}'")
+                # If search_term is empty, this will list all conversations up to the limit.
+                conversations = db.search_conversations_by_title(
+                    title_query=search_term, character_id=None, limit=200
+                )
 
             if not conversations:
-                await results_list_view.append(ListItem(Label("No items found.")))
+                if not search_term and not selected_character_id:
+                    await results_list_view.append(ListItem(Label("Enter search term or select a character.")))
+                else:
+                    await results_list_view.append(ListItem(Label("No items found matching your criteria.")))
             else:
-                for conv in conversations:
-                    title = conv.get('title') or f"Conversation ID: {conv['id'][:8]}..."
-                    # Check if character_id is present and not 0 or None
-                    char_id = conv.get('character_id')
-                    if char_id:  # Assuming 0 or None means no specific character
-                        try:
-                            char_details = db.get_character_card_by_id(char_id)
-                            if char_details and char_details.get('name'):
-                                title = f"[Char: {char_details['name']}] {title}"
-                        except Exception as e_char:
-                            logging.warning(f"Could not fetch character name for ID {char_id}: {e_char}")
+                character_name_prefix_for_filter = ""
+                if selected_character_id: # A specific character was used for the search filter
+                    try:
+                        char_info = db.get_character_card_by_id(selected_character_id)
+                        if char_info and char_info.get('name'):
+                            character_name_prefix_for_filter = f"[{char_info['name']}] "
+                    except Exception as e:
+                        logging.warning(f"Could not fetch name for selected character ID {selected_character_id}: {e}", exc_info=True)
 
-                    item = ListItem(Label(title))
+                for conv in conversations:
+                    base_title = conv.get('title') or f"Conversation ID: {conv['id'][:8]}..."
+                    display_title = base_title
+
+                    if character_name_prefix_for_filter: # Specific character was selected for search
+                        display_title = f"{character_name_prefix_for_filter}{base_title}"
+                    else: # Global search, try to find character for each conversation
+                        char_id_for_conv = conv.get('character_id')
+                        if char_id_for_conv:
+                            try:
+                                char_details = db.get_character_card_by_id(char_id_for_conv)
+                                if char_details and char_details.get('name'):
+                                    display_title = f"[{char_details['name']}] {base_title}"
+                            except Exception as e_char:
+                                logging.warning(f"Could not fetch character name for conversation {conv['id']}, char ID {char_id_for_conv}: {e_char}", exc_info=True)
+
+                    item = ListItem(Label(display_title))
                     item.details = conv  # Store all conversation details
                     await results_list_view.append(item)
-            logging.info(f"ConvChar search for '{search_term}' yielded {len(conversations)} results.")
+
+            logging.info(f"ConvChar search (Term: '{search_term}', CharID: {selected_character_id}) yielded {len(conversations)} results.")
 
         except QueryError as e:
             logging.error(f"UI component not found during ConvChar search: {e}", exc_info=True)
-            if 'results_list_view' in locals():
+            if 'results_list_view' in locals(): # Check if listview was queried before error
                 try:
-                    await results_list_view.append(ListItem(Label("Error: UI component missing.")))
-                except Exception:
-                    pass
+                    await results_list_view.clear() # Clear previous results
+                    await results_list_view.append(ListItem(Label("Error: UI component missing. Cannot perform search.")))
+                except Exception: pass # Avoid error in error handling
         except CharactersRAGDBError as e:
             logging.error(f"Database error during ConvChar search: {e}", exc_info=True)
             if 'results_list_view' in locals():
                 try:
+                    await results_list_view.clear()
                     await results_list_view.append(ListItem(Label("Error: Database search failed.")))
-                except Exception:
-                    pass
+                except Exception: pass
         except Exception as e:
             logging.error(f"Unexpected error during ConvChar search: {e}", exc_info=True)
             if 'results_list_view' in locals():
                 try:
+                    await results_list_view.clear()
                     await results_list_view.append(ListItem(Label("Error: Unexpected search failure.")))
-                except Exception:
-                    pass
+                except Exception: pass
 
     # --- Helper methods ---
     def _safe_float(self, value: str, default: float, name: str) -> float:
@@ -2538,6 +2817,59 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         model_select.prompt = "Select Model..." if models else "No models available"
         print(f"Helper: Model select value after update: {model_select.value!r}")
+
+    async def _populate_conv_char_character_select(self) -> None:
+        logging.info("Attempting to populate 'conv-char-character-select' dropdown.")
+        if not self.notes_service:
+            logging.error("Notes service not available, cannot populate character select for ConvChar tab.")
+            return
+
+        try:
+            db = self.notes_service._get_db(self.notes_user_id) # Accessing protected member
+            # Fetch a reasonable number of characters, assuming names are unique or selection handles it.
+            character_cards = db.list_character_cards(limit=1000)
+
+            options = []
+            if character_cards:
+                options = [(char['name'], char['id']) for char in character_cards if char.get('name') and char.get('id') is not None]
+
+            char_select_widget = self.query_one("#conv-char-character-select", Select)
+
+            if options:
+                char_select_widget.set_options(options)
+                char_select_widget.value = options[0][1] # Set default to the first character's ID
+                logging.info(f"Populated #conv-char-character-select with {len(options)} characters. Default: {options[0][0]} (ID: {options[0][1]})")
+            else:
+                # Use a list of tuples for set_options, even for a single placeholder
+                char_select_widget.set_options([("No characters found", Select.BLANK)])
+                char_select_widget.value = Select.BLANK # Ensure value is blank if no options
+                char_select_widget.prompt = "No characters available" # Update prompt
+                logging.info("No characters found to populate #conv-char-character-select.")
+
+        except QueryError as e:
+            logging.error(f"Failed to find #conv-char-character-select widget: {e}", exc_info=True)
+        except CharactersRAGDBError as e:
+            logging.error(f"Database error populating #conv-char-character-select: {e}", exc_info=True)
+            # Optionally update the select prompt to show an error
+            try:
+                # Ensure char_select_widget is defined or query again if necessary
+                # This code block might be entered if char_select_widget was queried successfully before the DB error
+                char_select_widget = self.query_one("#conv-char-character-select", Select)
+                char_select_widget.prompt = "Error loading characters"
+                char_select_widget.set_options([("Error loading", Select.BLANK)])
+                char_select_widget.value = Select.BLANK
+            except QueryError:
+                pass # Widget itself not found
+        except Exception as e:
+            logging.error(f"Unexpected error populating #conv-char-character-select: {e}", exc_info=True)
+            try:
+                # Similar to above, try to update the widget to show an error state
+                char_select_widget = self.query_one("#conv-char-character-select", Select)
+                char_select_widget.prompt = "Error loading characters"
+                char_select_widget.set_options([("Error loading", Select.BLANK)])
+                char_select_widget.value = Select.BLANK
+            except QueryError:
+                pass
 
 
 # --- Main execution block ---
