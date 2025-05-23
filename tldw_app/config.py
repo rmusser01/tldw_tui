@@ -623,16 +623,55 @@ def load_settings() -> Dict:
         "search_settings_general": { # Renamed from 'search_settings' to avoid conflict with SearchEngines section for keys
             'default_search_provider': _get_typed_value(search_settings_section, 'search_provider_default', 'google'),
             'search_language_query': _get_typed_value(search_settings_section, 'search_language_query', 'en'),
-            # ... (all general search settings from 'Search-Engines' in old config, now in 'SearchSettings' TOML table)
+            'search_language_analysis': _get_typed_value(search_settings_section, 'search_language_analysis', 'en'),
+            'search_default_max_queries': _get_typed_value(search_settings_section, 'search_default_max_queries', 5, int),
+            'search_enable_subquery': _get_typed_value(search_settings_section, 'search_enable_subquery', False, bool),
+            'search_enable_subquery_count_max': _get_typed_value(search_settings_section, 'search_enable_subquery_count_max', 3, int),
+            'search_result_rerank': _get_typed_value(search_settings_section, 'search_result_rerank', False, bool),
             'search_result_max': _get_typed_value(search_settings_section, 'search_result_max', 10, int),
-            'search_enable_subquery': _get_typed_value(search_settings_section, 'search_enable_subquery', True, bool),
+            'search_result_max_per_query': _get_typed_value(search_settings_section, 'search_result_max_per_query', 10, int),
+            'search_result_blacklist': _get_typed_value(search_settings_section, 'search_result_blacklist' , ''),
+            'search_result_display_type': _get_typed_value(search_settings_section, 'search_result_display_type' , 'text'),
+            'search_result_display_metadata': _get_typed_value(search_settings_section, 'search_result_display_metadata' , True, bool),
+            'search_result_save_to_db': _get_typed_value(search_settings_section, 'search_result_save_to_db' , True, bool),
+            'search_result_analysis_tone': _get_typed_value(search_settings_section, 'search_result_analysis_tone' , 'neutral'),
+            'relevance_analysis_llm': _get_typed_value(search_settings_section, 'relevance_analysis_llm' , 'openai'),
+            'final_answer_llm': _get_typed_value(search_settings_section, 'final_answer_llm' , 'openai'),
+        },
+        "search_engine_specific_settings": {  # API Keys for various search engines from 'SearchEngines' TOML table
+            'baidu_search_api_key': _get_typed_value(search_engines_section, 'baidu_search_api_key', ''),
+            'bing_country_code': _get_typed_value(search_engines_section, 'bing_country_code', ''),
+            'bing_search_api_url': _get_typed_value(search_engines_section, 'bing_search_api_url', ''),
+            'brave_country_code': _get_typed_value(search_engines_section, 'brave_country_code', ''),
+            'google_search_api_url': _get_typed_value(search_engines_section, 'google_search_api_url', ''),
+            'google_search_engine_id': _get_typed_value(search_engines_section, 'google_search_engine_id', ''),
+            'google_simp_trad_chinese': _get_typed_value(search_engines_section, 'google_simp_trad_chinese', False, bool),
+            'limit_google_search_to_country': _get_typed_value(search_engines_section, 'limit_google_search_to_country', False, bool),
+            'google_search_country': _get_typed_value(search_engines_section, 'google_search_country', ''),
+            'google_search_country_code': _get_typed_value(search_engines_section, 'google_search_country_code', ''),
+            'google_search_filter_setting': _get_typed_value(search_engines_section, 'google_filter_setting', ''),
+            'google_user_geolocation': _get_typed_value(search_engines_section, 'google_user_geolocation', False, bool),
+            'google_ui_language': _get_typed_value(search_engines_section, 'google_ui_language', ''),
+            'google_limit_search_results_to_language': _get_typed_value(search_engines_section, 'google_limit_search_results_to_language', False, bool),
+            'google_site_search_include': _get_typed_value(search_engines_section, 'google_site_search_include', ''),
+            'google_site_search_exclude': _get_typed_value(search_engines_section, 'google_site_search_exclude', ''),
+            'google_sort_results_by': _get_typed_value(search_engines_section, 'google_sort_results_by', ''),
+            'google_default_search_results': _get_typed_value(search_engines_section, 'google_default_search_results', 10, int),
+            'google_safe_search': _get_typed_value(search_engines_section, 'google_safe_search', False, bool),
+            'google_enable_site_search': _get_typed_value(search_engines_section, 'google_enable_site_search', False, bool),
+            'yandex_search_engine_id': _get_typed_value(search_engines_section, 'yandex_search_engine_id', ''),
         },
         "search_engines_keys": { # API Keys for various search engines from 'SearchEngines' TOML table
             'baidu_search_api_key': _get_typed_value(search_engines_section, 'search_engine_api_key_baidu', ''),
             'bing_search_api_key': _get_typed_value(search_engines_section, 'search_engine_api_key_bing', ''),
-            # ... (all search engine API keys and specific settings)
-            'google_search_api_key': _get_typed_value(search_engines_section, 'search_engine_api_key_google', ''),
-            'google_search_engine_id': _get_typed_value(search_engines_section, 'search_engine_id_google', ''),
+            'brave_search_api_key': _get_typed_value(search_engines_section, 'brave_search_api_key', ''),
+            'brave_search_ai_api_key': _get_typed_value(search_engines_section, 'brave_search_ai_api_key', ''),
+            'duckduckgo_search_api_key': _get_typed_value(search_engines_section, 'duckduckgo_search_api_key', ''),
+            'google_search_api_key': _get_typed_value(search_engines_section, 'google_search_api_key', ''),
+            'kagi_search_api_key': _get_typed_value(search_engines_section, 'kagi_search_api_key', ''),
+            'searx_search_api_url': _get_typed_value(search_engines_section, 'search_engine_searx_api', ''),
+            'tavily_search_api_key': _get_typed_value(search_engines_section, 'tavily_search_api_key', ''),
+            'yandex_search_api_key': _get_typed_value(search_engines_section, 'yandex_search_api_key', ''),
         },
         "prompts_strings": { # Specific prompt strings from 'Prompts' TOML table
             'sub_question_generation_prompt': _get_typed_value(get_toml_section('Prompts'), 'sub_question_generation_prompt', ''),
@@ -658,18 +697,33 @@ def load_settings() -> Dict:
     chunking_types = ['audio', 'book', 'document', 'mediawiki_article', 'mediawiki_dump',
                       'obsidian_note', 'podcast', 'text', 'video']
     for ctype in chunking_types:
-        config_dict["chunking_config"][f"{ctype}_chunking_method"] = _get_typed_value(
-            chunking_section, f"{ctype}_chunking_method", config_dict["chunking_config"]["chunking_method"])
-        config_dict["chunking_config"][f"{ctype}_chunk_max_size"] = _get_typed_value(
-            chunking_section, f"{ctype}_chunk_max_size", config_dict["chunking_config"]["chunk_max_size"], int)
-        config_dict["chunking_config"][f"{ctype}_chunk_overlap"] = _get_typed_value(
-            chunking_section, f"{ctype}_chunk_overlap", config_dict["chunking_config"]["chunk_overlap"], int)
-        config_dict["chunking_config"][f"{ctype}_adaptive_chunking"] = _get_typed_value(
-            chunking_section, f"{ctype}_adaptive_chunking", config_dict["chunking_config"]["adaptive_chunking"], bool)
-        config_dict["chunking_config"][f"{ctype}_chunking_multi_level"] = _get_typed_value(
-            chunking_section, f"{ctype}_chunking_multi_level", config_dict["chunking_config"]["multi_level"], bool)
-        config_dict["chunking_config"][f"{ctype}_language"] = _get_typed_value(
-            chunking_section, f"{ctype}_language", config_dict["chunking_config"]["chunk_language"])
+        # Use direct defaults from chunking_section or hardcoded fallbacks
+        default_method = _get_typed_value(chunking_section, "chunking_method", "words")
+        default_max_size = _get_typed_value(chunking_section, "chunk_max_size", 400, int)
+        default_overlap = _get_typed_value(chunking_section, "chunk_overlap", 200, int)
+        default_adaptive = _get_typed_value(chunking_section, "adaptive_chunking", False, bool)
+        default_multi_level = _get_typed_value(chunking_section, "chunking_multi_level", False, bool)
+        default_language = _get_typed_value(chunking_section, "chunk_language", global_default_chunk_language)
+
+        # Only set if not already defined in lines 494-562
+        if f"{ctype}_chunking_method" not in config_dict["chunking_config"]:
+            config_dict["chunking_config"][f"{ctype}_chunking_method"] = _get_typed_value(
+                chunking_section, f"{ctype}_chunking_method", default_method)
+        if f"{ctype}_chunk_max_size" not in config_dict["chunking_config"]:
+            config_dict["chunking_config"][f"{ctype}_chunk_max_size"] = _get_typed_value(
+                chunking_section, f"{ctype}_chunk_max_size", default_max_size, int)
+        if f"{ctype}_chunk_overlap" not in config_dict["chunking_config"]:
+            config_dict["chunking_config"][f"{ctype}_chunk_overlap"] = _get_typed_value(
+                chunking_section, f"{ctype}_chunk_overlap", default_overlap, int)
+        if f"{ctype}_adaptive_chunking" not in config_dict["chunking_config"]:
+            config_dict["chunking_config"][f"{ctype}_adaptive_chunking"] = _get_typed_value(
+                chunking_section, f"{ctype}_adaptive_chunking", default_adaptive, bool)
+        if f"{ctype}_chunking_multi_level" not in config_dict["chunking_config"]:
+            config_dict["chunking_config"][f"{ctype}_chunking_multi_level"] = _get_typed_value(
+                chunking_section, f"{ctype}_chunking_multi_level", default_multi_level, bool)
+        if f"{ctype}_language" not in config_dict["chunking_config"]:
+            config_dict["chunking_config"][f"{ctype}_language"] = _get_typed_value(
+                chunking_section, f"{ctype}_language", default_language)
 
 
     # --- Warnings ---
