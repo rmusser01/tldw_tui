@@ -3,6 +3,7 @@
 #
 # Imports
 import asyncio
+import json
 import logging
 import logging.handlers
 import tomllib
@@ -10,7 +11,6 @@ from pathlib import Path
 import traceback
 import os
 from typing import Union, Generator, Optional
-import json  # Added for JSON export
 #
 # 3rd-Party Libraries
 from rich.text import Text
@@ -25,6 +25,7 @@ from textual.reactive import reactive
 from textual.worker import Worker, WorkerState
 from textual.binding import Binding
 from textual.dom import DOMNode  # For type hinting if needed
+from textual.timer import Timer
 from textual.css.query import QueryError  # For specific error handling
 #
 # --- Local API library Imports ---
@@ -300,6 +301,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # Reactive variable for current conversation loaded in the Conversations & Characters tab
     current_conv_char_tab_conversation_id: reactive[Optional[str]] = reactive(None)
 
+    # De-Bouncers
+    _conv_char_search_timer: Optional[Timer] = None # For conv-char-search-input
+    _conversation_search_timer: Optional[Timer] = None # For chat-conversation-search-bar
+
     def __init__(self):
         super().__init__()
         # Load config ONCE
@@ -341,6 +346,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         logging.info(f"App __init__: Determined initial tab value: {self._initial_tab_value}")
         self._rich_log_handler: Optional[RichLogHandler] = None  # Initialize handler attribute
+        self._conv_char_search_timer = None
+        self._conversation_search_timer = None
+
 
     def _setup_logging(self):
         """Sets up all logging handlers. Call from on_mount."""
@@ -473,21 +481,20 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             # --- Chat Window ---
             # Assign specific reactive variables to the Select widgets
             with Container(id=f"{TAB_CHAT}-window", classes="window"):
-                yield from create_settings_sidebar(TAB_CHAT, self.app_config)
+                yield from create_settings_sidebar(TAB_CHAT, self.app_config) # This is fine
 
                 with Container(id="chat-main-content"):
-                    # *** Use VerticalScroll for ChatMessages ***
                     yield VerticalScroll(id="chat-log")
                     with Horizontal(id="chat-input-area"):
-                        yield Button("☰", id="toggle-chat-sidebar", classes="sidebar-toggle")  # Left sidebar toggle
-                        yield TextArea(id="chat-input", classes="chat-input")
+                        yield Button("☰", id="toggle-chat-sidebar", classes="sidebar-toggle")
+                        yield TextArea(id="chat-input", classes="chat-input") # Ensure prompt is used if needed
                         yield Button("Send ▶", id="send-chat", classes="send-button")
-                        # Add toggle for the new right sidebar (character settings) for chat window
                         yield Button("👤", id="toggle-character-sidebar", classes="sidebar-toggle")
 
                 # Right sidebar (new character specific settings) for chat window
                 # The create_character_sidebar function will define a widget with id="character-sidebar"
-                yield from create_character_sidebar(self.app_config)
+                # Pass a string prefix, for example, "chat" or "character_chat"
+                yield from create_character_sidebar("chat")
 
             # --- Conversations & Characters Window (Redesigned) ---
             with Container(id=f"{TAB_CONV_CHAR}-window", classes="window"):
@@ -1147,8 +1154,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                         # For this task, the immediate save is the focus.
                         # To update UI if title changed on TitleBar:
                         # if 'title' in update_data:
-                        #    title_bar = self.query_one(TitleBar)
-                        #    title_bar.update_title(f"Chat - {new_title}")
+                        title_bar = self.query_one(TitleBar)
+                        title_bar.reset_title()
                     else:
                         # This path might not be hit if update_conversation raises ConflictError directly
                         logging.warning(
@@ -1523,8 +1530,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     keywords_input = self.query_one("#chat-conversation-keywords-input", TextArea)
                     keywords_input.text = ""  # Clear for new chat
                     # Potentially update TitleBar if a new chat implies a generic title
-                    # title_bar = self.query_one(TitleBar)
-                    # title_bar.update_title("Chat")
+                    title_bar = self.query_one(TitleBar)
+                    title_bar.reset_title()
                 except QueryError:
                     logging.error("Could not clear title/keyword inputs for new chat.")
 
@@ -2072,8 +2079,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         # super().on_list_view_selected(event) # If applicable
 
     async def on_input_changed(self, event: Input.Changed) -> None:
-        # ... (any existing Input.Changed handlers for other inputs)
-
         if event.input.id == "notes-search-input":
             search_term = event.value.strip()
             logging.debug(f"Search term entered for notes: '{search_term}'")
@@ -2114,14 +2119,26 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 logging.error(f"Unexpected error during note search: {e}", exc_info=True)
             return  # Ensure this event is handled here
 
-        elif event.input.id == "chat-conversation-search-bar":
-            # Call the helper method to perform search when text changes in the search bar
-            # Add a debounce to avoid searching on every keystroke immediately
-            self.debounce_channel("conversation_search", self._perform_conversation_search, delay=0.5)
-            return
 
+        elif event.input.id == "chat-conversation-search-bar":
+            # Cancel any existing timer for this search
+            if self._conversation_search_timer:
+                self._conversation_search_timer.stop()
+            # Start a new timer to call _perform_conversation_search after 0.5 seconds
+            self._conversation_search_timer = self.set_timer(
+                0.5,
+                self._perform_conversation_search  # Pass the coroutine directly
+            )
+            return
         elif event.input.id == "conv-char-search-input":
-            self.debounce_channel("conv_char_search", self._perform_conv_char_search, delay=0.5)
+            # Cancel any existing timer for this search
+            if self._conv_char_search_timer:
+                self._conv_char_search_timer.stop()
+            # Start a new timer to call _perform_conv_char_search after 0.5 seconds
+            self._conv_char_search_timer = self.set_timer(
+                0.5,
+                self._perform_conv_char_search  # Pass the coroutine directly
+            )
             return
 
     async def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
