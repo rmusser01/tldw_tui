@@ -5,18 +5,18 @@
 import copy
 import json
 import tomllib
-# import logging # Standard logging is replaced by loguru for consistency in the CLI part
 import os
 from pathlib import Path
 import toml
 from typing import Dict, Any, List, Optional
-
-from loguru import logger
-
 #
 # Third-Party Imports
-## No third-party imports in this file
+from loguru import logger
+#
 # Local Imports
+from tldw_app.DB.ChaChaNotes_DB import CharactersRAGDB, CharactersRAGDBError, SchemaError as ChaChaSchemaError, ConflictError as ChaChaConflictError
+from tldw_app.DB.Client_Media_DB_v2 import MediaDatabase, DatabaseError as MediaDBError, SchemaError as MediaSchemaError, ConflictError as MediaConflictError
+from tldw_app.DB.Prompts_DB import PromptsDatabase, DatabaseError as PromptsDBError, SchemaError as PromptsSchemaError, ConflictError as PromptsConflictError
 #
 #######################################################################################################################
 #
@@ -25,6 +25,8 @@ from loguru import logger
 # --- Constants ---
 # Client ID used by the Server API itself when writing to sync logs
 SERVER_CLIENT_ID = "SERVER_API_V1"
+# Client ID for the CLI application instance for its local databases
+CLI_APP_CLIENT_ID = "tldw_cli_local_instance_v1"
 
 # --- Path to the CLI's configuration file ---
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "tldw_cli" / "config.toml"
@@ -721,26 +723,23 @@ def load_settings() -> Dict:
 
     # Create necessary directories if they don't exist
     # Ensure main SQLite database directory exists
-    if config_dict["DATABASE_URL"].startswith("sqlite:///"):
-        main_db_file_path_str = config_dict["DATABASE_URL"].replace("sqlite:///", "")
-        main_db_file_path = Path(main_db_file_path_str)
-        if not main_db_file_path.is_absolute():
-             main_db_file_path = ACTUAL_PROJECT_ROOT / main_db_file_path # Ensure absolute if relative
+    db_url_server = config_dict.get("DATABASE_URL", "")
+    if db_url_server and db_url_server.startswith("sqlite:///"):
+        main_db_file_path_str_server = db_url_server.replace("sqlite:///", "")
+        main_db_file_path_server = Path(main_db_file_path_str_server)
+        if not main_db_file_path_server.is_absolute() and ACTUAL_PROJECT_ROOT:
+            main_db_file_path_server = ACTUAL_PROJECT_ROOT / main_db_file_path_server
         try:
-            main_db_file_path.parent.mkdir(parents=True, exist_ok=True)
-            logger.info(f"Ensured main SQLite database directory exists: {main_db_file_path.parent}")
+            main_db_file_path_server.parent.mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            logger.error(f"Could not create database directory {main_db_file_path.parent}: {e}")
+            logger.error(f"Could not create server database directory {main_db_file_path_server.parent}: {e}")
 
-
-    # Ensure USER_DB_BASE_DIR exists
-    try:
-        user_data_base_dir.mkdir(parents=True, exist_ok=True) # user_data_base_dir is already a Path object
-        logger.info(f"Ensured user data base directory exists: {user_data_base_dir}")
-    except Exception as e:
-        logger.error(f"Could not create user data base directory {user_data_base_dir}: {e}")
-
-
+    user_data_base_dir_server = config_dict.get("USER_DB_BASE_DIR")
+    if user_data_base_dir_server and isinstance(user_data_base_dir_server, Path):
+        try:
+            user_data_base_dir_server.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.error(f"Could not create server user data base directory {user_data_base_dir_server}: {e}")
     return config_dict
 
 
@@ -774,24 +773,25 @@ RAG_SEARCH_CONFIG = settings.get("APP_RAG_SEARCH_CONFIG", DEFAULT_RAG_SEARCH_CON
 # --- Configuration File Content (for reference or auto-creation for the CLI) ---
 CONFIG_TOML_CONTENT = """
 # Configuration for tldw-cli TUI App
-# tldw_cli/config.toml
+# Located at: ~/.config/tldw_cli/config.toml
 [general]
 default_tab = "chat"  # "chat", "character", "logs", "media", "search", "ingest", "stats"
 log_level = "DEBUG" # TUI Log Level: DEBUG, INFO, WARNING, ERROR, CRITICAL
 
 [logging]
-# Log file will be placed in the same directory as the database file specified below.
+# Log file will be placed in the same directory as the chachanotes_db_path below.
 log_filename = "tldw_cli_app.log"
 file_log_level = "INFO" # File Log Level: DEBUG, INFO, WARNING, ERROR, CRITICAL
 log_max_bytes = 10485760 # 10 MB
 log_backup_count = 5
 
 [database]
-# Path to the main application data/history database.
-# Use ~ for home directory expansion.
-path = "~/.local/share/tldw_cli/tldw_cli_data.db"
-# Path to user config dir (derived from this in code if needed for other files)
-# user_config_dir = "~/.config/tldw_cli" # Example if needed explicitly
+# Path to the ChaChaNotes (Character, Chat, Notes) database.
+chachanotes_db_path = "~/.local/share/tldw_cli/tldw_cli_data.db"
+# Path to the Prompts database.
+prompts_db_path = "~/.local/share/tldw_cli/tldw_cli_prompts.db"
+# Path to the Media V2 database.
+media_db_path = "~/.local/share/tldw_cli/tldw_cli_media_v2.db"
 
 [api_endpoints]
 # Optional: Specify URLs for local/custom endpoints if they differ from library defaults
@@ -1129,19 +1129,12 @@ def deep_merge_dicts(base: Dict, update: Dict) -> Dict:
     return merged
 
 
-def load_config(force_reload: bool = False) -> Dict[str, Any]:
-    """
-    Loads CLI configuration from TOML file (DEFAULT_CONFIG_PATH),
-    falling back to DEFAULT_CONFIG.
-    Ensures that all keys from DEFAULT_CONFIG are present.
-    If the config file does not exist, it is created with default content.
-    Caches the loaded configuration.
-    """
+def load_cli_config(force_reload: bool = False) -> Dict[str, Any]: # Renamed from load_config
     global _CONFIG_CACHE
     if _CONFIG_CACHE is not None and not force_reload:
         return _CONFIG_CACHE
 
-    loaded_config = copy.deepcopy(DEFAULT_CONFIG) # Start with defaults
+    loaded_config = copy.deepcopy(DEFAULT_CONFIG)
 
     if not DEFAULT_CONFIG_PATH.exists():
         logger.info(f"CLI Config file not found at {DEFAULT_CONFIG_PATH}. Creating with default values.")
@@ -1152,94 +1145,133 @@ def load_config(force_reload: bool = False) -> Dict[str, Any]:
             logger.info(f"Created default CLI config file at {DEFAULT_CONFIG_PATH}")
         except OSError as e:
             logger.error(f"Could not create default CLI config file {DEFAULT_CONFIG_PATH}: {e}")
-            # loaded_config remains DEFAULT_CONFIG, which is fine.
     else:
         try:
             with open(DEFAULT_CONFIG_PATH, "rb") as f:
                 user_config = tomllib.load(f)
-            # Deep merge user_config into loaded_config (which is a copy of DEFAULT_CONFIG)
             loaded_config = deep_merge_dicts(loaded_config, user_config)
             logger.info(f"Successfully loaded and merged CLI config from {DEFAULT_CONFIG_PATH}")
-        except tomllib.TOMLDecodeError as e: # Corrected from TomlDecodeError
+        except tomllib.TOMLDecodeError as e:
             logger.error(f"Error decoding CLI TOML config file {DEFAULT_CONFIG_PATH}: {e}. Using default configuration.", exc_info=True)
-            # loaded_config remains as DEFAULT_CONFIG merged with potentially partial user_config if deep_merge_dicts ran before error
-            # For safety, reset to pure defaults if major decode error.
-            # However, deep_merge_dicts happens *after* successful tomllib.load(), so this path means user_config is bad.
-            # loaded_config at this point would still be the initial deepcopy(DEFAULT_CONFIG).
         except Exception as e:
             logger.error(f"An unexpected error occurred while loading CLI config {DEFAULT_CONFIG_PATH}: {e}. Using default configuration.", exc_info=True)
-            # loaded_config remains as DEFAULT_CONFIG
 
     _CONFIG_CACHE = loaded_config
     return _CONFIG_CACHE
 
 
-def get_setting(section: str, key: str, default: Any = None) -> Any:
-    """Gets a specific setting from the loaded CLI configuration."""
-    config = load_config()
-    # If default is not None, it implies we expect the key, and default acts as a true fallback.
-    # If default is None, tomllib might have loaded a key with value None, which is valid.
+# --- CLI Setting Getter ---
+def get_cli_setting(section: str, key: str, default: Any = None) -> Any: # Renamed from get_setting
+    config = load_cli_config()
     if default is not None:
         return config.get(section, {}).get(key, default)
     else:
         return config.get(section, {}).get(key)
 
 
-# --- Function to get providers and their models for the CLI ---
-def get_providers_and_models() -> Dict[str, List[str]]:
-    """
-    Loads provider and model configuration from the [providers] section of CLI config,
-    validates it, and returns a dictionary of valid providers mapped
-    to their list of models.
-    """
-    config = load_config()
+# --- CLI Providers and Models Getter ---
+def get_cli_providers_and_models() -> Dict[str, List[str]]: # Renamed
+    config = load_cli_config()
     providers_data = config.get("providers", {})
-
     valid_providers: Dict[str, List[str]] = {}
-
     if isinstance(providers_data, dict):
         for provider, models in providers_data.items():
             if isinstance(models, list) and all(isinstance(m, str) for m in models):
                 valid_providers[provider] = models
             else:
-                logger.warning(
-                    f"Invalid model list for provider '{provider}' in CLI config's [providers] section. "
-                    f"Value: {models!r}. Expected a list of strings. Skipping."
-                )
+                logger.warning(f"Invalid model list for provider '{provider}' in CLI config [providers]. Skipping.")
     else:
-        logger.error(
-            f"CLI Config's 'providers' section is not a dictionary: {providers_data!r}. "
-            f"No provider/model data available from [providers] section."
-        )
-        if not isinstance(DEFAULT_CONFIG.get("providers"), dict):
-             logger.error("DEFAULT_CONFIG 'providers' section is also not a dict. This is a bug in DEFAULT_CONFIG.")
-             return {}
-
-    logger.debug(f"get_providers_and_models (CLI) returning providers: {list(valid_providers.keys())}")
+        logger.error(f"CLI Config 'providers' section is not a dictionary. No provider/model data available.")
     return valid_providers
 
-# --- Database and Log File Path for the CLI (uses CLI config) ---
-def get_database_path() -> Path:
-    config = load_config()
-    default_db_path_str = DEFAULT_CONFIG.get("database", {}).get("path", "~/.local/share/tldw_cli/tldw_cli_data.db")
-    db_path_str = get_setting("database", "path", default_db_path_str)
 
+# --- CLI Database and Log File Path Getters ---
+BASE_DATA_DIR = Path.home() / ".local" / "share" / "tldw_cli"
+
+def get_chachanotes_db_path() -> Path:
+    config = load_cli_config()
+    default_db_path_str = DEFAULT_CONFIG.get("database", {}).get("chachanotes_db_path", "~/.local/share/tldw_cli/tldw_cli_data.db")
+    db_path_str = get_cli_setting("database", "chachanotes_db_path", default_db_path_str)
     db_path = Path(db_path_str).expanduser().resolve()
-    try:
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-    except OSError as e:
-        logger.error(f"Could not create CLI database directory {db_path.parent}: {e}", exc_info=True)
+    # Directory creation is handled by the DB class constructor
     return db_path
 
+def get_prompts_db_path() -> Path:
+    config = load_cli_config()
+    default_db_path_str = DEFAULT_CONFIG.get("database", {}).get("prompts_db_path", "~/.local/share/tldw_cli/tldw_cli_prompts.db")
+    db_path_str = get_cli_setting("database", "prompts_db_path", default_db_path_str)
+    db_path = Path(db_path_str).expanduser().resolve()
+    return db_path
 
-def get_log_file_path() -> Path:
-    # Ensure database path (and thus its parent dir) is resolved first, as log might go there.
-    db_parent_dir = get_database_path().parent
+def get_media_db_path() -> Path:
+    config = load_cli_config()
+    default_db_path_str = DEFAULT_CONFIG.get("database", {}).get("media_db_path", "~/.local/share/tldw_cli/tldw_cli_media_v2.db")
+    db_path_str = get_cli_setting("database", "media_db_path", default_db_path_str)
+    db_path = Path(db_path_str).expanduser().resolve()
+    return db_path
 
+def get_cli_log_file_path() -> Path: # Renamed
+    chachanotes_parent_dir = get_chachanotes_db_path().parent # Log file relative to main data DB dir
     default_log_filename = DEFAULT_CONFIG.get("logging", {}).get("log_filename", "tldw_cli_app.log")
-    log_filename = get_setting("logging", "log_filename", default_log_filename)
+    log_filename = get_cli_setting("logging", "log_filename", default_log_filename)
+    log_file_path = chachanotes_parent_dir / log_filename
+    try:
+        log_file_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        logger.error(f"Could not create log directory {log_file_path.parent}: {e}", exc_info=True)
+    return log_file_path
 
-    return db_parent_dir / log_filename
+# --- Global CLI Database Instances ---
+# These will be initialized by initialize_all_databases()
+chachanotes_db: Optional[CharactersRAGDB] = None
+prompts_db: Optional[PromptsDatabase] = None
+media_db: Optional[MediaDatabase] = None
+
+# --- Database Initialization Function ---
+def initialize_all_databases():
+    """
+    Initializes all CLI-specific databases.
+    The __init__ method of each DB class handles file creation and schema setup.
+    """
+    global chachanotes_db, prompts_db, media_db
+    logger.info("Initializing CLI databases...")
+
+    # ChaChaNotes DB
+    chachanotes_path = get_chachanotes_db_path()
+    logger.info(f"Attempting to initialize ChaChaNotes_DB at: {chachanotes_path}")
+    try:
+        chachanotes_db = CharactersRAGDB(db_path=chachanotes_path, client_id=CLI_APP_CLIENT_ID)
+        logger.success(f"ChaChaNotes_DB initialized successfully at {chachanotes_path}")
+    except (CharactersRAGDBError, ChaChaSchemaError, ChaChaConflictError, Exception) as e: # Catch specific and general errors
+        logger.error(f"Failed to initialize ChaChaNotes_DB at {chachanotes_path}: {e}", exc_info=True)
+        chachanotes_db = None # Ensure it's None on failure
+
+    # Prompts DB
+    prompts_path = get_prompts_db_path()
+    logger.info(f"Attempting to initialize Prompts_DB at: {prompts_path}")
+    try:
+        prompts_db = PromptsDatabase(db_path=prompts_path, client_id=CLI_APP_CLIENT_ID)
+        logger.success(f"Prompts_DB initialized successfully at {prompts_path}")
+    except (PromptsDBError, PromptsSchemaError, PromptsConflictError, Exception) as e:
+        logger.error(f"Failed to initialize Prompts_DB at {prompts_path}: {e}", exc_info=True)
+        prompts_db = None
+
+    # Media DB
+    media_path = get_media_db_path()
+    logger.info(f"Attempting to initialize Media_DB_v2 at: {media_path}")
+    try:
+        media_db = MediaDatabase(db_path=media_path, client_id=CLI_APP_CLIENT_ID)
+        logger.success(f"Media_DB_v2 initialized successfully at {media_path}")
+    except (MediaDBError, MediaSchemaError, MediaConflictError, Exception) as e:
+        logger.error(f"Failed to initialize Media_DB_v2 at {media_path}: {e}", exc_info=True)
+        media_db = None
+
+    logger.info("CLI database initialization complete.")
+
+
+# --- Load CLI Config and Initialize Databases on import ---
+cli_configuration = load_cli_config() # Load CLI config when module is imported
+initialize_all_databases()
 
 #
 # End of tldw_cli/config.py
