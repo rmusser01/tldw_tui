@@ -37,20 +37,21 @@ def create_character_sidebar(id_prefix: str) -> ComposeResult:
                 options=[("<placeholder>", "placeholder")],
                 prompt="Choose character…",
                 allow_blank=True,
-                id=f"{id_prefix}-character-select", # Use id_prefix
+                id="chat_sb-character-select",
             )
 
             yield Static("Your Name", classes="sidebar-label")
             yield Input(
                 placeholder="Type your display name…",
-                id=f"{id_prefix}-your-name", # Use id_prefix
+                id="chat_sb-your-name",
+
                 classes="sidebar-input",
             )
 
             yield Static("Search & Load Chats", classes="sidebar-label")
             yield Input(
                 placeholder="Search saved chats…",
-                id=f"{id_prefix}-chat-search", # Use id_prefix
+                id="chat_sb-chat-search",
                 classes="sidebar-input",
             )
             yield Static(
