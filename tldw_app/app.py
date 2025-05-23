@@ -14,8 +14,10 @@ from typing import Union, Generator, Optional
 #
 # 3rd-Party Libraries
 from rich.text import Text
+from rich.markup import escape
 # --- Textual Imports ---
 from textual.app import App, ComposeResult
+from rich.markup import escape as escape_markup
 from textual.logging import TextualHandler
 from textual.widgets import (
     Static, Button, Input, Header, Footer, RichLog, TextArea, Select, ListView, Checkbox, ListItem, Label
@@ -1589,12 +1591,18 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 if selected_provider in providers_requiring_key:
                     logging.error(f"API call aborted: API Key for required provider '{selected_provider}' is missing.")
                     await chat_container.mount(
-                        ChatMessage(f"API Key for {selected_provider} is missing.\n\n"
-                                    f"Please add it to your config file under:\n"
-                                    f"[api_settings.{provider_settings_key}]\n"
-                                    f"api_key = \"YOUR_KEY\"\n\n"
-                                    f"Or set the environment variable specified in 'api_key_env_var'.",
-                                    role="AI", classes="-error"))
+                        ChatMessage(
+                            # Use Text.from_markup to handle escaped characters correctly
+                            Text.from_markup(
+                                f"API Key for {selected_provider} is missing.\n\n"
+                                f"Please add it to your config file under:\n"
+                                f"\[api_settings.{provider_settings_key}\]\n"  # Note the escaped \[ and \]
+                                f"api_key = \"YOUR_KEY\"\n\n"
+                                f"Or set the environment variable specified in 'api_key_env_var'."
+                            ),
+                            role="AI", classes="-error"
+                        )
+                    )
                     # Remove the placeholder "thinking" message if it exists
                     if self.current_ai_message_widget and self.current_ai_message_widget.is_mounted:
                         await self.current_ai_message_widget.remove()
@@ -1853,10 +1861,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         except Exception as e:
             logging.exception(f"Error inside chat_wrapper for endpoint {api_endpoint}: {e}")
             # Return a formatted error string that on_worker_state_changed can display
-            return f"[bold red]Error during chat processing:[/]\n{str(e)}"
+            return f"[bold red]Error during chat processing:[/]\n{escape(str(e))}"
 
     # --- Handle worker completion ---
-    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+    async def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         """Handle completion / failure of a background API worker."""
         worker_name = event.worker.name or "Unknown Worker"
         logging.debug("Worker '%s' state changed to %s", worker_name, event.state)
@@ -1865,10 +1873,29 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             return
 
         prefix = worker_name.replace("API_Call_", "")
-        ai_message_widget = self.current_ai_message_widget  # previously stored
+        # It's crucial to handle the case where ai_message_widget might have been removed
+        # or was never properly assigned, especially if an error occurred very early.
+        ai_message_widget = self.current_ai_message_widget
 
-        if ai_message_widget is None:  # sanity-check
-            logging.error("Worker finished for %s but AI placeholder is missing!", prefix)
+        if ai_message_widget is None or not ai_message_widget.is_mounted:
+            logging.warning(
+                "Worker '%s' finished, but its AI placeholder widget (ID: %s) is missing or not mounted. Cannot update.",
+                worker_name,
+                getattr(self.current_ai_message_widget, 'id', 'N/A') if self.current_ai_message_widget else 'N/A'
+            )
+            # Attempt to log to the main chat container if the placeholder is gone
+            try:
+                chat_container_fallback: VerticalScroll = self.query_one(f"#{prefix}-log", VerticalScroll)
+                error_msg_text = f"[bold red]Error: AI response for worker '{worker_name}' received, but its display widget was missing. Check logs.[/]"
+                error_widget_fallback = ChatMessage(error_msg_text, role="System", classes="-error")
+                self.call_soon(chat_container_fallback.mount, error_widget_fallback)
+                self.call_soon(chat_container_fallback.scroll_end, animate=False)
+            except QueryError:
+                logging.error("Fallback: Could not even find chat container '#%s-log' to report missing AI placeholder.", prefix)
+            except Exception as e_fallback:
+                logging.error(f"Fallback: Error reporting missing AI placeholder: {e_fallback}", exc_info=True)
+
+            self.current_ai_message_widget = None # Ensure it's cleared
             return
 
         try:
@@ -1879,98 +1906,167 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 result = event.worker.result
                 streaming = isinstance(result, Generator)
 
-                # clear the “thinking…” placeholder once
-                if ai_message_widget.message_text == "AI thinking...":
-                    ai_message_widget.message_text = ""
-                    ai_message_widget.query_one(".message-text", Static).update("")
+                # Ensure the static widget for text exists before trying to update it
+                try:
+                    static_text_widget = ai_message_widget.query_one(".message-text", Static)
+                except QueryError:
+                    logging.error(f"Critical: .message-text Static widget not found within AI placeholder for worker {worker_name}. Cannot display AI response.")
+                    ai_message_widget.mark_generation_complete() # Still mark complete
+                    self.current_ai_message_widget = None
+                    # Optionally, remove the broken placeholder or add an error to chat_container
+                    # await ai_message_widget.remove()
+                    return
 
-                # ────────────── streaming response (async generator) ──────────────
+                if ai_message_widget.message_text == "AI thinking...": # Check internal state
+                    ai_message_widget.message_text = "" # Update internal state
+                    static_text_widget.update("") # Clear UI
+
                 if streaming:
                     logging.info("API call (%s) returned a generator – streaming.", prefix)
 
                     async def process_stream() -> None:
-                        full = ""
+                        full_original_text = ""
+                        # Ensure widget and its text part are still valid inside the async task
+                        if not ai_message_widget or not ai_message_widget.is_mounted:
+                            logging.warning(f"Stream processing for '{prefix}' aborted: AI widget no longer mounted.")
+                            return
+                        try:
+                            stream_static_text_widget = ai_message_widget.query_one(".message-text", Static)
+                        except QueryError:
+                            logging.error(f"Stream processing for '{prefix}' aborted: .message-text Static widget not found in AI widget.")
+                            return
+
                         try:
                             async for chunk in result:  # type: ignore[misc]
-                                text = str(chunk)
-                                ai_message_widget.update_message_chunk(text)
-                                full += text
-                                chat_container.scroll_end(animate=False, duration=0.05)
+                                text_chunk = str(chunk)
+                                full_original_text += text_chunk
+                                logging.debug(f"STREAM CHUNK for '{prefix}': {text_chunk!r}")
+
+                                # CORRECTED ESCAPING
+                                escaped_chunk_str = escape_markup(text_chunk)
+
+                                # Update the ChatMessage widget's internal buffer and the Static widget
+                                # Assuming update_message_chunk handles appending and updating the Static widget.
+                                # If update_message_chunk directly calls static.update(), it needs to handle appending.
+                                # A safer way is to update the Static widget directly by appending.
+                                current_display_text = stream_static_text_widget.renderable
+                                if isinstance(current_display_text, Text):
+                                     # Create a new Text object by appending if you want to preserve prior styling (if any)
+                                     # For pure escaped text, just append the string.
+                                    new_text_obj = Text(current_display_text.plain + escaped_chunk_str, end="")
+                                    stream_static_text_widget.update(new_text_obj)
+                                    ai_message_widget.message_text += escaped_chunk_str # Update internal raw buffer
+                                else: # If it was a string or other renderable, overwrite or convert
+                                    existing_plain = str(current_display_text)
+                                    stream_static_text_widget.update(existing_plain + escaped_chunk_str)
+                                    ai_message_widget.message_text += escaped_chunk_str # Update internal raw buffer
+
+
+                                if chat_container.is_mounted:
+                                    chat_container.scroll_end(animate=False, duration=0.05)
                             ai_message_widget.mark_generation_complete()
-                            logging.info("Stream finished (%d chars).", len(full))
-                        except Exception as exc:  # noqa: BLE001
-                            logging.exception("Stream failure (%s): %s", prefix, exc)
-                            ai_message_widget.query_one(".message-text", Static).update(
-                                f"{ai_message_widget.message_text}\n[bold red] Error during stream.[/]"
-                            )
-                            ai_message_widget.mark_generation_complete()
+                            logging.info(f"Stream finished for '{prefix}' (Original length: {len(full_original_text)} chars). Full original text: {full_original_text!r}")
+                        except Exception as exc:
+                            logging.exception("Stream failure for worker '%s': %s", worker_name, exc)
+                            if ai_message_widget.is_mounted:
+                                try:
+                                    current_text = ai_message_widget.message_text # Get current text (might be partially streamed)
+                                    error_message_display = escape_markup(current_text) + Text.from_markup("\n[bold red]Error during stream.[/]")
+                                    stream_static_text_widget.update(error_message_display)
+                                    ai_message_widget.mark_generation_complete()
+                                except QueryError: # static_text_widget might be gone if ai_message_widget was removed
+                                     logging.error("Could not update static text with stream failure message: widget part missing.")
+                                except Exception as e_stream_err:
+                                     logging.error(f"Further error updating with stream failure: {e_stream_err}")
+
                         finally:
                             self.current_ai_message_widget = None
-                            try:
-                                self.query_one(f"#{prefix}-input", TextArea).focus()
-                            except QueryError:
-                                pass
+                            if self.is_mounted: # Check if app itself is still mounted
+                                try:
+                                    self.query_one(f"#{prefix}-input", TextArea).focus()
+                                except QueryError:
+                                    pass # Input area might be gone if tab changed quickly
+                    self.run_worker(process_stream, name=f"stream_{prefix}", group="streams", exclusive=True)
 
-                    # schedule the coroutine in Textual’s worker pool
-                    self.run_worker(
-                        process_stream,  # pass the coroutine *callable*
-                        name=f"stream_{prefix}",
-                        group="streams",
-                        exclusive=True,
-                    )
+                else:  # Non-streaming
+                    raw_result_text = str(result) if result is not None else ""
+                    logging.debug(f"NON-STREAMING RESULT for '{prefix}': {raw_result_text!r}")
 
-                # ──────────────── non-streaming (plain string / None) ─────────────
-                else:
-                    target = ai_message_widget.query_one(".message-text", Static)
+                    # ──────────────── non-streaming (plain string / None) ─────────────
+                    display_text_renderable: Union[str, Text]
 
                     if isinstance(result, str):
-                        if result.startswith("[bold red]API Error"):
-                            logging.error("API call (%s) returned an error.", prefix)
+                        if result.startswith(("[bold red]API Error", "[bold red]AI: Error", "[bold red]Error:")):
+                            display_text_renderable = result # Assume these are safe pre-formatted markup
+                        else:
+                            # CORRECTED ESCAPING
+                            display_text_renderable = escape_markup(raw_result_text)
+                        # Update internal message_text of ChatMessage with the raw (or pre-formatted error) string
                         ai_message_widget.message_text = result
-                        target.update(result)
-
+                        static_text_widget.update(display_text_renderable)
                     elif result is None:
-                        err = "[bold red]AI: Error – No response received.[/]"
-                        ai_message_widget.message_text = err
-                        target.update(err)
-
+                        display_text_renderable = "[bold red]AI: Error – No response received.[/]"
+                        ai_message_widget.message_text = display_text_renderable # Store the error string
+                        static_text_widget.update(display_text_renderable)
                     else:
-                        err = "[bold red]Error: Unexpected result type.[/]"
-                        logging.error("Unexpected result type: %r", type(result))
-                        ai_message_widget.message_text = err
-                        target.update(err)
+                        display_text_renderable = "[bold red]Error: Unexpected result type from API.[/]"
+                        logging.error(f"Unexpected result type from API for '{prefix}': {type(result)}")
+                        ai_message_widget.message_text = display_text_renderable # Store the error string
+                        static_text_widget.update(display_text_renderable)
 
                     ai_message_widget.mark_generation_complete()
                     self.current_ai_message_widget = None
+                    if chat_container.is_mounted:
+                        chat_container.scroll_end(animate=True)
+                    if self.is_mounted:
+                        try:
+                            self.query_one(f"#{prefix}-input", TextArea).focus()
+                        except QueryError:
+                            pass
+
+            # ─────────────────────────────── ERROR ───────────────────────────────
+            elif event.state is WorkerState.ERROR:
+                err_display = "[bold red]AI Error: Processing failed. Check logs.[/]"
+                logging.error("Worker '%s' failed.", worker_name, exc_info=event.worker.error)
+                if ai_message_widget.is_mounted: # Check if widget still exists
+                    try:
+                        static_text_widget_err = ai_message_widget.query_one(".message-text", Static)
+                        ai_message_widget.message_text = err_display # Store error string
+                        static_text_widget_err.update(err_display)
+                        ai_message_widget.mark_generation_complete()
+                    except QueryError:
+                        logging.error("Could not find .message-text Static widget to update for worker error state.")
+                    except Exception as e_worker_err:
+                         logging.error(f"Further error updating with worker error state: {e_worker_err}")
+
+                self.current_ai_message_widget = None
+                if chat_container.is_mounted:
                     chat_container.scroll_end(animate=True)
+                if self.is_mounted:
                     try:
                         self.query_one(f"#{prefix}-input", TextArea).focus()
                     except QueryError:
                         pass
-
-            # ─────────────────────────────── ERROR ───────────────────────────────
-            elif event.state is WorkerState.ERROR:
-                err = "[bold red]AI Error: Processing failed. Check logs.[/]"
-                logging.error("Worker '%s' failed.", worker_name, exc_info=event.worker.error)
-                ai_message_widget.message_text = err
-                ai_message_widget.query_one(".message-text", Static).update(err)
-                ai_message_widget.mark_generation_complete()
-                self.current_ai_message_widget = None
-                chat_container.scroll_end(animate=True)
+        except QueryError as qe:
+            logging.error("QueryError in on_worker_state_changed for '%s': %s. Widget might have been removed or DOM is unstable.", worker_name, qe, exc_info=True)
+            if self.current_ai_message_widget and self.current_ai_message_widget.is_mounted:
+                # Try a last-ditch effort to remove the thinking message or show error
                 try:
-                    self.query_one(f"#{prefix}-input", TextArea).focus()
-                except QueryError:
-                    pass
-
-        except QueryError:
-            logging.error("Cannot find '#%s-log' for worker '%s'.", prefix, worker_name)
+                    await self.current_ai_message_widget.remove()
+                except Exception: pass
             self.current_ai_message_widget = None
-        except Exception as exc:  # noqa: BLE001
-            logging.exception("on_worker_state_changed – unexpected: %s", exc)
-            ai_message_widget.query_one(".message-text", Static).update(
-                "[bold red]Internal error handling response.[/]"
-            )
-            ai_message_widget.mark_generation_complete()
+        except Exception as exc:
+            logging.exception("Unexpected error in on_worker_state_changed for worker '%s': %s", worker_name, exc)
+            if ai_message_widget and ai_message_widget.is_mounted:
+                try:
+                    static_widget_unexpected_err = ai_message_widget.query_one(".message-text", Static)
+                    error_update_text_unexpected = "[bold red]Internal error handling AI response.[/]"
+                    static_widget_unexpected_err.update(error_update_text_unexpected)
+                    ai_message_widget.mark_generation_complete()
+                except QueryError:
+                     logging.error("Could not find .message-text Static widget to update for unexpected_error in on_worker_state_changed.")
+                except Exception as e_unexp_final:
+                    logging.error(f"Further error updating with unexpected error: {e_unexp_final}")
             self.current_ai_message_widget = None
 
     async def load_and_display_notes(self) -> None:
