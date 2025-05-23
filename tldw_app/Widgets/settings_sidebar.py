@@ -64,7 +64,7 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
         # ===================================================================
         # 1. General & Chat Settings – existing controls
         # ===================================================================
-        with Collapsible(title="General & Chat Settings", collapsed=False):
+        with Collapsible(title="Current Chat Settings", collapsed=True):
             yield Static(
                 "Inference Endpoints & \nService Providers", classes="sidebar-label"
             )
@@ -133,11 +133,7 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
                 classes="sidebar-input",
             )
 
-        # ===================================================================
-        # NEW: Conversation Details (only for chat tab)
-        # ===================================================================
-        if id_prefix == "chat":  # Assuming "chat" is the id_prefix for the main chat tab
-            with Collapsible(title="Conversation Details", collapsed=False):
+            if id_prefix == "chat": # Moved Conversation Details content here
                 yield Static("Current Conversation Title:", classes="sidebar-label")
                 yield Input(
                     id=f"{id_prefix}-conversation-title-input",
@@ -147,17 +143,26 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
                 yield Static("Conversation Keywords:", classes="sidebar-label")
                 yield TextArea(
                     id=f"{id_prefix}-conversation-keywords-input",
-                    classes="sidebar-textarea"  # Use existing class for basic styling
+                    classes="sidebar-textarea"
                 )
-                # Set initial height for TextArea via styles property if not handled by class
-                # Example: self.query_one(f"#{id_prefix}-conversation-keywords-input", TextArea).styles.height = 5
                 yield Button(
                     "Save Title & Keywords",
                     id=f"{id_prefix}-save-conversation-details-button",
                     variant="primary",
-                    classes="sidebar-button"  # Add a class if you have specific button styling
+                    classes="sidebar-button"
                 )
 
+        # ===================================================================
+        # NEW: Prompts (only for chat tab)
+        # ===================================================================
+        if id_prefix == "chat":
+            with Collapsible(title="Prompts", collapsed=True):
+                yield Static("Prompt management UI placeholder")
+
+        # ===================================================================
+        # NEW: Saved Conversations (only for chat tab)
+        # ===================================================================
+        if id_prefix == "chat":  # Assuming "chat" is the id_prefix for the main chat tab
             # NEW: Saved Conversations (only for chat tab)
             with Collapsible(title="Saved Conversations", collapsed=True):
                 yield Input(
