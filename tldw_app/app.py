@@ -2534,6 +2534,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             conversations = []
             if not include_character_chats:
                 # Search only for conversations with character_id IS NULL
+                # FIXME
                 # This requires db.search_conversations_by_title to support a new flag/mode
                 # For now, log this case and skip results, or implement a temporary client-side filter if feasible
                 logging.info("Search limited to non-character chats (feature requires DB method update).")
