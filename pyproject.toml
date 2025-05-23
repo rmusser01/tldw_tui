@@ -68,7 +68,7 @@ tldw-cli = "tldw_app.app:main_cli_runner"
 [tool.setuptools.packages.find]
 where = ["."]  # Look for packages in the current directory (where pyproject.toml is)
 include = ["tldw_app*"]  # Include the tldw_app package and its submodules
-exclude = ["tests*"]  # Example: exclude a tests directory if you have one
+exclude = ["Tests*"]  # Example: exclude a tests directory if you have one
 
 [tool.setuptools.package-data]
 "tldw_app.css" = ["*.tcss"] # Include .tcss files in the tldw_app.css package
