@@ -32,8 +32,8 @@ from textual.css.query import QueryError  # For specific error handling
 #
 # --- Local API library Imports ---
 from tldw_app.Chat.Chat_Functions import chat
-from .config import CONFIG_TOML_CONTENT, load_settings, get_setting, get_log_file_path, DEFAULT_CONFIG, \
-    DEFAULT_CONFIG_PATH, get_providers_and_models
+from .config import CONFIG_TOML_CONTENT, load_settings, get_cli_setting, get_cli_log_file_path, DEFAULT_CONFIG, \
+    DEFAULT_CONFIG_PATH, get_cli_providers_and_models
 from .Notes.Notes_Library import NotesInteropService
 from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
 from .Widgets.chat_message import ChatMessage
@@ -332,7 +332,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         logging.debug("__INIT__: Attempting to get providers and models...")
         try:
             # Call the function from the config module
-            self.providers_models = get_providers_and_models()
+            self.providers_models = get_cli_providers_and_models()
             # *** ADD THIS LOGGING ***
             logging.info(
                 f"__INIT__: Successfully retrieved providers_models. Count: {len(self.providers_models)}. Keys: {list(self.providers_models.keys())}")
@@ -340,7 +340,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             logging.error(f"__INIT__: Failed to get providers and models: {e}", exc_info=True)
             self.providers_models = {}  # Set empty on error
         # Determine the *value* for the initial tab but don't set the reactive var yet
-        initial_tab_from_config = get_setting("general", "default_tab", "chat")
+        initial_tab_from_config = get_cli_setting("general", "default_tab", "chat")
         if initial_tab_from_config not in ALL_TABS:
             logging.warning(f"Default tab '{initial_tab_from_config}' from config not valid. Falling back to 'chat'.")
             self._initial_tab_value = "chat"
@@ -408,7 +408,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         # --- Setup File Logging ---
         try:
-            log_file_path = get_log_file_path()  # Get path from config module
+            log_file_path = get_cli_log_file_path()  # Get path from config module
             log_dir = log_file_path.parent
             log_dir.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
             print(f"Ensured log directory exists: {log_dir}")
@@ -419,10 +419,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 root_logger.handlers)
 
             if not has_file_handler:
-                max_bytes = int(get_setting("logging", "log_max_bytes", DEFAULT_CONFIG["logging"]["log_max_bytes"]))
+                max_bytes = int(get_cli_setting("logging", "log_max_bytes", DEFAULT_CONFIG["logging"]["log_max_bytes"]))
                 backup_count = int(
-                    get_setting("logging", "log_backup_count", DEFAULT_CONFIG["logging"]["log_backup_count"]))
-                file_log_level_str = get_setting("logging", "file_log_level", "INFO").upper()
+                    get_cli_setting("logging", "log_backup_count", DEFAULT_CONFIG["logging"]["log_backup_count"]))
+                file_log_level_str = get_cli_setting("logging", "file_log_level", "INFO").upper()
                 file_log_level = getattr(logging, file_log_level_str, logging.INFO)
 
             # Use standard RotatingFileHandler

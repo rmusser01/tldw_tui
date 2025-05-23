@@ -11,7 +11,7 @@ from textual.containers import VerticalScroll
 from textual.widgets import Static, Select, TextArea, Input, Collapsible, Button, Checkbox, ListView
 #
 # Local Imports
-from ..config import get_providers_and_models
+from ..config import get_cli_providers_and_models
 
 #
 #######################################################################################################################
@@ -37,7 +37,7 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
         # Retrieve defaults / provider information (used in Collapsible #1)
         # -------------------------------------------------------------------
         defaults = config.get(f"{id_prefix}_defaults", config.get("chat_defaults", {}))
-        providers_models = get_providers_and_models()
+        providers_models = get_cli_providers_and_models()
         logging.info(
             "Sidebar %s: Received providers_models. Count: %d. Keys: %s",
             id_prefix,
