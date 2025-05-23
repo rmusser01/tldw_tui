@@ -11,14 +11,13 @@ class NotesSidebarLeft(VerticalScroll):
         yield Input(placeholder="Search notes...", id="notes-search-input")
 
         with Collapsible(title="Notes Actions"):
-            yield Button("Create New Note", id="notes-create-new-button", variant="success")
-            yield Button("Edit Selected Note", id="notes-edit-selected-button", variant="primary")
-            yield Button("Search Notes", id="notes-search-button", variant="default")
-            yield Button("Load Selected Note", id="notes-load-selected-button", variant="default")
-            yield Button("Save Current Note", id="notes-save-current-button", variant="success")
+            yield Button("Create New Note", id="notes-create-new-button", variant="success", classes="notes-sidebar-button")
+            yield Button("Edit Selected Note", id="notes-edit-selected-button", variant="primary", classes="notes-sidebar-button")
+            yield Button("Search Notes", id="notes-search-button", variant="default", classes="notes-sidebar-button")
+            yield Button("Load Selected Note", id="notes-load-selected-button", variant="default", classes="notes-sidebar-button")
+            yield Button("Save Current Note", id="notes-save-current-button", variant="success", classes="notes-sidebar-button")
 
         yield ListView(id="notes-list-view") # Ensure ListView is created
-        yield Button("New Note", id="notes-new-button", variant="success") # Existing Button
         yield Button("Delete Selected Note", id="notes-delete-button", variant="error") # Existing Button
 
     async def populate_notes_list(self, notes_data: list[dict]) -> None:

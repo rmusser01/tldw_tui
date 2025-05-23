@@ -577,6 +577,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
             # --- Notes Tab Window ---
             with Container(id=f"{TAB_NOTES}-window", classes="window"):
+                yield Button("☰ L", id="toggle-notes-sidebar-left", classes="sidebar-toggle") # <-- MOVED HERE
                 # Instantiate the left sidebar (ensure it has a unique ID for the watcher)
                 yield NotesSidebarLeft(id="notes-sidebar-left", classes="sidebar")
 
@@ -585,7 +586,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     yield TextArea(id="notes-editor-area", classes="notes-editor")  # Make it take up 1fr height
                     # Container for toggle buttons, similar to chat-input-area
                     with Horizontal(id="notes-controls-area"):
-                        yield Button("☰ L", id="toggle-notes-sidebar-left", classes="sidebar-toggle")
                         yield Static()  # Spacer
                         yield Button("Save Note", id="notes-save-button", variant="primary")
                         yield Static()  # Spacer
