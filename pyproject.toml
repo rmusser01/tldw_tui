@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tldw_chatbook"
+version = "0.1.0" # Choose an initial version
+authors = [
+  { name="Robert Musser", email="contact@rmusser.net" },
+]
+description = "A Textual TUI for chatting with LLMs, and interacting with the tldw server."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file="LICENSE" }
+keywords = ["tui", "cli", "llm", "textual", "ai", "chat"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Utilities",
+    "Topic :: Terminals",
+    "License :: OSI Approved :: AGPL License", # Choose your license
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Environment :: Console",
+    "Operating System :: OS Independent",
+]
+
+[dependency-groups]
+core =  [
+    "chardet",
+    "loguru",
+    "textual", # textual[dev] is for development, just textual for distribution
+    "requests",
+    "Pillow",
+    "PyYAML",
+    "pydantic",
+    "psutil",
+    "toml", # Even with tomllib, some parts of your code might still use toml for writing if needed. If only reading, and Python 3.11+, this can be omitted.
+    # rich is a dependency of textual, so usually not needed to list explicitly
+]
+inference = [
+    "placeholder"
+]
+ingestion = [
+    "placeholder"
+]
+rag = [
+    "placeholder"
+]
+voice = [
+    "Placeholder"
+]
+web = [
+    "placeholder"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/rmusser01/tldw_chatbook" # Replace with your repo
+"Bug Tracker" = "https://github.com/rmusser01/tldw_chatbook/issues" # Replace
+
+# This creates a command-line script called 'tldw-cli'
+[project.scripts]
+tldw-cli = "tldw_app.app:main_cli_runner"
+
+[tool.setuptools.packages.find]
+where = ["."]  # Look for packages in the current directory (where pyproject.toml is)
+include = ["tldw_app*"]  # Include the tldw_app package and its submodules
+exclude = ["tests*"]  # Example: exclude a tests directory if you have one
+
+[tool.setuptools.package-data]
+"tldw_app.css" = ["*.tcss"] # Include .tcss files in the tldw_app.css package
+# If you have other assets inside tldw_app (e.g., tldw_app/assets/), add them here:
+# "tldw_app.assets" = ["*"]
