@@ -132,35 +132,6 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
             )
 
         # ===================================================================
-        # 2. Character Chat Settings – placeholders
-        # ===================================================================
-        with Collapsible(title="Character Chat Settings", collapsed=True):
-            yield Static("Current Character", classes="sidebar-label")
-            yield Select(
-                options=[("<placeholder>", "placeholder")],
-                prompt="Choose character…",
-                allow_blank=True,
-                id=f"{id_prefix}-character-select",
-            )
-
-            yield Static("Your Name", classes="sidebar-label")
-            yield Input(
-                placeholder="Type your display name…",
-                id=f"{id_prefix}-your-name",
-                classes="sidebar-input",
-            )
-
-            yield Static("Search & Load Chats", classes="sidebar-label")
-            yield Input(
-                placeholder="Search saved chats…",
-                id=f"{id_prefix}-chat-search",
-                classes="sidebar-input",
-            )
-            yield Static(
-                "(search results dropdown placeholder)", classes="sidebar-placeholder"
-            )
-
-        # ===================================================================
         # 3. Media Settings – placeholders
         # ===================================================================
         with Collapsible(title="Media Settings", collapsed=True):
