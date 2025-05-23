@@ -28,7 +28,8 @@ from textual.css.query import QueryError # For specific error handling
 #
 # --- Local API library Imports ---
 from tldw_app.Chat.Chat_Functions import chat
-from .config import CONFIG_TOML_CONTENT, load_settings, get_setting
+from .config import CONFIG_TOML_CONTENT, load_settings, get_setting, get_log_file_path, DEFAULT_CONFIG, \
+    DEFAULT_CONFIG_PATH, get_providers_and_models
 from .Notes.Notes_Library import NotesInteropService
 from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
 from .Widgets.chat_message import ChatMessage
