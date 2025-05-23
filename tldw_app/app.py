@@ -457,7 +457,6 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
                     with Horizontal(id="chat-input-area"):
                         yield Button("☰", id="toggle-chat-sidebar", classes="sidebar-toggle") # Left sidebar toggle
                         yield TextArea(id="chat-input", classes="chat-input")
-                        yield Button("🎤", id="mic-chat", classes="mic-button")
                         yield Button("Send", id="send-chat", classes="send-button")
                         # Add toggle for the new right sidebar (character settings) for chat window
                         yield Button("👤", id="toggle-character-sidebar", classes="sidebar-toggle")
