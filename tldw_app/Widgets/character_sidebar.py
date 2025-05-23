@@ -17,7 +17,7 @@ from textual.widgets import Static, Collapsible, Placeholder, Select, Input
 #
 # Functions:
 
-def create_character_sidebar(id_prefix: str, config: dict) -> ComposeResult:
+def create_character_sidebar(id_prefix: str) -> ComposeResult:
     """Yield the widgets for the character settings sidebar.
 
     The sidebar is intended for managing character information and conversation data.
@@ -44,6 +44,7 @@ def create_character_sidebar(id_prefix: str, config: dict) -> ComposeResult:
             yield Input(
                 placeholder="Type your display name…",
                 id="chat_sb-your-name",
+
                 classes="sidebar-input",
             )
 

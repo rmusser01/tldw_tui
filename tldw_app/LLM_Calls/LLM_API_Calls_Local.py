@@ -14,7 +14,7 @@ from urllib3 import Retry
 
 from tldw_app.Chat.Chat_Deps import ChatProviderError, ChatBadRequestError, ChatConfigurationError
 from tldw_app.Utils.Utils import logging
-from tldw_app.config import load_and_log_configs
+from tldw_app.config import load_settings
 
 
 ####################
@@ -193,7 +193,7 @@ def chat_with_local_llm(  # Generic OpenAI-compatible endpoint, e.g., LM Studio
         min_p: Optional[float] = None,
         model: Optional[str] = None  # Model name can be passed
 ):
-    loaded_config_data = load_and_log_configs()
+    loaded_config_data = load_settings()
     cfg = loaded_config_data.get('local_llm', {})  # Renamed 'local_llm_api' to 'local_llm' for consistency
 
     api_base_url = cfg.get('api_ip', 'http://127.0.0.1:8080')  # Default to common local proxy
@@ -248,7 +248,7 @@ def chat_with_llama(  # llama.cpp server with OpenAI compatible endpoint
         min_p: Optional[float] = None,
         model: Optional[str] = None  # Model name for the payload
 ):
-    loaded_config_data = load_and_log_configs()
+    loaded_config_data = load_settings()
     cfg = loaded_config_data.get('llama_api', {})
 
     # api_url is a positional argument for llama.cpp in PROVIDER_PARAM_MAP, not a generic one.
@@ -309,7 +309,7 @@ def chat_with_kobold(  # KoboldAI native API (/api/v1/generate)
         model: Optional[str] = None  # Model for Kobold if selectable via API (often fixed by server)
 ):
     logging.debug("KoboldAI (Native): Chat request starting...")
-    loaded_config_data = load_and_log_configs()
+    loaded_config_data = load_settings()
     cfg = loaded_config_data.get('kobold_api', {})
 
     current_api_key = api_key or cfg.get('api_key')  # Kobold often doesn't need a key
@@ -427,7 +427,7 @@ def chat_with_oobabooga(
     top_p: Optional[float] = None,
     model: Optional[str] = None          # Model name for the payload
 ):
-    loaded_config_data = load_and_log_configs()
+    loaded_config_data = load_settings()
     cfg = loaded_config_data.get('ooba_api', {}) # Ensure this section exists in your config
 
     current_api_base_url = api_url or cfg.get('api_ip') # api_url from args takes precedence
@@ -484,7 +484,7 @@ def chat_with_tabbyapi(
     min_p: Optional[float] = None,
     model: Optional[str] = None                   # Mapped
 ):
-    loaded_config_data = load_and_log_configs()
+    loaded_config_data = load_settings()
     cfg = loaded_config_data.get('tabby_api', {})
 
     api_base_url = cfg.get('api_ip') # Assuming api_ip is the base URL
@@ -543,7 +543,7 @@ def chat_with_vllm(
     model: Optional[str] = None,                  # Mapped
     vllm_api_url: Optional[str] = None            # Specific config, not from generic map
 ):
-    loaded_config_data = load_and_log_configs()
+    loaded_config_data = load_settings()
     cfg = loaded_config_data.get('vllm_api', {})
 
     current_api_base_url = vllm_api_url or cfg.get('api_ip') # vllm_api_url from specific arg if provided
@@ -600,7 +600,7 @@ def chat_with_aphrodite(
     topk: Optional[int] = None,
     model: Optional[str] = None           # Mapped
 ):
-    loaded_config_data = load_and_log_configs()
+    loaded_config_data = load_settings()
     cfg = loaded_config_data.get('aphrodite_api', {})
 
     api_base_url = cfg.get('api_ip') # Assuming api_ip is the base URL
@@ -660,7 +660,7 @@ def chat_with_ollama(
     streaming: Optional[bool] = False,
     top_p: Optional[float] = None         # Mapped from 'topp'
 ):
-    loaded_config_data = load_and_log_configs()
+    loaded_config_data = load_settings()
     cfg = loaded_config_data.get('ollama_api', {})
 
     current_api_base_url = api_url or cfg.get('api_url') # api_url from args takes precedence
@@ -720,7 +720,7 @@ def chat_with_custom_openai(
     topk: Optional[int] = None,               # Mapped from 'topk'
     model: Optional[str] = None               # Mapped
 ):
-    loaded_config_data = load_and_log_configs()
+    loaded_config_data = load_settings()
     cfg = loaded_config_data.get('custom_openai_api', {}) # Section name from old code
 
     api_base_url = cfg.get('api_ip') # Assuming api_ip is the base URL
@@ -778,7 +778,7 @@ def chat_with_custom_openai_2(
     model: Optional[str] = None               # Mapped
     # Original didn't take maxp, minp, topk
 ):
-    loaded_config_data = load_and_log_configs()
+    loaded_config_data = load_settings()
     # Note: Original code referenced 'custom_openai_2_api' for retry config, but 'custom_openai_api_2' for others.
     # Using 'custom_openai_api_2' consistently for the section name.
     cfg = loaded_config_data.get('custom_openai_api_2', {})
