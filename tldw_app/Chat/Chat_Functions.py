@@ -44,7 +44,7 @@ from tldw_app.LLM_Calls.LLM_API_Calls_Local import chat_with_aphrodite, chat_wit
     chat_with_custom_openai_2
 from tldw_app.Utils.Utils import generate_unique_filename, logging
 from tldw_app.Metrics.metrics_logger import log_counter, log_histogram
-from tldw_app.config import load_config
+from tldw_app.config import load_settings
 #
 ####################################################################################################
 #
@@ -931,7 +931,7 @@ def chat(
             log_counter("chat_success_multimodal", labels={"api_endpoint": api_endpoint})
             logging.debug(f"Chat Function - Response (first 500 chars): {str(response)[:500]}")
 
-            loaded_config_data = load_config()
+            loaded_config_data = load_settings()
             post_gen_replacement_config = loaded_config_data.get('chat_dictionaries', {}).get('post_gen_replacement')
             if post_gen_replacement_config and isinstance(response, str):
                 post_gen_replacement_dict_path = loaded_config_data.get('chat_dictionaries', {}).get('post_gen_replacement_dict')

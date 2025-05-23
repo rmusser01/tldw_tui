@@ -26,8 +26,8 @@ from requests.adapters import HTTPAdapter
 from urllib3 import Retry
 #
 # Import Local Libraries
-from tldw_Server_API.app.core.Utils.Utils import extract_text_from_segments, logging
-from tldw_Server_API.app.core.config import load_and_log_configs
+from tldw_app.Utils.Utils import extract_text_from_segments, logging
+from tldw_app.config import load_settings
 
 #
 #######################################################################################################################
@@ -154,7 +154,7 @@ def summarize_with_local_llm(input_data, custom_prompt_arg, temp, system_message
 def summarize_with_llama(input_data, custom_prompt, api_key=None, temp=None, system_message=None, streaming=False):
     try:
         logging.debug("Llama.cpp: Loading and validating configurations")
-        loaded_config_data = load_and_log_configs()
+        loaded_config_data = load_settings()
         if loaded_config_data is None:
             logging.error("Failed to load configuration data")
             llama_api_key = None
@@ -324,7 +324,7 @@ def summarize_with_kobold(input_data, api_key, custom_prompt_input,  system_mess
     logging.debug("Kobold: Summarization process starting...")
     try:
         logging.debug("Kobold: Loading and validating configurations")
-        loaded_config_data = load_and_log_configs()
+        loaded_config_data = load_settings()
         if loaded_config_data is None:
             logging.error("Failed to load configuration data")
             kobold_api_key = None
@@ -532,7 +532,7 @@ def summarize_with_oobabooga(input_data, api_key, custom_prompt, system_message=
     logging.debug("Oobabooga: Summarization process starting...")
     try:
         logging.debug("Oobabooga: Loading and validating configurations")
-        loaded_config_data = load_and_log_configs()
+        loaded_config_data = load_settings()
         ooba_api_key = None
 
         if loaded_config_data is None:
@@ -747,7 +747,7 @@ def summarize_with_tabbyapi(
     logging.debug("TabbyAPI: Summarization process starting...")
     try:
         logging.debug("TabbyAPI: Loading and validating configurations")
-        loaded_config_data = load_and_log_configs()
+        loaded_config_data = load_settings()
         if loaded_config_data is None:
             logging.error("Failed to load configuration data")
             tabby_api_key = None
@@ -936,7 +936,7 @@ def summarize_with_vllm(api_key, input_data, custom_prompt_arg, temp=None, syste
         if not api_key or api_key.strip() == "":
             logging.info("vLLM Summarize: API key not provided as parameter")
             logging.info("vLLM Summarize: Attempting to use API key from config file")
-            loaded_config_data = load_and_log_configs()
+            loaded_config_data = load_settings()
             api_key = loaded_config_data.get('vllm_api', {}).get('api_key', "")
             logging.debug(f"vLLM Summarize: Using API key from config file: {api_key[:5]}...{api_key[-5:]}")
 
@@ -987,7 +987,7 @@ def summarize_with_vllm(api_key, input_data, custom_prompt_arg, temp=None, syste
         logging.debug(f"vLLM Summarize: Extracted text (first 500 chars): {text[:500]}...")
         logging.debug(f"vLLM Summarize: Custom prompt: {custom_prompt_arg}")
 
-        config_settings = load_and_log_configs()
+        config_settings = load_settings()
         vllm_model = config_settings['vllm_api']['model']
         logging.debug(f"vLLM Summarize: Using model: {vllm_model}")
 
@@ -1001,13 +1001,13 @@ def summarize_with_vllm(api_key, input_data, custom_prompt_arg, temp=None, syste
         logging.debug("vLLM Summarize: Preparing data + prompt for submittal")
         user_prompt = f"{text} \n\n\n\n{custom_prompt_arg}"
         if temp is None:
-            temp = load_and_log_configs()['vllm_api']['temperature']
+            temp = load_settings()['vllm_api']['temperature']
         if system_message is None:
             system_message = "You are a helpful AI assistant who does whatever the user requests."
         temp = float(temp)
 
         # Set max tokens
-        max_tokens = load_and_log_configs()['vllm_api']['max_tokens']
+        max_tokens = load_settings()['vllm_api']['max_tokens']
         max_tokens = int(max_tokens)
         logging.debug(f"vLLM Summarize: Using max tokens: {max_tokens}")
 
@@ -1024,7 +1024,7 @@ def summarize_with_vllm(api_key, input_data, custom_prompt_arg, temp=None, syste
         }
 
         # Setup URL
-        url = load_and_log_configs()['vllm_api']['api_ip']
+        url = load_settings()['vllm_api']['api_ip']
 
         # Handle streaming
         if streaming:
@@ -1150,7 +1150,7 @@ def summarize_with_ollama(
     # 1) Load config
     try:
         logging.debug("Ollama: Loading and validating configurations")
-        loaded_config_data = load_and_log_configs()
+        loaded_config_data = load_settings()
         if not loaded_config_data:
             logging.error("summarize_with_ollama: Could not load config data.")
             return "Ollama: No config data found."
@@ -1385,7 +1385,7 @@ def summarize_with_ollama(
 
 
 def summarize_with_custom_openai(api_key, input_data, custom_prompt_arg, temp=None, system_message=None, streaming=False):
-    loaded_config_data = load_and_log_configs()
+    loaded_config_data = load_settings()
     custom_openai_api_key = api_key
     try:
         # API key validation
@@ -1458,7 +1458,7 @@ def summarize_with_custom_openai(api_key, input_data, custom_prompt_arg, temp=No
 
         # Set temperature
         if temp is None:
-            temp = load_and_log_configs()['custom_openai_api']['temperature']
+            temp = load_settings()['custom_openai_api']['temperature']
         temp = float(temp)
 
         # Set system message
@@ -1467,7 +1467,7 @@ def summarize_with_custom_openai(api_key, input_data, custom_prompt_arg, temp=No
 
         # Set Streaming
         if streaming is None:
-            streaming = load_and_log_configs()['custom_openai_api']['streaming']
+            streaming = load_settings()['custom_openai_api']['streaming']
 
         # Set API URL
         custom_openai_api_url = loaded_config_data['custom_openai_api']['api_ip']
@@ -1596,7 +1596,7 @@ def summarize_with_custom_openai(api_key, input_data, custom_prompt_arg, temp=No
 
 
 def summarize_with_custom_openai_2(api_key, input_data, custom_prompt_arg, temp=None, system_message=None, streaming=False):
-    loaded_config_data = load_and_log_configs()
+    loaded_config_data = load_settings()
     custom_openai_api_key = api_key
     try:
         # API key validation
@@ -1669,7 +1669,7 @@ def summarize_with_custom_openai_2(api_key, input_data, custom_prompt_arg, temp=
 
         # Set temperature
         if temp is None:
-            temp = load_and_log_configs()['custom_openai_api_2']['temperature']
+            temp = load_settings()['custom_openai_api_2']['temperature']
         temp = float(temp)
 
         # Set system message
@@ -1678,7 +1678,7 @@ def summarize_with_custom_openai_2(api_key, input_data, custom_prompt_arg, temp=
 
         # Set Streaming
         if streaming is None:
-            streaming = load_and_log_configs()['custom_openai_api_2']['streaming']
+            streaming = load_settings()['custom_openai_api_2']['streaming']
 
         # Set API URL
         custom_openai_api_url = loaded_config_data['custom_openai_api_2']['api_ip']

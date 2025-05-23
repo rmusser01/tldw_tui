@@ -46,6 +46,8 @@ from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 # 3rd-Party Imports
 import chardet
 import unicodedata
+from loguru import logger
+
 #
 #######################################################################################################################
 #
@@ -84,7 +86,33 @@ PROJECT_DATABASES_DIR = PROJECT_ROOT_DIR / PROJECT_DB_DIR_NAME
 
 # --- Functions for Project-Internal Databases (if needed) ---
 
+def extract_text_from_segments(segments, include_timestamps=True):
+    logger.trace(f"Segments received: {segments}")
+    logger.trace(f"Type of segments: {type(segments)}")
 
+    def extract_text_recursive(data, include_timestamps):
+        if isinstance(data, dict):
+            text = data.get('Text', '')
+            if include_timestamps and 'Time_Start' in data and 'Time_End' in data:
+                return f"{data['Time_Start']}s - {data['Time_End']}s | {text}"
+            for key, value in data.items():
+                if key == 'Text':
+                    return value
+                elif isinstance(value, (dict, list)):
+                    result = extract_text_recursive(value, include_timestamps)
+                    if result:
+                        return result
+        elif isinstance(data, list):
+            return '\n'.join(filter(None, [extract_text_recursive(item, include_timestamps) for item in data]))
+        return None
+
+    text = extract_text_recursive(segments, include_timestamps)
+
+    if text:
+        return text.strip()
+    else:
+        logging.error(f"Unable to extract text from segments: {segments}")
+        return "Error: Unable to extract transcription"
 
 def ensure_directory_exists(path):
     """Ensure that a directory exists, creating it if necessary."""

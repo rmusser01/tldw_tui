@@ -3,18 +3,16 @@
 #
 # Imports
 import asyncio
-import logging  # Standard logging library
-import logging.handlers  # For handlers
-import tomllib # Use built-in tomllib for Python 3.11+
+import logging
+import logging.handlers
+import tomllib
 from pathlib import Path
 import traceback
 import os
-from typing import Union, Generator, Any, Optional  # For type hinting
-
-import toml
-from rich.text import Text
+from typing import Union, Generator, Optional
 #
 # 3rd-Party Libraries
+from rich.text import Text
 # --- Textual Imports ---
 from textual.app import App, ComposeResult
 from textual.logging import TextualHandler
@@ -30,8 +28,7 @@ from textual.css.query import QueryError # For specific error handling
 #
 # --- Local API library Imports ---
 from tldw_app.Chat.Chat_Functions import chat
-from .config import get_setting, get_providers_and_models, get_log_file_path, DEFAULT_CONFIG, load_config, \
-    DEFAULT_CONFIG_PATH, CONFIG_TOML_CONTENT
+from .config import CONFIG_TOML_CONTENT, load_settings, get_setting
 from .Notes.Notes_Library import NotesInteropService
 from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
 from .Widgets.chat_message import ChatMessage
@@ -237,7 +234,7 @@ class RichLogHandler(logging.Handler):
 
 
 # --- Global variable for config ---
-APP_CONFIG = load_config()
+APP_CONFIG = load_settings()
 
 # Configure root logger based on config BEFORE app starts fully
 _initial_log_level_str = APP_CONFIG.get("general", {}).get("log_level", "INFO").upper()
@@ -287,7 +284,7 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
     def __init__(self):
         super().__init__()
         # Load config ONCE
-        self.app_config = load_config() # Ensure this is called
+        self.app_config = load_settings() # Ensure this is called
 
         # --- Initialize NotesInteropService ---
         self.notes_user_id = "default_tui_user" # Or any default user ID string
@@ -1148,7 +1145,7 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
 
             # 1. Get provider-specific settings from the loaded config
             provider_settings_key = selected_provider.lower() # e.g., "openai", "anthropic"
-            # Access the already loaded config (self.app_config or load_config() again if needed)
+            # Access the already loaded config (self.app_config or load_settings() again if needed)
             # Assuming self.app_config holds the merged config dictionary
             provider_settings = self.app_config.get("api_settings", {}).get(provider_settings_key, {})
 
