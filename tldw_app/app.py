@@ -21,7 +21,6 @@ from textual.logging import TextualHandler
 from textual.widgets import (
     Static, Button, Input, Header, Footer, RichLog, TextArea, Select, ListView
 )
-from textual.widgets.list_view import ListItem # Specific import for ListItem
 from textual.containers import Horizontal, Container, VerticalScroll
 from textual.reactive import reactive
 from textual.worker import Worker, WorkerState
@@ -30,7 +29,7 @@ from textual.dom import DOMNode # For type hinting if needed
 from textual.css.query import QueryError # For specific error handling
 #
 # --- Local API library Imports ---
-from .Chat.Chat_Functions import chat
+from tldw_app.Chat.Chat_Functions import chat
 from .config import get_setting, get_providers_and_models, get_log_file_path, DEFAULT_CONFIG, load_config, \
     DEFAULT_CONFIG_PATH, CONFIG_TOML_CONTENT
 from .Notes.Notes_Library import NotesInteropService

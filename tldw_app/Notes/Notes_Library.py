@@ -11,7 +11,7 @@ from typing import List, Dict, Optional, Any, Union
 # Third-Party Imports
 #
 # Local Imports
-from tldw_Server_API.app.core.DB_Management.ChaChaNotes_DB import (
+from tldw_app.DB.ChaChaNotes_DB import (
     CharactersRAGDB,
     CharactersRAGDBError,
     SchemaError,

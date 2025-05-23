@@ -34,17 +34,17 @@ from pydantic import BaseModel, Field
 
 #
 # Local Imports
-from ..Chat.Chat_Deps import ChatBadRequestError, ChatConfigurationError, ChatAPIError, \
+from .Chat_Deps import ChatBadRequestError, ChatConfigurationError, ChatAPIError, \
     ChatProviderError, ChatRateLimitError, ChatAuthenticationError
-from ..DB.ChaChaNotes_DB import CharactersRAGDB, InputError, ConflictError, CharactersRAGDBError
-from ..LLM_Calls.LLM_API_Calls import chat_with_openai, chat_with_anthropic, chat_with_cohere, \
+from tldw_app.DB.ChaChaNotes_DB import CharactersRAGDB, InputError, ConflictError, CharactersRAGDBError
+from tldw_app.LLM_Calls.LLM_API_Calls import chat_with_openai, chat_with_anthropic, chat_with_cohere, \
     chat_with_groq, chat_with_openrouter, chat_with_deepseek, chat_with_mistral, chat_with_huggingface, chat_with_google
-from ..LLM_Calls.LLM_API_Calls_Local import chat_with_aphrodite, chat_with_local_llm, chat_with_ollama, \
+from tldw_app.LLM_Calls.LLM_API_Calls_Local import chat_with_aphrodite, chat_with_local_llm, chat_with_ollama, \
     chat_with_kobold, chat_with_llama, chat_with_oobabooga, chat_with_tabbyapi, chat_with_vllm, chat_with_custom_openai, \
     chat_with_custom_openai_2
-from ..Utils.Utils import generate_unique_filename, logging
-from ..Metrics.metrics_logger import log_counter, log_histogram
-from ..config import load_config
+from tldw_app.Utils.Utils import generate_unique_filename, logging
+from tldw_app.Metrics.metrics_logger import log_counter, log_histogram
+from tldw_app.config import load_config
 #
 ####################################################################################################
 #

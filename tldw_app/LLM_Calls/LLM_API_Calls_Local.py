@@ -12,9 +12,9 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3 import Retry
 
-from tldw_Server_API.app.core.Chat.Chat_Deps import ChatProviderError, ChatBadRequestError, ChatConfigurationError
-from tldw_Server_API.app.core.Utils.Utils import logging, extract_text_from_segments
-from tldw_Server_API.app.core.config import load_and_log_configs
+from tldw_app.Chat.Chat_Deps import ChatProviderError, ChatBadRequestError, ChatConfigurationError
+from tldw_app.Utils.Utils import logging
+from tldw_app.config import load_and_log_configs
 
 
 ####################
