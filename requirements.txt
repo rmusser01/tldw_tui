@@ -1,6 +1,16 @@
+# Base
 chardet
 toml
 rich
 textual
 psutil
 requests
+# Chunk Library
+tqdm
+langdetect
+transformers
+nltk
+sklearn
+# LLM
+
+# Audio

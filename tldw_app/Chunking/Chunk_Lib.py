@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union, Callable, Generator
 import xml.etree.ElementTree as ET
 #
 # Import 3rd party
+from loguru import logger
 from tqdm import tqdm
 from langdetect import detect, LangDetectException # Import specific exception
 from transformers import AutoTokenizer, PreTrainedTokenizerBase # Using AutoTokenizer for flexibility
@@ -22,9 +23,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 #
 # Import Local
-from tldw_Server_API.app.core.Utils.Utils import logging
-from tldw_Server_API.app.core.config import load_and_log_configs
-from tldw_Server_API.app.core.config import global_default_chunk_language
+from tldw_app.config import load_settings
+from tldw_app.config import global_default_chunk_language
 #
 #######################################################################################################################
 # Custom Exceptions
@@ -52,12 +52,12 @@ def ensure_nltk_data():
     try:
         nltk.data.find('tokenizers/punkt')
     except LookupError:
-        logging.info("NLTK 'punkt' tokenizer not found. Downloading...")
+        logger.info("NLTK 'punkt' tokenizer not found. Downloading...")
         try:
             nltk.download('punkt')
-            logging.info("'punkt' downloaded successfully.")
+            logger.info("'punkt' downloaded successfully.")
         except Exception as e:
-            logging.error(f"Failed to download 'punkt': {e}")
+            logger.error(f"Failed to download 'punkt': {e}")
             # Depending on how critical this is, you might raise an error or just warn
             # For now, we'll let it proceed, and sent_tokenize will fail later if needed.
 ensure_nltk_data()
@@ -126,7 +126,7 @@ class Chunker:
                     try:
                         options[key] = int(options[key])
                     except (ValueError, TypeError):
-                        logging.warning(f"Invalid type for option '{key}': {options[key]}. Using default or ignoring.")
+                        logger.warning(f"Invalid type for option '{key}': {options[key]}. Using default or ignoring.")
                         options[key] = self.options.get(key) # Revert to default from self.options
 
             for key in ['semantic_similarity_threshold']:
@@ -134,18 +134,18 @@ class Chunker:
                     try:
                         options[key] = float(options[key])
                     except (ValueError, TypeError):
-                        logging.warning(f"Invalid type for option '{key}': {options[key]}. Using default or ignoring.")
+                        logger.warning(f"Invalid type for option '{key}': {options[key]}. Using default or ignoring.")
                         options[key] = self.options.get(key) # Revert to default
 
             self.options.update(options)
 
-        logging.debug(f"Chunker initialized with options: {self.options}")
+        logger.debug(f"Chunker initialized with options: {self.options}")
 
         try:
             self.tokenizer: PreTrainedTokenizerBase = AutoTokenizer.from_pretrained(tokenizer_name_or_path)
-            logging.info(f"Tokenizer '{tokenizer_name_or_path}' loaded successfully.")
+            logger.info(f"Tokenizer '{tokenizer_name_or_path}' loaded successfully.")
         except Exception as e:
-            logging.error(f"Failed to load tokenizer '{tokenizer_name_or_path}': {e}. Some token-based methods may fail.")
+            logger.error(f"Failed to load tokenizer '{tokenizer_name_or_path}': {e}. Some token-based methods may fail.")
             # Fallback or raise error? For now, set to None and let methods handle it.
             self.tokenizer = None
             # raise ChunkingError(f"Failed to load tokenizer '{tokenizer_name_or_path}': {e}") from e
@@ -171,20 +171,20 @@ class Chunker:
                  Defaults to 'en' if detection fails.
         """
         if not text or not text.strip():
-            logging.warning("Attempted to detect language from empty or whitespace-only text. Defaulting to 'en'.")
+            logger.warning("Attempted to detect language from empty or whitespace-only text. Defaulting to 'en'.")
             return self._get_option('language', 'en') # Use option if available, else 'en'
         try:
             # langdetect can be sensitive to very short texts.
             # Add a minimum length check if it becomes an issue.
             # For example: if len(text) < 20: return 'en' (or self.options.get('language', 'en'))
             lang = detect(text)
-            logging.debug(f"Detected language: {lang}")
+            logger.debug(f"Detected language: {lang}")
             return lang
         except LangDetectException as e:
-            logging.warning(f"Language detection failed: {e}. Defaulting to 'en'.")
+            logger.warning(f"Language detection failed: {e}. Defaulting to 'en'.")
             return self._get_option('language', 'en')
         except Exception as e_gen:
-            logging.error(f"Unexpected error during language detection: {e_gen}. Defaulting to 'en'.")
+            logger.error(f"Unexpected error during language detection: {e_gen}. Defaulting to 'en'.")
             return self._get_option('language', 'en')
 
 
@@ -233,7 +233,7 @@ class Chunker:
         overlap = self._get_option('overlap')   # Already int from __init__
         language = self._ensure_language(text, self._get_option('language')) # Ensure language is determined
 
-        logging.debug(f"Chunking text with method='{chunk_method}', max_size={max_size}, overlap={overlap}, language='{language}'")
+        logger.debug(f"Chunking text with method='{chunk_method}', max_size={max_size}, overlap={overlap}, language='{language}'")
 
         # Adaptive chunking can modify max_size before the main method is called
         if self._get_option('adaptive', False) and chunk_method not in ['semantic', 'json', 'xml', 'ebook_chapters', 'rolling_summarize']:
@@ -246,12 +246,12 @@ class Chunker:
                  max_size = self._adaptive_chunk_size_nltk(text, base_adaptive_size, min_adaptive_size, max_adaptive_size, language)
             else: # Fallback if no tokenizer for NLTK based one.
                  max_size = self._adaptive_chunk_size_non_punkt(text, base_adaptive_size, min_adaptive_size, max_adaptive_size)
-            logging.info(f"Adaptive chunking adjusted max_size to: {max_size}")
+            logger.info(f"Adaptive chunking adjusted max_size to: {max_size}")
 
 
         # Multi-level chunking is a wrapper around other methods
         if self._get_option('multi_level', False) and chunk_method in ['words', 'sentences']:
-             logging.info(f"Applying multi-level chunking with base method: {chunk_method}")
+             logger.info(f"Applying multi-level chunking with base method: {chunk_method}")
              return self._multi_level_chunking(text, chunk_method, max_size, overlap, language)
 
 
@@ -305,13 +305,13 @@ class Chunker:
         # Add 'hybrid' if you still need it. It was similar to token based.
         # def chunk_text_hybrid(text: str, max_tokens: int = 1000, overlap: int = 0) -> List[str]:
         else:
-            logging.warning(f"Unknown chunking method '{chunk_method}'. Returning full text as a single chunk.")
+            logger.warning(f"Unknown chunking method '{chunk_method}'. Returning full text as a single chunk.")
             # return [text] # Previous behavior
             raise InvalidChunkingMethodError(f"Unsupported chunking method: '{chunk_method}'")
 
 
     def _chunk_text_by_words(self, text: str, max_words: int, overlap: int, language: str) -> List[str]:
-        logging.debug(f"Chunking by words: max_words={max_words}, overlap={overlap}, language='{language}'")
+        logger.debug(f"Chunking by words: max_words={max_words}, overlap={overlap}, language='{language}'")
         # Language-specific word tokenization
         words: List[str]
         if language.startswith('zh'):  # Chinese
@@ -319,10 +319,10 @@ class Chunker:
                 import jieba
                 words = list(jieba.cut(text))
             except ImportError:
-                logging.warning("jieba library not found for Chinese word tokenization. Falling back to space splitting.")
+                logger.warning("jieba library not found for Chinese word tokenization. Falling back to space splitting.")
                 words = text.split()
             except Exception as e:
-                logging.warning(f"Error using jieba for Chinese tokenization: {e}. Falling back to space splitting.")
+                logger.warning(f"Error using jieba for Chinese tokenization: {e}. Falling back to space splitting.")
                 words = text.split()
         elif language == 'ja':  # Japanese
             try:
@@ -330,20 +330,20 @@ class Chunker:
                 tagger = fugashi.Tagger('-Owakati') # Output wakachi-gaki (space-separated words)
                 words = tagger.parse(text).split()
             except ImportError:
-                logging.warning("fugashi library not found for Japanese word tokenization. Falling back to space splitting.")
+                logger.warning("fugashi library not found for Japanese word tokenization. Falling back to space splitting.")
                 words = text.split()
             except Exception as e: # fugashi can raise various errors
-                logging.warning(f"Error using fugashi for Japanese tokenization: {e}. Falling back to space splitting.")
+                logger.warning(f"Error using fugashi for Japanese tokenization: {e}. Falling back to space splitting.")
                 words = text.split()
         else:  # Default to simple splitting for other languages
             words = text.split()
 
-        logging.debug(f"Total words: {len(words)}")
+        logger.debug(f"Total words: {len(words)}")
         if max_words <= 0 :
-            logging.warning(f"max_words is {max_words}, must be positive. Defaulting to 1 if text exists, or empty list.")
+            logger.warning(f"max_words is {max_words}, must be positive. Defaulting to 1 if text exists, or empty list.")
             return [text] if text else [] # Or raise error
         if overlap >= max_words :
-            logging.warning(f"Overlap {overlap} is >= max_words {max_words}. Setting overlap to 0.")
+            logger.warning(f"Overlap {overlap} is >= max_words {max_words}. Setting overlap to 0.")
             overlap = 0
 
 
@@ -355,13 +355,13 @@ class Chunker:
         for i in range(0, len(words), step):
             chunk_words = words[i : i + max_words]
             chunks.append(' '.join(chunk_words))
-            logging.debug(f"Created word chunk {len(chunks)} with {len(chunk_words)} words")
+            logger.debug(f"Created word chunk {len(chunks)} with {len(chunk_words)} words")
 
         return self._post_process_chunks(chunks)
 
 
     def _chunk_text_by_sentences(self, text: str, max_sentences: int, overlap: int, language: str) -> List[str]:
-        logging.debug(f"Chunking by sentences: max_sentences={max_sentences}, overlap={overlap}, lang='{language}'")
+        logger.debug(f"Chunking by sentences: max_sentences={max_sentences}, overlap={overlap}, lang='{language}'")
         sentences: List[str]
 
         if language.startswith('zh'):
@@ -411,17 +411,17 @@ class Chunker:
                 nltk_language = nltk_lang_map.get(language.lower(), language.lower()) # Default to language if not in map
                 sentences = sent_tokenize(text, language=nltk_language)
             except LookupError:
-                logging.warning(f"NLTK Punkt tokenizer not found for language '{language}' (mapped to '{nltk_language}'). Using default 'english'.")
+                logger.warning(f"NLTK Punkt tokenizer not found for language '{language}' (mapped to '{nltk_language}'). Using default 'english'.")
                 sentences = sent_tokenize(text, language='english')
             except Exception as e_sent_tokenize:
-                logging.error(f"Error during NLTK sentence tokenization for language '{language}': {e_sent_tokenize}. Falling back to newline splitting.")
+                logger.error(f"Error during NLTK sentence tokenization for language '{language}': {e_sent_tokenize}. Falling back to newline splitting.")
                 sentences = text.splitlines() # Basic fallback
 
         if max_sentences <= 0:
-            logging.warning(f"max_sentences is {max_sentences}, must be positive. Defaulting to 1 sentence if text exists.")
+            logger.warning(f"max_sentences is {max_sentences}, must be positive. Defaulting to 1 sentence if text exists.")
             return [text] if text else []
         if overlap >= max_sentences:
-            logging.warning(f"Overlap {overlap} >= max_sentences {max_sentences}. Setting overlap to 0.")
+            logger.warning(f"Overlap {overlap} >= max_sentences {max_sentences}. Setting overlap to 0.")
             overlap = 0
 
         chunks = []
@@ -435,7 +435,7 @@ class Chunker:
 
 
     def _chunk_text_by_paragraphs(self, text: str, max_paragraphs: int, overlap: int) -> List[str]:
-        logging.debug(f"Chunking by paragraphs: max_paragraphs={max_paragraphs}, overlap={overlap}")
+        logger.debug(f"Chunking by paragraphs: max_paragraphs={max_paragraphs}, overlap={overlap}")
         # Split by one or more empty lines (common paragraph delimiter)
         paragraphs = re.split(r'\n\s*\n+', text)
         paragraphs = [p.strip() for p in paragraphs if p.strip()] # Remove empty paragraphs
@@ -443,10 +443,10 @@ class Chunker:
         if not paragraphs:
             return []
         if max_paragraphs <= 0:
-            logging.warning("max_paragraphs must be positive. Returning single chunk or empty.")
+            logger.warning("max_paragraphs must be positive. Returning single chunk or empty.")
             return [text] if text.strip() else []
         if overlap >= max_paragraphs:
-            logging.warning(f"Overlap {overlap} >= max_paragraphs {max_paragraphs}. Setting overlap to 0.")
+            logger.warning(f"Overlap {overlap} >= max_paragraphs {max_paragraphs}. Setting overlap to 0.")
             overlap = 0
 
         chunks = []
@@ -462,20 +462,20 @@ class Chunker:
     def _chunk_text_by_tokens(self, text: str, max_tokens: int, overlap: int) -> List[str]:
         # This uses the accurate tokenizer version
         if not self.tokenizer:
-            logging.error("Tokenizer not available for token-based chunking.")
+            logger.error("Tokenizer not available for token-based chunking.")
             raise ChunkingError("Tokenizer not loaded, cannot use 'tokens' chunking method.")
 
-        logging.debug(f"Chunking by tokens: max_tokens={max_tokens}, overlap_tokens={overlap} (token overlap)")
+        logger.debug(f"Chunking by tokens: max_tokens={max_tokens}, overlap_tokens={overlap} (token overlap)")
         if max_tokens <= 0:
-            logging.warning("max_tokens must be positive. Returning single chunk or empty.")
+            logger.warning("max_tokens must be positive. Returning single chunk or empty.")
             return [text] if text.strip() else []
 
         tokens = self.tokenizer.encode(text)
-        logging.debug(f"Total tokens: {len(tokens)}")
+        logger.debug(f"Total tokens: {len(tokens)}")
 
         # Overlap here is in number of tokens
         if overlap >= max_tokens :
-            logging.warning(f"Token overlap {overlap} >= max_tokens {max_tokens}. Setting overlap to 0.")
+            logger.warning(f"Token overlap {overlap} >= max_tokens {max_tokens}. Setting overlap to 0.")
             overlap = 0
 
         step = max_tokens - overlap
@@ -493,16 +493,16 @@ class Chunker:
     # --- Adaptive Chunking Methods ---
     def _adaptive_chunk_size_nltk(self, text: str, base_size: int, min_size: int, max_size: int, language: str) -> int:
         """Adjusts chunk size based on NLTK sentence tokenization."""
-        logging.debug(f"Calculating adaptive chunk size (NLTK) for lang '{language}'. Base: {base_size}, Min: {min_size}, Max: {max_size}")
+        logger.debug(f"Calculating adaptive chunk size (NLTK) for lang '{language}'. Base: {base_size}, Min: {min_size}, Max: {max_size}")
         try:
             nltk_lang_map = {'en': 'english', 'es': 'spanish', 'fr': 'french', 'de': 'german'}
             nltk_language = nltk_lang_map.get(language.lower(), language.lower())
             sentences = sent_tokenize(text, language=nltk_language)
         except LookupError:
-            logging.warning(f"NLTK Punkt for '{language}' not found for adaptive sizing. Using non-NLTK fallback.")
+            logger.warning(f"NLTK Punkt for '{language}' not found for adaptive sizing. Using non-NLTK fallback.")
             return self._adaptive_chunk_size_non_punkt(text, base_size, min_size, max_size)
         except Exception as e:
-            logging.warning(f"Error tokenizing sentences for adaptive sizing with NLTK: {e}. Using non-NLTK fallback.")
+            logger.warning(f"Error tokenizing sentences for adaptive sizing with NLTK: {e}. Using non-NLTK fallback.")
             return self._adaptive_chunk_size_non_punkt(text, base_size, min_size, max_size)
 
 
@@ -510,7 +510,7 @@ class Chunker:
             return base_size
 
         avg_sentence_length_words = sum(len(s.split()) for s in sentences) / len(sentences)
-        logging.debug(f"Avg sentence length (words): {avg_sentence_length_words}")
+        logger.debug(f"Avg sentence length (words): {avg_sentence_length_words}")
 
         size_factor = 1.0
         if avg_sentence_length_words < 10: # Short sentences
@@ -520,19 +520,19 @@ class Chunker:
 
         adaptive_size = int(base_size * size_factor)
         final_size = max(min_size, min(adaptive_size, max_size))
-        logging.debug(f"Adaptive size calculated (NLTK): {final_size} (factor: {size_factor})")
+        logger.debug(f"Adaptive size calculated (NLTK): {final_size} (factor: {size_factor})")
         return final_size
 
     def _adaptive_chunk_size_non_punkt(self, text: str, base_size: int, min_size: int, max_size: int) -> int:
         """Adjusts chunk size based on average word length if NLTK is not available."""
-        logging.debug(f"Calculating adaptive chunk size (non-NLTK). Base: {base_size}, Min: {min_size}, Max: {max_size}")
+        logger.debug(f"Calculating adaptive chunk size (non-NLTK). Base: {base_size}, Min: {min_size}, Max: {max_size}")
         words = text.split()
         if not words:
             return base_size
 
         # Using character length of words as a proxy for complexity
         avg_word_char_length = sum(len(word) for word in words) / len(words) if words else 0
-        logging.debug(f"Avg word char length: {avg_word_char_length}")
+        logger.debug(f"Avg word char length: {avg_word_char_length}")
 
         size_factor = 1.0
         if avg_word_char_length > 7:  # Longer average words -> potentially more complex
@@ -542,12 +542,12 @@ class Chunker:
 
         adaptive_size = int(base_size * size_factor)
         final_size = max(min_size, min(adaptive_size, max_size))
-        logging.debug(f"Adaptive size calculated (non-NLTK): {final_size} (factor: {size_factor})")
+        logger.debug(f"Adaptive size calculated (non-NLTK): {final_size} (factor: {size_factor})")
         return final_size
 
     # Multi-level chunking - can be a wrapper method
     def _multi_level_chunking(self, text: str, base_method_name: str, max_size: int, overlap: int, language: str) -> List[str]:
-        logging.debug(f"Multi-level chunking: base_method='{base_method_name}', max_size={max_size}, overlap={overlap}, lang='{language}'")
+        logger.debug(f"Multi-level chunking: base_method='{base_method_name}', max_size={max_size}, overlap={overlap}, lang='{language}'")
 
         # First level: chunk by paragraphs (configurable, but paragraphs is common)
         # The max_paragraphs for this initial split could be larger or an independent option.
@@ -567,7 +567,7 @@ class Chunker:
 
     # --- Stubs for other methods to be moved ---
     def _semantic_chunking(self, text: str, max_chunk_size: int, unit: str) -> List[str]:
-        logging.info("Semantic chunking called...")
+        logger.info("Semantic chunking called...")
         # Lazy import for sklearn if not already at top
         try:
             from sklearn.feature_extraction.text import TfidfVectorizer
@@ -582,10 +582,10 @@ class Chunker:
         try:
             sentences = sent_tokenize(text, language=nltk_language)
         except LookupError:
-            logging.warning(f"NLTK Punkt for '{language}' (for semantic chunking) not found. Defaulting to 'english'.")
+            logger.warning(f"NLTK Punkt for '{language}' (for semantic chunking) not found. Defaulting to 'english'.")
             sentences = sent_tokenize(text, language='english')
         except Exception as e:
-            logging.error(f"Error sentence tokenizing for semantic chunking: {e}. Using newline split.")
+            logger.error(f"Error sentence tokenizing for semantic chunking: {e}. Using newline split.")
             sentences = text.splitlines()
 
         if not sentences:
@@ -598,7 +598,7 @@ class Chunker:
             if not valid_sentences: return [] # No valid sentences to process
             sentence_vectors = vectorizer.fit_transform(valid_sentences)
         except ValueError as ve: # TFidfVectorizer can raise ValueError if vocabulary is empty (e.g. all stop words)
-            logging.warning(f"TF-IDF Vectorizer error during semantic chunking (perhaps all stop words or very short text): {ve}. Returning single chunk.")
+            logger.warning(f"TF-IDF Vectorizer error during semantic chunking (perhaps all stop words or very short text): {ve}. Returning single chunk.")
             return [text] if text.strip() else []
 
 
@@ -617,7 +617,7 @@ class Chunker:
                 return len(self.tokenizer.encode(txt))
             elif unit_type == 'characters':
                 return len(txt)
-            logging.warning(f"Unknown unit type '{unit_type}' or tokenizer missing for tokens. Defaulting to word count.")
+            logger.warning(f"Unknown unit type '{unit_type}' or tokenizer missing for tokens. Defaulting to word count.")
             return len(txt.split())
 
 
@@ -644,7 +644,7 @@ class Chunker:
                 try:
                     similarity = cosine_similarity(current_sentence_vector, next_sentence_vector)[0, 0]
                 except IndexError: # Can happen if vectors are not as expected
-                    logging.warning(f"Could not compute similarity for sentence index {i}. Assuming low similarity.")
+                    logger.warning(f"Could not compute similarity for sentence index {i}. Assuming low similarity.")
 
                 # Break if similarity drops AND current chunk has substantial size (e.g., half of max_chunk_size)
                 if similarity < similarity_threshold and current_size_units >= (max_chunk_size // 2) and current_chunk_sentences:
@@ -660,11 +660,11 @@ class Chunker:
 
 
     def _chunk_text_by_json(self, text: str, max_size: int, overlap: int) -> List[Dict[str, Any]]:
-        logging.debug("chunk_text_by_json (method) started...")
+        logger.debug("chunk_text_by_json (method) started...")
         try:
             json_data = json.loads(text)
         except json.JSONDecodeError as e:
-            logging.error(f"Invalid JSON data provided to _chunk_text_by_json: {e}")
+            logger.error(f"Invalid JSON data provided to _chunk_text_by_json: {e}")
             raise InvalidInputError(f"Invalid JSON data: {e}") from e
 
         if isinstance(json_data, list):
@@ -675,15 +675,15 @@ class Chunker:
             return self._chunk_json_dict(json_data, max_size, overlap)
         else:
             msg = "Unsupported JSON structure. _chunk_text_by_json only supports top-level JSON objects or arrays."
-            logging.error(msg)
+            logger.error(msg)
             raise InvalidInputError(msg)
 
     def _chunk_json_list(self, json_list: List[Any], max_size: int, overlap: int) -> List[Dict[str, Any]]:
-        logging.debug(f"Chunking JSON list: max_items_per_chunk={max_size}, overlap_items={overlap}")
+        logger.debug(f"Chunking JSON list: max_items_per_chunk={max_size}, overlap_items={overlap}")
         if max_size <= 0:
             raise ValueError("max_size for JSON list chunking must be positive.")
         if overlap >= max_size:
-            logging.warning(f"JSON list overlap {overlap} >= max_size {max_size}. Setting overlap to 0.")
+            logger.warning(f"JSON list overlap {overlap} >= max_size {max_size}. Setting overlap to 0.")
             overlap = 0
 
         chunks_output = []
@@ -710,18 +710,18 @@ class Chunker:
     def _chunk_json_dict(self, json_dict: Dict[str, Any], max_size: int, overlap: int) -> List[Dict[str, Any]]:
         # This method is quite specific to a schema with a 'data' key.
         # Consider making 'chunkable_key' an option.
-        logging.debug(f"Chunking JSON dict: max_keys_in_data_per_chunk={max_size}, overlap_keys={overlap}")
+        logger.debug(f"Chunking JSON dict: max_keys_in_data_per_chunk={max_size}, overlap_keys={overlap}")
         chunkable_key = self._get_option('json_chunkable_data_key', 'data') # e.g. {'json_chunkable_data_key': 'entries'}
 
         if chunkable_key not in json_dict or not isinstance(json_dict[chunkable_key], dict):
             msg = f"Chunkable key '{chunkable_key}' not found in JSON dictionary or is not a dictionary itself."
-            logging.error(msg)
+            logger.error(msg)
             raise InvalidInputError(msg)
 
         if max_size <= 0:
             raise ValueError("max_size for JSON dict chunking must be positive.")
         if overlap >= max_size:
-            logging.warning(f"JSON dict overlap {overlap} >= max_size {max_size}. Setting overlap to 0.")
+            logger.warning(f"JSON dict overlap {overlap} >= max_size {max_size}. Setting overlap to 0.")
             overlap = 0
 
         data_to_chunk = json_dict[chunkable_key]
@@ -759,11 +759,9 @@ class Chunker:
 
         # In tldw_Server_API/app/core/Utils/Chunk_Lib.py
 
-
-    global global_default_chunk_language
     def _chunk_ebook_by_chapters(self, text: str, max_size: int, overlap: int, custom_pattern: Optional[str],
                                  language: str = global_default_chunk_language) -> List[Dict[str, Any]]:
-        logging.debug(f"Chunking Ebook by Chapters. Custom pattern: {custom_pattern}, Lang: {language}")
+        logger.debug(f"Chunking Ebook by Chapters. Custom pattern: {custom_pattern}, Lang: {language}")
 
         chapter_patterns = [
             custom_pattern,
@@ -777,7 +775,7 @@ class Chunker:
         ]
         active_patterns = [p for p in chapter_patterns if p is not None]
         if not active_patterns:  # pragma: no cover
-            logging.warning("No chapter patterns available for ebook chunking.")
+            logger.warning("No chapter patterns available for ebook chunking.")
             if text.strip():
                 return [{'text': text,
                          'metadata': {'chunk_type': 'single_document_no_chapters', 'chapter_title': 'Full Document'}}]
@@ -799,7 +797,7 @@ class Chunker:
                         first_heading_title_text = line_content.strip()
                         break
                 except re.error as re_e:  # pragma: no cover
-                    logging.warning(
+                    logger.warning(
                         f"Regex error in chapter pattern '{pattern_str}' during initial scan: {re_e}. Disabling this pattern.")
                     if pattern_str in current_scan_patterns: current_scan_patterns.remove(pattern_str)
                     if pattern_str in active_patterns: active_patterns.remove(pattern_str)
@@ -822,7 +820,7 @@ class Chunker:
                 })
         elif first_heading_index == -1:  # pragma: no cover
             if text.strip():
-                logging.warning(
+                logger.warning(
                     "No chapter headings found using patterns. Returning document as a single chapter chunk.")
                 return [{'text': text,
                          'metadata': {'chunk_type': 'single_document_no_chapters', 'chapter_title': 'Full Document'}}]
@@ -850,7 +848,7 @@ class Chunker:
                         new_heading_pattern_str = pattern_str
                         break
                 except re.error as re_e_inner:  # pragma: no cover
-                    logging.warning(f"Regex error (inner loop) for pattern '{pattern_str}': {re_e_inner}.")
+                    logger.warning(f"Regex error (inner loop) for pattern '{pattern_str}': {re_e_inner}.")
 
             if is_new_chapter_heading:
                 chapter_content_lines = lines[start_line_of_current_chapter_content: line_idx]
@@ -862,8 +860,8 @@ class Chunker:
                     # Determine if this block should be considered a preface based on its content/title
                     # This logic is specifically for cases where the preface *is* the first detected heading block
                     if chapter_number == 1 and first_heading_index == 0 and \
-                            (current_chapter_title.lower() == "preface" or \
-                             current_chapter_title.lower() == "introduction" or \
+                            (current_chapter_title.lower() == "preface" or
+                             current_chapter_title.lower() == "introduction" or
                              current_chapter_title == "Preface or Introduction"):
                         chunk_type = 'preface'
 
@@ -930,7 +928,7 @@ class Chunker:
                 self.tokenizer.encode)
             if max_size > 0 and tokenizer_available and len(
                     self.tokenizer.encode(chap_data['text'])) > max_size:  # pragma: no cover
-                logging.info(
+                logger.info(
                     f"Chapter '{chap_data['metadata']['chapter_title']}' (length {len(self.tokenizer.encode(chap_data['text']))} tokens) exceeds max_size {max_size}. Sub-chunking.")
                 sub_chunks = self._chunk_text_by_tokens(chap_data['text'], max_tokens=max_size,
                                                         overlap=overlap if overlap < max_size else max_size // 5)
@@ -966,11 +964,11 @@ class Chunker:
     def _chunk_xml(self, xml_text: str, max_size: int, overlap: int, language: str) -> List[Dict[str, Any]]:
         # max_size is in words for the content of combined XML elements
         # overlap is in number of XML elements (path-content pairs)
-        logging.debug(f"Chunking XML: max_words_per_chunk_content={max_size}, overlap_elements={overlap}, Lang: {language}")
+        logger.debug(f"Chunking XML: max_words_per_chunk_content={max_size}, overlap_elements={overlap}, Lang: {language}")
         try:
             root = ET.fromstring(xml_text)
         except ET.ParseError as e:
-            logging.error(f"XML parsing error: {e}")
+            logger.error(f"XML parsing error: {e}")
             raise InvalidInputError(f"Invalid XML content: {e}") from e
 
         xml_elements_with_paths = self._extract_xml_structure_recursive(root)
@@ -980,7 +978,7 @@ class Chunker:
         if max_size <=0:
             raise ValueError("max_size for XML chunking must be positive.")
         if overlap >= len(xml_elements_with_paths) and len(xml_elements_with_paths) > 0 : # Check if overlap makes sense
-            logging.warning(f"XML overlap elements {overlap} >= total elements {len(xml_elements_with_paths)}. Setting overlap to 0.")
+            logger.warning(f"XML overlap elements {overlap} >= total elements {len(xml_elements_with_paths)}. Setting overlap to 0.")
             overlap = 0
         elif overlap < 0:
             overlap = 0
@@ -1045,7 +1043,7 @@ class Chunker:
         if not self.tokenizer: # Should have been checked by caller (chunk_text)
             raise ChunkingError("Tokenizer required for rolling summarization.")
 
-        logging.info(f"Rolling summarization called. Detail: {detail}")
+        logger.info(f"Rolling summarization called. Detail: {detail}")
         text_token_length = len(self.tokenizer.encode(text_to_summarize))
         max_summarization_chunks = max(1, text_token_length // min_chunk_tokens)
         min_summarization_chunks = 1
@@ -1059,9 +1057,9 @@ class Chunker:
             delimiter=chunk_delimiter
         )
         if dropped_count > 0 and verbose:
-            logging.warning(f"{dropped_count} parts were dropped during text splitting for summarization.")
+            logger.warning(f"{dropped_count} parts were dropped during text splitting for summarization.")
         if verbose:
-            logging.info(f"Splitting text for summarization into {len(text_chunks_for_llm)} parts.")
+            logger.info(f"Splitting text for summarization into {len(text_chunks_for_llm)} parts.")
 
         final_system_prompt = system_prompt_content
         if additional_instructions:
@@ -1091,16 +1089,16 @@ class Chunker:
                 summary_content = llm_summarize_step_func(payload_for_llm_call)
 
                 if isinstance(summary_content, str) and summary_content.startswith("Error:"):
-                    logging.error(f"LLM call for summarization part {i+1} failed: {summary_content}")
+                    logger.error(f"LLM call for summarization part {i+1} failed: {summary_content}")
                     accumulated_summaries.append(f"[Summarization failed for this part: {chunk_for_llm[:100]}...]")
                 elif isinstance(summary_content, str):
                     accumulated_summaries.append(summary_content)
                 else: # Should not happen if llm_summarize_step_func is well-behaved
-                    logging.error(f"LLM call for summarization part {i+1} returned non-string: {type(summary_content)}")
+                    logger.error(f"LLM call for summarization part {i+1} returned non-string: {type(summary_content)}")
                     accumulated_summaries.append(f"[Summarization error for this part (unexpected type): {chunk_for_llm[:100]}...]")
 
             except Exception as e_llm:
-                logging.error(f"Exception calling llm_summarize_step_func for part {i+1}: {e_llm}", exc_info=True)
+                logger.error(f"Exception calling llm_summarize_step_func for part {i+1}: {e_llm}", exc_info=True)
                 accumulated_summaries.append(f"[Exception during summarization for this part: {chunk_for_llm[:100]}...]")
 
         final_summary = '\n\n---\n\n'.join(accumulated_summaries) # Join with a clear separator
@@ -1162,13 +1160,13 @@ class Chunker:
                     # If this new chunk *itself* is too large (even with header)
                     current_candidate_only_text = chunk_delimiter.join(current_candidate_text_parts)
                     if len(self.tokenizer.encode(current_candidate_only_text)) > max_tokens:
-                        logging.warning(f"Single chunk (index {chunk_idx}, content: '{chunk_content[:50]}...') itself exceeds max_tokens ({max_tokens}) even after starting new. It will be dropped.")
+                        logger.warning(f"Single chunk (index {chunk_idx}, content: '{chunk_content[:50]}...') itself exceeds max_tokens ({max_tokens}) even after starting new. It will be dropped.")
                         dropped_chunk_count +=1
                         current_candidate_text_parts = [header] if header else [] # Reset for next
                         current_candidate_indices = []
                         # continue # Skip to next chunk_content
                 else: # current_candidate_text_parts was empty or just header, and new chunk overflows
-                    logging.warning(f"Single chunk (index {chunk_idx}, content: '{chunk_content[:50]}...') itself exceeds max_tokens ({max_tokens}). It will be dropped.")
+                    logger.warning(f"Single chunk (index {chunk_idx}, content: '{chunk_content[:50]}...') itself exceeds max_tokens ({max_tokens}). It will be dropped.")
                     dropped_chunk_count +=1
                     # current_candidate_text_parts remains [header] or []
                     # current_candidate_indices remains []
@@ -1282,7 +1280,7 @@ def chunk_for_embedding(text: str,
     Uses improved_chunking_process internally.
     """
     # `improved_chunking_process` will create a Chunker instance with these options
-    logging.info(f"Chunking for embedding. File: {file_name}. Custom options: {custom_chunk_options}")
+    logger.info(f"Chunking for embedding. File: {file_name}. Custom options: {custom_chunk_options}")
     chunks_from_improved_process = improved_chunking_process(
         text,
         chunk_options_dict=custom_chunk_options,
@@ -1340,7 +1338,7 @@ def process_document_with_metadata(text: str,
     """
     Processes a document, chunks it, and associates document-level metadata with the chunked output.
     """
-    logging.info(f"Processing document with metadata. Options: {chunk_options_dict}")
+    logger.info(f"Processing document with metadata. Options: {chunk_options_dict}")
     chunks_result = improved_chunking_process(
         text,
         chunk_options_dict=chunk_options_dict,
@@ -1369,8 +1367,8 @@ def improved_chunking_process(text: str,
                               llm_call_function_for_chunker: Optional[Callable] = None,
                               llm_api_config_for_chunker: Optional[Dict[str, Any]] = None
                               ) -> List[Dict[str, Any]]:
-    logging.debug("Improved chunking process started...")
-    logging.debug(f"Received chunk_options_dict: {chunk_options_dict}")
+    logger.debug("Improved chunking process started...")
+    logger.debug(f"Received chunk_options_dict: {chunk_options_dict}")
 
     chunker_instance = Chunker(options=chunk_options_dict,
                                tokenizer_name_or_path=tokenizer_name_or_path,
@@ -1391,16 +1389,16 @@ def improved_chunking_process(text: str,
                 try:
                     json_content_metadata = json.loads(potential_json_str)
                     processed_text = processed_text[json_end_index:].strip()
-                    logging.debug(f"Extracted JSON metadata: {json_content_metadata}")
+                    logger.debug(f"Extracted JSON metadata: {json_content_metadata}")
                 except json.JSONDecodeError:
-                    logging.debug("Potential JSON at start, but failed to parse. Treating as normal text.")
+                    logger.debug("Potential JSON at start, but failed to parse. Treating as normal text.")
                     json_content_metadata = {}
             else:
-                logging.debug("Text starts with '{' but no clear '}\\n' end for JSON metadata.")
+                logger.debug("Text starts with '{' but no clear '}\\n' end for JSON metadata.")
         else:
-            logging.debug("No JSON metadata found at the beginning of the text.")
+            logger.debug("No JSON metadata found at the beginning of the text.")
     except Exception as e_json:
-        logging.warning(f"Error during JSON metadata extraction: {e_json}. Proceeding without it.")
+        logger.warning(f"Error during JSON metadata extraction: {e_json}. Proceeding without it.")
         json_content_metadata = {}
 
     header_re = re.compile(r"""^ (This[ ]text[ ]was[ ]transcribed[ ]using (?:[^\n]*\n)*?\n) """, re.MULTILINE | re.VERBOSE)
@@ -1409,12 +1407,12 @@ def improved_chunking_process(text: str,
     if header_match:
         header_text_content = header_match.group(1)
         processed_text = processed_text[len(header_text_content):].strip()
-        logging.debug(f"Extracted header text: {header_text_content}")
+        logger.debug(f"Extracted header text: {header_text_content}")
 
     if not effective_options.get('language'):
         detected_lang = chunker_instance.detect_language(processed_text)
         effective_options['language'] = str(detected_lang)
-        logging.debug(f"Language for overall process set to: {effective_options['language']}")
+        logger.debug(f"Language for overall process set to: {effective_options['language']}")
 
     try:
         raw_chunks = chunker_instance.chunk_text(
@@ -1423,12 +1421,12 @@ def improved_chunking_process(text: str,
             llm_call_function=llm_call_function_for_chunker, # Pass it down
             llm_api_config=llm_api_config_for_chunker      # Pass it down
         )
-        logging.debug(f"Created {len(raw_chunks)} raw_chunks using method {effective_options['method']}")
+        logger.debug(f"Created {len(raw_chunks)} raw_chunks using method {effective_options['method']}")
     except ChunkingError as ce:
-        logging.error(f"ChunkingError in chunking process: {ce}")
+        logger.error(f"ChunkingError in chunking process: {ce}")
         raise
     except Exception as e:
-        logging.error(f"Unexpected error in chunking process: {e}", exc_info=True)
+        logger.error(f"Unexpected error in chunking process: {e}", exc_info=True)
         raise ChunkingError(f"Unexpected error in chunking process: {e}") from e
 
     chunks_with_metadata_list = []
@@ -1449,7 +1447,7 @@ def improved_chunking_process(text: str,
             elif isinstance(chunk_item, str):
                 actual_text_content = chunk_item
             else:
-                logging.warning(f"Unexpected chunk item type: {type(chunk_item)}. Skipping.")
+                logger.warning(f"Unexpected chunk item type: {type(chunk_item)}. Skipping.")
                 continue
 
             current_chunk_metadata = {
@@ -1475,10 +1473,10 @@ def improved_chunking_process(text: str,
                 'metadata': current_chunk_metadata
             })
 
-        logging.debug(f"Successfully created metadata for all {len(chunks_with_metadata_list)} chunks")
+        logger.debug(f"Successfully created metadata for all {len(chunks_with_metadata_list)} chunks")
         return chunks_with_metadata_list
     except Exception as e:
-        logging.error(f"Error creating chunk metadata: {e}", exc_info=True)
+        logger.error(f"Error creating chunk metadata: {e}", exc_info=True)
         raise ChunkingError(f"Error creating chunk metadata: {e}") from e
 
 
@@ -1490,8 +1488,8 @@ def load_document(file_path: str) -> str:
             text = file.read()
         return re.sub(r'\s+', ' ', text).strip()
     except FileNotFoundError:
-        logging.error(f"File not found: {file_path}")
+        logger.error(f"File not found: {file_path}")
         raise
     except Exception as e:
-        logging.error(f"Error loading document {file_path}: {e}")
+        logger.error(f"Error loading document {file_path}: {e}")
         raise
