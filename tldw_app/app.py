@@ -10,6 +10,7 @@ from pathlib import Path
 import traceback
 import os
 from typing import Union, Generator, Optional
+import json  # Added for JSON export
 #
 # 3rd-Party Libraries
 from rich.text import Text
@@ -17,14 +18,14 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.logging import TextualHandler
 from textual.widgets import (
-    Static, Button, Input, Header, Footer, RichLog, TextArea, Select, ListView
+    Static, Button, Input, Header, Footer, RichLog, TextArea, Select, ListView, Checkbox, ListItem, Label
 )
 from textual.containers import Horizontal, Container, VerticalScroll
 from textual.reactive import reactive
 from textual.worker import Worker, WorkerState
 from textual.binding import Binding
-from textual.dom import DOMNode # For type hinting if needed
-from textual.css.query import QueryError # For specific error handling
+from textual.dom import DOMNode  # For type hinting if needed
+from textual.css.query import QueryError  # For specific error handling
 #
 # --- Local API library Imports ---
 from tldw_app.Chat.Chat_Functions import chat
@@ -34,10 +35,11 @@ from .Notes.Notes_Library import NotesInteropService
 from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
 from .Widgets.chat_message import ChatMessage
 from .Widgets.settings_sidebar import create_settings_sidebar
-from .Widgets.character_sidebar import create_character_sidebar # Import for character sidebar
+from .Widgets.character_sidebar import create_character_sidebar  # Import for character sidebar
 from .Widgets.notes_sidebar_left import NotesSidebarLeft
 from .Widgets.notes_sidebar_right import NotesSidebarRight
 from .Widgets.titlebar import TitleBar
+
 # Adjust the path based on your project structure
 try:
     # Import from the new 'api' directory
@@ -45,30 +47,32 @@ try:
         chat_with_openai, chat_with_anthropic, chat_with_cohere,
         chat_with_groq, chat_with_openrouter, chat_with_huggingface,
         chat_with_deepseek, chat_with_mistral, chat_with_google,
-        )
+    )
     from .api.LLM_API_Calls_Local import (
         # Add local API functions if they are in the same file
         chat_with_llama, chat_with_kobold, chat_with_oobabooga,
         chat_with_vllm, chat_with_tabbyapi, chat_with_aphrodite,
         chat_with_ollama, chat_with_custom_openai, chat_with_custom_openai_2
     )
+
     # You'll need a map for these later, ensure names match
     API_FUNCTION_MAP = {
-        "OpenAI": chat_with_openai, "Anthropic": chat_with_anthropic, # etc...
-         # Make sure all providers from config have a mapping here or handle None
+        "OpenAI": chat_with_openai, "Anthropic": chat_with_anthropic,  # etc...
+        # Make sure all providers from config have a mapping here or handle None
     }
     API_IMPORTS_SUCCESSFUL = True
     logging.info("Successfully imported API functions from .api.llm_api")
 except ImportError as e:
-    logging.error(f"Failed to import API libraries from .api.LLM_API_Calls / .api.LLM_API_Calls_Local: {e}", exc_info=True)
+    logging.error(f"Failed to import API libraries from .api.LLM_API_Calls / .api.LLM_API_Calls_Local: {e}",
+                  exc_info=True)
     # Set functions to None so the app doesn't crash later trying to use them
     chat_with_openai = chat_with_anthropic = chat_with_cohere = chat_with_groq = \
-    chat_with_openrouter = chat_with_huggingface = chat_with_deepseek = \
-    chat_with_mistral = chat_with_google = \
-    chat_with_llama = chat_with_kobold = chat_with_oobabooga = chat_with_vllm = \
-    chat_with_tabbyapi = chat_with_aphrodite = chat_with_ollama = \
-    chat_with_custom_openai = chat_with_custom_openai_2 = None
-    API_FUNCTION_MAP = {} # Clear the map on failure
+        chat_with_openrouter = chat_with_huggingface = chat_with_deepseek = \
+        chat_with_mistral = chat_with_google = \
+        chat_with_llama = chat_with_kobold = chat_with_oobabooga = chat_with_vllm = \
+        chat_with_tabbyapi = chat_with_aphrodite = chat_with_ollama = \
+        chat_with_custom_openai = chat_with_custom_openai_2 = None
+    API_FUNCTION_MAP = {}  # Clear the map on failure
     API_IMPORTS_SUCCESSFUL = False
     print("-" * 60)
     print("WARNING: Could not import one or more API library functions.")
@@ -90,17 +94,17 @@ if API_IMPORTS_SUCCESSFUL:
         "OpenRouter": chat_with_openrouter,
         "HuggingFace": chat_with_huggingface,
         "DeepSeek": chat_with_deepseek,
-        "MistralAI": chat_with_mistral, # Key from config
+        "MistralAI": chat_with_mistral,  # Key from config
         "Google": chat_with_google,
-        "Llama_cpp": chat_with_llama,    # Key from config
-        "KoboldCpp": chat_with_kobold,   # Key from config
-        "Oobabooga": chat_with_oobabooga,# Key from config
-        "vLLM": chat_with_vllm,       # Key from config
+        "Llama_cpp": chat_with_llama,  # Key from config
+        "KoboldCpp": chat_with_kobold,  # Key from config
+        "Oobabooga": chat_with_oobabooga,  # Key from config
+        "vLLM": chat_with_vllm,  # Key from config
         "TabbyAPI": chat_with_tabbyapi,  # Key from config
-        "Aphrodite": chat_with_aphrodite,# Key from config
-        "Ollama": chat_with_ollama,     # Key from config
-        "Custom": chat_with_custom_openai, # Key from config
-        "Custom_2": chat_with_custom_openai_2, # Key from config
+        "Aphrodite": chat_with_aphrodite,  # Key from config
+        "Ollama": chat_with_ollama,  # Key from config
+        "Custom": chat_with_custom_openai,  # Key from config
+        "Custom_2": chat_with_custom_openai_2,  # Key from config
         # "local-llm": chat_with_local_llm # Add if this is a distinct provider in config
     }
     logging.info(f"API_FUNCTION_MAP populated with {len(API_FUNCTION_MAP)} entries.")
@@ -115,9 +119,15 @@ else:
 # Functions:
 
 # --- Constants ---
-TAB_CHAT = "chat"; TAB_CHARACTER = "character"; TAB_MEDIA = "media"; TAB_SEARCH = "search"
-TAB_INGEST = "ingest"; TAB_LOGS = "logs"; TAB_STATS = "stats"; TAB_NOTES = "notes"
-ALL_TABS = [ TAB_CHAT, TAB_CHARACTER, TAB_MEDIA, TAB_SEARCH, TAB_INGEST, TAB_LOGS, TAB_STATS, TAB_NOTES ]
+TAB_CHAT = "chat"
+TAB_CONV_CHAR = "conversations_characters"
+TAB_MEDIA = "media"
+TAB_SEARCH = "search"
+TAB_INGEST = "ingest"
+TAB_LOGS = "logs"
+TAB_STATS = "stats"
+TAB_NOTES = "notes"
+ALL_TABS = [TAB_CHAT, TAB_CONV_CHAR, TAB_MEDIA, TAB_SEARCH, TAB_INGEST, TAB_LOGS, TAB_STATS, TAB_NOTES]  # Updated list
 
 # --- Define API Models (Combined Cloud & Local) ---
 # (Keep your existing API_MODELS_BY_PROVIDER and LOCAL_PROVIDERS dictionaries)
@@ -150,6 +160,7 @@ ASCII_PORTRAIT = r"""
     `~~`
 """
 
+
 # --- Custom Logging Handler ---
 class RichLogHandler(logging.Handler):
     def __init__(self, rich_log_widget: RichLog):
@@ -163,7 +174,7 @@ class RichLogHandler(logging.Handler):
         self.setFormatter(self.formatter)
         self._queue_processor_task = None
 
-    def start_processor(self, app: App): # Keep 'app' param for context if needed elsewhere, but don't use for run_task
+    def start_processor(self, app: App):  # Keep 'app' param for context if needed elsewhere, but don't use for run_task
         """Starts the log queue processing task using the widget's run_task."""
         if not self._queue_processor_task or self._queue_processor_task.done():
             try:
@@ -196,7 +207,7 @@ class RichLogHandler(logging.Handler):
                 # Log errors during cancellation itself
                 logging.error(f"Error occurred while awaiting cancelled log processor task: {e}", exc_info=True)
             finally:
-                 self._queue_processor_task = None # Ensure it's cleared
+                self._queue_processor_task = None  # Ensure it's cleared
 
     async def _process_log_queue(self):
         """Coroutine to process logs from the queue and write to the widget."""
@@ -212,9 +223,9 @@ class RichLogHandler(logging.Handler):
                 # while not self.log_queue.empty():
                 #    try: message = self.log_queue.get_nowait(); # process...
                 #    except asyncio.QueueEmpty: break
-                break # Exit the loop on cancellation
+                break  # Exit the loop on cancellation
             except Exception as e:
-                print(f"!!! CRITICAL ERROR in RichLog processor: {e}") # Use print as fallback
+                print(f"!!! CRITICAL ERROR in RichLog processor: {e}")  # Use print as fallback
                 traceback.print_exc()
                 # Avoid continuous loop on error, maybe sleep?
                 await asyncio.sleep(1)
@@ -227,10 +238,10 @@ class RichLogHandler(logging.Handler):
             # For workers started with thread=True, this is necessary.
             if hasattr(self.rich_log_widget, 'app') and self.rich_log_widget.app:
                 self.rich_log_widget.app._loop.call_soon_threadsafe(self.log_queue.put_nowait, message)
-            else: # Fallback during startup/shutdown
-                 if record.levelno >= logging.WARNING: print(f"LOG_FALLBACK: {message}")
+            else:  # Fallback during startup/shutdown
+                if record.levelno >= logging.WARNING: print(f"LOG_FALLBACK: {message}")
         except Exception:
-            print(f"!!!!!!!! ERROR within RichLogHandler.emit !!!!!!!!!!") # Use print as fallback
+            print(f"!!!!!!!! ERROR within RichLogHandler.emit !!!!!!!!!!")  # Use print as fallback
             traceback.print_exc()
 
 
@@ -243,16 +254,18 @@ _initial_log_level = getattr(logging, _initial_log_level_str, logging.INFO)
 # Define a basic initial format
 _initial_log_format = "%(asctime)s [%(levelname)s] %(name)s:%(lineno)d - %(message)s"
 # Remove existing handlers before basicConfig to avoid duplicates if script is re-run
-logging.basicConfig(level=_initial_log_level, format=_initial_log_format, force=True) # force=True might help override defaults
+logging.basicConfig(level=_initial_log_level, format=_initial_log_format,
+                    force=True)  # force=True might help override defaults
 logging.info("Initial basic logging configured.")
 
+
 # --- Main App ---
-class TldwCli(App[None]): # Specify return type for run() if needed, None is common
+class TldwCli(App[None]):  # Specify return type for run() if needed, None is common
     """A Textual app for interacting with LLMs."""
     TITLE = "🧠📝🔍  tldw CLI"
     # Use forward slashes for paths, works cross-platform
     CSS_PATH = "css/tldw_cli.tcss"
-    BINDINGS = [ Binding("ctrl+q", "quit", "Quit App", show=True) ]
+    BINDINGS = [Binding("ctrl+q", "quit", "Quit App", show=True)]
 
     # Define reactive at class level with a placeholder default and type hint
     current_tab: reactive[str] = reactive("chat", layout=True)
@@ -272,7 +285,7 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
 
     # Reactives for sidebar
     chat_sidebar_collapsed: reactive[bool] = reactive(False, layout=True)
-    character_sidebar_collapsed: reactive[bool] = reactive(False, layout=True) # For character sidebar
+    character_sidebar_collapsed: reactive[bool] = reactive(False, layout=True)  # For character sidebar
     notes_sidebar_left_collapsed: reactive[bool] = reactive(False, layout=True)
     notes_sidebar_right_collapsed: reactive[bool] = reactive(False, layout=True)
 
@@ -282,27 +295,32 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
     current_selected_note_title: reactive[Optional[str]] = reactive(None)
     current_selected_note_content: reactive[Optional[str]] = reactive("")
 
+    # Reactive variable for current chat conversation ID
+    current_chat_conversation_id: reactive[Optional[str]] = reactive(None)
+    # Reactive variable for current conversation loaded in the Conversations & Characters tab
+    current_conv_char_tab_conversation_id: reactive[Optional[str]] = reactive(None)
+
     def __init__(self):
         super().__init__()
         # Load config ONCE
-        self.app_config = load_settings() # Ensure this is called
+        self.app_config = load_settings()  # Ensure this is called
 
         # --- Initialize NotesInteropService ---
-        self.notes_user_id = "default_tui_user" # Or any default user ID string
+        self.notes_user_id = "default_tui_user"  # Or any default user ID string
         notes_db_base_dir = Path.home() / ".config/tldw_cli/user_notes"
         try:
             self.notes_service = NotesInteropService(
                 base_db_directory=notes_db_base_dir,
-                api_client_id="tldw_tui_client" # Client ID for operations done by the TUI
+                api_client_id="tldw_tui_client"  # Client ID for operations done by the TUI
             )
             logging.info(f"NotesInteropService initialized for user '{self.notes_user_id}' at {notes_db_base_dir}")
         except CharactersRAGDBError as e:
             logging.error(f"Failed to initialize NotesInteropService: {e}", exc_info=True)
             self.notes_service = None
-        except Exception as e: # Catch any other unexpected error during init
+        except Exception as e:  # Catch any other unexpected error during init
             logging.error(f"An unexpected error occurred during NotesInteropService initialization: {e}", exc_info=True)
             self.notes_service = None
-        
+
         logging.debug("__INIT__: Attempting to get providers and models...")
         try:
             # Call the function from the config module
@@ -322,7 +340,7 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
             self._initial_tab_value = initial_tab_from_config
 
         logging.info(f"App __init__: Determined initial tab value: {self._initial_tab_value}")
-        self._rich_log_handler: Optional[RichLogHandler] = None # Initialize handler attribute
+        self._rich_log_handler: Optional[RichLogHandler] = None  # Initialize handler attribute
 
     def _setup_logging(self):
         """Sets up all logging handlers. Call from on_mount."""
@@ -356,16 +374,17 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
             log_display_widget = self.query_one("#app-log-display", RichLog)
             # Prevent adding multiple RichLog Handlers
             if self._rich_log_handler and self._rich_log_handler in root_logger.handlers:
-                 print("RichLogHandler already exists and is added.")
+                print("RichLogHandler already exists and is added.")
             elif not self._rich_log_handler:
                 self._rich_log_handler = RichLogHandler(log_display_widget)
-                self._rich_log_handler.setLevel(logging.DEBUG) # Set level explicitly
+                self._rich_log_handler.setLevel(logging.DEBUG)  # Set level explicitly
                 root_logger.addHandler(self._rich_log_handler)
-                print(f"Added RichLogHandler to root logger (Level: {logging.getLevelName(self._rich_log_handler.level)}).")
+                print(
+                    f"Added RichLogHandler to root logger (Level: {logging.getLevelName(self._rich_log_handler.level)}).")
             else:
-                 # Handler exists but wasn't added? Add it.
-                 root_logger.addHandler(self._rich_log_handler)
-                 print(f"Re-added existing RichLogHandler instance to root logger.")
+                # Handler exists but wasn't added? Add it.
+                root_logger.addHandler(self._rich_log_handler)
+                print(f"Re-added existing RichLogHandler instance to root logger.")
 
         except QueryError:
             print("!!! ERROR: Failed to find #app-log-display widget for RichLogHandler setup.")
@@ -384,11 +403,14 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
             print(f"Ensured log directory exists: {log_dir}")
 
             # Prevent adding multiple File Handlers
-            has_file_handler = any(isinstance(h, logging.handlers.RotatingFileHandler) and h.baseFilename == str(log_file_path) for h in root_logger.handlers)
+            has_file_handler = any(
+                isinstance(h, logging.handlers.RotatingFileHandler) and h.baseFilename == str(log_file_path) for h in
+                root_logger.handlers)
 
             if not has_file_handler:
                 max_bytes = int(get_setting("logging", "log_max_bytes", DEFAULT_CONFIG["logging"]["log_max_bytes"]))
-                backup_count = int(get_setting("logging", "log_backup_count", DEFAULT_CONFIG["logging"]["log_backup_count"]))
+                backup_count = int(
+                    get_setting("logging", "log_backup_count", DEFAULT_CONFIG["logging"]["log_backup_count"]))
                 file_log_level_str = get_setting("logging", "file_log_level", "INFO").upper()
                 file_log_level = getattr(logging, file_log_level_str, logging.INFO)
 
@@ -414,11 +436,11 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
         # Re-evaluate lowest level
         all_handlers = root_logger.handlers
         if all_handlers:
-             lowest_level = min(h.level for h in all_handlers if h.level > 0) # Ignore level 0 handlers
-             root_logger.setLevel(lowest_level)
-             print(f"Final Root logger level set to: {logging.getLevelName(root_logger.level)}")
+            lowest_level = min(h.level for h in all_handlers if h.level > 0)  # Ignore level 0 handlers
+            root_logger.setLevel(lowest_level)
+            print(f"Final Root logger level set to: {logging.getLevelName(root_logger.level)}")
         else:
-             print(f"No handlers found on root logger after setup!")
+            print(f"No handlers found on root logger after setup!")
         logging.info("Logging setup complete.")
         print("--- _setup_logging END ---")
 
@@ -433,10 +455,12 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
         logging.debug("App compose finished.")
 
     def compose_tabs(self) -> ComposeResult:
-         with Horizontal(id="tabs"):
+        with Horizontal(id="tabs"):
             for tab_id in ALL_TABS:
+                label = "Conversations & Characters" if tab_id == TAB_CONV_CHAR else tab_id.replace('_',
+                                                                                                    ' ').capitalize()
                 yield Button(
-                    tab_id.replace('_', ' ').capitalize(),
+                    label,
                     id=f"tab-{tab_id}",
                     # Initial active state based on the value determined in __init__
                     classes="-active" if tab_id == self._initial_tab_value else ""
@@ -455,60 +479,90 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
                     # *** Use VerticalScroll for ChatMessages ***
                     yield VerticalScroll(id="chat-log")
                     with Horizontal(id="chat-input-area"):
-                        yield Button("☰", id="toggle-chat-sidebar", classes="sidebar-toggle") # Left sidebar toggle
+                        yield Button("☰", id="toggle-chat-sidebar", classes="sidebar-toggle")  # Left sidebar toggle
                         yield TextArea(id="chat-input", classes="chat-input")
-                        yield Button("Send", id="send-chat", classes="send-button")
+                        yield Button("Send ▶", id="send-chat", classes="send-button")
                         # Add toggle for the new right sidebar (character settings) for chat window
                         yield Button("👤", id="toggle-character-sidebar", classes="sidebar-toggle")
-                
+
                 # Right sidebar (new character specific settings) for chat window
                 # The create_character_sidebar function will define a widget with id="character-sidebar"
                 yield from create_character_sidebar(self.app_config)
 
-            # --- Character Chat Window ---
-            # NOTE: This still uses Richlogging. Update if interactive messages needed.
-            with Container(id=f"{TAB_CHARACTER}-window", classes="window"):
-                 # Left sidebar (existing settings)
-                 yield from create_settings_sidebar(TAB_CHARACTER, self.app_config)
+            # --- Conversations & Characters Window (Redesigned) ---
+            with Container(id=f"{TAB_CONV_CHAR}-window", classes="window"):
+                # Left Pane
+                with VerticalScroll(id="conv-char-left-pane", classes="cc-left-pane"):
+                    yield Static("My Characters & Conversations",
+                                 classes="sidebar-title")  # Reusing sidebar-title class
+                    yield Input(id="conv-char-search-input", placeholder="Search conversations...",
+                                classes="sidebar-input")  # Reusing sidebar-input
+                    yield ListView(
+                        id="conv-char-search-results-list")  # Will need specific styling for height if not covered
+                    yield Button("Load Selected", id="conv-char-load-button",
+                                 classes="sidebar-button")  # Reusing sidebar-button
 
-                 # Main content area for character
-                 with Container(id="character-main-content"):
-                     with Horizontal(id="character-top-area"):
-                         yield RichLog(id="character-log", wrap=True, highlight=True, classes="chat-log") # Still RichLog here
-                         yield Static(ASCII_PORTRAIT, id="character-portrait") # Use ASCII art
-                     with Horizontal(id="character-input-area"):
-                         # Removed toggle-character-sidebar from here
-                         yield TextArea(id="character-input", classes="chat-input")
-                         yield Button("🎤", id="mic-character", classes="mic-button")
-                         yield Button("Send", id="send-character", classes="send-button")
-                
-                 # Removed character sidebar from here
+                # Center Pane
+                with VerticalScroll(id="conv-char-center-pane", classes="cc-center-pane"):
+                    yield Static("Conversation History", classes="pane-title")
+                    # Message widgets will be mounted here dynamically
 
+                # Right Pane (also includes settings previously in a separate sidebar for this tab)
+                with VerticalScroll(id="conv-char-right-pane", classes="cc-right-pane"):
+                    yield Static("Character/Conversation Details", classes="sidebar-title")  # Reusing sidebar-title
+
+                    # General Settings (from create_settings_sidebar for TAB_CONV_CHAR)
+                    # This assumes create_settings_sidebar for TAB_CONV_CHAR would now be integrated here
+                    # or this section is for new character/conv details separate from global settings.
+                    # For now, adding new specific fields as per instruction:
+                    yield Static("Title:", classes="sidebar-label")
+                    yield Input(id="conv-char-title-input", placeholder="Conversation title...",
+                                classes="sidebar-input")
+
+                    yield Static("Keywords:", classes="sidebar-label")
+                    yield TextArea("", id="conv-char-keywords-input",
+                                   classes="conv-char-keywords-textarea")  # Placeholder text removed for specific class
+
+                    yield Button("Save Details", id="conv-char-save-details-button", classes="sidebar-button",
+                                 variant="primary")
+
+                    yield Static("Export Options", classes="sidebar-label export-label")
+                    yield Button("Export as Text", id="conv-char-export-text-button", classes="sidebar-button")
+                    yield Button("Export as JSON", id="conv-char-export-json-button", classes="sidebar-button")
+
+                    # Placeholder for where old settings from create_settings_sidebar(TAB_CONV_CHAR,...) would go
+                    # For this step, we are just adding the new UI elements.
+                    # The existing call to create_settings_sidebar for TAB_CONV_CHAR is removed as per the instruction
+                    # to "Remove all existing child widgets currently composed within this container".
+                    # If global settings (like API provider, model) are still needed for this tab,
+                    # they would need to be re-integrated here or the design re-evaluated.
+                    # The instruction was to remove existing children of the TAB_CONV_CHAR-window,
+                    # which included the create_settings_sidebar(TAB_CONV_CHAR, self.app_config) call.
 
             # --- Logs Window ---
             with Container(id=f"{TAB_LOGS}-window", classes="window"):
-                 yield RichLog(id="app-log-display", wrap=True, highlight=True, markup=True, auto_scroll=True)
+                yield RichLog(id="app-log-display", wrap=True, highlight=True, markup=True, auto_scroll=True)
 
             # --- Other Placeholder Windows ---
             for tab_id in ALL_TABS:
-                if tab_id not in [TAB_CHAT, TAB_CHARACTER, TAB_LOGS, TAB_NOTES]: # Exclude TAB_NOTES
+                if tab_id not in [TAB_CHAT, TAB_CONV_CHAR, TAB_LOGS, TAB_NOTES]:  # Updated to TAB_CONV_CHAR
                     with Container(id=f"{tab_id}-window", classes="window placeholder-window"):
-                         yield Static(f"{tab_id.replace('_', ' ').capitalize()} Window Placeholder")
-            
+                        yield Static(f"{tab_id.replace('_', ' ').capitalize()} Window Placeholder")
+
             # --- Notes Tab Window ---
             with Container(id=f"{TAB_NOTES}-window", classes="window"):
                 # Instantiate the left sidebar (ensure it has a unique ID for the watcher)
                 yield NotesSidebarLeft(id="notes-sidebar-left", classes="sidebar")
 
                 # Main content area for notes (editor and toggles)
-                with Container(id="notes-main-content"): # Similar to chat-main-content
-                    yield TextArea(id="notes-editor-area", classes="notes-editor") # Make it take up 1fr height
+                with Container(id="notes-main-content"):  # Similar to chat-main-content
+                    yield TextArea(id="notes-editor-area", classes="notes-editor")  # Make it take up 1fr height
                     # Container for toggle buttons, similar to chat-input-area
                     with Horizontal(id="notes-controls-area"):
                         yield Button("☰ L", id="toggle-notes-sidebar-left", classes="sidebar-toggle")
-                        yield Static() # Spacer
+                        yield Static()  # Spacer
                         yield Button("Save Note", id="notes-save-button", variant="primary")
-                        yield Static() # Spacer
+                        yield Static()  # Spacer
                         yield Button("R ☰", id="toggle-notes-sidebar-right", classes="sidebar-toggle")
 
                 # Instantiate the right sidebar (ensure it has a unique ID for the watcher)
@@ -524,9 +578,8 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
         """Called when the character provider Select value changes internally."""
         print(f">>> DEBUG: update_character_provider_reactive called with: {new_value!r}")
         self.character_api_provider_value = new_value
+
     # --- END Add explicit methods ---
-
-
 
     def on_mount(self) -> None:
         """Configure logging, set initial tab, bind selects, and start processors."""
@@ -570,12 +623,13 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
             print(f">>> DEBUG: ERROR - Exception during chat provider select binding: {e}")
 
         try:
-            char_select = self.query_one(f"#{TAB_CHARACTER}-api-provider", Select)
+            char_select = self.query_one(f"#{TAB_CONV_CHAR}-api-provider", Select)
             self.watch(char_select, "value", self.update_character_provider_reactive, init=False)
-            logging.debug(f"Bound character provider Select ({char_select.id}) value to update_character_provider_reactive")
+            logging.debug(
+                f"Bound character provider Select ({char_select.id}) value to update_character_provider_reactive")
             print(f">>> DEBUG: Bound character provider Select to reactive update method.")
         except QueryError:
-            logging.error(f"on_mount: Failed to find character provider select: #{TAB_CHARACTER}-api-provider")
+            logging.error(f"on_mount: Failed to find character provider select: #{TAB_CONV_CHAR}-api-provider")
             print(f">>> DEBUG: ERROR - Failed to bind character provider select.")
         except Exception as e:
             logging.error(f"on_mount: Error binding character provider select: {e}", exc_info=True)
@@ -586,10 +640,35 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
         # This MUST be done AFTER the UI exists and AFTER bindings are set up (if they depend on it)
         # Crucially, this will trigger watch_current_tab to set the initial visibility.
         print(f">>> DEBUG: on_mount: Setting self.current_tab = {self._initial_tab_value} (will trigger watcher)")
-        logging.info(f"App on_mount: Setting current_tab reactive value to {self._initial_tab_value} to trigger initial view.")
+        logging.info(
+            f"App on_mount: Setting current_tab reactive value to {self._initial_tab_value} to trigger initial view.")
         self.current_tab = self._initial_tab_value
 
         logging.info("App mount process completed.")
+
+        # Populate character filter for conversation search
+        try:
+            if self.notes_service:
+                db = self.notes_service._get_db(self.notes_user_id)
+                character_cards = db.list_character_cards(limit=1000)  # Fetch a reasonable number of characters
+
+                options = [(char['name'], char['id']) for char in character_cards if
+                           char.get('name') and char.get('id') is not None]
+
+                char_filter_select = self.query_one("#chat-conversation-search-character-filter-select", Select)
+                char_filter_select.set_options(options)
+                logging.info(
+                    f"Populated #chat-conversation-search-character-filter-select with {len(options)} characters.")
+            else:
+                logging.warning(
+                    "Notes service not available, cannot populate character filter for conversation search.")
+        except QueryError as e:
+            logging.error(f"on_mount: Could not find #chat-conversation-search-character-filter-select: {e}",
+                          exc_info=True)
+        except CharactersRAGDBError as e:
+            logging.error(f"on_mount: Database error populating character filter: {e}", exc_info=True)
+        except Exception as e:
+            logging.error(f"on_mount: Unexpected error populating character filter: {e}", exc_info=True)
 
     async def on_shutdown_request(self, event) -> None:
         """Stop background tasks before shutdown."""
@@ -619,20 +698,19 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
         logging.shutdown()  # Ensure logs are flushed
         print("--- App Unmounted ---")  # Use print as logging might be shut down
 
-
     # WATCHER - Handles UI changes when current_tab's VALUE changes
     def watch_current_tab(self, old_tab: Optional[str], new_tab: str) -> None:
         """Shows/hides the relevant content window when the tab changes."""
         # (Your existing watcher code is likely fine, just ensure the QueryErrors aren't hiding a problem)
         print(f"\n>>> DEBUG: watch_current_tab triggered! Old: '{old_tab}', New: '{new_tab}'")
         if not isinstance(new_tab, str) or not new_tab:
-             print(f">>> DEBUG: watch_current_tab: Invalid new_tab '{new_tab!r}', aborting.")
-             logging.error(f"Watcher received invalid new_tab value: {new_tab!r}. Aborting tab switch.")
-             return
+            print(f">>> DEBUG: watch_current_tab: Invalid new_tab '{new_tab!r}', aborting.")
+            logging.error(f"Watcher received invalid new_tab value: {new_tab!r}. Aborting tab switch.")
+            return
         if old_tab and not isinstance(old_tab, str):
-             print(f">>> DEBUG: watch_current_tab: Invalid old_tab '{old_tab!r}', setting to None.")
-             logging.warning(f"Watcher received invalid old_tab value: {old_tab!r}.")
-             old_tab = None
+            print(f">>> DEBUG: watch_current_tab: Invalid old_tab '{old_tab!r}', setting to None.")
+            logging.warning(f"Watcher received invalid old_tab value: {old_tab!r}.")
+            old_tab = None
 
         logging.debug(f"Watcher: Switching tab from '{old_tab}' to '{new_tab}'")
 
@@ -650,7 +728,7 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
 
             try:
                 old_window = self.query_one(f"#{old_tab}-window")
-                old_window.display = False # Set style directly
+                old_window.display = False  # Set style directly
                 print(f">>> DEBUG: Set display=False for window #{old_tab}-window")
             except QueryError:
                 print(f">>> DEBUG: Could not find old window #{old_tab}-window")
@@ -671,21 +749,27 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
 
         try:
             new_window = self.query_one(f"#{new_tab}-window")
-            new_window.display = True # Set style directly
+            new_window.display = True  # Set style directly
             print(f">>> DEBUG: Set display=True for window #{new_tab}-window")
 
             # Focus input (your existing logic here is fine)
             if new_tab not in [TAB_LOGS]:
                 input_widget: Optional[Union[TextArea, Input]] = None
-                try: input_widget = new_window.query_one(TextArea)
+                try:
+                    input_widget = new_window.query_one(TextArea)
                 except QueryError:
-                    try: input_widget = new_window.query_one(Input)
-                    except QueryError: pass
+                    try:
+                        input_widget = new_window.query_one(Input)
+                    except QueryError:
+                        pass
 
                 if input_widget:
                     def _focus_input():
-                        try: input_widget.focus()
-                        except Exception as focus_err: logging.warning(f"Focus failed: {focus_err}")
+                        try:
+                            input_widget.focus()
+                        except Exception as focus_err:
+                            logging.warning(f"Focus failed: {focus_err}")
+
                     # Slightly longer delay might sometimes help if layout is complex
                     self.set_timer(0.1, _focus_input)
                     logging.debug(f"Watcher: Scheduled focus for input in '{new_tab}'")
@@ -716,7 +800,7 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
     def watch_character_sidebar_collapsed(self, collapsed: bool) -> None:
         """Hide or show the character settings sidebar."""
         try:
-            sidebar = self.query_one("#character-sidebar") # ID from create_character_sidebar
+            sidebar = self.query_one("#character-sidebar")  # ID from create_character_sidebar
             sidebar.display = not collapsed
         except QueryError:
             logging.error("Character sidebar widget (#character-sidebar) not found.")
@@ -757,7 +841,8 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
             # For now, we save unconditionally if a note is selected.
             # A more advanced check could compare with self.current_selected_note_title and self.current_selected_note_content
 
-            logging.info(f"Attempting to save note ID: {self.current_selected_note_id}, Version: {self.current_selected_note_version}")
+            logging.info(
+                f"Attempting to save note ID: {self.current_selected_note_id}, Version: {self.current_selected_note_version}")
             success = self.notes_service.update_note(
                 user_id=self.notes_user_id,
                 note_id=self.current_selected_note_id,
@@ -774,7 +859,7 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
                 )
                 if updated_note_details:
                     self.current_selected_note_version = updated_note_details.get('version')
-                    self.current_selected_note_title = updated_note_details.get('title') # Update reactive
+                    self.current_selected_note_title = updated_note_details.get('title')  # Update reactive
                     # self.current_selected_note_content = updated_note_details.get('content') # Update reactive
 
                     # Refresh the list in the left sidebar to reflect title changes and update item version
@@ -788,7 +873,8 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
                 return True
             else:
                 # This path should ideally not be reached if update_note raises exceptions on failure.
-                logging.warning(f"notes_service.update_note for {self.current_selected_note_id} returned False without raising error.")
+                logging.warning(
+                    f"notes_service.update_note for {self.current_selected_note_id} returned False without raising error.")
                 # self.notify("Failed to save note (unknown reason).", severity="error")
                 return False
 
@@ -836,12 +922,12 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
             self.chat_sidebar_collapsed = not self.chat_sidebar_collapsed
             logging.debug("Chat sidebar now %s", "collapsed" if self.chat_sidebar_collapsed else "expanded")
             return
-        
+
         if button_id == "toggle-character-sidebar":
             self.character_sidebar_collapsed = not self.character_sidebar_collapsed
             logging.debug("Character sidebar now %s", "collapsed" if self.character_sidebar_collapsed else "expanded")
             return
-        
+
         if button_id == "toggle-notes-sidebar-left":
             self.notes_sidebar_left_collapsed = not self.notes_sidebar_left_collapsed
             logging.debug("Notes left sidebar now %s", "collapsed" if self.notes_sidebar_left_collapsed else "expanded")
@@ -849,7 +935,8 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
 
         if button_id == "toggle-notes-sidebar-right":
             self.notes_sidebar_right_collapsed = not self.notes_sidebar_right_collapsed
-            logging.debug("Notes right sidebar now %s", "collapsed" if self.notes_sidebar_right_collapsed else "expanded")
+            logging.debug("Notes right sidebar now %s",
+                          "collapsed" if self.notes_sidebar_right_collapsed else "expanded")
             return
 
         if button_id == "notes-new-button":
@@ -864,11 +951,11 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
                 new_note_id = self.notes_service.add_note(
                     user_id=self.notes_user_id,
                     title=new_note_title,
-                    content="" # Start with empty content
+                    content=""  # Start with empty content
                 )
                 if new_note_id:
                     logging.info(f"New note created with ID: {new_note_id}")
-                    await self.load_and_display_notes() # Refresh list
+                    await self.load_and_display_notes()  # Refresh list
                     # Optionally, select the new note automatically:
                     # self.current_selected_note_id = new_note_id
                     # new_note_details = self.notes_service.get_note_by_id(self.notes_user_id, new_note_id)
@@ -887,18 +974,295 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
                 logging.error(f"Unexpected error creating new note: {e}", exc_info=True)
             return
 
-        if button_id == "notes-save-button":
+        # --- New Button Functionalities for Collapsible Menu ---
+        if button_id == "notes-create-new-button":  # Matches existing "notes-new-button"
+            if not self.notes_service:
+                logging.error("Notes service not available, cannot create new note.")
+                # TODO: Show user error (e.g., self.notify)
+                return
+            try:
+                new_note_title = "New Note"
+                new_note_id = self.notes_service.add_note(
+                    user_id=self.notes_user_id,
+                    title=new_note_title,
+                    content=""  # Start with empty content
+                )
+                if new_note_id:
+                    logging.info(f"New note created with ID: {new_note_id} via 'notes-create-new-button'")
+                    await self.load_and_display_notes()  # Refresh list
+                    # Optionally, select the new note:
+                    # This would involve finding the ListItem, setting current_selected_note_id,
+                    # and then calling the logic from on_list_view_selected or a helper.
+                    # For now, just refresh the list.
+                else:
+                    logging.error("Failed to create new note (ID was None) via 'notes-create-new-button'.")
+            except CharactersRAGDBError as e:
+                logging.error(f"Database error creating new note via 'notes-create-new-button': {e}", exc_info=True)
+            except Exception as e:
+                logging.error(f"Unexpected error creating new note via 'notes-create-new-button': {e}", exc_info=True)
+            return
+
+        if button_id == "notes-edit-selected-button":
+            try:
+                if self.current_selected_note_id:  # Only focus if a note is selected/loaded
+                    self.query_one("#notes-editor-area", TextArea).focus()
+                    logging.info("Focused notes editor for editing selected note.")
+                else:
+                    logging.info("Edit selected note button pressed, but no note is currently selected.")
+                    # Optionally: self.notify("No note selected to edit.", severity="warning")
+            except QueryError as e:
+                logging.error(f"UI component not found for 'notes-edit-selected-button': {e}", exc_info=True)
+            return
+
+        if button_id == "notes-search-button":
+            try:
+                self.query_one("#notes-search-input", Input).focus()
+                logging.info("Focused notes search input.")
+            except QueryError as e:
+                logging.error(f"UI component not found for 'notes-search-button': {e}", exc_info=True)
+            return
+
+        if button_id == "notes-load-selected-button":
+            logging.info("Attempting to load selected note via button.")
+            if not self.notes_service:
+                logging.error("Notes service not available, cannot load selected note.")
+                # self.notify("Notes service unavailable.", severity="error")
+                return
+            try:
+                notes_list_view = self.query_one("#notes-list-view", ListView)
+                selected_item = notes_list_view.highlighted_child
+
+                if selected_item and hasattr(selected_item, 'note_id') and hasattr(selected_item, 'note_version'):
+                    note_id = selected_item.note_id
+                    # note_version = selected_item.note_version # We get the latest version from DB
+                    logging.info(f"Re-loading note: ID={note_id} from highlighted item.")
+
+                    note_details = self.notes_service.get_note_by_id(
+                        user_id=self.notes_user_id,
+                        note_id=note_id
+                    )
+                    if note_details:
+                        self.current_selected_note_id = note_id
+                        self.current_selected_note_version = note_details.get('version')
+                        self.current_selected_note_title = note_details.get('title')
+                        self.current_selected_note_content = note_details.get('content', "")
+
+                        self.query_one("#notes-editor-area", TextArea).text = self.current_selected_note_content
+                        self.query_one("#notes-title-input", Input).value = self.current_selected_note_title or ""
+
+                        keywords_area = self.query_one("#notes-keywords-area", TextArea)
+                        keywords_for_note = self.notes_service.get_keywords_for_note(
+                            user_id=self.notes_user_id, note_id=note_id
+                        )
+                        keywords_area.text = ", ".join(
+                            [kw['keyword'] for kw in keywords_for_note]) if keywords_for_note else ""
+
+                        logging.info(f"Successfully re-loaded note '{self.current_selected_note_title}'.")
+                        # self.notify(f"Note '{self.current_selected_note_title}' loaded.", severity="information")
+                    else:
+                        logging.warning(f"Could not retrieve details for note ID: {note_id} on re-load.")
+                        # self.notify(f"Failed to load note ID: {note_id}.", severity="error")
+                else:
+                    logging.info("No item highlighted in notes list to load.")
+                    # self.notify("No note selected in the list to load.", severity="warning")
+            except QueryError as e:
+                logging.error(f"UI component not found for 'notes-load-selected-button': {e}", exc_info=True)
+            except CharactersRAGDBError as e:
+                logging.error(f"Database error loading note via button: {e}", exc_info=True)
+            except Exception as e:
+                logging.error(f"Unexpected error loading note via button: {e}", exc_info=True)
+            return
+
+        if button_id == "notes-save-current-button":
+            logging.info("Save current note button pressed.")
+            await self.save_current_note()  # This method already exists and handles saving
+            return
+
+        if button_id == "chat-save-conversation-details-button":
+            logging.info("Save conversation details button pressed.")
+            if not self.current_chat_conversation_id:
+                logging.warning("No active chat conversation ID to save details for.")
+                # self.notify("No active conversation to save details for.", severity="warning")
+                return
+
+            try:
+                title_input = self.query_one("#chat-conversation-title-input", Input)
+                new_title = title_input.value
+                keywords_input = self.query_one("#chat-conversation-keywords-input", TextArea)
+                new_keywords = keywords_input.text
+            except QueryError as e:
+                logging.error(f"UI component not found for saving conversation details: {e}", exc_info=True)
+                # self.notify("Error accessing UI fields for conversation details.", severity="error")
+                return
+
+            conversation_details = None
+            db_instance = None
+            if self.notes_service:  # notes_service provides access to DB
+                try:
+                    db_instance = self.notes_service._get_db(self.notes_user_id)  # Accessing protected member
+                    conversation_details = db_instance.get_conversation_by_id(self.current_chat_conversation_id)
+                except Exception as e:
+                    logging.error(f"Failed to get conversation details for ID {self.current_chat_conversation_id}: {e}",
+                                  exc_info=True)
+                    # self.notify("Error fetching conversation details.", severity="error")
+                    return  # Stop if we can't get details
+
+            if not conversation_details:
+                logging.error(
+                    f"Could not find conversation details for ID {self.current_chat_conversation_id} to save.")
+                # self.notify("Active conversation not found in database.", severity="error")
+                return
+
+            current_version = conversation_details.get('version')
+            if current_version is None:
+                logging.error(f"Conversation {self.current_chat_conversation_id} lacks version information.")
+                # self.notify("Conversation version information is missing.", severity="error")
+                return
+
+            update_data = {}
+            if new_title != conversation_details.get('title'):
+                update_data['title'] = new_title
+            if new_keywords != conversation_details.get('keywords'):  # Assuming 'keywords' can be None
+                update_data['keywords'] = new_keywords
+
+            if update_data:
+                try:
+                    if not db_instance:  # Should have been set if conversation_details was fetched
+                        logging.error("DB instance not available for update_conversation.")
+                        # self.notify("Database service not available.", severity="error")
+                        return
+
+                    success = db_instance.update_conversation(
+                        conversation_id=self.current_chat_conversation_id,
+                        update_data=update_data,
+                        expected_version=current_version
+                    )
+                    if success:
+                        logging.info(
+                            f"Successfully updated conversation {self.current_chat_conversation_id} with: {update_data}")
+                        # self.notify("Conversation details saved!", severity="information")
+                        # To ensure the next save uses the correct version, we should update our idea of the version.
+                        # A simple way is to re-fetch, or if update_conversation returned the new version, use that.
+                        # For now, let's assume a re-fetch or manual increment would be needed in a more complex scenario.
+                        # For this task, the immediate save is the focus.
+                        # To update UI if title changed on TitleBar:
+                        # if 'title' in update_data:
+                        #    title_bar = self.query_one(TitleBar)
+                        #    title_bar.update_title(f"Chat - {new_title}")
+                    else:
+                        # This path might not be hit if update_conversation raises ConflictError directly
+                        logging.warning(
+                            f"Update_conversation call returned False for {self.current_chat_conversation_id}.")
+                        # self.notify("Failed to save conversation details (returned false).", severity="error")
+                except ConflictError as e:
+                    logging.error(f"Conflict saving conversation details for {self.current_chat_conversation_id}: {e}",
+                                  exc_info=True)
+                    # self.notify(f"Save conflict: {e}. Details may have been changed elsewhere. Please reload.", severity="error")
+                except CharactersRAGDBError as e:
+                    logging.error(f"DB error saving conversation details for {self.current_chat_conversation_id}: {e}",
+                                  exc_info=True)
+                    # self.notify("Database error saving details.", severity="error")
+                except Exception as e:
+                    logging.error(f"Unexpected error saving conversation details: {e}", exc_info=True)
+                    # self.notify("Unexpected error saving details.", severity="error")
+            else:
+                logging.info(
+                    f"No changes detected in title or keywords for conversation {self.current_chat_conversation_id}.")
+                # self.notify("No changes to save.", severity="info")
+            return
+
+        if button_id == "chat-conversation-load-selected-button":
+            logging.info("Load selected chat button pressed.")
+            try:
+                results_list_view = self.query_one("#chat-conversation-search-results-list", ListView)
+                highlighted_item = results_list_view.highlighted_child
+
+                if highlighted_item and hasattr(highlighted_item, 'conversation_id'):
+                    loaded_conversation_id = highlighted_item.conversation_id
+                    logging.info(f"Loading conversation ID: {loaded_conversation_id}")
+
+                    self.current_chat_conversation_id = loaded_conversation_id  # Update reactive variable
+
+                    # Fetch full conversation details (title, keywords might already be on item)
+                    db = self.notes_service._get_db(self.notes_user_id)
+                    conv_details = db.get_conversation_by_id(loaded_conversation_id)
+
+                    if not conv_details:
+                        logging.error(f"Failed to fetch details for conversation ID: {loaded_conversation_id}")
+                        # self.notify(f"Error: Could not load details for chat {loaded_conversation_id}.", severity="error")
+                        return
+
+                    # Populate title and keywords fields
+                    title_input = self.query_one("#chat-conversation-title-input", Input)
+                    title_input.value = conv_details.get('title', '')
+
+                    keywords_input = self.query_one("#chat-conversation-keywords-input", TextArea)
+                    keywords_input.text = conv_details.get('keywords', '')
+
+                    # Update the main TitleBar
+                    title_bar = self.query_one(TitleBar)
+                    title_bar.update_title(f"Chat - {conv_details.get('title', 'Untitled Conversation')}")
+
+                    # Clear existing messages from chat log
+                    chat_log = self.query_one("#chat-log", VerticalScroll)
+                    await chat_log.remove_children()
+                    logging.debug(f"Cleared #chat-log for new conversation {loaded_conversation_id}.")
+
+                    # Fetch and display messages for this conversation
+                    messages = db.get_messages_for_conversation(loaded_conversation_id, order_by_timestamp="ASC",
+                                                                limit=1000)  # Adjust limit as needed
+                    logging.debug(f"Fetched {len(messages)} messages for conversation {loaded_conversation_id}.")
+
+                    for msg_data in messages:
+                        # Ensure image_data is handled correctly (it might be None or bytes)
+                        image_data_for_widget = msg_data.get('image_data')
+                        # logging.debug(f"Message {msg_data['id']} has image_data type: {type(image_data_for_widget)}")
+
+                        chat_message_widget = ChatMessage(
+                            message=msg_data['content'],
+                            role=msg_data['sender'],
+                            timestamp=msg_data.get('timestamp'),  # Ensure timestamp is passed if available
+                            image_data=image_data_for_widget,  # Pass image_data
+                            image_mime_type=msg_data.get('image_mime_type'),  # Pass mime_type
+                            message_id=msg_data['id']  # Pass message_id
+                        )
+                        await chat_log.mount(chat_message_widget)
+
+                    chat_log.scroll_end(animate=False)  # Scroll to the latest message
+
+                    # Focus the main chat input area
+                    self.query_one("#chat-input", TextArea).focus()
+                    logging.info(f"Successfully loaded conversation {loaded_conversation_id} into chat view.")
+                    # self.notify(f"Chat '{conv_details.get('title', 'Untitled')}' loaded.", severity="information")
+
+                else:
+                    logging.info("No conversation selected in the list to load.")
+                    # self.notify("No chat selected to load.", severity="warning")
+            except QueryError as e:
+                logging.error(f"UI component not found for loading chat: {e}", exc_info=True)
+                # self.notify("Error accessing UI for loading chat.", severity="error")
+            except CharactersRAGDBError as e:
+                logging.error(f"Database error loading chat: {e}", exc_info=True)
+                # self.notify("Database error loading chat.", severity="error")
+            except Exception as e:
+                logging.error(f"Unexpected error loading chat: {e}", exc_info=True)
+                # self.notify("Unexpected error loading chat.", severity="error")
+            return
+        # --- End of New Button Functionalities ---
+
+        if button_id == "notes-save-button":  # Existing save button in the notes control area
             await self.save_current_note()
             return
 
-        if button_id == "notes-delete-button":
+        if button_id == "notes-delete-button":  # Existing delete button
             if not self.notes_service or not self.current_selected_note_id or self.current_selected_note_version is None:
                 logging.warning("No note selected to delete.")
                 # self.notify("No note selected to delete.", severity="warning")
                 return
 
             # Basic confirmation (logging only, no UI dialog for this subtask)
-            logging.info(f"Attempting to delete note ID: {self.current_selected_note_id}, Version: {self.current_selected_note_version}")
+            logging.info(
+                f"Attempting to delete note ID: {self.current_selected_note_id}, Version: {self.current_selected_note_version}")
 
             # TODO: Implement a proper confirmation dialog here in a future step.
             # confirmed = await self.app.push_screen_wait(ConfirmDeleteDialog(self.current_selected_note_title or "this note"))
@@ -917,17 +1281,18 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
                     # Clear selection and UI
                     self.current_selected_note_id = None
                     self.current_selected_note_version = None
-                    self.current_selected_note_title = "" # Update reactive
-                    self.current_selected_note_content = "" # Update reactive
+                    self.current_selected_note_title = ""  # Update reactive
+                    self.current_selected_note_content = ""  # Update reactive
 
                     self.query_one("#notes-editor-area", TextArea).text = ""
                     self.query_one("#notes-title-input", Input).value = ""
-                    self.query_one("#notes-keywords-area", TextArea).text = "" # Clear keywords too
+                    self.query_one("#notes-keywords-area", TextArea).text = ""  # Clear keywords too
 
-                    await self.load_and_display_notes() # Refresh list in left sidebar
+                    await self.load_and_display_notes()  # Refresh list in left sidebar
                 else:
                     # This path should ideally not be reached if soft_delete_note raises exceptions on failure.
-                    logging.warning(f"notes_service.soft_delete_note for {self.current_selected_note_id} returned False.")
+                    logging.warning(
+                        f"notes_service.soft_delete_note for {self.current_selected_note_id} returned False.")
                     # self.notify("Failed to delete note (unknown reason).", severity="error")
 
             except ConflictError as e:
@@ -955,8 +1320,9 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
             try:
                 keywords_area = self.query_one("#notes-keywords-area", TextArea)
                 input_keyword_texts = {kw.strip().lower() for kw in keywords_area.text.split(',') if kw.strip()}
-                
-                logging.info(f"Attempting to save keywords for note {self.current_selected_note_id}. Input: {input_keyword_texts}")
+
+                logging.info(
+                    f"Attempting to save keywords for note {self.current_selected_note_id}. Input: {input_keyword_texts}")
 
                 # Get existing keyword links for the note
                 existing_linked_keywords_data = self.notes_service.get_keywords_for_note(
@@ -969,24 +1335,25 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
 
                 # Process input keywords: get/create IDs
                 for kw_text in input_keyword_texts:
-                    if not kw_text: continue # Skip empty strings after split/strip
-                    
+                    if not kw_text: continue  # Skip empty strings after split/strip
+
                     keyword_detail = self.notes_service.get_keyword_by_text(self.notes_user_id, kw_text)
-                    if not keyword_detail: # Keyword doesn't exist globally for this user
+                    if not keyword_detail:  # Keyword doesn't exist globally for this user
                         logging.debug(f"Keyword '{kw_text}' not found globally, creating it.")
                         new_kw_id = self.notes_service.add_keyword(self.notes_user_id, kw_text)
-                        if new_kw_id is None: # Should not happen if add_keyword raises on error
+                        if new_kw_id is None:  # Should not happen if add_keyword raises on error
                             logging.error(f"Failed to create new keyword '{kw_text}', skipping.")
                             continue
                         processed_keyword_ids.add(new_kw_id)
                         logging.info(f"Created new keyword '{kw_text}' with ID {new_kw_id}.")
-                    else: # Keyword exists globally
+                    else:  # Keyword exists globally
                         processed_keyword_ids.add(keyword_detail['id'])
-                
+
                 # Link new keywords
                 for kw_id in processed_keyword_ids:
                     # Check if this keyword_id is among those already linked (by comparing IDs, not text)
-                    is_already_linked = any(existing_kw_data['id'] == kw_id for existing_kw_data in existing_linked_keywords_data)
+                    is_already_linked = any(
+                        existing_kw_data['id'] == kw_id for existing_kw_data in existing_linked_keywords_data)
                     if not is_already_linked:
                         self.notes_service.link_note_to_keyword(
                             user_id=self.notes_user_id,
@@ -997,14 +1364,15 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
 
                 # Unlink keywords that were removed
                 for existing_kw_text, existing_kw_id in existing_linked_keyword_map.items():
-                    if existing_kw_text not in input_keyword_texts: # Compare by lowercased text
+                    if existing_kw_text not in input_keyword_texts:  # Compare by lowercased text
                         self.notes_service.unlink_note_from_keyword(
                             user_id=self.notes_user_id,
                             note_id=self.current_selected_note_id,
                             keyword_id=existing_kw_id
                         )
-                        logging.debug(f"Unlinked keyword ID {existing_kw_id} ('{existing_kw_text}') from note {self.current_selected_note_id}")
-                
+                        logging.debug(
+                            f"Unlinked keyword ID {existing_kw_id} ('{existing_kw_text}') from note {self.current_selected_note_id}")
+
                 # Refresh the displayed keywords
                 refreshed_keywords_data = self.notes_service.get_keywords_for_note(
                     user_id=self.notes_user_id,
@@ -1015,13 +1383,15 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
                 logging.info(f"Keywords for note {self.current_selected_note_id} updated and refreshed.")
 
             except CharactersRAGDBError as e:
-                logging.error(f"Database error saving keywords for note {self.current_selected_note_id}: {e}", exc_info=True)
+                logging.error(f"Database error saving keywords for note {self.current_selected_note_id}: {e}",
+                              exc_info=True)
                 # self.notify("Error saving keywords.", severity="error")
             except QueryError as e:
                 logging.error(f"UI component #notes-keywords-area not found: {e}", exc_info=True)
                 # self.notify("UI error while saving keywords.", severity="error")
             except Exception as e:
-                logging.error(f"Unexpected error saving keywords for note {self.current_selected_note_id}: {e}", exc_info=True)
+                logging.error(f"Unexpected error saving keywords for note {self.current_selected_note_id}: {e}",
+                              exc_info=True)
                 # self.notify("Unexpected error saving keywords.", severity="error")
             return
 
@@ -1035,7 +1405,8 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
             try:
                 text_area = self.query_one(f"#{prefix}-input", TextArea)
                 chat_container = self.query_one(f"#{prefix}-log", VerticalScroll)
-                provider_widget = self.query_one(f"#{prefix}-api-provider", Select)
+                provider_widget = self.query_one(f"#{prefix}-api-provider",
+                                                 Select)  # e.g., #chat-api-provider or #conversations_characters-api-provider
                 model_widget = self.query_one(f"#{prefix}-api-model", Select)
                 system_prompt_widget = self.query_one(f"#{prefix}-system-prompt", TextArea)
                 temp_widget = self.query_one(f"#{prefix}-temperature", Input)
@@ -1133,6 +1504,30 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
             if not reuse_last_user_bubble:
                 user_msg_widget = ChatMessage(message, role="User")
                 await chat_container.mount(user_msg_widget)
+
+            # --- Conversation ID Management (Conceptual for new chat) ---
+            if prefix == "chat" and not self.current_chat_conversation_id:
+                # This is likely the first message in a new chat.
+                # A new conversation ID would be generated here or by the first API call's response handling.
+                # For now, we assume it's generated and set elsewhere.
+                # Example: self.current_chat_conversation_id = self.notes_service._get_db(self.notes_user_id)._generate_uuid()
+                #          (if creating before API call)
+                # Or it's set when handling the API response that confirms conversation creation.
+                # For this task, the save button relies on it being set.
+                # We also need to load/clear the title/keywords input fields.
+                logging.info(
+                    f"New chat detected or conversation ID not set. Current ID: {self.current_chat_conversation_id}")
+                try:
+                    title_input = self.query_one("#chat-conversation-title-input", Input)
+                    title_input.value = ""  # Clear for new chat
+                    keywords_input = self.query_one("#chat-conversation-keywords-input", TextArea)
+                    keywords_input.text = ""  # Clear for new chat
+                    # Potentially update TitleBar if a new chat implies a generic title
+                    # title_bar = self.query_one(TitleBar)
+                    # title_bar.update_title("Chat")
+                except QueryError:
+                    logging.error("Could not clear title/keyword inputs for new chat.")
+
             chat_container.scroll_end(animate=True)
             text_area.clear()
             text_area.focus()
@@ -1144,7 +1539,7 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
             env_key_found = False
 
             # 1. Get provider-specific settings from the loaded config
-            provider_settings_key = selected_provider.lower() # e.g., "openai", "anthropic"
+            provider_settings_key = selected_provider.lower()  # e.g., "openai", "anthropic"
             # Access the already loaded config (self.app_config or load_settings() again if needed)
             # Assuming self.app_config holds the merged config dictionary
             provider_settings = self.app_config.get("api_settings", {}).get(provider_settings_key, {})
@@ -1155,7 +1550,8 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
                 if config_api_key:
                     api_key_for_call = config_api_key
                     config_key_found = True
-                    logging.debug(f"Using API key for '{selected_provider}' from config file [api_settings.{provider_settings_key}].api_key.")
+                    logging.debug(
+                        f"Using API key for '{selected_provider}' from config file [api_settings.{provider_settings_key}].api_key.")
                 else:
                     # 3. If no config key, check environment variable specified in config
                     env_var_name = provider_settings.get("api_key_env_var", "").strip()
@@ -1164,21 +1560,24 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
                         if env_api_key:
                             api_key_for_call = env_api_key
                             env_key_found = True
-                            logging.debug(f"Using API key for '{selected_provider}' from environment variable '{env_var_name}'.")
+                            logging.debug(
+                                f"Using API key for '{selected_provider}' from environment variable '{env_var_name}'.")
                         else:
-                            logging.debug(f"Environment variable '{env_var_name}' for '{selected_provider}' not found or empty.")
+                            logging.debug(
+                                f"Environment variable '{env_var_name}' for '{selected_provider}' not found or empty.")
                     else:
                         logging.debug(f"No 'api_key_env_var' specified for '{selected_provider}' in config.")
             else:
-                logging.warning(f"No [api_settings.{provider_settings_key}] section found in config for '{selected_provider}'. Cannot check for configured API key or ENV variable name.")
-
+                logging.warning(
+                    f"No [api_settings.{provider_settings_key}] section found in config for '{selected_provider}'. Cannot check for configured API key or ENV variable name.")
 
             # 4. Handle case where no key was found (neither config nor ENV)
             if not api_key_for_call:
-                logging.warning(f"API Key for '{selected_provider}' not found in config file or specified environment variable.")
+                logging.warning(
+                    f"API Key for '{selected_provider}' not found in config file or specified environment variable.")
                 # Define known cloud providers requiring keys
                 providers_requiring_key = ["OpenAI", "Anthropic", "Google", "MistralAI", "Groq",
-                                           "Cohere", "OpenRouter", "HuggingFace", "DeepSeek"] # Add any others
+                                           "Cohere", "OpenRouter", "HuggingFace", "DeepSeek"]  # Add any others
                 # Check if the selected provider requires a key
                 if selected_provider in providers_requiring_key:
                     logging.error(f"API call aborted: API Key for required provider '{selected_provider}' is missing.")
@@ -1191,13 +1590,14 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
                                     role="AI", classes="-error"))
                     # Remove the placeholder "thinking" message if it exists
                     if self.current_ai_message_widget and self.current_ai_message_widget.is_mounted:
-                         await self.current_ai_message_widget.remove()
-                         self.current_ai_message_widget = None
-                    return # Stop processing
+                        await self.current_ai_message_widget.remove()
+                        self.current_ai_message_widget = None
+                    return  # Stop processing
                 else:
                     # Assume it's a local model or one not needing a key
-                    logging.info(f"Proceeding without API key for provider '{selected_provider}' (assumed local/no key required).")
-                    api_key_for_call = None # Explicitly ensure it's None
+                    logging.info(
+                        f"Proceeding without API key for provider '{selected_provider}' (assumed local/no key required).")
+                    api_key_for_call = None  # Explicitly ensure it's None
 
             # --- Mount Placeholder AI Message ---
             ai_placeholder_widget = ChatMessage(message="AI thinking...", role="AI", generation_complete=False)
@@ -1573,7 +1973,7 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
             # Optionally, display an error in the UI
             return
         try:
-            notes_list = self.notes_service.list_notes(user_id=self.notes_user_id, limit=200) # Increased limit
+            notes_list = self.notes_service.list_notes(user_id=self.notes_user_id, limit=200)  # Increased limit
             sidebar_left = self.query_one("#notes-sidebar-left", NotesSidebarLeft)
             await sidebar_left.populate_notes_list(notes_list)
             logging.info(f"Loaded {len(notes_list)} notes into the sidebar.")
@@ -1592,7 +1992,7 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
                 logging.error("Notes service not available, cannot load selected note.")
                 return
 
-            selected_item = event.item # This is the ListItem
+            selected_item = event.item  # This is the ListItem
             if selected_item and hasattr(selected_item, 'note_id') and hasattr(selected_item, 'note_version'):
                 note_id = selected_item.note_id
                 note_version = selected_item.note_version
@@ -1617,22 +2017,23 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
                         # editor.focus()
 
                         title_input = self.query_one("#notes-title-input", Input)
-                        title_input.value = self.current_selected_note_title or "" # Handle None title
+                        title_input.value = self.current_selected_note_title or ""  # Handle None title
 
                         # Clear and update keywords area
                         try:
                             keywords_area = self.query_one("#notes-keywords-area", TextArea)
                             keywords_for_note = self.notes_service.get_keywords_for_note(
                                 user_id=self.notes_user_id,
-                                note_id=note_id # note_id is available from the selection logic
+                                note_id=note_id  # note_id is available from the selection logic
                             )
-                            
+
                             if keywords_for_note:
                                 keywords_str = ", ".join([kw['keyword'] for kw in keywords_for_note])
                                 keywords_area.text = keywords_str
-                                logging.info(f"Displayed {len(keywords_for_note)} keywords for note {note_id}: '{keywords_str}'")
+                                logging.info(
+                                    f"Displayed {len(keywords_for_note)} keywords for note {note_id}: '{keywords_str}'")
                             else:
-                                keywords_area.text = "" # Clear if no keywords
+                                keywords_area.text = ""  # Clear if no keywords
                                 logging.info(f"No keywords found for note {note_id}.")
 
                         except CharactersRAGDBError as e:
@@ -1647,7 +2048,7 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
                         logging.info(f"Loaded note '{self.current_selected_note_title}' into editor.")
                     else:
                         logging.warning(f"Could not retrieve details for note ID: {note_id}")
-                        self.current_selected_note_id = None # Clear selection
+                        self.current_selected_note_id = None  # Clear selection
                         self.current_selected_note_version = None
                         self.current_selected_note_title = None
                         self.current_selected_note_content = ""
@@ -1675,7 +2076,7 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
 
         if event.input.id == "notes-search-input":
             search_term = event.value.strip()
-            logging.debug(f"Search term entered: '{search_term}'")
+            logging.debug(f"Search term entered for notes: '{search_term}'")
 
             if not self.notes_service:
                 logging.error("Notes service not available for search.")
@@ -1683,7 +2084,7 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
 
             try:
                 sidebar_left = self.query_one("#notes-sidebar-left", NotesSidebarLeft)
-                if not search_term: # If search term is empty, load all notes
+                if not search_term:  # If search term is empty, load all notes
                     await self.load_and_display_notes()
                 else:
                     # Optional: Add a small delay or minimum character count if desired
@@ -1695,7 +2096,7 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
                     notes_list = self.notes_service.search_notes(
                         user_id=self.notes_user_id,
                         search_term=search_term,
-                        limit=200 # Or a suitable limit for search results
+                        limit=200  # Or a suitable limit for search results
                     )
                     await sidebar_left.populate_notes_list(notes_list)
                     logging.info(f"Found {len(notes_list)} notes for search term '{search_term}'.")
@@ -1711,9 +2112,190 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
                 logging.error(f"UI component not found during note search: {e}", exc_info=True)
             except Exception as e:
                 logging.error(f"Unexpected error during note search: {e}", exc_info=True)
-            return # Ensure this event is handled here
-        
-        # ... (any other Input.Changed handlers)
+            return  # Ensure this event is handled here
+
+        elif event.input.id == "chat-conversation-search-bar":
+            # Call the helper method to perform search when text changes in the search bar
+            # Add a debounce to avoid searching on every keystroke immediately
+            self.debounce_channel("conversation_search", self._perform_conversation_search, delay=0.5)
+            return
+
+        elif event.input.id == "conv-char-search-input":
+            self.debounce_channel("conv_char_search", self._perform_conv_char_search, delay=0.5)
+            return
+
+    async def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """Handle checkbox changes for conversation search filters."""
+        checkbox_id = event.checkbox.id
+        logging.debug(f"Checkbox '{checkbox_id}' changed to {event.value}")
+
+        if checkbox_id == "chat-conversation-search-all-characters-checkbox":
+            try:
+                char_filter_select = self.query_one("#chat-conversation-search-character-filter-select", Select)
+                if event.value is True:  # "All Characters" is checked
+                    char_filter_select.disabled = True
+                    char_filter_select.value = Select.BLANK  # Clear selection
+                    logging.debug("Disabled character filter select and cleared its value.")
+                else:  # "All Characters" is unchecked
+                    char_filter_select.disabled = False
+                    logging.debug("Enabled character filter select.")
+                # Trigger a new search based on the changed filter
+                await self._perform_conversation_search()
+            except QueryError as e:
+                logging.error(f"Error accessing character filter select: {e}", exc_info=True)
+
+        elif checkbox_id == "chat-conversation-search-include-character-checkbox":
+            # This checkbox's state will be read by _perform_conversation_search
+            # Trigger a new search based on the changed filter
+            await self._perform_conversation_search()
+
+    async def _perform_conversation_search(self) -> None:
+        """Performs conversation search based on current UI filter states and populates the ListView."""
+        logging.debug("Performing conversation search...")
+        try:
+            search_bar = self.query_one("#chat-conversation-search-bar", Input)
+            search_term = search_bar.value.strip()
+
+            include_char_chats_checkbox = self.query_one("#chat-conversation-search-include-character-checkbox",
+                                                         Checkbox)
+            include_character_chats = include_char_chats_checkbox.value
+
+            all_chars_checkbox = self.query_one("#chat-conversation-search-all-characters-checkbox", Checkbox)
+            search_all_characters = all_chars_checkbox.value
+
+            char_filter_select = self.query_one("#chat-conversation-search-character-filter-select", Select)
+            selected_character_id = char_filter_select.value if not char_filter_select.disabled and char_filter_select.value != Select.BLANK else None
+
+            results_list_view = self.query_one("#chat-conversation-search-results-list", ListView)
+            await results_list_view.clear()
+
+            if not self.notes_service:
+                logging.error("Notes service not available for conversation search.")
+                # Optionally, show a message in the ListView
+                await results_list_view.append(ListItem(Label("Error: Notes service unavailable.")))
+                return
+
+            db = self.notes_service._get_db(self.notes_user_id)
+
+            # Refined search logic based on checkbox states
+            conversations = []
+            if not include_character_chats:
+                # Search only for conversations with character_id IS NULL
+                # This requires db.search_conversations_by_title to support a new flag/mode
+                # For now, log this case and skip results, or implement a temporary client-side filter if feasible
+                logging.info("Search limited to non-character chats (feature requires DB method update).")
+                # As a placeholder, we can fetch all and filter, but this is inefficient.
+                # temp_conversations = db.search_conversations_by_title(title_query=search_term, character_id=None, limit=1000)
+                # conversations = [conv for conv in temp_conversations if conv.get('character_id') is None]
+                # For now, let's just return empty or a message.
+                await results_list_view.append(ListItem(Label("Filtering non-character chats needs DB update.")))
+
+            elif search_all_characters or selected_character_id is None:
+                # Search all conversations (character_id can be anything or NULL)
+                logging.debug(f"Searching all conversations for term: '{search_term}'")
+                conversations = db.search_conversations_by_title(title_query=search_term, character_id=None, limit=100)
+            else:  # Specific character selected
+                logging.debug(
+                    f"Searching conversations for term: '{search_term}', character_id: {selected_character_id}")
+                conversations = db.search_conversations_by_title(title_query=search_term,
+                                                                 character_id=selected_character_id, limit=100)
+
+            if not conversations:
+                await results_list_view.append(ListItem(Label(
+                    "No conversations found." if search_term or selected_character_id else "Enter search term or select character.")))
+
+            for conv in conversations:
+                title = conv.get('title') or f"Chat ID: {conv['id'][:8]}..."
+                item = ListItem(Label(title))
+                item.conversation_id = conv['id']  # Store ID for loading
+                item.conversation_title = conv.get('title')  # Store for potential use
+                item.conversation_keywords = conv.get('keywords')  # Store for potential use
+                await results_list_view.append(item)
+            logging.info(f"Conversation search yielded {len(conversations)} results.")
+
+        except QueryError as e:
+            logging.error(f"UI component not found during conversation search: {e}", exc_info=True)
+            if 'results_list_view' in locals():  # Check if listview was queried
+                try:
+                    await results_list_view.append(ListItem(Label("Error: UI component missing.")))
+                except Exception:
+                    pass  # Avoid error in error handling
+        except CharactersRAGDBError as e:
+            logging.error(f"Database error during conversation search: {e}", exc_info=True)
+            if 'results_list_view' in locals():
+                try:
+                    await results_list_view.append(ListItem(Label("Error: Database search failed.")))
+                except Exception:
+                    pass
+        except Exception as e:
+            logging.error(f"Unexpected error during conversation search: {e}", exc_info=True)
+            if 'results_list_view' in locals():
+                try:
+                    await results_list_view.append(ListItem(Label("Error: Unexpected search failure.")))
+                except Exception:
+                    pass
+
+    async def _perform_conv_char_search(self) -> None:
+        """Performs conversation search for the Conversations & Characters tab."""
+        logging.debug("Performing Conversations & Characters search...")
+        try:
+            search_input = self.query_one("#conv-char-search-input", Input)
+            search_term = search_input.value.strip()
+
+            results_list_view = self.query_one("#conv-char-search-results-list", ListView)
+            await results_list_view.clear()
+
+            if not self.notes_service:
+                logging.error("Notes service not available for ConvChar search.")
+                await results_list_view.append(ListItem(Label("Error: Notes service unavailable.")))
+                return
+
+            db = self.notes_service._get_db(self.notes_user_id)
+            # For now, search_conversations_by_title is used. This might need a more generic search method later.
+            # character_id=None means search all conversations, including those linked and not linked to characters.
+            conversations = db.search_conversations_by_title(title_query=search_term, character_id=None, limit=200)
+
+            if not conversations:
+                await results_list_view.append(ListItem(Label("No items found.")))
+            else:
+                for conv in conversations:
+                    title = conv.get('title') or f"Conversation ID: {conv['id'][:8]}..."
+                    # Check if character_id is present and not 0 or None
+                    char_id = conv.get('character_id')
+                    if char_id:  # Assuming 0 or None means no specific character
+                        try:
+                            char_details = db.get_character_card_by_id(char_id)
+                            if char_details and char_details.get('name'):
+                                title = f"[Char: {char_details['name']}] {title}"
+                        except Exception as e_char:
+                            logging.warning(f"Could not fetch character name for ID {char_id}: {e_char}")
+
+                    item = ListItem(Label(title))
+                    item.details = conv  # Store all conversation details
+                    await results_list_view.append(item)
+            logging.info(f"ConvChar search for '{search_term}' yielded {len(conversations)} results.")
+
+        except QueryError as e:
+            logging.error(f"UI component not found during ConvChar search: {e}", exc_info=True)
+            if 'results_list_view' in locals():
+                try:
+                    await results_list_view.append(ListItem(Label("Error: UI component missing.")))
+                except Exception:
+                    pass
+        except CharactersRAGDBError as e:
+            logging.error(f"Database error during ConvChar search: {e}", exc_info=True)
+            if 'results_list_view' in locals():
+                try:
+                    await results_list_view.append(ListItem(Label("Error: Database search failed.")))
+                except Exception:
+                    pass
+        except Exception as e:
+            logging.error(f"Unexpected error during ConvChar search: {e}", exc_info=True)
+            if 'results_list_view' in locals():
+                try:
+                    await results_list_view.append(ListItem(Label("Error: Unexpected search failure.")))
+                except Exception:
+                    pass
 
     # --- Helper methods ---
     def _safe_float(self, value: str, default: float, name: str) -> float:
@@ -1721,14 +2303,16 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
         try:
             return float(value)
         except ValueError:
-            logging.warning(f"Invalid {name} '{value}', using {default}"); return default
+            logging.warning(f"Invalid {name} '{value}', using {default}")
+            return default
 
     def _safe_int(self, value: str, default: int, name: str) -> int:
         if not value: return default
         try:
             return int(value)
         except ValueError:
-            logging.warning(f"Invalid {name} '{value}', using {default}"); return default
+            logging.warning(f"Invalid {name} '{value}', using {default}")
+            return default
 
     def _get_api_name(self, provider: str, endpoints: dict) -> Optional[str]:
         # Map provider names (case-insensitive keys from config/UI) to endpoint keys in config.toml
@@ -1765,16 +2349,16 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
         print(f"Widget ID: chat-api-provider")
         print(f"New Value Observed: {new_value!r}")
         if new_value is None or new_value == Select.BLANK:
-             print(f"Watcher: Value is blank or None. Clearing model options.")
-             self._update_model_select("chat", []) # Pass empty list
-             return
+            print(f"Watcher: Value is blank or None. Clearing model options.")
+            self._update_model_select("chat", [])  # Pass empty list
+            return
 
         # --- Re-introduce the model update logic here ---
         print(f"Watcher: Updating models for provider '{new_value}'")
         print(f"Watcher: Available Provider Keys: {list(self.providers_models.keys())}")
-        models = self.providers_models.get(new_value, []) # Get models for the new provider key
+        models = self.providers_models.get(new_value, [])  # Get models for the new provider key
         print(f"Watcher: Models retrieved: {models}")
-        self._update_model_select("chat", models) # Call helper
+        self._update_model_select("chat", models)  # Call helper
         print(f"--- WATCHER END (chat-api-provider) ---\n")
 
     def watch_character_api_provider_value(self, new_value: Optional[str]) -> None:
@@ -1815,7 +2399,7 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
         except Exception as e:
             print(f"Helper ERROR setting options: {e}")
             logging.error(f"Helper ERROR setting options for {model_select_id}: {e}")
-            model_select.set_options([]) # Clear on error
+            model_select.set_options([])  # Clear on error
             model_select.prompt = "Error"
             model_select.value = None
             return
@@ -1825,19 +2409,19 @@ class TldwCli(App[None]): # Specify return type for run() if needed, None is com
         if models:
             # You could try and get the default from config here if needed
             # default_model_for_provider = get_setting("api_settings", f"{new_value}.model") # Example
-            model_to_set = models[0] # Simple default: first in list
+            model_to_set = models[0]  # Simple default: first in list
             print(f"Helper: Setting value to first model: {model_to_set!r}")
         else:
             print(f"Helper: No models, clearing value.")
 
         try:
-             # Explicitly set the value *after* setting options
-             # This might be necessary if set_options clears the value
+            # Explicitly set the value *after* setting options
+            # This might be necessary if set_options clears the value
             model_select.value = model_to_set
             print(f">>> HELPER: Model select value AFTER explicit set: {model_select.value!r}")
         except Exception as e:
-             print(f">>> HELPER ERROR setting value: {e}")
-             logging.error(f"Helper ERROR setting value for {model_select_id}: {e}")
+            print(f">>> HELPER ERROR setting value: {e}")
+            logging.error(f"Helper ERROR setting value for {model_select_id}: {e}")
 
         model_select.prompt = "Select Model..." if models else "No models available"
         print(f"Helper: Model select value after update: {model_select.value!r}")
@@ -1851,7 +2435,7 @@ if __name__ == "__main__":
             logging.info(f"Config file not found at {DEFAULT_CONFIG_PATH}, creating default.")
             DEFAULT_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
             with open(DEFAULT_CONFIG_PATH, "w") as f:
-                f.write(CONFIG_TOML_CONTENT) # Write the example content
+                f.write(CONFIG_TOML_CONTENT)  # Write the example content
     except Exception as e:
         logging.error(f"Could not ensure creation of default config file: {e}", exc_info=True)
 
@@ -2064,9 +2648,9 @@ ChatMessage.-ai .message-actions.-generating {
     try:
         css_file = Path(TldwCli.CSS_PATH)
         if not css_file.is_file():
-             css_file.parent.mkdir(parents=True, exist_ok=True)
-             with open(css_file, "w") as f: f.write(css_content)
-             logging.info(f"Created default CSS file: {css_file}")
+            css_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(css_file, "w") as f: f.write(css_content)
+            logging.info(f"Created default CSS file: {css_file}")
     except Exception as e:
         logging.error(f"Error handling CSS file '{TldwCli.CSS_PATH}': {e}", exc_info=True)
 
@@ -2083,13 +2667,13 @@ ChatMessage.-ai .message-actions.-generating {
     try:
         app.run()
     except Exception as e:
-         print(f"--- CRITICAL ERROR DURING app.run() ---")
-         logging.exception("--- CRITICAL ERROR DURING app.run() ---")
-         traceback.print_exc() # Make sure traceback prints
+        print(f"--- CRITICAL ERROR DURING app.run() ---")
+        logging.exception("--- CRITICAL ERROR DURING app.run() ---")
+        traceback.print_exc()  # Make sure traceback prints
     finally:
-         # This might run even if app exits early internally in run()
-         print("--- FINALLY block after app.run() ---")
-         logging.info("--- FINALLY block after app.run() ---")
+        # This might run even if app exits early internally in run()
+        print("--- FINALLY block after app.run() ---")
+        logging.info("--- FINALLY block after app.run() ---")
 
     print("--- AFTER app.run() call (if not crashed hard) ---")
     logging.info("--- AFTER app.run() call (if not crashed hard) ---")

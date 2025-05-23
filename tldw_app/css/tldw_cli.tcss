@@ -22,13 +22,13 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 /* Sidebar Styling */
 /* Existing left sidebar */
 .sidebar { 
-    width: 42; 
-    background: $boost; 
-    padding: 1 2; 
-    border-right: thick $background-darken-1; 
-    height: 100%; 
-    overflow-y: auto; 
-    overflow-x: hidden; 
+    width: 70;
+    background: $boost;
+    padding: 1 2;
+    border-right: thick $background-darken-1;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 /* Collapsed state for the existing left sidebar */
 .sidebar.collapsed {
@@ -42,7 +42,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 /* New right sidebar (character-sidebar) */
 #character-sidebar {
     dock: right; /* Position on the right */
-    width: 35;   /* Specific width for this sidebar */
+    width: 70;   /* Specific width for this sidebar */
     background: $boost;
     padding: 1 2;
     border-left: thick $background-darken-1; /* Border on the left */
@@ -81,7 +81,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 }
 
 /* Input area styling (shared by chat and character) */
-#chat-input-area, #character-input-area {
+#chat-input-area, #conv-char-input-area { /* Updated from #character-input-area */
     height: auto;    /* Allow height to adjust */
     max-height: 12;  /* Limit growth */
     width: 100%;
@@ -105,29 +105,84 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     margin-top: 0;
 }
 
-/* --- Character Chat Window specific layouts --- */
-#character-main-content {
-    layout: vertical;
+/* --- Conversations & Characters Window specific layouts (previously Character Chat) --- */
+/* Main container for the three-pane layout */
+#conversations_characters-window {
+    layout: horizontal; /* Crucial for side-by-side panes */
+    /* Ensure it takes full height if not already by .window */
     height: 100%;
-    width: 1fr;
 }
-#character-top-area {
-    height: 1fr; /* Top area takes remaining vertical space */
+
+/* Left Pane Styling */
+.cc-left-pane {
+    width: 30%; /* Example width */
+    height: 100%;
+    background: $boost;
+    padding: 1;
+    border-right: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Center Pane Styling */
+.cc-center-pane {
+    width: 1fr; /* Takes remaining space */
+    height: 100%;
+    padding: 1;
+    overflow-y: auto; /* For conversation history */
+}
+
+/* Right Pane Styling */
+.cc-right-pane {
+    width: 30%; /* Example width */
+    height: 100%;
+    background: $boost;
+    padding: 1;
+    border-left: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* General styles for elements within these panes (can reuse/adapt from .sidebar styles) */
+.cc-left-pane Input, .cc-right-pane Input {
+    width: 100%; margin-bottom: 1;
+}
+.cc-left-pane ListView {
+    height: 1fr; /* Make ListView take available space */
+    margin-bottom: 1;
+    border: round $surface;
+}
+.cc-left-pane Button, .cc-right-pane Button {
     width: 100%;
-    layout: horizontal;
     margin-bottom: 1;
 }
-/* Log when next to portrait (Still RichLog here) */
-#character-top-area > #character-log { /* Target by ID is safer */
-    margin: 0 1 0 0;
-    height: 100%;
-    margin-bottom: 0; /* Override base margin */
-    border: round $surface; /* Added border back for RichLog */
-    padding: 0 1; /* Added padding back for RichLog */
-    width: 1fr; /* Ensure it takes space */
+
+/* Specific title style for panes */
+.pane-title {
+    text-style: bold;
+    margin-bottom: 1;
+    text-align: center;
+    width: 100%; /* Ensure it spans width for centering */
 }
-/* Portrait styling */
-#character-portrait {
+
+/* Specific style for keywords TextArea in the right pane */
+.conv-char-keywords-textarea {
+    height: 5; /* Example height */
+    width: 100%;
+    margin-bottom: 1;
+    border: round $surface; /* Re-apply border if not inherited */
+}
+
+/* Specific style for the "Export Options" label */
+.export-label {
+    margin-top: 2; /* Add some space above export options */
+}
+
+
+/* Old styles for #conv-char-main-content, #conv-char-top-area etc. are removed */
+/* as the structure within #conversations_characters-window is now different. */
+/* Portrait styling - if still needed, would be part of a specific pane's content now */
+/* #conv-char-portrait {
     width: 25;
     height: 100%;
     border: round $surface;

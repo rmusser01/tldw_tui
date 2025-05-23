@@ -8,10 +8,11 @@ import logging
 
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
-from textual.widgets import Static, Select, TextArea, Input, Collapsible
+from textual.widgets import Static, Select, TextArea, Input, Collapsible, Button, Checkbox, ListView
 #
 # Local Imports
 from ..config import get_providers_and_models
+
 #
 #######################################################################################################################
 #
@@ -19,6 +20,7 @@ from ..config import get_providers_and_models
 
 # Sidebar visual constants ---------------------------------------------------
 SIDEBAR_WIDTH = "30%"
+
 
 def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
     """Yield the widgets for the settings sidebar.
@@ -130,6 +132,68 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
                 value=default_top_k,
                 classes="sidebar-input",
             )
+
+        # ===================================================================
+        # NEW: Conversation Details (only for chat tab)
+        # ===================================================================
+        if id_prefix == "chat":  # Assuming "chat" is the id_prefix for the main chat tab
+            with Collapsible(title="Conversation Details", collapsed=False):
+                yield Static("Current Conversation Title:", classes="sidebar-label")
+                yield Input(
+                    id=f"{id_prefix}-conversation-title-input",
+                    placeholder="Enter conversation title...",
+                    classes="sidebar-input"
+                )
+                yield Static("Conversation Keywords:", classes="sidebar-label")
+                yield TextArea(
+                    id=f"{id_prefix}-conversation-keywords-input",
+                    classes="sidebar-textarea"  # Use existing class for basic styling
+                )
+                # Set initial height for TextArea via styles property if not handled by class
+                # Example: self.query_one(f"#{id_prefix}-conversation-keywords-input", TextArea).styles.height = 5
+                yield Button(
+                    "Save Title & Keywords",
+                    id=f"{id_prefix}-save-conversation-details-button",
+                    variant="primary",
+                    classes="sidebar-button"  # Add a class if you have specific button styling
+                )
+
+            # NEW: Saved Conversations (only for chat tab)
+            with Collapsible(title="Saved Conversations", collapsed=True):
+                yield Input(
+                    id=f"{id_prefix}-conversation-search-bar",
+                    placeholder="Search all chats...",
+                    classes="sidebar-input"
+                )
+                yield Checkbox(
+                    "Include Character Chats",
+                    id=f"{id_prefix}-conversation-search-include-character-checkbox"
+                    # value=False by default for Checkbox
+                )
+                yield Select(
+                    [],  # Empty options initially
+                    id=f"{id_prefix}-conversation-search-character-filter-select",
+                    allow_blank=True,  # User can select nothing to clear filter
+                    prompt="Filter by Character...",
+                    classes="sidebar-select"  # Assuming a general class for selects or use default
+                )
+                yield Checkbox(
+                    "All Characters",
+                    id=f"{id_prefix}-conversation-search-all-characters-checkbox",
+                    value=True  # Default to True
+                )
+                yield ListView(
+                    id=f"{id_prefix}-conversation-search-results-list",
+                    classes="sidebar-listview"  # Add specific styling if needed
+                )
+                # Set initial height for ListView via styles property if not handled by class
+                # Example: self.query_one(f"#{id_prefix}-conversation-search-results-list", ListView).styles.height = 10
+                yield Button(
+                    "Load Selected Chat",
+                    id=f"{id_prefix}-conversation-load-selected-button",
+                    variant="default",  # Or "primary"
+                    classes="sidebar-button"  # Use existing class or new one
+                )
 
         # ===================================================================
         # 3. Media Settings – placeholders

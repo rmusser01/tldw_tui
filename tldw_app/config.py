@@ -123,14 +123,14 @@ def load_settings() -> Dict:
 
     current_file_path = Path(__file__).resolve()
     # config.py is in project_root/tldw_server_api/app/core/config.py
-    ACTUAL_PROJECT_ROOT = current_file_path.parent.parent.parent.parent # /project_root/
-    API_COMPONENT_ROOT = current_file_path.parent.parent.parent # /project_root/tldw_server_api/
+    ACTUAL_PROJECT_ROOT = current_file_path.parent # /project_root/
+    APP_COMPONENT_ROOT = current_file_path.parent # /project_root/tldw_server_api/
     logger.info(f"Determined ACTUAL_PROJECT_ROOT for general paths: {ACTUAL_PROJECT_ROOT}")
-    logger.info(f"Determined API_COMPONENT_ROOT for config files: {API_COMPONENT_ROOT}")
+    logger.info(f"Determined APP_COMPONENT_ROOT for config files: {APP_COMPONENT_ROOT}")
 
     # --- Load Comprehensive Config from TOML ---
     toml_config_data = {}
-    config_toml_path = API_COMPONENT_ROOT / "Config_Files" / "config.toml"
+    config_toml_path = APP_COMPONENT_ROOT / "Config_Files" / "config.toml"
     logger.info(f"Attempting to load comprehensive TOML config from: {str(config_toml_path)}")
     try:
         with open(config_toml_path, "rb") as f: # TOML library recommends 'rb'
@@ -173,11 +173,6 @@ def load_settings() -> Dict:
     # --- Single-User Settings ---
     single_user_fixed_id = int(os.getenv("SINGLE_USER_FIXED_ID", _get_typed_value(processing_section, "single_user_fixed_id", "0", int)))
     single_user_api_key = os.getenv("API_KEY", _get_typed_value(api_section, "single_user_api_key", "default-secret-key-for-single-user"))
-
-    # --- Multi-User Settings (JWT) ---
-    jwt_secret_key = os.getenv("JWT_SECRET_KEY", _get_typed_value(api_section, "jwt_secret_key", "a_very_insecure_default_secret_key_for_dev_only"))
-    jwt_algorithm = _get_typed_value(api_section, "jwt_algorithm", "HS256")
-    access_token_expire_minutes = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", _get_typed_value(api_section, "access_token_expire_minutes", "30", int)))
 
     # --- Paths ---
     default_user_data_base_dir = ACTUAL_PROJECT_ROOT / "user_databases"
@@ -225,20 +220,16 @@ def load_settings() -> Dict:
         "SINGLE_USER_MODE": single_user_mode,
         "LOG_LEVEL": log_level_toml,
         "PROJECT_ROOT": ACTUAL_PROJECT_ROOT,
-        "API_COMPONENT_ROOT": API_COMPONENT_ROOT, # Added for clarity
+        "API_COMPONENT_ROOT": APP_COMPONENT_ROOT, # Added for clarity
 
         # Single User
         "SINGLE_USER_FIXED_ID": single_user_fixed_id,
         "SINGLE_USER_API_KEY": single_user_api_key,
 
-        # Multi User / Auth
-        "JWT_SECRET_KEY": jwt_secret_key,
-        "JWT_ALGORITHM": jwt_algorithm,
-        "ACCESS_TOKEN_EXPIRE_MINUTES": access_token_expire_minutes,
+        # Auth
         "DATABASE_URL": database_url,
         "USER_DB_BASE_DIR": user_data_base_dir,
         "USERS_DB_CONFIGURED": users_db_configured,
-        "SERVER_CLIENT_ID": SERVER_CLIENT_ID,
 
         # --- Configurations migrated from load_and_log_configs ---
         "anthropic_api": {
@@ -727,12 +718,6 @@ def load_settings() -> Dict:
 
 
     # --- Warnings ---
-    if config_dict["SINGLE_USER_MODE"] and config_dict["SINGLE_USER_API_KEY"] == "default-secret-key-for-single-user":
-        logger.warning("!!! WARNING: Using default API_KEY for single-user mode. Set the API_KEY environment variable or 'single_user_api_key' in [API] TOML section for security. !!!")
-    if not config_dict["SINGLE_USER_MODE"] and config_dict["JWT_SECRET_KEY"] == "a_very_insecure_default_secret_key_for_dev_only":
-        logger.warning("!!! SECURITY WARNING: Using default JWT_SECRET_KEY in multi-user mode. Set a strong JWT_SECRET_KEY environment variable or 'jwt_secret_key' in [API] TOML section! !!!")
-    if not config_dict["SINGLE_USER_MODE"] and not config_dict["USERS_DB_CONFIGURED"]:
-         logger.warning("!!! WARNING: Multi-user mode enabled (APP_MODE=multi), but USERS_DB_ENABLED is not 'true'. User authentication will likely fail. !!!")
 
     # Create necessary directories if they don't exist
     # Ensure main SQLite database directory exists
@@ -1172,7 +1157,7 @@ def load_config(force_reload: bool = False) -> Dict[str, Any]:
             # This ensures all default sections and keys are present if user_config is partial.
             loaded_config = deep_merge_dicts(loaded_config, user_config)
             logging.info(f"Successfully loaded and merged config from {DEFAULT_CONFIG_PATH}")
-        except tomllib.TomlDecodeError as e:
+        except tomllib.DecodeError as e:
             logging.error(f"Error decoding TOML config file {DEFAULT_CONFIG_PATH}: {e}. Using default configuration.")
             # loaded_config remains as DEFAULT_CONFIG
         except Exception as e:
