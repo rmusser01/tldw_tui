@@ -193,6 +193,8 @@ def chat_with_local_llm(  # Generic OpenAI-compatible endpoint, e.g., LM Studio
         min_p: Optional[float] = None,
         model: Optional[str] = None  # Model name can be passed
 ):
+    if model is "None" or "none":
+        model = None
     loaded_config_data = load_settings()
     cfg = loaded_config_data.get('local_llm', {})  # Renamed 'local_llm_api' to 'local_llm' for consistency
 
@@ -248,6 +250,8 @@ def chat_with_llama(  # llama.cpp server with OpenAI compatible endpoint
         min_p: Optional[float] = None,
         model: Optional[str] = None  # Model name for the payload
 ):
+    if model is "None" or "none":
+        model = None
     loaded_config_data = load_settings()
     cfg = loaded_config_data.get('llama_api', {})
 
@@ -308,6 +312,8 @@ def chat_with_kobold(  # KoboldAI native API (/api/v1/generate)
         top_p: Optional[float] = None,
         model: Optional[str] = None  # Model for Kobold if selectable via API (often fixed by server)
 ):
+    if model is "None" or "none":
+        model = None
     logging.debug("KoboldAI (Native): Chat request starting...")
     loaded_config_data = load_settings()
     cfg = loaded_config_data.get('kobold_api', {})
@@ -427,6 +433,8 @@ def chat_with_oobabooga(
     top_p: Optional[float] = None,
     model: Optional[str] = None          # Model name for the payload
 ):
+    if model is "None" or "none":
+        model = None
     loaded_config_data = load_settings()
     cfg = loaded_config_data.get('ooba_api', {}) # Ensure this section exists in your config
 
@@ -484,6 +492,8 @@ def chat_with_tabbyapi(
     min_p: Optional[float] = None,
     model: Optional[str] = None                   # Mapped
 ):
+    if model is "None" or "none":
+        model = None
     loaded_config_data = load_settings()
     cfg = loaded_config_data.get('tabby_api', {})
 
@@ -543,6 +553,8 @@ def chat_with_vllm(
     model: Optional[str] = None,                  # Mapped
     vllm_api_url: Optional[str] = None            # Specific config, not from generic map
 ):
+    if model is "None" or "none":
+        model = None
     loaded_config_data = load_settings()
     cfg = loaded_config_data.get('vllm_api', {})
 
@@ -600,6 +612,8 @@ def chat_with_aphrodite(
     topk: Optional[int] = None,
     model: Optional[str] = None           # Mapped
 ):
+    if model is "None" or "none":
+        model = None
     loaded_config_data = load_settings()
     cfg = loaded_config_data.get('aphrodite_api', {})
 
@@ -720,6 +734,8 @@ def chat_with_custom_openai(
     topk: Optional[int] = None,               # Mapped from 'topk'
     model: Optional[str] = None               # Mapped
 ):
+    if model is "None" or "none":
+        model = None
     loaded_config_data = load_settings()
     cfg = loaded_config_data.get('custom_openai_api', {}) # Section name from old code
 
@@ -778,6 +794,8 @@ def chat_with_custom_openai_2(
     model: Optional[str] = None               # Mapped
     # Original didn't take maxp, minp, topk
 ):
+    if model is "None" or "none":
+        model = None
     loaded_config_data = load_settings()
     # Note: Original code referenced 'custom_openai_2_api' for retry config, but 'custom_openai_api_2' for others.
     # Using 'custom_openai_api_2' consistently for the section name.
