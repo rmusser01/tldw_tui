@@ -49,12 +49,12 @@ from .Widgets.titlebar import TitleBar
 # Adjust the path based on your project structure
 try:
     # Import from the new 'api' directory
-    from .api.LLM_API_Calls import (
+    from .tldw_api.LLM_API_Calls import (
         chat_with_openai, chat_with_anthropic, chat_with_cohere,
         chat_with_groq, chat_with_openrouter, chat_with_huggingface,
         chat_with_deepseek, chat_with_mistral, chat_with_google,
     )
-    from .api.LLM_API_Calls_Local import (
+    from .tldw_api.LLM_API_Calls_Local import (
         # Add local API functions if they are in the same file
         chat_with_llama, chat_with_kobold, chat_with_oobabooga,
         chat_with_vllm, chat_with_tabbyapi, chat_with_aphrodite,
