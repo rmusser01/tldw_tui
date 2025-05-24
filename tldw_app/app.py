@@ -21,6 +21,7 @@ from rich.markup import escape
 from textual.app import App, ComposeResult
 from rich.markup import escape as escape_markup
 from textual.logging import TextualHandler
+from textual.strip import Strip
 from textual.widgets import (
     Static, Button, Input, Header, Footer, RichLog, TextArea, Select, ListView, Checkbox, ListItem, Label, Collapsible
 )
@@ -641,6 +642,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             # --- Logs Window ---
             with Container(id=f"{TAB_LOGS}-window", classes="window"):
                 yield RichLog(id="app-log-display", wrap=True, highlight=True, markup=True, auto_scroll=True)
+                yield Button("Copy All Logs to Clipboard", id="copy-logs-button", classes="logs-action-button")
 
             # --- Other Placeholder Windows ---
             for tab_id in ALL_TABS:
@@ -1221,7 +1223,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 # self.notify("An unexpected error occurred.", severity="error")
             return
 
-        # --- Tab Switching --- (Keep this part as is)
+        # --- Tab Switching --- ────────────────────────────
         if button_id and button_id.startswith("tab-"):
             print(f">>> DEBUG: Tab button detected: {button_id}")
             new_tab_id = button_id.replace("tab-", "")
@@ -1296,7 +1298,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 logging.error(f"Unexpected error creating new note: {e}", exc_info=True)
             return
 
-        # --- New Button Functionalities for Collapsible Menu ---
+        # --- Button Functionalities for Collapsible Menu ---
         if button_id == "notes-create-new-button":  # Matches existing "notes-new-button"
             if not self.notes_service:
                 logging.error("Notes service not available, cannot create new note.")
@@ -1569,6 +1571,50 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             except Exception as e:
                 logging.error(f"Unexpected error loading chat: {e}", exc_info=True)
                 # self.notify("Unexpected error loading chat.", severity="error")
+            return
+
+        # --- Copy Logs Button ---
+        if button_id == "copy-logs-button":
+            logging.info("Copy logs button pressed.")
+            try:
+                log_widget = self.query_one("#app-log-display", RichLog)
+                if log_widget.lines:
+                    all_log_text_parts = []
+                    for i, line_item in enumerate(log_widget.lines):
+                        if isinstance(line_item, Strip):
+                            # The .text property of a Strip object returns its plain text content
+                            all_log_text_parts.append(line_item.text)
+                        else:
+                            # This case should ideally not be hit if RichLog.lines behaves as expected
+                            # (i.e., only contains Strip objects from wrapped Text).
+                            logging.warning(
+                                f"Item {i} in RichLog.lines is of unexpected type: {type(line_item)}. "
+                                f"Falling back to str() for this line: {repr(line_item)}"
+                            )
+                            all_log_text_parts.append(str(line_item))
+
+                    all_log_text = "\n".join(all_log_text_parts)
+
+                    self.copy_to_clipboard(all_log_text)
+                    self.notify(
+                        "Logs copied to clipboard!",
+                        title="Clipboard",
+                        severity="information",
+                        timeout=4
+                    )
+                    logging.debug(
+                        f"Copied {len(log_widget.lines)} lines ({len(all_log_text)} chars) from RichLog to clipboard.")
+                else:
+                    self.notify("Log is empty, nothing to copy.", title="Clipboard", severity="warning", timeout=4)
+            except QueryError:
+                self.notify("Log widget not found. Cannot copy.", title="Error", severity="error", timeout=4)
+                logging.error("Could not find #app-log-display to copy logs.")
+            except AttributeError as ae:  # Specifically catch if .text is missing on an unexpected object
+                self.notify(f"Error processing log line: {str(ae)}", title="Error", severity="error", timeout=6)
+                logging.error(f"AttributeError while processing RichLog lines: {ae}", exc_info=True)
+            except Exception as e:
+                self.notify(f"Error copying logs: {str(e)}", title="Error", severity="error", timeout=6)
+                logging.error(f"Failed to copy logs: {e}", exc_info=True)
             return
         # --- End of New Button Functionalities ---
 

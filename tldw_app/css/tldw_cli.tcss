@@ -192,9 +192,32 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     align: center top;
 }
 
-/* Logs Window */
-#logs-window { padding: 0; border: none; height: 100%; width: 100%; }
+/* Logs Window adjustments */
+#logs-window {
+    layout: vertical; /* Override .window's default horizontal layout for this specific window */
+    /* The rest of your #logs-window styles (padding, border, height, width) are fine */
+    /* E.g., if you had: padding: 0; border: none; height: 100%; width: 100%; those are okay. */
+}
+#app-log-display {
+    border: none;
+    height: 1fr;    /* RichLog takes most of the vertical space */
+    width: 100%;    /* RichLog takes full width in the vertical layout */
+    margin: 0;
+    padding: 1;     /* Your existing padding is good */
+}
+
+/* Style for the new "Copy All Logs" button */
+.logs-action-button {
+    width: 100%;     /* Button takes full width */
+    height: 3;       /* A standard button height */
+    margin-top: 1;   /* Add some space between RichLog and the button */
+    /* dock: bottom; /* Optional: If you want it always pinned to the very bottom.
+                       If omitted, it will just flow after the RichLog in the vertical layout.
+                       For simplicity, let's omit it for now. */
+}
+/* old #logs-window { padding: 0; border: none; height: 100%; width: 100%; }
 #app-log-display { border: none; height: 1fr; width: 1fr; margin: 0; padding: 1; }
+*/
 
 /* --- ChatMessage Styling --- */
 ChatMessage {
