@@ -838,10 +838,10 @@ media_db_path = "~/.local/share/tldw_cli/tldw_cli_media_v2.db"
 [api_endpoints]
 # Optional: Specify URLs for local/custom endpoints if they differ from library defaults
 # These keys should match the provider names used in the app (adjust if needed)
-Ollama = "http://localhost:11434"
 Llama_cpp = "http://localhost:8080" # Check if your API provider uses this address
-Oobabooga = "http://localhost:5000/api" # Check if your API provider uses this address
 KoboldCpp = "http://localhost:5001/api" # Check if your API provider uses this address
+Oobabooga = "http://localhost:5000/api" # Check if your API provider uses this address
+Ollama = "http://localhost:11434"
 vLLM = "http://localhost:8000" # Check if your API provider uses this address
 Custom = "http://localhost:1234/v1"
 Custom_2 = "http://localhost:5678/v1"
@@ -850,26 +850,26 @@ Custom_2 = "http://localhost:5678/v1"
 [providers]
 # This section primarily lists providers and their *available* models for the UI dropdown.
 # Actual default model/settings used for calls are defined in [api_settings.*] or [chat_defaults]/[character_defaults].
-OpenAI = ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"]
-Anthropic = ["claude-3-5-sonnet-20240620", "claude-3-opus-20240229", "claude-3-haiku-20240307"]
-Google = ["gemini-1.5-pro-latest", "gemini-1.5-flash-latest"]
-MistralAI = ["mistral-large-latest", "mistral-small-latest", "open-mixtral-8x7b"]
-Groq = ["llama3-70b-8192", "mixtral-8x7b-32768"]
-Cohere = ["command-r-plus", "command-r"]
-OpenRouter = ["meta-llama/Llama-3.1-8B-Instruct"] # Example, add more
-HuggingFace = ["mistralai/Mixtral-8x7B-Instruct-v0.1"] # Example, add more
-DeepSeek = ["deepseek-chat"]
+OpenAI = ["gpt-4.1-2025-04-14", "o4-mini-2025-04-16", "o3-2025-04-16", "o3-mini-2025-01-31", "o1-2024-12-17", "chatgpt-4o-latest", "gpt-4o-2024-11-20", "gpt-4o-2024-08-06", "gpt-4.1-mini-2025-04-14", "gpt-4.1-nano-2025-04-14", "gpt-4o-mini-2024-07-18", ]
+Anthropic = ["claude-opus-4-20250514", "claude-sonnet-4-20250514", "claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-5-sonnet-20240620", "claude-3-haiku-20240307", "claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-2.1", "claude-2.0"]
+Cohere = ["command-a-03-2025", "command-r7b-12-2024", "command-r-plus-04-2024", "command-r-plus", "command-r-08-2024", "command-r-03-2024", "command", "command-nightly", "command-light", "command-light-nightly"]
+DeepSeek = ["deepseek-chat", "deepseek-reasoner"]
+Groq = ["gemma2-9b-it", "mmeta-llama/Llama-Guard-4-12B", "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192", "llama3-70b-8192", "llama3-8b-8192",]
+Google = ["gemini-2.5-flash-preview-05-20", "gemini-2.5-pro-preview-05-06", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.5-pro", ]
+HuggingFace = ["meta-llama/Meta-Llama-3.1-8B-Instruct", "meta-llama/Meta-Llama-3.1-70B-Instruct",]
+MistralAI = ["open-mistral-nemo", "mistral-medium-2505", "codestral-2501", "mistral-saba-2502", "mistral-large-2411", "ministral-3b-2410", "ministral-8b-2410", "mistral-moderation-2411", "devstral-small-2505", "mistral-small-2503", ]
+OpenRouter = ["openai/gpt-4o-mini", "anthropic/claude-3.7-sonnet", "google/gemini-2.0-flash-001", "google/gemini-2.5-pro-preview", "google/gemini-2.5-flash-preview", "deepseek/deepseek-chat-v3-0324:free", "deepseek/deepseek-chat-v3-0324", "openai/gpt-4.1", "anthropic/claude-sonnet-4", "deepseek/deepseek-r1:free", "anthropic/claude-3.7-sonnet:thinking", "google/gemini-flash-1.5-8b", "mistralai/mistral-nemo", "google/gemini-2.5-flash-preview-05-20", ]
 # Local Providers
-Ollama = ["llama3:latest", "mistral:latest"] # Use format expected by your Ollama client
-Llama_cpp = ["."] # Often model is specified at server start, client might not need it
-Oobabooga = ["."] # Often model is specified at server start
-KoboldCpp = ["."] # Often model is specified at server start
-vLLM = ["."] # Often model is specified at server start
+Llama_cpp = ["None"]
+KoboldCpp = ["None"]
+Oobabooga = ["None"]
+Ollama = ["gemma3:12b", "gemma3:4b", "gemma3:27b", "qwen3:4b", "qwen3:8b", "qwen3:14b", "qwen3:30b", "qwen3:32b", "qwen3:235b", "devstral:24b", "deepseek-r1:671b"]
+vLLM = ["vllm-model-z", "vllm-model-x", "vllm-model-y", "vllm-model-a"]
 Custom = ["custom-model-alpha", "custom-model-beta"]
-Custom_2 = ["custom-model-gamma"]
-TabbyAPI = ["tabby-model"]
-Aphrodite = ["aphrodite-engine"]
-# local-llm = ["."] # Add if you have a specific local-llm provider entry
+Custom_2 = ["custom-model-gamma", "custom-model-delta"]
+TabbyAPI = ["tabby-model", "tabby-model-2", "tabby-model-3"]
+Aphrodite = ["aphrodite-engine", "aphrodite-engine-2"]
+local-llm = ["None"] # Add if you have a specific local-llm provider entry
 
 [api_settings] # Parent section for all API provider specific settings
 

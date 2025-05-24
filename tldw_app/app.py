@@ -106,6 +106,7 @@ TAB_NOTES = "notes"
 ALL_TABS = [TAB_CHAT, TAB_CONV_CHAR, TAB_MEDIA, TAB_SEARCH, TAB_INGEST, TAB_LOGS, TAB_STATS, TAB_NOTES]  # Updated list
 
 
+# FIXME - this is only referenced in the sidebar, should consolidate with the config loading so there's only one set of these
 ALL_API_MODELS = {**API_MODELS_BY_PROVIDER, **LOCAL_PROVIDERS}
 AVAILABLE_PROVIDERS = list(ALL_API_MODELS.keys())
 

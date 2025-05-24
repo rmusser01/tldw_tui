@@ -2,11 +2,13 @@
 
 A Textual TUI for interacting with various LLM APIs, managing conversation history, characters, notes, and more.
 
-Current status: Working. Weak DB support, lots of bugs there. Chat works great. ( I think )
+Current status: Working. Weak DB support, lots of bugs there. Chat (does not currently) work great. Rewiring to support new chat libraries.
 
 ## Features
 
-*   Connect to multiple LLM providers (OpenAI, Anthropic, local models via Ollama, etc.).
+*   Connect to multiple LLM providers
+  * Commercial: OpenAI, Anthropic, Cohere, Deepseek, Google, Groq, Mistral, .
+  * Local: Llama.cpp, Ollama, Koboldcpp, Ooba, vLLM, Tabby, Aphrodite
 *   Character chat functionality.
 *   Conversation history management.
 *   Notes and keyword management.
