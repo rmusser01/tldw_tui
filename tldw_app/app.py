@@ -604,6 +604,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 if tab_id not in [TAB_CHAT, TAB_CONV_CHAR, TAB_LOGS, TAB_NOTES]:  # Updated to TAB_CONV_CHAR
                     with Container(id=f"{tab_id}-window", classes="window placeholder-window"):
                         yield Static(f"{tab_id.replace('_', ' ').capitalize()} Window Placeholder")
+                        yield Button("Coming Soon", id=f"{tab_id}-placeholder-button", disabled=True)
 
             # --- Notes Tab Window ---
             with Container(id=f"{TAB_NOTES}-window", classes="window"):
