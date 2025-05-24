@@ -10,7 +10,7 @@ tqdm
 langdetect
 transformers
 nltk
-sklearn
+scikit-learn
 # LLM
 
 # Audio

@@ -8,11 +8,10 @@ import logging
 import logging.handlers
 import platform
 import sys
-import tomllib
 from pathlib import Path
 import traceback
 import os
-from typing import Union, Generator, Optional
+from typing import Union, Generator, Optional, List, Dict, Any
 #
 # 3rd-Party Libraries
 from rich.text import Text
@@ -1000,6 +999,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     # self.notify("Please select a conversation to load.", severity="warning") # If notifier is set up
                     return
 
+                # FIXME
                 conv_details = highlighted_item.details
                 loaded_conversation_id = conv_details.get('id')
 
@@ -1730,15 +1730,27 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 text_area = self.query_one(f"#{prefix}-input", TextArea)
                 chat_container = self.query_one(f"#{prefix}-log", VerticalScroll)
                 provider_widget = self.query_one(f"#{prefix}-api-provider",
-                                                 Select)  # e.g., #chat-api-provider or #conversations_characters-api-provider
+                                                 Select)  # e.g., #chat-api-provider
                 model_widget = self.query_one(f"#{prefix}-api-model", Select)
                 system_prompt_widget = self.query_one(f"#{prefix}-system-prompt", TextArea)
                 temp_widget = self.query_one(f"#{prefix}-temperature", Input)
                 top_p_widget = self.query_one(f"#{prefix}-top-p", Input)
                 min_p_widget = self.query_one(f"#{prefix}-min-p", Input)
                 top_k_widget = self.query_one(f"#{prefix}-top-k", Input)
-                # Add query for custom prompt if you have one
-                # custom_prompt_widget = self.query_one(f"#{prefix}-custom-prompt", TextArea) # Example
+                # --- Query "Full Chat Settings" widgets ---
+                llm_max_tokens_widget = self.query_one(f"#{prefix}-llm-max-tokens", Input)
+                llm_seed_widget = self.query_one(f"#{prefix}-llm-seed", Input)
+                llm_stop_widget = self.query_one(f"#{prefix}-llm-stop", Input)
+                llm_response_format_widget = self.query_one(f"#{prefix}-llm-response-format", Select)
+                llm_n_widget = self.query_one(f"#{prefix}-llm-n", Input)
+                llm_user_identifier_widget = self.query_one(f"#{prefix}-llm-user-identifier", Input)
+                llm_logprobs_widget = self.query_one(f"#{prefix}-llm-logprobs", Checkbox)
+                llm_top_logprobs_widget = self.query_one(f"#{prefix}-llm-top-logprobs", Input)
+                llm_logit_bias_widget = self.query_one(f"#{prefix}-llm-logit-bias", TextArea)
+                llm_presence_penalty_widget = self.query_one(f"#{prefix}-llm-presence-penalty", Input)
+                llm_frequency_penalty_widget = self.query_one(f"#{prefix}-llm-frequency-penalty", Input)
+                llm_tools_widget = self.query_one(f"#{prefix}-llm-tools", TextArea)
+                llm_tool_choice_widget = self.query_one(f"#{prefix}-llm-tool-choice", Input)
             except QueryError as e:
                 logging.error(f"Send Button: Could not find UI widgets for '{prefix}': {e}")
                 # Optionally mount an error message in the chat_container
@@ -1778,13 +1790,48 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             selected_model = str(model_widget.value) if model_widget.value else None
             system_prompt = system_prompt_widget.text
             temperature = self._safe_float(temp_widget.value, 0.7, "temperature")
-            top_p = self._safe_float(top_p_widget.value, 0.95, "top_p")  # UI value for top_p
-            min_p = self._safe_float(min_p_widget.value, 0.05, "min_p")  # UI value for min_p
-            top_k = self._safe_int(top_k_widget.value, 50, "top_k")  # UI value for top_k
-            custom_prompt = ""  # Fetch from UI if needed: custom_prompt_widget.text
-            # Determine streaming based on config or UI element if you add one
-            # Placeholder: Use False for now
-            should_stream = False
+            top_p = self._safe_float(top_p_widget.value, 0.95, "top_p")
+            min_p = self._safe_float(min_p_widget.value, 0.05, "min_p")
+            top_k = self._safe_int(top_k_widget.value, 50, "top_k")
+            custom_prompt = ""
+            should_stream = False  # Placeholder, actual streaming logic might differ
+
+            # --- Retrieve and process "Full Chat Settings" values ---
+            llm_max_tokens_value = self._safe_int(llm_max_tokens_widget.value, 1024, "llm_max_tokens")
+            llm_seed_value = self._safe_int(llm_seed_widget.value, None, "llm_seed")  # API handles None if not set
+            llm_stop_value = llm_stop_widget.value.split(',') if llm_stop_widget.value.strip() else None
+            # llm_response_format_widget.value is guaranteed by allow_blank=False in settings_sidebar.py
+            llm_response_format_value = {"type": str(llm_response_format_widget.value)}
+            llm_n_value = self._safe_int(llm_n_widget.value, 1, "llm_n")
+            llm_user_identifier_value = llm_user_identifier_widget.value.strip() or None
+            llm_logprobs_value = llm_logprobs_widget.value  # Boolean
+            llm_top_logprobs_value = self._safe_int(llm_top_logprobs_widget.value, 0,
+                                                    "llm_top_logprobs")  # Default 0 if logprobs is False
+            llm_presence_penalty_value = self._safe_float(llm_presence_penalty_widget.value, 0.0,
+                                                          "llm_presence_penalty")
+            llm_frequency_penalty_value = self._safe_float(llm_frequency_penalty_widget.value, 0.0,
+                                                           "llm_frequency_penalty")
+            llm_tool_choice_value = llm_tool_choice_widget.value.strip() or None
+
+            try:
+                llm_logit_bias_text = llm_logit_bias_widget.text.strip()
+                llm_logit_bias_value = json.loads(llm_logit_bias_text) if llm_logit_bias_text else None
+            except json.JSONDecodeError:
+                logging.warning(f"Invalid JSON in llm_logit_bias: '{llm_logit_bias_widget.text}'")
+                await chat_container.mount(
+                    ChatMessage("Error: Invalid JSON in LLM Logit Bias setting. Parameter not used.", role="AI",
+                                classes="-error"))
+                llm_logit_bias_value = None  # Default to None if JSON is invalid
+
+            try:
+                llm_tools_text = llm_tools_widget.text.strip()
+                llm_tools_value = json.loads(llm_tools_text) if llm_tools_text else None
+            except json.JSONDecodeError:
+                logging.warning(f"Invalid JSON in llm_tools: '{llm_tools_widget.text}'")
+                await chat_container.mount(
+                    ChatMessage("Error: Invalid JSON in LLM Tools setting. Parameter not used.", role="AI",
+                                classes="-error"))
+                llm_tools_value = None  # Default to None if JSON is invalid
 
             # --- Basic Validation ---
             if not message:
@@ -1952,13 +1999,27 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 minp=min_p,  # Pass min_p from UI
                 # maxp=top_p,    # Pass top_p from UI as maxp if chat_wrapper/chat expects it
                 model=selected_model,
-                topp=top_p,  # Pass top_p from UI as topp
-                topk=top_k,  # Pass top_k from UI
-                # Add placeholders for unused chat() params for now
-                media_content={},
-                selected_parts=[],
-                chatdict_entries=None,
-                max_tokens=500,  # Default or get from config/UI
+                topp=top_p,
+                topk=top_k,
+                # FIXME
+                llm_max_tokens=llm_max_tokens_value,
+                llm_seed=llm_seed_value,
+                llm_stop=llm_stop_value,
+                llm_response_format=llm_response_format_value,
+                llm_n=llm_n_value,
+                llm_user_identifier=llm_user_identifier_value,
+                llm_logprobs=llm_logprobs_value,
+                llm_top_logprobs=llm_top_logprobs_value,
+                llm_logit_bias=llm_logit_bias_value,
+                llm_presence_penalty=llm_presence_penalty_value,
+                llm_frequency_penalty=llm_frequency_penalty_value,
+                llm_tools=llm_tools_value,
+                llm_tool_choice=llm_tool_choice_value,
+                # --- Existing parameters for chatdict etc. ---
+                media_content={},  # Placeholder for now
+                selected_parts=[],  # Placeholder for now
+                chatdict_entries=None,  # Placeholder for now
+                max_tokens=500,  # This is the existing chatdict max_tokens
                 strategy="sorted_evenly"  # Default or get from config/UI
             )
 
@@ -2141,7 +2202,21 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
     def chat_wrapper(self, message, history, api_endpoint, api_key, custom_prompt, temperature,
                      system_message, streaming, minp, model, topp, topk,
-                     # Removed maxp if chat() doesn't use it directly
+                     # --- New "Full Chat Settings" parameters ---
+                     llm_max_tokens: Optional[int],
+                     llm_seed: Optional[int],
+                     llm_stop: Optional[List[str]],  # Corrected based on processing: list of strings
+                     llm_response_format: Optional[Dict[str, str]],  # Passed as dict {"type": "text"}
+                     llm_n: Optional[int],
+                     llm_user_identifier: Optional[str],
+                     llm_logprobs: Optional[bool],
+                     llm_top_logprobs: Optional[int],
+                     llm_logit_bias: Optional[Dict[str, float]],  # JSON parsed to dict
+                     llm_presence_penalty: Optional[float],
+                     llm_frequency_penalty: Optional[float],
+                     llm_tools: Optional[List[Dict[str, Any]]],  # JSON parsed to list of dicts
+                     llm_tool_choice: Optional[Union[str, Dict[str, Any]]],  # String or JSON parsed to dict
+                     # --- Existing parameters ---
                      media_content, selected_parts, chatdict_entries, max_tokens, strategy):
         """
         This method runs in the worker thread and calls the main chat logic.
@@ -2162,12 +2237,25 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 system_message=system_message,
                 streaming=streaming,
                 minp=minp,
-                # maxp=maxp, # Pass maxp if chat() needs it, otherwise remove
-                model=model,
-                topp=topp,  # Pass topp from UI
-                topk=topk,  # Pass topk from UI
+                topp=topp,
+                topk=topk,
+                # --- Pass new "Full Chat Settings" to chat() ---
+                llm_max_tokens=llm_max_tokens,
+                llm_seed=llm_seed,
+                llm_stop=llm_stop,
+                llm_response_format=llm_response_format,  # Pass as dict
+                llm_n=llm_n,
+                llm_user_identifier=llm_user_identifier,
+                llm_logprobs=llm_logprobs,
+                llm_top_logprobs=llm_top_logprobs,
+                llm_logit_bias=llm_logit_bias,
+                llm_presence_penalty=llm_presence_penalty,
+                llm_frequency_penalty=llm_frequency_penalty,
+                llm_tools=llm_tools,
+                llm_tool_choice=llm_tool_choice,
+                # --- Existing parameters for chat() ---
                 chatdict_entries=chatdict_entries,
-                max_tokens=max_tokens,
+                max_tokens=max_tokens,  # This is for chatdict context
                 strategy=strategy
             )
             logging.debug(f"chat_wrapper finished for '{api_endpoint}'. Result type: {type(result)}")
@@ -2202,6 +2290,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 chat_container_fallback: VerticalScroll = self.query_one(f"#{prefix}-log", VerticalScroll)
                 error_msg_text = f"[bold red]Error: AI response for worker '{worker_name}' received, but its display widget was missing. Check logs.[/]"
                 error_widget_fallback = ChatMessage(error_msg_text, role="System", classes="-error")
+                # FIXME
                 self.call_soon(chat_container_fallback.mount, error_widget_fallback)
                 self.call_soon(chat_container_fallback.scroll_end, animate=False)
             except QueryError:
@@ -2285,6 +2374,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                             if ai_message_widget.is_mounted:
                                 try:
                                     current_text = ai_message_widget.message_text # Get current text (might be partially streamed)
+                                    # FIXME
                                     error_message_display = escape_markup(current_text) + Text.from_markup("\n[bold red]Error during stream.[/]")
                                     stream_static_text_widget.update(error_message_display)
                                     ai_message_widget.mark_generation_complete()

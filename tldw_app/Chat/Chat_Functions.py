@@ -685,7 +685,7 @@ def chat(
     llm_max_tokens: Optional[int] = None,
     llm_seed: Optional[int] = None,
     llm_stop: Optional[Union[str, List[str]]] = None,
-    llm_response_format: Optional[ResponseFormat] = None,
+    llm_response_format: Optional[Dict[str, str]] = None,
     llm_n: Optional[int] = None,
     llm_user_identifier: Optional[str] = None,
     llm_logprobs: Optional[bool] = None,
@@ -736,7 +736,7 @@ def chat(
         llm_seed: Seed for LLM generation.
         llm_stop: Stop sequence(s) for LLM generation.
         llm_response_format: Desired response format from LLM (e.g., JSON object).
-                             Pydantic `ResponseFormat` model instance.
+                             Passed as a dictionary, e.g., `{"type": "json_object"}`.
         llm_n: Number of LLM completion choices to generate.
         llm_user_identifier: User identifier for LLM API call.
         llm_logprobs: Whether LLM should return log probabilities.
@@ -762,6 +762,14 @@ def chat(
     try:
         logging.info(f"Debug - Chat Function - Input Text: '{message}', Image provided: {'Yes' if current_image_input else 'No'}")
         logging.info(f"Debug - Chat Function - History length: {len(history)}, Image History Mode: {image_history_mode}")
+        logging.info(
+            f"Debug - Chat Function - LLM Max Tokens: {llm_max_tokens}, LLM Seed: {llm_seed}, LLM Stop: {llm_stop}, LLM N: {llm_n}")
+        logging.info(
+            f"Debug - Chat Function - LLM User Identifier: {llm_user_identifier}, LLM Logprobs: {llm_logprobs}, LLM Top Logprobs: {llm_top_logprobs}")
+        logging.info(
+            f"Debug - Chat Function - LLM Logit Bias: {llm_logit_bias}, LLM Presence Penalty: {llm_presence_penalty}, LLM Frequency Penalty: {llm_frequency_penalty}")
+        logging.info(
+            f"Debug - Chat Function - LLM Tools: {llm_tools}, LLM Tool Choice: {llm_tool_choice}, LLM Response Format (dict): {llm_response_format}")
 
         # Ensure selected_parts is a list
         if not isinstance(selected_parts, (list, tuple)):
@@ -894,7 +902,7 @@ def chat(
             logging.debug(f"  Msg {i}: Role: {msg_p['role']}, Content: [{', '.join(content_log)}]")
 
         logging.debug(f"Debug - Chat Function - Temperature: {temperature}")
-        logging.debug(f"Debug - Chat Function - API Key: {api_key[:10]}")
+        logging.debug(f"Debug - Chat Function - API Key: {api_key[:10] if api_key else 'None'}")
         logging.debug(f"Debug - Chat Function - Prompt: {custom_prompt}")
 
         # --- Call the LLM via the updated chat_api_call ---
@@ -910,7 +918,7 @@ def chat(
             max_tokens=llm_max_tokens,
             seed=llm_seed,
             stop=llm_stop,
-            response_format=llm_response_format.model_dump() if llm_response_format else None,
+            response_format=llm_response_format,
             n=llm_n,
             user_identifier=llm_user_identifier,
             logprobs=llm_logprobs,

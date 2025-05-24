@@ -64,7 +64,7 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
         # ===================================================================
         # 1. General & Chat Settings – existing controls
         # ===================================================================
-        with Collapsible(title="General & Chat Settings", collapsed=False):
+        with Collapsible(title="Current Chat Settings", collapsed=True):
             yield Static(
                 "Inference Endpoints & \nService Providers", classes="sidebar-label"
             )
@@ -77,7 +77,9 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
                 value=default_provider,
             )
 
+            # ===================================================================
             # ----------------------------- Model ---------------------------
+            # ===================================================================
             yield Static("Model", classes="sidebar-label")
             initial_models = providers_models.get(default_provider, [])
             model_options = [(model, model) for model in initial_models]
@@ -92,7 +94,9 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
                 value=current_model_value,
             )
 
+            # ===================================================================
             # ------------------ Remaining numeric / text inputs ------------
+            # ===================================================================
             yield Static(
                 "API Key (Set in config/env)",
                 classes="sidebar-label",
@@ -111,30 +115,45 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
                 value=default_temp,
                 classes="sidebar-input",
             )
-            yield Static("Top‑P", classes="sidebar-label")
-            yield Input(
-                placeholder="0.0 to 1.0",
-                id=f"{id_prefix}-top-p",
-                value=default_top_p,
-                classes="sidebar-input",
-            )
-            yield Static("Min‑P", classes="sidebar-label")
-            yield Input(
-                placeholder="0.0 to 1.0",
-                id=f"{id_prefix}-min-p",
-                value=default_min_p,
-                classes="sidebar-input",
-            )
-            yield Static("Top‑K", classes="sidebar-label")
-            yield Input(
-                placeholder="e.g., 50",
-                id=f"{id_prefix}-top-k",
-                value=default_top_k,
-                classes="sidebar-input",
-            )
-
+            # ===================================================================
+            # NEW: Full Chat Settings
+            # ===================================================================
+            with Collapsible(title="Full Chat Settings", collapsed=True):
+                yield Static("LLM Max Tokens", classes="sidebar-label")
+                yield Input(id=f"{id_prefix}-llm-max-tokens", value="1024", placeholder="e.g., 1024",
+                            classes="sidebar-input")
+                yield Static("LLM Seed", classes="sidebar-label")
+                yield Input(id=f"{id_prefix}-llm-seed", value="42", placeholder="e.g., 42", classes="sidebar-input")
+                yield Static("LLM Stop Sequences (comma-sep)", classes="sidebar-label")
+                yield Input(id=f"{id_prefix}-llm-stop", placeholder="e.g., <|endoftext|>,<|eot_id|>",
+                            classes="sidebar-input")
+                yield Static("LLM Response Format", classes="sidebar-label")
+                yield Select(options=[("text", "text"), ("json_object", "json_object")],
+                             id=f"{id_prefix}-llm-response-format", value="text", allow_blank=False)
+                yield Static("LLM N (Completions)", classes="sidebar-label")
+                yield Input(id=f"{id_prefix}-llm-n", value="1", placeholder="e.g., 1", classes="sidebar-input")
+                yield Static("LLM User Identifier", classes="sidebar-label")
+                yield Input(id=f"{id_prefix}-llm-user-identifier", placeholder="e.g., user-123",
+                            classes="sidebar-input")
+                yield Checkbox("LLM Logprobs", id=f"{id_prefix}-llm-logprobs", value=False)
+                yield Static("LLM Top Logprobs", classes="sidebar-label")
+                yield Input(id=f"{id_prefix}-llm-top-logprobs", value="0", placeholder="e.g., 5 (if logprobs is true)",
+                            classes="sidebar-input")
+                yield Static("LLM Logit Bias (JSON)", classes="sidebar-label")
+                yield TextArea(id=f"{id_prefix}-llm-logit-bias", text="{}", classes="sidebar-textarea")
+                yield Static("LLM Presence Penalty", classes="sidebar-label")
+                yield Input(id=f"{id_prefix}-llm-presence-penalty", value="0.0", placeholder="e.g., 0.0 to 2.0",
+                            classes="sidebar-input")
+                yield Static("LLM Frequency Penalty", classes="sidebar-label")
+                yield Input(id=f"{id_prefix}-llm-frequency-penalty", value="0.0", placeholder="e.g., 0.0 to 2.0",
+                            classes="sidebar-input")
+                yield Static("LLM Tools (JSON)", classes="sidebar-label")
+                yield TextArea(id=f"{id_prefix}-llm-tools", text="[]", classes="sidebar-textarea")
+                yield Static("LLM Tool Choice", classes="sidebar-label")
+                yield Input(id=f"{id_prefix}-llm-tool-choice", placeholder="e.g., auto, none, or specific tool",
+                            classes="sidebar-input")
         # ===================================================================
-        # NEW: Conversation Details (only for chat tab)
+        # Conversation Details (only for chat tab)
         # ===================================================================
         if id_prefix == "chat":  # Assuming "chat" is the id_prefix for the main chat tab
             with Collapsible(title="Conversation Details", collapsed=False):
@@ -155,10 +174,19 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
                     "Save Title & Keywords",
                     id=f"{id_prefix}-save-conversation-details-button",
                     variant="primary",
-                    classes="sidebar-button"  # Add a class if you have specific button styling
+                    classes="sidebar-button"
                 )
 
-            # NEW: Saved Conversations (only for chat tab)
+            # ===================================================================
+            # Prompts (only for chat tab)
+            # ===================================================================
+            if id_prefix == "chat":
+                with Collapsible(title="Prompts", collapsed=True):
+                    yield Static("Prompt management UI placeholder")
+
+            # ===================================================================
+            # Saved Conversations (only for chat tab)
+            # ===================================================================
             with Collapsible(title="Saved Conversations", collapsed=True):
                 yield Input(
                     id=f"{id_prefix}-conversation-search-bar",

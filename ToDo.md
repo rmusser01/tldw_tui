@@ -5,6 +5,10 @@
 - [ ] Manual for use
 - [ ] Add tests
 - [ ] Add examples of use
+- **General UI/UX**
+  - [ ] Setup Emoji support/handling/detection if the user's terminal supports it
+  - [ ] Remove the 'speak' buttons
+  - 
 - **Chat Functionality**
   - [x] API selection
   - [x] Selection of model for API
