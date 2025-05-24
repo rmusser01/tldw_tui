@@ -592,21 +592,24 @@ class PromptsDatabase:
 
                 if existing:
                     kw_id, kw_uuid, is_deleted, current_version = existing['id'], existing['uuid'], existing['deleted'], \
-                    existing['version']
+                        existing['version']
                     if is_deleted:  # Undelete
                         new_version = current_version + 1
                         cursor.execute(
                             "UPDATE PromptKeywordsTable SET deleted=0, last_modified=?, version=?, client_id=? WHERE id=? AND version=?",
                             (current_time, new_version, client_id, kw_id, current_version))
-                        if cursor.rowcount == 0: raise ConflictError("Failed to undelete keyword due to version mismatch or it was not found.", "PromptKeywordsTable", kw_id) # Refined error
+                        if cursor.rowcount == 0: raise ConflictError(
+                            "Failed to undelete keyword due to version mismatch or it was not found.",
+                            "PromptKeywordsTable", kw_id)
                         cursor.execute("SELECT * FROM PromptKeywordsTable WHERE id=?", (kw_id,))
                         payload = dict(cursor.fetchone())
                         self._log_sync_event(conn, 'PromptKeywordsTable', kw_uuid, 'update', new_version, payload)
                         self._update_fts_prompt_keyword(conn, kw_id, normalized_keyword)
                         return kw_id, kw_uuid
                     else:  # Already active, just return its ID and UUID
-                        logger.debug(f"Keyword '{normalized_keyword}' already exists and is active. Reusing ID: {kw_id}, UUID: {kw_uuid}")
-                        return kw_id, kw_uuid # MODIFIED LINE
+                        logger.debug(
+                            f"Keyword '{normalized_keyword}' already exists and is active. Reusing ID: {kw_id}, UUID: {kw_uuid}")
+                        return kw_id, kw_uuid
                 else:  # New keyword
                     new_uuid = self._generate_uuid()
                     new_version = 1
@@ -626,6 +629,30 @@ class PromptsDatabase:
                 raise e
             else:
                 raise DatabaseError(f"Failed to add/update prompt keyword: {e}") from e
+
+    def get_active_keyword_by_text(self, keyword_text: str) -> Optional[Dict]:
+        """
+        Fetches an active (not deleted) keyword by its exact normalized text.
+
+        Args:
+            keyword_text: The keyword text to search for.
+
+        Returns:
+            A dictionary of the keyword's data if found and active, else None.
+        """
+        if not keyword_text or not keyword_text.strip():
+            return None  # Or raise InputError if strictness is preferred here
+        normalized_keyword = self._normalize_keyword(keyword_text)
+        query = "SELECT id, uuid, keyword, last_modified, version, client_id FROM PromptKeywordsTable WHERE keyword = ? AND deleted = 0"
+        try:
+            cursor = self.execute_query(query, (normalized_keyword,))
+            result = cursor.fetchone()
+            return dict(result) if result else None
+        except (DatabaseError, sqlite3.Error) as e:
+            logger.error(f"Error fetching active keyword by text '{normalized_keyword}': {e}")
+            # Depending on desired strictness, could raise or return None
+            # For a simple check, returning None on error is acceptable if the next step handles it.
+            return None
 
     def add_prompt(self, name: str, author: Optional[str], details: Optional[str],
                    system_prompt: Optional[str] = None, user_prompt: Optional[str] = None,

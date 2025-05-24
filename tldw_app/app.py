@@ -6,6 +6,8 @@ import asyncio
 import json
 import logging
 import logging.handlers
+import platform
+import sys
 import tomllib
 from pathlib import Path
 import traceback
@@ -162,6 +164,77 @@ ASCII_PORTRAIT = r"""
   '.    /
     `~~`
 """
+
+# --- Emoji Checker ---
+# Cache the result so we don't re-calculate every time
+_emoji_support_cached = None
+
+def supports_emoji():
+    """
+    Detects if the current terminal likely supports emojis.
+    This is heuristic-based and not 100% foolproof.
+    """
+    global _emoji_support_cached
+    if _emoji_support_cached is not None:
+        return _emoji_support_cached
+
+    # 1. Must be a TTY
+    if not sys.stdout.isatty():
+        _emoji_support_cached = False
+        return False
+
+    # 2. Encoding should be UTF-8
+    # (getattr is used for safety, e.g., if sys.stdout is mocked)
+    encoding = getattr(sys.stdout, 'encoding', '').lower()
+    if 'utf-8' not in encoding and 'utf8' not in encoding:
+        _emoji_support_cached = False
+        return False
+
+    # 3. OS-specific checks
+    os_name = platform.system()
+
+    if os_name == 'Windows':
+        # Windows Terminal has good emoji support
+        if 'WT_SESSION' in os.environ:
+            _emoji_support_cached = True
+            return True
+        # For older cmd.exe or PowerShell without Windows Terminal,
+        # emoji support is unreliable or poor.
+        # We could try to check Windows build version, but WT_SESSION is a good indicator.
+        # Let's be conservative for other Windows environments.
+        _emoji_support_cached = False
+        return False
+
+    # For macOS and Linux:
+    # If it's a UTF-8 TTY, support is generally good on modern systems.
+    # We can check for TERM=dumb as a negative indicator.
+    if os.environ.get('TERM') == 'dumb':
+        _emoji_support_cached = False
+        return False
+
+    # Default to True for non-Windows UTF-8 TTYs not being 'dumb'
+    _emoji_support_cached = True
+    return True
+
+# --- Example Usage ---
+
+# Define your emojis and fallbacks
+# You could use a dictionary or just define them as pairs
+ROCKET_EMOJI = "🚀"
+ROCKET_FALLBACK = "[Go!]"
+
+CHECK_EMOJI = "✅"
+CHECK_FALLBACK = "[OK]"
+
+CROSS_EMOJI = "❌"
+CROSS_FALLBACK = "[FAIL]"
+
+SPARKLES_EMOJI = "✨"
+SPARKLES_FALLBACK = "*"
+
+# A helper function for convenience
+def get_char(emoji, fallback):
+    return emoji if supports_emoji() else fallback
 
 
 # --- Custom Logging Handler ---
@@ -2884,6 +2957,27 @@ if __name__ == "__main__":
                 f.write(CONFIG_TOML_CONTENT)  # Write the example content
     except Exception as e:
         logging.error(f"Could not ensure creation of default config file: {e}", exc_info=True)
+
+    # --- Emoij Check ---
+    print(f"Terminal emoji support: {supports_emoji()}")
+    print("-" * 30)
+
+    print(f"Launching the project... {get_char(ROCKET_EMOJI, ROCKET_FALLBACK)}")
+    print(f"Step 1: Initialization {get_char(CHECK_EMOJI, CHECK_FALLBACK)}")
+    print(f"Step 2: Configuration {get_char(CHECK_EMOJI, CHECK_FALLBACK)}")
+    print(f"Step 3: Critical Error {get_char(CROSS_EMOJI, CROSS_FALLBACK)}")
+    print(f"{get_char(SPARKLES_EMOJI, SPARKLES_FALLBACK)} All done! {get_char(SPARKLES_EMOJI, SPARKLES_FALLBACK)}")
+
+    # Example with a dictionary
+    status_icons = {
+        "success": {"emoji": "🎉", "fallback": "(success)"},
+        "warning": {"emoji": "⚠️", "fallback": "(!)"},
+        "info": {"emoji": "ℹ️", "fallback": "(i)"}
+    }
+
+    print("-" * 30)
+    for status, icons in status_icons.items():
+        print(f"Status {status.capitalize()}: {get_char(icons['emoji'], icons['fallback'])}")
 
     # --- CSS definition ---
     # (Keep your CSS content here, make sure IDs match widgets)
