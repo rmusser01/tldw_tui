@@ -746,6 +746,48 @@ def load_settings() -> Dict:
 # --- Global Settings Object ---
 settings = load_settings()
 
+# --- Define API Models (Combined Cloud & Local) ---
+# (Keep your existing API_MODELS_BY_PROVIDER and LOCAL_PROVIDERS dictionaries)
+API_MODELS_BY_PROVIDER = {
+    "OpenAI": ["gpt-4.1-2025-04-14", "o4-mini-2025-04-16", "o3-2025-04-16", "o3-mini-2025-01-31",
+               "o1-2024-12-17", "chatgpt-4o-latest", "gpt-4o-2024-11-20", "gpt-4o-2024-08-06",
+               "gpt-4.1-mini-2025-04-14", "gpt-4.1-nano-2025-04-14", "gpt-4o-mini-2024-07-18", ],
+    "Anthropic": ["claude-opus-4-20250514", "claude-sonnet-4-20250514", "claude-3-7-sonnet-20250219",
+                  "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-5-sonnet-20240620",
+                  "claude-3-haiku-20240307", "claude-3-opus-20240229", "claude-3-sonnet-20240229",
+                  "claude-2.1", "claude-2.0"],
+    "Cohere": ["command-a-03-2025", "command-r7b-12-2024", "command-r-plus-04-2024", "command-r-plus",
+               "command-r-08-2024", "command-r-03-2024", "command", "command-nightly", "command-light",
+               "command-light-nightly"],
+    "DeepSeek": ["deepseek-chat", "deepseek-reasoner"],
+    "Groq": ["gemma2-9b-it", "mmeta-llama/Llama-Guard-4-12B", "llama-3.3-70b-versatile", "llama-3.1-8b-instant",
+             "llama3-70b-8192", "llama3-70b-8192", "llama3-8b-8192",],
+    "Google": ["gemini-2.5-flash-preview-05-20", "gemini-2.5-pro-preview-05-06", "gemini-2.0-flash",
+               "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.5-pro", ],
+    "HuggingFace": ["meta-llama/Meta-Llama-3.1-8B-Instruct", "meta-llama/Meta-Llama-3.1-70B-Instruct",],
+    "MistralAI": ["open-mistral-nemo", "mistral-medium-2505", "codestral-2501", "mistral-saba-2502",
+                  "mistral-large-2411", "ministral-3b-2410", "ministral-8b-2410", "mistral-moderation-2411",
+                  "devstral-small-2505", "mistral-small-2503", ],
+    "OpenRouter": ["openai/gpt-4o-mini", "anthropic/claude-3.7-sonnet", "google/gemini-2.0-flash-001",
+                   "google/gemini-2.5-pro-preview", "google/gemini-2.5-flash-preview",
+                   "deepseek/deepseek-chat-v3-0324:free", "deepseek/deepseek-chat-v3-0324",
+                   "openai/gpt-4.1", "anthropic/claude-sonnet-4", "deepseek/deepseek-r1:free",
+                   "anthropic/claude-3.7-sonnet:thinking", "google/gemini-flash-1.5-8b",
+                   "mistralai/mistral-nemo", "google/gemini-2.5-flash-preview-05-20", ],
+}
+LOCAL_PROVIDERS = {
+    "Llama.cpp": ["None"],
+    "Oobabooga": ["None"],
+    "KoboldCpp": ["None"],
+    "Ollama": ["gemma3:12b", "gemma3:4b", "gemma3:27b", "qwen3:4b", "qwen3:8b", "qwen3:14b", "qwen3:30b",
+               "qwen3:32b", "qwen3:235b", "devstral:24b", "deepseek-r1:671b"],
+    "vLLM": ["vllm-model-z", "vllm-model-x", "vllm-model-y", "vllm-model-a"],
+    "TabbyAPI": ["tabby-model", "tabby-model-2", "tabby-model-3"],
+    "Aphrodite": ["aphrodite-engine", "aphrodite-engine-2"],
+    "Custom": ["custom-model-alpha", "custom-model-beta"],
+    "Custom-2": ["custom-model-gamma", "custom-model-delta"],
+}
+
 # --- Global default_api_endpoint (example of using the new settings) ---
 try:
     # Accessing deeply nested key safely

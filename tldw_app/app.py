@@ -36,7 +36,7 @@ from textual.css.query import QueryError  # For specific error handling
 # --- Local API library Imports ---
 from tldw_app.Chat.Chat_Functions import chat
 from .config import CONFIG_TOML_CONTENT, load_settings, get_cli_setting, get_cli_log_file_path, DEFAULT_CONFIG, \
-    DEFAULT_CONFIG_PATH, get_cli_providers_and_models
+    DEFAULT_CONFIG_PATH, get_cli_providers_and_models, API_MODELS_BY_PROVIDER, LOCAL_PROVIDERS
 from .Notes.Notes_Library import NotesInteropService
 from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
 from .Widgets.chat_message import ChatMessage
@@ -45,73 +45,43 @@ from .Widgets.character_sidebar import create_character_sidebar  # Import for ch
 from .Widgets.notes_sidebar_left import NotesSidebarLeft
 from .Widgets.notes_sidebar_right import NotesSidebarRight
 from .Widgets.titlebar import TitleBar
-
-# Adjust the path based on your project structure
-try:
-    # Import from the new 'api' directory
-    from .tldw_api.LLM_API_Calls import (
+from .LLM_Calls.LLM_API_Calls import (
         chat_with_openai, chat_with_anthropic, chat_with_cohere,
         chat_with_groq, chat_with_openrouter, chat_with_huggingface,
         chat_with_deepseek, chat_with_mistral, chat_with_google,
-    )
-    from .tldw_api.LLM_API_Calls_Local import (
-        # Add local API functions if they are in the same file
-        chat_with_llama, chat_with_kobold, chat_with_oobabooga,
-        chat_with_vllm, chat_with_tabbyapi, chat_with_aphrodite,
-        chat_with_ollama, chat_with_custom_openai, chat_with_custom_openai_2
-    )
-
-    # You'll need a map for these later, ensure names match
-    API_FUNCTION_MAP = {
-        "OpenAI": chat_with_openai, "Anthropic": chat_with_anthropic,  # etc...
-        # Make sure all providers from config have a mapping here or handle None
-    }
-    API_IMPORTS_SUCCESSFUL = True
-    logging.info("Successfully imported API functions from .api.llm_api")
-except ImportError as e:
-    logging.error(f"Failed to import API libraries from .api.LLM_API_Calls / .api.LLM_API_Calls_Local: {e}",
-                  exc_info=True)
-    # Set functions to None so the app doesn't crash later trying to use them
-    chat_with_openai = chat_with_anthropic = chat_with_cohere = chat_with_groq = \
-        chat_with_openrouter = chat_with_huggingface = chat_with_deepseek = \
-        chat_with_mistral = chat_with_google = \
-        chat_with_llama = chat_with_kobold = chat_with_oobabooga = chat_with_vllm = \
-        chat_with_tabbyapi = chat_with_aphrodite = chat_with_ollama = \
-        chat_with_custom_openai = chat_with_custom_openai_2 = None
-    API_FUNCTION_MAP = {}  # Clear the map on failure
-    API_IMPORTS_SUCCESSFUL = False
-    print("-" * 60)
-    print("WARNING: Could not import one or more API library functions.")
-    print("Check logs for details. Affected API functionality will be disabled.")
-    print("-" * 60)
+)
+from .LLM_Calls.LLM_API_Calls_Local import (
+    # Add local API functions if they are in the same file
+    chat_with_llama, chat_with_kobold, chat_with_oobabooga,
+    chat_with_vllm, chat_with_tabbyapi, chat_with_aphrodite,
+    chat_with_ollama, chat_with_custom_openai, chat_with_custom_openai_2, chat_with_local_llm
+)
+API_IMPORTS_SUCCESSFUL = True
 #
 #######################################################################################################################
 #
 # Statics
-
-
-# Make sure these imports succeed first!
 if API_IMPORTS_SUCCESSFUL:
     API_FUNCTION_MAP = {
         "OpenAI": chat_with_openai,
         "Anthropic": chat_with_anthropic,
         "Cohere": chat_with_cohere,
-        "Groq": chat_with_groq,
-        "OpenRouter": chat_with_openrouter,
         "HuggingFace": chat_with_huggingface,
         "DeepSeek": chat_with_deepseek,
-        "MistralAI": chat_with_mistral,  # Key from config
-        "Google": chat_with_google,
-        "Llama_cpp": chat_with_llama,  # Key from config
+        "Google": chat_with_google, # Key from config
+        "Groq": chat_with_groq,
         "KoboldCpp": chat_with_kobold,  # Key from config
+        "Llama_cpp": chat_with_llama,  # Key from config
+        "MistralAI": chat_with_mistral,  # Key from config
         "Oobabooga": chat_with_oobabooga,  # Key from config
+        "OpenRouter": chat_with_openrouter,
         "vLLM": chat_with_vllm,  # Key from config
         "TabbyAPI": chat_with_tabbyapi,  # Key from config
         "Aphrodite": chat_with_aphrodite,  # Key from config
         "Ollama": chat_with_ollama,  # Key from config
         "Custom": chat_with_custom_openai,  # Key from config
         "Custom_2": chat_with_custom_openai_2,  # Key from config
-        # "local-llm": chat_with_local_llm # Add if this is a distinct provider in config
+        "local-llm": chat_with_local_llm
     }
     logging.info(f"API_FUNCTION_MAP populated with {len(API_FUNCTION_MAP)} entries.")
 else:
@@ -135,23 +105,7 @@ TAB_STATS = "stats"
 TAB_NOTES = "notes"
 ALL_TABS = [TAB_CHAT, TAB_CONV_CHAR, TAB_MEDIA, TAB_SEARCH, TAB_INGEST, TAB_LOGS, TAB_STATS, TAB_NOTES]  # Updated list
 
-# --- Define API Models (Combined Cloud & Local) ---
-# (Keep your existing API_MODELS_BY_PROVIDER and LOCAL_PROVIDERS dictionaries)
-API_MODELS_BY_PROVIDER = {
-    "OpenAI": ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"],
-    "Anthropic": ["claude-3-5-sonnet-20240620", "claude-3-opus-20240229", "claude-3-haiku-20240307"],
-    "Google": ["gemini-1.5-pro-latest", "gemini-1.5-flash-latest"],
-    "MistralAI": ["mistral-large-latest", "mistral-small-latest", "open-mixtral-8x7b"],
-    "Custom": ["custom-model-alpha", "custom-model-beta"]
-}
-LOCAL_PROVIDERS = {
-    "Llama.cpp": ["llama-model-1"], "Oobabooga": ["ooba-model-a"], "KoboldCpp": ["kobold-model-x"],
-    "Ollama": ["ollama/llama3:latest", "ollama/mistral:latest"], "vLLM": ["vllm-model-z"],
-    "TabbyAPI": ["tabby-model"], "Aphrodite": ["aphrodite-engine"], "Custom-2": ["custom-model-gamma"],
-    "Groq": ["llama3-70b-8192", "mixtral-8x7b-32768"], "Cohere": ["command-r-plus", "command-r"],
-    "OpenRouter": ["meta-llama/Llama-3.1-8B-Instruct"], "HuggingFace": ["mistralai/Mixtral-8x7B-Instruct-v0.1"],
-    "DeepSeek": ["deepseek-chat"],
-}
+
 ALL_API_MODELS = {**API_MODELS_BY_PROVIDER, **LOCAL_PROVIDERS}
 AVAILABLE_PROVIDERS = list(ALL_API_MODELS.keys())
 
