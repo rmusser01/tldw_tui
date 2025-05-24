@@ -1986,71 +1986,70 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
             # ───────────── existing branches above this point … ─────────────
             if "edit-button" in button_classes:
-                """
-                First click  → switch the message into an editable TextArea.
-                Second click → save the edits, restore the Static, and reset the button.
-                """
                 logging.info(
                     "Action: Edit clicked for %s message: '%s…'",
                     message_role,
-                    message_text[:50],
+                    str(action_widget.message_text)[:50],  # Use str() for safety on message_text
                 )
-
-                # A private flag stored on the ChatMessage
                 is_editing = getattr(action_widget, "_editing", False)
 
                 if not is_editing:
                     # ── START EDITING ────────────────────────────────────────────────
                     static_text: Static = action_widget.query_one(".message-text", Static)
+                    current_renderable = static_text.renderable
+                    current_text = ""
+                    if isinstance(current_renderable, Text):
+                        current_text = current_renderable.plain
+                    elif isinstance(current_renderable, str):
+                        current_text = current_renderable
+                    else:  # Fallback for other types, could be Segment, etc.
+                        current_text = str(current_renderable)
 
-                    # Current text (Rich.Text exposes `.plain`; fall back to str())
-                    current = (
-                        static_text.renderable.plain
-                        if hasattr(static_text.renderable, "plain")
-                        else str(static_text.renderable)
-                    )
-
-                    # Hide the Static and mount a TextArea in its place
                     static_text.display = False
                     editor = TextArea(
-                        text=current,  # <-- TextArea’s ctor uses *text*
+                        text=current_text,
                         id="edit-area",
                         classes="edit-area",
                     )
                     editor.styles.width = "100%"
                     await action_widget.mount(editor, before=static_text)
                     editor.focus()
-
-                    # Set flag & button label
-                    action_widget._editing = True  # type: ignore[attr-defined]
-                    button.label = "Stop editing"
+                    action_widget._editing = True
+                    button.label = "Save Edit"  # Changed to "Save Edit" for clarity
                     logging.debug("Editing started.")
-
                 else:
                     # ── STOP EDITING & SAVE ─────────────────────────────────────────
                     try:
                         editor: TextArea = action_widget.query_one("#edit-area", TextArea)
-                        new_text = editor.text.strip()  # <-- property is .text
+                        new_text = editor.text  # TextArea.text is already plain
                     except QueryError:
                         logging.error("Edit TextArea not found when stopping edit.")
-                        new_text = message_text
+                        # Restore original text if editor not found, make sure it's plain or escaped
+                        original_renderable = action_widget.message_text  # This should be Text or str
+                        if isinstance(original_renderable, Text):
+                            new_text = original_renderable.plain
+                        else:
+                            new_text = str(original_renderable)  # Fallback
+                        # new_text = action_widget.message_text.plain if isinstance(action_widget.message_text, Text) else str(action_widget.message_text)
 
-                    # Remove the TextArea
                     try:
                         await editor.remove()
-                    except Exception:
+                    except Exception:  # Catch if editor was already removed or not found
                         pass
 
-                    # Restore the Static with updated content
                     static_text: Static = action_widget.query_one(".message-text", Static)
-                    static_text.update(new_text)
+
+                    # --- THIS IS THE CRITICAL FIX ---
+                    # Ensure the text is escaped before updating the Static widget,
+                    # if the Static widget is expected to parse markup.
+                    from rich.markup import escape as escape_markup
+                    escaped_new_text = escape_markup(new_text)
+                    static_text.update(escaped_new_text)
+                    # --- END CRITICAL FIX ---
+
                     static_text.display = True
-
-                    # Update the ChatMessage’s own copy for later operations
-                    action_widget.message_text = new_text
-
-                    # Clear flag & reset button label
-                    action_widget._editing = False  # type: ignore[attr-defined]
+                    action_widget.message_text = new_text  # Store the *plain* unescaped text internally
+                    action_widget._editing = False
                     button.label = "✏️"
                     logging.debug("Editing finished. New length: %d", len(new_text))
 
