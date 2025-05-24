@@ -592,6 +592,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     # they would need to be re-integrated here or the design re-evaluated.
                     # The instruction was to remove existing children of the TAB_CONV_CHAR-window,
                     # which included the create_settings_sidebar(TAB_CONV_CHAR, self.app_config) call.
+                    yield from create_settings_sidebar(TAB_CONV_CHAR, self.app_config)
 
             # --- Logs Window ---
             with Container(id=f"{TAB_LOGS}-window", classes="window"):
@@ -1725,18 +1726,39 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             prefix = chat_id_part
             logging.info(f"Send button pressed for '{chat_id_part}'")
 
+            if prefix == "chat":
+                logging.debug(f"SENDBUTTON: Querying widgets for prefix '{prefix}'.")
+                try:
+                    # Check sidebar
+                    chat_sidebar_check = self.query_one("#chat-sidebar")
+                    logging.debug(f"SENDBUTTON: #chat-sidebar.is_mounted={chat_sidebar_check.is_mounted}, .display={chat_sidebar_check.display}")
+                    # Try to query #chat-top-p from sidebar
+                    # Ensure the ID is correct, e.g., f"#{prefix}-top-p" if that's how it's constructed
+                    chat_top_p_from_sidebar = chat_sidebar_check.query_one(f"#{prefix}-top-p") # Using prefix here
+                    logging.debug(f"SENDBUTTON: #{prefix}-top-p from sidebar.is_mounted={chat_top_p_from_sidebar.is_mounted}, .display={chat_top_p_from_sidebar.display}")
+                except QueryError as qe_diag_sidebar:
+                    logging.debug(f"SENDBUTTON: Diagnostic query for #chat-sidebar or #{prefix}-top-p from it failed: {str(qe_diag_sidebar)}")
+                try:
+                    # Try to query #chat-top-p directly from app
+                    # Ensure the ID is correct, e.g., f"#{prefix}-top-p"
+                    chat_top_p_direct_check = self.query_one(f"#{prefix}-top-p") # Using prefix here
+                    logging.debug(f"SENDBUTTON: #{prefix}-top-p direct query OK. .is_mounted={chat_top_p_direct_check.is_mounted}, .display={chat_top_p_direct_check.display}")
+                except QueryError as qe_diag_direct:
+                    logging.debug(f"SENDBUTTON: Diagnostic query for #{prefix}-top-p direct failed: {str(qe_diag_direct)}")
+
             # --- Query Widgets ---
             try:
                 text_area = self.query_one(f"#{prefix}-input", TextArea)
                 chat_container = self.query_one(f"#{prefix}-log", VerticalScroll)
                 provider_widget = self.query_one(f"#{prefix}-api-provider",
-                                                 Select)  # e.g., #chat-api-provider
+                                                 Select)  # e.g., #chat-api-provider or #conversations_characters-api-provider
                 model_widget = self.query_one(f"#{prefix}-api-model", Select)
                 system_prompt_widget = self.query_one(f"#{prefix}-system-prompt", TextArea)
                 temp_widget = self.query_one(f"#{prefix}-temperature", Input)
                 top_p_widget = self.query_one(f"#{prefix}-top-p", Input)
                 min_p_widget = self.query_one(f"#{prefix}-min-p", Input)
                 top_k_widget = self.query_one(f"#{prefix}-top-k", Input)
+
                 # --- Query "Full Chat Settings" widgets ---
                 llm_max_tokens_widget = self.query_one(f"#{prefix}-llm-max-tokens", Input)
                 llm_seed_widget = self.query_one(f"#{prefix}-llm-seed", Input)
@@ -1804,13 +1826,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             llm_response_format_value = {"type": str(llm_response_format_widget.value)}
             llm_n_value = self._safe_int(llm_n_widget.value, 1, "llm_n")
             llm_user_identifier_value = llm_user_identifier_widget.value.strip() or None
-            llm_logprobs_value = llm_logprobs_widget.value  # Boolean
-            llm_top_logprobs_value = self._safe_int(llm_top_logprobs_widget.value, 0,
-                                                    "llm_top_logprobs")  # Default 0 if logprobs is False
-            llm_presence_penalty_value = self._safe_float(llm_presence_penalty_widget.value, 0.0,
-                                                          "llm_presence_penalty")
-            llm_frequency_penalty_value = self._safe_float(llm_frequency_penalty_widget.value, 0.0,
-                                                           "llm_frequency_penalty")
+            llm_logprobs_value = llm_logprobs_widget.value # Boolean
+            llm_top_logprobs_value = self._safe_int(llm_top_logprobs_widget.value, 0, "llm_top_logprobs") # Default 0 if logprobs is False
+            llm_presence_penalty_value = self._safe_float(llm_presence_penalty_widget.value, 0.0, "llm_presence_penalty")
+            llm_frequency_penalty_value = self._safe_float(llm_frequency_penalty_widget.value, 0.0, "llm_frequency_penalty")
             llm_tool_choice_value = llm_tool_choice_widget.value.strip() or None
 
             try:
@@ -1818,20 +1837,16 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 llm_logit_bias_value = json.loads(llm_logit_bias_text) if llm_logit_bias_text else None
             except json.JSONDecodeError:
                 logging.warning(f"Invalid JSON in llm_logit_bias: '{llm_logit_bias_widget.text}'")
-                await chat_container.mount(
-                    ChatMessage("Error: Invalid JSON in LLM Logit Bias setting. Parameter not used.", role="AI",
-                                classes="-error"))
-                llm_logit_bias_value = None  # Default to None if JSON is invalid
+                await chat_container.mount(ChatMessage("Error: Invalid JSON in LLM Logit Bias setting. Parameter not used.", role="AI", classes="-error"))
+                llm_logit_bias_value = None # Default to None if JSON is invalid
 
             try:
                 llm_tools_text = llm_tools_widget.text.strip()
                 llm_tools_value = json.loads(llm_tools_text) if llm_tools_text else None
             except json.JSONDecodeError:
                 logging.warning(f"Invalid JSON in llm_tools: '{llm_tools_widget.text}'")
-                await chat_container.mount(
-                    ChatMessage("Error: Invalid JSON in LLM Tools setting. Parameter not used.", role="AI",
-                                classes="-error"))
-                llm_tools_value = None  # Default to None if JSON is invalid
+                await chat_container.mount(ChatMessage("Error: Invalid JSON in LLM Tools setting. Parameter not used.", role="AI", classes="-error"))
+                llm_tools_value = None # Default to None if JSON is invalid
 
             # --- Basic Validation ---
             if not message:
@@ -1879,11 +1894,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             # --- Conversation ID Management (Conceptual for new chat) ---
             if prefix == "chat" and not self.current_chat_conversation_id:
                 # This is likely the first message in a new chat.
-                # A new conversation ID would be generated here or by the first API call's response handling.
-                # For now, we assume it's generated and set elsewhere.
+                # FIXME - Generate Chat Conversation ID Here
                 # Example: self.current_chat_conversation_id = self.notes_service._get_db(self.notes_user_id)._generate_uuid()
                 #          (if creating before API call)
-                # Or it's set when handling the API response that confirms conversation creation.
                 # For this task, the save button relies on it being set.
                 # We also need to load/clear the title/keywords input fields.
                 logging.info(
@@ -1958,7 +1971,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                             Text.from_markup(
                                 f"API Key for {selected_provider} is missing.\n\n"
                                 f"Please add it to your config file under:\n"
-                                f"\[api_settings.{provider_settings_key}\]\n"  # Note the escaped \[ and \]
+                                f"\[api_settings.{provider_settings_key}]\n"  # Note the escaped \[ and \]
                                 f"api_key = \"YOUR_KEY\"\n\n"
                                 f"Or set the environment variable specified in 'api_key_env_var'."
                             ),
@@ -1996,12 +2009,11 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 temperature=temperature,
                 system_message=system_prompt,
                 streaming=should_stream,
-                minp=min_p,  # Pass min_p from UI
-                # maxp=top_p,    # Pass top_p from UI as maxp if chat_wrapper/chat expects it
+                minp=min_p,
                 model=selected_model,
                 topp=top_p,
                 topk=top_k,
-                # FIXME
+                # --- Pass new "Full Chat Settings" values ---
                 llm_max_tokens=llm_max_tokens_value,
                 llm_seed=llm_seed_value,
                 llm_stop=llm_stop_value,
@@ -2016,11 +2028,11 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 llm_tools=llm_tools_value,
                 llm_tool_choice=llm_tool_choice_value,
                 # --- Existing parameters for chatdict etc. ---
-                media_content={},  # Placeholder for now
-                selected_parts=[],  # Placeholder for now
-                chatdict_entries=None,  # Placeholder for now
+                media_content={}, # Placeholder for now
+                selected_parts=[], # Placeholder for now
+                chatdict_entries=None, # Placeholder for now
                 max_tokens=500,  # This is the existing chatdict max_tokens
-                strategy="sorted_evenly"  # Default or get from config/UI
+                strategy="sorted_evenly" # Default or get from config/UI
             )
 
             # --- Run Worker ---
@@ -2205,17 +2217,17 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                      # --- New "Full Chat Settings" parameters ---
                      llm_max_tokens: Optional[int],
                      llm_seed: Optional[int],
-                     llm_stop: Optional[List[str]],  # Corrected based on processing: list of strings
-                     llm_response_format: Optional[Dict[str, str]],  # Passed as dict {"type": "text"}
+                     llm_stop: Optional[List[str]], # Corrected based on processing: list of strings
+                     llm_response_format: Optional[Dict[str, str]], # Passed as dict {"type": "text"}
                      llm_n: Optional[int],
                      llm_user_identifier: Optional[str],
                      llm_logprobs: Optional[bool],
                      llm_top_logprobs: Optional[int],
-                     llm_logit_bias: Optional[Dict[str, float]],  # JSON parsed to dict
+                     llm_logit_bias: Optional[Dict[str, float]], # JSON parsed to dict
                      llm_presence_penalty: Optional[float],
                      llm_frequency_penalty: Optional[float],
-                     llm_tools: Optional[List[Dict[str, Any]]],  # JSON parsed to list of dicts
-                     llm_tool_choice: Optional[Union[str, Dict[str, Any]]],  # String or JSON parsed to dict
+                     llm_tools: Optional[List[Dict[str, Any]]], # JSON parsed to list of dicts
+                     llm_tool_choice: Optional[Union[str, Dict[str, Any]]], # String or JSON parsed to dict
                      # --- Existing parameters ---
                      media_content, selected_parts, chatdict_entries, max_tokens, strategy):
         """
@@ -2237,6 +2249,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 system_message=system_message,
                 streaming=streaming,
                 minp=minp,
+                model=model,
                 topp=topp,
                 topk=topk,
                 # --- Pass new "Full Chat Settings" to chat() ---
@@ -2255,7 +2268,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 llm_tool_choice=llm_tool_choice,
                 # --- Existing parameters for chat() ---
                 chatdict_entries=chatdict_entries,
-                max_tokens=max_tokens,  # This is for chatdict context
+                max_tokens=max_tokens, # This is for chatdict context
                 strategy=strategy
             )
             logging.debug(f"chat_wrapper finished for '{api_endpoint}'. Result type: {type(result)}")
@@ -2934,7 +2947,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         print(f"Watcher: Available Provider Keys: {list(self.providers_models.keys())}")
         models = self.providers_models.get(new_value, [])
         print(f"Watcher: Models retrieved: {models}")
-        self._update_model_select("character", models)
+        self._update_model_select(TAB_CONV_CHAR, models)
         print(f"--- WATCHER END (character-api-provider) ---\n")
 
     # --- ADD HELPER METHOD to update model select ---

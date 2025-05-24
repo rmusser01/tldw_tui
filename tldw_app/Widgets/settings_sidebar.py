@@ -115,6 +115,29 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
                 value=default_temp,
                 classes="sidebar-input",
             )
+            yield Static("Top P", classes="sidebar-label")
+            yield Input(
+                placeholder="e.g., 0.95",
+                id=f"{id_prefix}-top-p", # This will create #chat-top-p
+                value=default_top_p,
+                classes="sidebar-input",
+            )
+
+            yield Static("Min P", classes="sidebar-label")
+            yield Input(
+                placeholder="e.g., 0.05",
+                id=f"{id_prefix}-min-p", # This will create #chat-min-p
+                value=default_min_p,
+                classes="sidebar-input",
+            )
+
+            yield Static("Top K", classes="sidebar-label")
+            yield Input(
+                placeholder="e.g., 50",
+                id=f"{id_prefix}-top-k", # This will create #chat-top-k
+                value=default_top_k,
+                classes="sidebar-input",
+            )
             # ===================================================================
             # NEW: Full Chat Settings
             # ===================================================================
