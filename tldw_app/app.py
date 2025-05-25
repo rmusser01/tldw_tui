@@ -1385,6 +1385,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 # self.notify("An unexpected error occurred.", severity="error")
             return
 
+        # --- Message Swiping Button ----------------
+
+        
         # --- Tab Switching --- ────────────────────────────
         if button_id and button_id.startswith("tab-"):
             print(f">>> DEBUG: Tab button detected: {button_id}")
@@ -3724,6 +3727,160 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 char_select_widget.value = Select.BLANK
             except QueryError:
                 pass
+
+
+    async def _load_branched_conversation_history(self, target_conversation_id: str, chat_log_widget: VerticalScroll):
+        """
+        Loads the complete message history for a given conversation_id,
+        tracing back through parent branches to the root if necessary.
+        """
+        if not self.notes_service:
+            logging.error("Notes service not available for loading branched history.")
+            await chat_log_widget.mount(
+                ChatMessage("Error: Notes service unavailable.", role="System", classes="-error"))
+            return
+
+        db = self.notes_service._get_db(self.notes_user_id)
+        await chat_log_widget.remove_children()
+        logging.debug(f"Loading branched history for target_conversation_id: {target_conversation_id}")
+
+        # 1. Trace path from target_conversation_id up to its root,
+        #    collecting (conversation_id, fork_message_id_in_parent_that_started_this_segment)
+        #    The 'fork_message_id_in_parent' is what we need to stop at when loading the parent's messages.
+        path_segments_info = []  # Stores (conv_id, fork_msg_id_in_parent)
+
+        current_conv_id_for_path = target_conversation_id
+        while current_conv_id_for_path:
+            conv_details = db.get_conversation_by_id(current_conv_id_for_path)
+            if not conv_details:
+                logging.error(f"Path tracing failed: Conversation {current_conv_id_for_path} not found.")
+                await chat_log_widget.mount(
+                    ChatMessage(f"Error: Conversation segment {current_conv_id_for_path} not found.", role="System",
+                                classes="-error"))
+                return  # Stop if a segment is missing
+
+            path_segments_info.append({
+                "id": conv_details['id'],
+                "forked_from_message_id": conv_details.get('forked_from_message_id'),
+                # ID of message in PARENT where THIS conv started
+                "parent_conversation_id": conv_details.get('parent_conversation_id')
+            })
+            current_conv_id_for_path = conv_details.get('parent_conversation_id')
+
+        path_segments_info.reverse()  # Now path_segments_info is from root-most to target_conversation_id
+
+        all_messages_to_display = []
+        for i, segment_info in enumerate(path_segments_info):
+            segment_conv_id = segment_info['id']
+
+            # Get all messages belonging to this specific segment_conv_id
+            messages_this_segment = db.get_messages_for_conversation(
+                segment_conv_id,
+                order_by_timestamp="ASC",
+                limit=10000  # Effectively all messages for this segment
+            )
+
+            # If this segment is NOT the last one in the path, it means it was forked FROM.
+            # We need to know where the NEXT segment (its child) forked from THIS segment.
+            # The 'forked_from_message_id' of the *next* segment is the message_id in *this* segment.
+            stop_at_message_id_for_this_segment = None
+            if (i + 1) < len(path_segments_info):  # If there is a next segment
+                next_segment_info = path_segments_info[i + 1]
+                # next_segment_info['forked_from_message_id'] is the message in current segment_conv_id
+                # from which the next_segment_info['id'] was forked.
+                stop_at_message_id_for_this_segment = next_segment_info['forked_from_message_id']
+
+            for msg_data in messages_this_segment:
+                all_messages_to_display.append(msg_data)
+                if stop_at_message_id_for_this_segment and msg_data['id'] == stop_at_message_id_for_this_segment:
+                    logging.debug(f"Stopping message load for segment {segment_conv_id} at fork point {msg_data['id']}")
+                    break  # Stop adding messages from this segment, as the next segment takes over
+
+        # Now mount all collected messages
+        logging.debug(f"Total messages collected for display: {len(all_messages_to_display)}")
+        for msg_data in all_messages_to_display:
+            image_data_for_widget = msg_data.get('image_data')
+            chat_message_widget = ChatMessage(
+                message=msg_data['content'],
+                role=msg_data['sender'],
+                timestamp=msg_data.get('timestamp'),
+                image_data=image_data_for_widget,
+                image_mime_type=msg_data.get('image_mime_type'),
+                message_id=msg_data['id']
+            )
+            await chat_log_widget.mount(chat_message_widget)
+
+        if chat_log_widget.is_mounted:
+            chat_log_widget.scroll_end(animate=False)
+        logging.info(
+            f"Loaded {len(all_messages_to_display)} messages for conversation {target_conversation_id} (including history).")
+
+
+    async def _display_conversation_in_chat_tab(self, conversation_id: str):
+        """Consolidates UI updates when loading/switching to a conversation."""
+        if not self.notes_service:
+            logging.error("Notes service unavailable, cannot display conversation.")
+            return
+
+        db = self.notes_service._get_db(self.notes_user_id)
+        conv_details = db.get_conversation_by_id(conversation_id)
+
+        if not conv_details:
+            logging.error(f"Cannot display conversation: Details for ID {conversation_id} not found.")
+            # self.notify(f"Error: Could not load chat {conversation_id}.", severity="error")
+            # Clear relevant UI fields or show error state
+            try:
+                self.query_one("#chat-conversation-title-input", Input).value = "Error: Not Found"
+                self.query_one("#chat-conversation-keywords-input", TextArea).text = ""
+                self.query_one("#chat-conversation-uuid-display", Input).value = conversation_id
+                title_bar = self.query_one(TitleBar)
+                title_bar.update_title(f"Chat - Error Loading")
+                chat_log = self.query_one("#chat-log", VerticalScroll)
+                await chat_log.remove_children()
+                await chat_log.mount(
+                    ChatMessage("Failed to load conversation details.", role="System", classes="-error"))
+            except QueryError as qe:
+                logging.error(f"UI component missing during error display for conversation {conversation_id}: {qe}")
+            return
+
+        self.current_chat_conversation_id = conversation_id  # Ensure reactive is set
+
+        try:
+            title_input = self.query_one("#chat-conversation-title-input", Input)
+            title_input.value = conv_details.get('title', '')
+        except QueryError:
+            logging.error("Failed to find #chat-conversation-title-input.")
+
+        try:
+            uuid_display = self.query_one("#chat-conversation-uuid-display", Input)
+            uuid_display.value = conversation_id
+        except QueryError:
+            logging.error("Failed to find #chat-conversation-uuid-display.")
+
+        try:
+            keywords_input = self.query_one("#chat-conversation-keywords-input", TextArea)
+            all_keywords_list = db.get_keywords_for_conversation(conversation_id)
+            visible_keywords = [kw['keyword'] for kw in all_keywords_list if not kw['keyword'].startswith("__")]
+            keywords_input.text = ", ".join(visible_keywords)
+        except Exception as e_kw:
+            logging.error(f"Error loading keywords for {conversation_id}: {e_kw}")
+
+        try:
+            title_bar = self.query_one(TitleBar)
+            title_bar.update_title(f"Chat - {conv_details.get('title', 'Untitled Conversation')}")
+        except QueryError:
+            logging.error("Failed to find TitleBar to update.")
+
+        chat_log_widget = self.query_one("#chat-log", VerticalScroll)
+        await self._load_branched_conversation_history(conversation_id, chat_log_widget)
+
+        try:
+            self.query_one("#chat-input", TextArea).focus()
+        except QueryError:
+            logging.error("Failed to find #chat-input to focus.")
+
+        logging.info(
+            f"Displayed conversation '{conv_details.get('title', 'Untitled')}' (ID: {conversation_id}) in chat tab.")
 
 
 # --- Main execution block ---
