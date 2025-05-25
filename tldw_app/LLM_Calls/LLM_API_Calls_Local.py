@@ -140,12 +140,20 @@ def _chat_with_openai_compatible_local_server(
 
 
     # Construct full API URL for chat completions
+    base_url = api_base_url.rstrip('/')
     chat_completions_path = "v1/chat/completions" # Standard OpenAI path
-    full_api_url = api_base_url.rstrip('/') + "/" + chat_completions_path.lstrip('/')
+    #full_api_url = api_base_url.rstrip('/') + "/" + chat_completions_path.lstrip('/')
+    if base_url.endswith(chat_completions_path):
+        full_api_url = base_url
+    else:
+        # If it doesn't end with the standard path, append it.
+        # This handles cases where the config provides just the server root.
+        full_api_url = base_url + chat_completions_path
 
     logging.debug(
         f"{provider_name}: Posting to {full_api_url}. Payload keys: {list(payload.keys())}")
-    logging.debug(f"{provider_name} Payload details (excluding messages): {{k: v for k, v in payload.items() if k != 'messages'}}")
+    logging.debug(
+        f"{provider_name} Payload details (excluding messages): {{k: v for k, v in payload.items() if k != 'messages'}}")
 
 
     try:
@@ -236,11 +244,11 @@ def chat_with_local_llm(
     if model and (model.lower() == "none" or model.strip() == ""): model = None
 
     # --- Settings Load ---
-    cfg = settings.get('local_llm', {})
+    cfg = settings.get('local-llm', {})
     api_base_url = cfg.get('api_ip')  # api_url passed via chat_api_call or from config
     if not api_base_url:
         raise ChatConfigurationError(
-            provider="local_llm",
+            provider="local-llm",
             message="Llamafile/Local LLM API URL (api_url) is required and could not be determined from arguments or configuration."
         )
 
@@ -331,7 +339,7 @@ def chat_with_llama(
     if model and (model.lower() == "none" or model.strip() == ""): model = None
 
     # --- Settings Load ---
-    cfg = settings.get('kobold_api', {})
+    cfg = settings.get('llama_cpp', {})
     api_base_url = cfg.get('api_ip')  # api_url passed via chat_api_call or from config
     if not api_base_url:
         raise ChatConfigurationError(
@@ -661,18 +669,18 @@ def chat_with_tabbyapi(
     if model and (model.lower() == "none" or model.strip() == ""): model = None
 
     # --- Settings Load ---
-    cfg = settings.get('tabby_api', {})
+    cfg = settings.get('tabbyapi', {})
     api_base_url = cfg.get('api_url')  # api_url passed via chat_api_call or from config
     if not api_base_url:
         raise ChatConfigurationError(
-            provider="tabby_api",
+            provider="tabbyapi",
             message="Tabby_API API URL (api_url) is required and could not be determined from arguments or configuration."
         )
     current_api_key = api_key or cfg.get('api_key')
     current_model = model or cfg.get('model')
     if not current_model:
         raise ChatConfigurationError(
-            provider="tabby_api",
+            provider="tabbyapi",
             message="Tabby_API model name is required and could not be determined from arguments or configuration."
         )
 
@@ -745,7 +753,7 @@ def chat_with_vllm(
     if model and (model.lower() == "none" or model.strip() == ""): model = None
 
     # --- Settings Load ---
-    cfg = settings.get('vllm_api', {})
+    cfg = settings.get('vllm', {})
     vllm_api_url = cfg.get('api_url')  # api_url passed via chat_api_call or from config
     if not vllm_api_url:
         raise ChatConfigurationError(
@@ -847,7 +855,7 @@ def chat_with_aphrodite(
     if model and (model.lower() == "none" or model.strip() == ""): model = None
 
     # --- Settings Load ---
-    cfg = settings.get('aphrodite_api', {})
+    cfg = settings.get('aphrodite', {})
     api_base_url = cfg.get('api_url')  # api_url passed via chat_api_call or from config
     if not api_base_url:
         raise ChatConfigurationError(
@@ -931,8 +939,7 @@ def chat_with_ollama(
     num_predict: Optional[int] = None,      # from map (mapped from generic 'max_tokens')
     seed: Optional[int] = None,             # from map
     stop: Optional[Union[str, List[str]]] = None, # from map
-    format: Optional[str] = None,       # from map (mapped from generic 'response_format', e.g. "json")
-                                            # _chat_with_openai_compatible_local_server expects dict {"type": "json_object"}
+    format: Optional[Union[str, Dict[str,str]]] = None, # from map (mapped from generic 'response_format', e.g. "json" or {"type":"json_object"})
     presence_penalty: Optional[float] = None, # from map
     frequency_penalty: Optional[float] = None, # from map
     # api_url is specific for Ollama if passed directly, else from config
@@ -941,18 +948,27 @@ def chat_with_ollama(
     # logit_bias, n (num_choices), user_identifier, logprobs, top_logprobs, tools, tool_choice, min_p
     # Add to signature and pass if Ollama supports them.
 ):
-    format_str = format  # 'format' is the key in PROVIDER_PARAM_MAP, but we use 'format_str' for clarity
     if model and (model.lower() == "none" or model.strip() == ""): model = None
 
-    # --- Settings Load ---
-    cfg = settings.get('ollama_api', {})
-    current_api_base_url = api_url or cfg.get('api_url')  # api_url passed via chat_api_call or from config
+    # --- Settings Load for CLI config structure ---
+    cli_api_settings = settings.get('api_settings', {}) # Get the [api_settings] table
+    cfg = cli_api_settings.get('ollama', {})             # Get the [api_settings.ollama] sub-table
+
+    # API URL: function argument 'api_url' takes precedence, then config.
+    # The config.py's CONFIG_TOML_CONTENT provides a default for [api_settings.ollama].api_url
+    current_api_base_url = api_url or cfg.get('api_url')
     if not current_api_base_url:
         raise ChatConfigurationError(
-            provider="ollama",
+            provider="ollama", # Matches the key 'ollama' used for cfg
             message="Ollama API URL (api_url) is required and could not be determined from arguments or configuration."
         )
+
+    # API Key: function argument takes precedence, then config.
+    # For Ollama, cfg.get('api_key') will likely be None as it's not standard.
     current_api_key = api_key or cfg.get('api_key')
+
+    # Model: function argument takes precedence, then config.
+    # config.py's CONFIG_TOML_CONTENT provides a default for [api_settings.ollama].model
     current_model = model or cfg.get('model')
     if not current_model:
         raise ChatConfigurationError(
@@ -960,40 +976,75 @@ def chat_with_ollama(
             message="Ollama model name is required and could not be determined from arguments or configuration."
         )
 
-    current_temp = temperature if temperature is not None else float(cfg.get('temperature', 0.7)) # Ollama uses 'temperature'
-    current_streaming = streaming if streaming is not None else cfg.get('streaming', False)
-    current_top_p = top_p if top_p is not None else cfg.get('top_p') # Ollama uses 'top_p'
-    current_top_k = top_k if top_k is not None else cfg.get('top_k') # Ollama uses 'top_k'
-    current_max_tokens = num_predict if num_predict is not None else int(cfg.get('num_predict', cfg.get('max_tokens', 4096))) # Ollama uses 'num_predict'
-    current_seed = seed if seed is not None else cfg.get('seed') # Ollama uses 'seed'
-    current_stop = stop if stop is not None else cfg.get('stop') # Ollama uses 'stop' (list of strings)
+    # Load parameters, prioritizing function arguments, then config values
+    # Types are cast where necessary (e.g., float, int, bool)
+    # Defaults from cfg.get() are based on [api_settings.ollama] in CONFIG_TOML_CONTENT
 
-    # Handle response_format for Ollama:
-    # PROVIDER_PARAM_MAP has 'response_format': 'format' (e.g., "json")
-    # _chat_with_openai_compatible_local_server expects {'type': 'json_object'}
-    # We need to translate `format_str` (which is "json" from mapping) to the dict format.
+    current_temp = temperature if temperature is not None else float(cfg.get('temperature', 0.7))
+    current_streaming_arg = streaming if streaming is not None else cfg.get('streaming', False)
+    current_streaming = bool(current_streaming_arg) if not isinstance(current_streaming_arg, bool) else current_streaming_arg
+
+    current_top_p = top_p if top_p is not None else cfg.get('top_p') # Should be float or None
+    if current_top_p is not None: current_top_p = float(current_top_p)
+
+    current_top_k = top_k if top_k is not None else cfg.get('top_k') # Should be int or None
+    if current_top_k is not None: current_top_k = int(current_top_k)
+
+    # 'num_predict' is the function arg name (from provider map), 'max_tokens' is key in CLI TOML.
+    current_max_tokens = num_predict if num_predict is not None else int(cfg.get('max_tokens', 4096))
+
+    current_seed = seed # Already Optional[int]
+    if current_seed is None and cfg.get('seed') is not None:
+        current_seed = int(cfg.get('seed'))
+
+    current_stop = stop # Already Optional[Union[str, List[str]]]
+    if current_stop is None and cfg.get('stop') is not None:
+        current_stop = cfg.get('stop') # TOML can define this as string or list of strings
+
+    # Handle response_format:
+    # 'format' (function arg) is from PROVIDER_PARAM_MAP, maps generic 'response_format'.
+    # generic 'response_format' is expected as Dict by _chat_with_openai_compatible_local_server.
+    # Ollama's own '/api/generate' takes a string "json", but OpenAI compat endpoint uses the dict.
+    # cfg.get('format') would read from [api_settings.ollama].format, if a user adds it (string).
     ollama_response_format_dict: Optional[Dict[str, str]] = None
-    actual_format_str = format_str if format_str is not None else cfg.get('format')
-    if actual_format_str and actual_format_str.lower() == 'json':
-        ollama_response_format_dict = {"type": "json_object"}
-    elif actual_format_str: # if other formats are supported by Ollama and have an OpenAI equivalent
-        logging.warning(f"Ollama: Unsupported format string '{actual_format_str}' from 'format_str'. Only 'json' is translated to OpenAI's response_format dict.")
+    candidate_format_value = format if format is not None else cfg.get('format')
 
+    if isinstance(candidate_format_value, str):
+        if candidate_format_value.lower() == 'json':
+            ollama_response_format_dict = {"type": "json_object"}
+        else:
+            logging.warning(
+                f"Ollama: Unsupported format string '{candidate_format_value}' from config/argument. "
+                f"Only 'json' (string) is translated to OpenAI's response_format dict."
+            )
+    elif isinstance(candidate_format_value, dict):
+        if candidate_format_value.get("type") == "json_object": # Check if it's already the correct dict format
+            ollama_response_format_dict = candidate_format_value
+        else:
+            logging.warning(
+                f"Ollama: Received a dictionary for format, but it's not the expected "
+                f"{{'type': 'json_object'}}. Value: {candidate_format_value}"
+            )
+    elif candidate_format_value is not None:
+        logging.warning(
+            f"Ollama: Unexpected type for format value: {type(candidate_format_value)}. Value: {candidate_format_value}"
+        )
 
-    current_presence_penalty = presence_penalty if presence_penalty is not None else cfg.get('presence_penalty') # Ollama uses 'presence_penalty'
-    current_frequency_penalty = frequency_penalty if frequency_penalty is not None else cfg.get('frequency_penalty') # Ollama uses 'frequency_penalty'
+    # 'presence_penalty' and 'frequency_penalty' are not in default [api_settings.ollama] in CONFIG_TOML_CONTENT
+    current_presence_penalty = presence_penalty if presence_penalty is not None else cfg.get('presence_penalty')
+    current_frequency_penalty = frequency_penalty if frequency_penalty is not None else cfg.get('frequency_penalty')
 
-    # Ollama also supports other native parameters like 'num_ctx', 'tfs_z', 'mirostat', etc.
-    # These would need to be added to PROVIDER_PARAM_MAP and then to this function if full coverage is desired.
-    # For now, focusing on OpenAI compatible ones.
+    # 'timeout', 'api_retries', 'api_retry_delay' are in [api_settings.ollama] in CONFIG_TOML_CONTENT
+    timeout = int(cfg.get('timeout', 300))
+    api_retries = int(cfg.get('api_retries', 1)) # Default to 1 from CONFIG_TOML_CONTENT
+    api_retry_delay = int(cfg.get('api_retry_delay', 2)) # Default to 2 from CONFIG_TOML_CONTENT
 
-    timeout = int(cfg.get('api_timeout', 300)) # Ollama can be slow
-    api_retries = int(cfg.get('api_retries', 1))
-    api_retry_delay = int(cfg.get('api_retry_delay', 1))
+    if isinstance(current_streaming, str): # Should be bool by now from config or arg, but defensive
+        current_streaming = current_streaming.lower() == "true"
 
-    if isinstance(current_streaming, str): current_streaming = current_streaming.lower() == "true"
     if custom_prompt:
-        logging.info("Ollama: 'custom_prompt' received. Ensure incorporated if needed.")
+        logging.info("Ollama: 'custom_prompt' (function argument) received. Ensure this is correctly incorporated "
+                     "into 'input_data' or 'system_message' by the calling logic (e.g., chat_api_call or the 'chat' function).")
 
     # Ollama's /v1/chat/completions endpoint is OpenAI compatible
     return _chat_with_openai_compatible_local_server(
@@ -1007,7 +1058,7 @@ def chat_with_ollama(
         max_tokens=current_max_tokens, # map num_predict to max_tokens for OpenAI server
         top_p=current_top_p,
         top_k=current_top_k,
-        # min_p is not in Ollama's map, pass if supported and added
+        # min_p is not in Ollama's map, pass if supported and added. If None, generic server won't include it.
         stop=current_stop,
         presence_penalty=current_presence_penalty,
         frequency_penalty=current_frequency_penalty,
@@ -1018,7 +1069,7 @@ def chat_with_ollama(
         # user_identifier not in Ollama's map, pass if supported
         # logprobs, top_logprobs not in Ollama's map, pass if supported
         # tools, tool_choice not in Ollama's map, pass if supported by Ollama's OpenAI endpoint
-        provider_name="Ollama",
+        provider_name="Ollama", # For logging within _chat_with_openai_compatible_local_server
         timeout=timeout,
         api_retries=api_retries,
         api_retry_delay=api_retry_delay
