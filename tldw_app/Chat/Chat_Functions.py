@@ -84,7 +84,7 @@ API_CALL_HANDLERS = {
     'google': chat_with_google,
     'huggingface': chat_with_huggingface,
     'llama_cpp': chat_with_llama,
-    'kobold_cpp': chat_with_kobold,
+    'koboldcpp': chat_with_kobold,
     'ooba': chat_with_oobabooga,
     'tabbyapi': chat_with_tabbyapi,
     'vllm': chat_with_vllm,
@@ -283,7 +283,7 @@ PROVIDER_PARAM_MAP = {
         'presence_penalty': 'presence_penalty',
         'frequency_penalty': 'frequency_penalty',
     },
-    'kobold_cpp': {
+    'koboldcpp': {
         'api_key': 'api_key',
         'messages_payload': 'input_data',
         'prompt': 'custom_prompt_input',

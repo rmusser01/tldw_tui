@@ -21,10 +21,10 @@ path = "~/.local/share/tldw_cli/tldw_cli_data.db"
 # Optional: Specify URLs for local/custom endpoints if they differ from library defaults
 # These keys should match the provider names used in the app (adjust if needed)
 Ollama = "http://localhost:11434"
-Llama_cpp = "http://localhost:8080" # Check if your API provider uses this address
+llama_cpp = "http://localhost:8080" # Check if your API provider uses this address
 Oobabooga = "http://localhost:5000/api" # Check if your API provider uses this address
-KoboldCpp = "http://localhost:5001/api" # Check if your API provider uses this address
-vLLM = "http://localhost:8000" # Check if your API provider uses this address
+koboldcpp = "http://localhost:5001/api" # Check if your API provider uses this address
+vllm = "http://localhost:8000" # Check if your API provider uses this address
 Custom = "http://localhost:1234/v1"
 Custom_2 = "http://localhost:5678/v1"
 # Add other local URLs if needed
@@ -42,11 +42,11 @@ HuggingFace = ["meta-llama/Meta-Llama-3.1-8B-Instruct", "meta-llama/Meta-Llama-3
 MistralAI = ["open-mistral-nemo", "mistral-medium-2505", "codestral-2501", "mistral-saba-2502", "mistral-large-2411", "ministral-3b-2410", "ministral-8b-2410", "mistral-moderation-2411", "devstral-small-2505", "mistral-small-2503", ]
 OpenRouter = ["openai/gpt-4o-mini", "anthropic/claude-3.7-sonnet", "google/gemini-2.0-flash-001", "google/gemini-2.5-pro-preview", "google/gemini-2.5-flash-preview", "deepseek/deepseek-chat-v3-0324:free", "deepseek/deepseek-chat-v3-0324", "openai/gpt-4.1", "anthropic/claude-sonnet-4", "deepseek/deepseek-r1:free", "anthropic/claude-3.7-sonnet:thinking", "google/gemini-flash-1.5-8b", "mistralai/mistral-nemo", "google/gemini-2.5-flash-preview-05-20", ]
 # Local Providers
-Llama_cpp = ["None"]
-KoboldCpp = ["None"]
+llama_cpp = ["None"]
+koboldcpp = ["None"]
 Oobabooga = ["None"]
 Ollama = ["gemma3:12b", "gemma3:4b", "gemma3:27b", "qwen3:4b", "qwen3:8b", "qwen3:14b", "qwen3:30b", "qwen3:32b", "qwen3:235b", "devstral:24b", "deepseek-r1:671b"]
-vLLM = ["vllm-model-z", "vllm-model-x", "vllm-model-y", "vllm-model-a"]
+vllm = ["vllm-model-z", "vllm-model-x", "vllm-model-y", "vllm-model-a"]
 Custom = ["custom-model-alpha", "custom-model-beta"]
 Custom_2 = ["custom-model-gamma", "custom-model-delta"]
 TabbyAPI = ["tabby-model", "tabby-model-2", "tabby-model-3"]

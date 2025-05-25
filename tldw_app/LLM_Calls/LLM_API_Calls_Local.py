@@ -426,26 +426,33 @@ def chat_with_kobold(
         max_length: Optional[int] = None, # Mapped from 'max_tokens'
         stop_sequence: Optional[Union[str, List[str]]] = None, # Mapped from 'stop'
         num_responses: Optional[int] = None, # Mapped from 'n'
-        seed: Optional[int] = None # Mapped from 'seed'
+        seed: Optional[int] = None, # Mapped from 'seed'
+        # Add api_url as an optional parameter if it can be passed directly
+        api_url: Optional[str] = None
 ):
     if model and (model.lower() == "none" or model.strip() == ""): model = None
     logging.debug("KoboldAI (Native): Chat request starting...")
 
-    # --- Settings Load ---
-    cfg = settings.get('kobold_api', {})
-    api_base_url = cfg.get('api_ip')  # api_url passed via chat_api_call or from config
-    if not api_base_url:
+    # --- Settings Load for CLI config structure ---
+    # The global 'settings' object is imported from tldw_app.config
+    cli_api_settings = settings.get('api_settings', {}) # Get the [api_settings] table
+    # Use 'koboldcpp' (lowercase) as this is the key in CONFIG_TOML_CONTENT's [api_settings]
+    cfg = cli_api_settings.get('koboldcpp', {})
+
+    # API URL: function argument 'api_url' takes precedence, then config.
+    # The config.py's CONFIG_TOML_CONTENT provides a default for [api_settings.koboldcpp].api_url
+    # Note: CONFIG_TOML_CONTENT uses 'api_url' for koboldcpp, not 'api_ip'.
+    # Ensure your function arguments and cfg.get() match the TOML key.
+    current_api_base_url = api_url or cfg.get('api_url')
+    if not current_api_base_url:
         raise ChatConfigurationError(
-            provider="kobold_api",
-            message="Kobold API URL (api_url) is required and could not be determined from arguments or configuration."
+            provider="koboldcpp", # Consistent with the key used for cfg
+            message="KoboldCpp API URL (api_url) is required and could not be determined from arguments or configuration."
         )
     current_api_key = api_key or cfg.get('api_key')
     current_model = model or cfg.get('model')
     if not current_model:
-        raise ChatConfigurationError(
-            provider="kobold_api",
-            message="Kobold API model name is required and could not be determined from arguments or configuration."
-        )
+        logging.info("Kobold API model namenot passed and or could not be determined from arguments or configuration.")
 
     current_temp = temp if temp is not None else float(cfg.get('temperature', 0.7)) # Kobold native 'temp'
     current_top_k = top_k if top_k is not None else cfg.get('top_k')
@@ -514,7 +521,7 @@ def chat_with_kobold(
     if cfg.get('rep_pen') is not None: payload['rep_pen'] = float(cfg['rep_pen'])
     # Other kobold params: typical_p, tfs, top_a, etc. could be added from cfg
 
-    logging.debug(f"KoboldAI (Native): Posting to {api_base_url}. Prompt (first 200 chars): '{final_prompt_string[:200]}...'")
+    logging.debug(f"KoboldAI (Native): Posting to {current_api_base_url}. Prompt (first 200 chars): '{final_prompt_string[:200]}...'")
     logging.debug(f"KoboldAI (Native) Payload details: {payload}")
 
 
@@ -525,7 +532,7 @@ def chat_with_kobold(
         session.mount("http://", adapter)
         session.mount("https://", adapter)
 
-        response = session.post(api_base_url, headers=headers, json=payload, timeout=timeout)
+        response = session.post(current_api_base_url, headers=headers, json=payload, timeout=timeout)
         response.raise_for_status()
         response_data = response.json()
 

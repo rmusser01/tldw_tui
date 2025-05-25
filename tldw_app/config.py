@@ -200,7 +200,6 @@ def load_settings() -> Dict:
     # If [API] exists in user_override_config_data, it would have merged with/overridden base_config_data's [API]
     # Same applies to all other sections retrieved below.
 
-    local_api_section = get_toml_section('LocalAPI')
     paths_section = get_toml_section('Paths')
     logging_section_server = get_toml_section('Logging')
     processing_section = get_toml_section('Processing')
@@ -394,93 +393,93 @@ def load_settings() -> Dict:
         },
         # Local APIs from LocalAPI section
         "kobold_api": {
-            'api_ip': _get_typed_value(local_api_section, 'kobold_api_IP', 'http://127.0.0.1:5000/api/v1/generate'),
-            'api_streaming_ip': _get_typed_value(local_api_section, 'kobold_openai_api_IP', 'http://127.0.0.1:5001/v1/chat/completions'),
-            'api_key': _get_typed_value(local_api_section, 'kobold_api_key', ''),
-            'streaming': _get_typed_value(local_api_section, 'kobold_streaming', False, bool),
-            'temperature': _get_typed_value(local_api_section, 'kobold_temperature', 0.7, float),
-            'top_p': _get_typed_value(local_api_section, 'kobold_top_p', 0.95, float),
-            'top_k': _get_typed_value(local_api_section, 'kobold_top_k', 100, int),
-            'max_tokens': _get_typed_value(local_api_section, 'kobold_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(local_api_section, 'kobold_api_timeout', 90, int),
-            'api_retries': _get_typed_value(local_api_section, 'kobold_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(local_api_section, 'kobold_api_retry_delay', 5, int)
+            'api_ip': _get_typed_value(api_section, 'kobold_api_IP', 'http://127.0.0.1:5000/api/v1/generate'),
+            'api_streaming_ip': _get_typed_value(api_section, 'kobold_openai_api_IP', 'http://127.0.0.1:5001/v1/chat/completions'),
+            'api_key': _get_typed_value(api_section, 'kobold_api_key', ''),
+            'streaming': _get_typed_value(api_section, 'kobold_streaming', False, bool),
+            'temperature': _get_typed_value(api_section, 'kobold_temperature', 0.7, float),
+            'top_p': _get_typed_value(api_section, 'kobold_top_p', 0.95, float),
+            'top_k': _get_typed_value(api_section, 'kobold_top_k', 100, int),
+            'max_tokens': _get_typed_value(api_section, 'kobold_max_tokens', 4096, int),
+            'api_timeout': _get_typed_value(api_section, 'kobold_api_timeout', 90, int),
+            'api_retries': _get_typed_value(api_section, 'kobold_api_retry', 3, int),
+            'api_retry_delay': _get_typed_value(api_section, 'kobold_api_retry_delay', 5, int)
         },
         "llama_cpp_api": { # Renamed for clarity, assuming llama.cpp server
-            'api_ip': _get_typed_value(local_api_section, 'llama_api_IP', 'http://127.0.0.1:8080/v1/chat/completions'),
-            'api_key': _get_typed_value(local_api_section, 'llama_api_key', ''),
-            'streaming': _get_typed_value(local_api_section, 'llama_streaming', False, bool),
-            'temperature': _get_typed_value(local_api_section, 'llama_temperature', 0.7, float),
-            'top_p': _get_typed_value(local_api_section, 'llama_top_p', 0.95, float),
-            'min_p': _get_typed_value(local_api_section, 'llama_min_p', 0.05, float),
-            'top_k': _get_typed_value(local_api_section, 'llama_top_k', 100, int),
-            'max_tokens': _get_typed_value(local_api_section, 'llama_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(local_api_section, 'llama_api_timeout', 90, int),
-            'api_retries': _get_typed_value(local_api_section, 'llama_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(local_api_section, 'llama_api_retry_delay', 5, int)
+            'api_ip': _get_typed_value(api_section, 'llama_api_IP', 'http://127.0.0.1:8080/v1/chat/completions'),
+            'api_key': _get_typed_value(api_section, 'llama_api_key', ''),
+            'streaming': _get_typed_value(api_section, 'llama_streaming', False, bool),
+            'temperature': _get_typed_value(api_section, 'llama_temperature', 0.7, float),
+            'top_p': _get_typed_value(api_section, 'llama_top_p', 0.95, float),
+            'min_p': _get_typed_value(api_section, 'llama_min_p', 0.05, float),
+            'top_k': _get_typed_value(api_section, 'llama_top_k', 100, int),
+            'max_tokens': _get_typed_value(api_section, 'llama_max_tokens', 4096, int),
+            'api_timeout': _get_typed_value(api_section, 'llama_api_timeout', 90, int),
+            'api_retries': _get_typed_value(api_section, 'llama_api_retry', 3, int),
+            'api_retry_delay': _get_typed_value(api_section, 'llama_api_retry_delay', 5, int)
         },
         "ooba_api": {
-            'api_ip': _get_typed_value(local_api_section, 'ooba_api_IP', 'http://127.0.0.1:5000/v1/chat/completions'),
-            'api_key': _get_typed_value(local_api_section, 'ooba_api_key', ''),
-            'streaming': _get_typed_value(local_api_section, 'ooba_streaming', False, bool),
-            'temperature': _get_typed_value(local_api_section, 'ooba_temperature', 0.7, float),
-            'top_p': _get_typed_value(local_api_section, 'ooba_top_p', 0.95, float),
-            'min_p': _get_typed_value(local_api_section, 'ooba_min_p', 0.05, float),
-            'top_k': _get_typed_value(local_api_section, 'ooba_top_k', 100, int),
-            'max_tokens': _get_typed_value(local_api_section, 'ooba_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(local_api_section, 'ooba_api_timeout', 90, int),
-            'api_retries': _get_typed_value(local_api_section, 'ooba_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(local_api_section, 'ooba_api_retry_delay', 5, int)
+            'api_ip': _get_typed_value(api_section, 'ooba_api_IP', 'http://127.0.0.1:5000/v1/chat/completions'),
+            'api_key': _get_typed_value(api_section, 'ooba_api_key', ''),
+            'streaming': _get_typed_value(api_section, 'ooba_streaming', False, bool),
+            'temperature': _get_typed_value(api_section, 'ooba_temperature', 0.7, float),
+            'top_p': _get_typed_value(api_section, 'ooba_top_p', 0.95, float),
+            'min_p': _get_typed_value(api_section, 'ooba_min_p', 0.05, float),
+            'top_k': _get_typed_value(api_section, 'ooba_top_k', 100, int),
+            'max_tokens': _get_typed_value(api_section, 'ooba_max_tokens', 4096, int),
+            'api_timeout': _get_typed_value(api_section, 'ooba_api_timeout', 90, int),
+            'api_retries': _get_typed_value(api_section, 'ooba_api_retry', 3, int),
+            'api_retry_delay': _get_typed_value(api_section, 'ooba_api_retry_delay', 5, int)
         },
          "tabby_api": {
-            'api_ip': _get_typed_value(local_api_section, 'tabby_api_IP', 'http://127.0.0.1:5000/api/v1/generate'),
-            'api_key': _get_typed_value(local_api_section, 'tabby_api_key', None),
-            'model': _get_typed_value(local_api_section, 'tabby_model', None), # Tabby model might be part of URL or configured in Tabby
-            'streaming': _get_typed_value(local_api_section, 'tabby_streaming', False, bool),
-            'temperature': _get_typed_value(local_api_section, 'tabby_temperature', 0.7, float),
-            'top_p': _get_typed_value(local_api_section, 'tabby_top_p', 0.95, float),
-            'top_k': _get_typed_value(local_api_section, 'tabby_top_k', 100, int),
-            'min_p': _get_typed_value(local_api_section, 'tabby_min_p', 0.05, float),
-            'max_tokens': _get_typed_value(local_api_section, 'tabby_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(local_api_section, 'tabby_api_timeout', 90, int),
-            'api_retries': _get_typed_value(local_api_section, 'tabby_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(local_api_section, 'tabby_api_retry_delay', 5, int)
+            'api_ip': _get_typed_value(api_section, 'tabby_api_IP', 'http://127.0.0.1:5000/api/v1/generate'),
+            'api_key': _get_typed_value(api_section, 'tabby_api_key', None),
+            'model': _get_typed_value(api_section, 'tabby_model', None), # Tabby model might be part of URL or configured in Tabby
+            'streaming': _get_typed_value(api_section, 'tabby_streaming', False, bool),
+            'temperature': _get_typed_value(api_section, 'tabby_temperature', 0.7, float),
+            'top_p': _get_typed_value(api_section, 'tabby_top_p', 0.95, float),
+            'top_k': _get_typed_value(api_section, 'tabby_top_k', 100, int),
+            'min_p': _get_typed_value(api_section, 'tabby_min_p', 0.05, float),
+            'max_tokens': _get_typed_value(api_section, 'tabby_max_tokens', 4096, int),
+            'api_timeout': _get_typed_value(api_section, 'tabby_api_timeout', 90, int),
+            'api_retries': _get_typed_value(api_section, 'tabby_api_retry', 3, int),
+            'api_retry_delay': _get_typed_value(api_section, 'tabby_api_retry_delay', 5, int)
         },
         "vllm_api": {
-            'api_ip': _get_typed_value(local_api_section, 'vllm_api_IP', 'http://127.0.0.1:5000/v1/chat/completions'), # Corrected key
-            'api_key': _get_typed_value(local_api_section, 'vllm_api_key', None),
-            'model': _get_typed_value(local_api_section, 'vllm_model', None),
-            'streaming': _get_typed_value(local_api_section, 'vllm_streaming', False, bool),
-            'temperature': _get_typed_value(local_api_section, 'vllm_temperature', 0.7, float),
-            'top_p': _get_typed_value(local_api_section, 'vllm_top_p', 0.95, float),
-            'top_k': _get_typed_value(local_api_section, 'vllm_top_k', 100, int),
-            'min_p': _get_typed_value(local_api_section, 'vllm_min_p', 0.05, float),
-            'max_tokens': _get_typed_value(local_api_section, 'vllm_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(local_api_section, 'vllm_api_timeout', 90, int),
-            'api_retries': _get_typed_value(local_api_section, 'vllm_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(local_api_section, 'vllm_api_retry_delay', 5, int)
+            'api_ip': _get_typed_value(api_section, 'vllm_api_IP', 'http://127.0.0.1:5000/v1/chat/completions'), # Corrected key
+            'api_key': _get_typed_value(api_section, 'vllm_api_key', None),
+            'model': _get_typed_value(api_section, 'vllm_model', None),
+            'streaming': _get_typed_value(api_section, 'vllm_streaming', False, bool),
+            'temperature': _get_typed_value(api_section, 'vllm_temperature', 0.7, float),
+            'top_p': _get_typed_value(api_section, 'vllm_top_p', 0.95, float),
+            'top_k': _get_typed_value(api_section, 'vllm_top_k', 100, int),
+            'min_p': _get_typed_value(api_section, 'vllm_min_p', 0.05, float),
+            'max_tokens': _get_typed_value(api_section, 'vllm_max_tokens', 4096, int),
+            'api_timeout': _get_typed_value(api_section, 'vllm_api_timeout', 90, int),
+            'api_retries': _get_typed_value(api_section, 'vllm_api_retry', 3, int),
+            'api_retry_delay': _get_typed_value(api_section, 'vllm_api_retry_delay', 5, int)
         },
         "ollama_api": {
-            'api_url': _get_typed_value(local_api_section, 'ollama_api_IP', 'http://127.0.0.1:11434/api/generate'), # ollama_api_url or IP
-            'api_key': _get_typed_value(local_api_section, 'ollama_api_key', None), # Ollama doesn't typically use API keys
-            'model': _get_typed_value(local_api_section, 'ollama_model', None),
-            'streaming': _get_typed_value(local_api_section, 'ollama_streaming', False, bool),
-            'temperature': _get_typed_value(local_api_section, 'ollama_temperature', 0.7, float),
-            'top_p': _get_typed_value(local_api_section, 'ollama_top_p', 0.95, float),
-            'max_tokens': _get_typed_value(local_api_section, 'ollama_max_tokens', 4096, int), # Ollama might handle max_tokens differently (num_predict)
-            'api_timeout': _get_typed_value(local_api_section, 'ollama_api_timeout', 90, int),
-            'api_retries': _get_typed_value(local_api_section, 'ollama_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(local_api_section, 'ollama_api_retry_delay', 5, int)
+            'api_url': _get_typed_value(api_section, 'ollama_api_IP', 'http://127.0.0.1:11434/api/generate'), # ollama_api_url or IP
+            'api_key': _get_typed_value(api_section, 'ollama_api_key', None), # Ollama doesn't typically use API keys
+            'model': _get_typed_value(api_section, 'ollama_model', None),
+            'streaming': _get_typed_value(api_section, 'ollama_streaming', False, bool),
+            'temperature': _get_typed_value(api_section, 'ollama_temperature', 0.7, float),
+            'top_p': _get_typed_value(api_section, 'ollama_top_p', 0.95, float),
+            'max_tokens': _get_typed_value(api_section, 'ollama_max_tokens', 4096, int), # Ollama might handle max_tokens differently (num_predict)
+            'api_timeout': _get_typed_value(api_section, 'ollama_api_timeout', 90, int),
+            'api_retries': _get_typed_value(api_section, 'ollama_api_retry', 3, int),
+            'api_retry_delay': _get_typed_value(api_section, 'ollama_api_retry_delay', 5, int)
         },
         "aphrodite_api": {
-            'api_ip': _get_typed_value(local_api_section, 'aphrodite_api_IP', 'http://127.0.0.1:8080/v1/chat/completions'),
-            'api_key': _get_typed_value(local_api_section, 'aphrodite_api_key', ''),
-            'model': _get_typed_value(local_api_section, 'aphrodite_model', ''),
-            'max_tokens': _get_typed_value(local_api_section, 'aphrodite_max_tokens', 4096, int),
-            'streaming': _get_typed_value(local_api_section, 'aphrodite_streaming', False, bool),
-            'api_timeout': _get_typed_value(local_api_section, 'aphrodite_api_timeout', 90, int), # Original used llama_api_timeout
-            'api_retries': _get_typed_value(local_api_section, 'aphrodite_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(local_api_section, 'aphrodite_api_retry_delay', 5, int)
+            'api_ip': _get_typed_value(api_section, 'aphrodite_api_IP', 'http://127.0.0.1:8080/v1/chat/completions'),
+            'api_key': _get_typed_value(api_section, 'aphrodite_api_key', ''),
+            'model': _get_typed_value(api_section, 'aphrodite_model', ''),
+            'max_tokens': _get_typed_value(api_section, 'aphrodite_max_tokens', 4096, int),
+            'streaming': _get_typed_value(api_section, 'aphrodite_streaming', False, bool),
+            'api_timeout': _get_typed_value(api_section, 'aphrodite_api_timeout', 90, int), # Original used llama_api_timeout
+            'api_retries': _get_typed_value(api_section, 'aphrodite_api_retry', 3, int),
+            'api_retry_delay': _get_typed_value(api_section, 'aphrodite_api_retry_delay', 5, int)
         },
         "custom_openai_api": {
             'api_ip': _get_typed_value(api_section, 'custom_openai_api_ip', 'http://127.0.0.1:5000/v1/chat/completions'),
@@ -510,9 +509,9 @@ def load_settings() -> Dict:
         },
         "llm_api_settings": { # General LLM settings
             'default_api': _get_typed_value(api_section, 'default_api', 'openai'),
-            'local_api_timeout': _get_typed_value(local_api_section, 'local_api_timeout', 90, int), # Note: this was also in Local-API Settings before
-            'local_api_retries': _get_typed_value(local_api_section, 'local_api_retry', 3, int), # Key name consistency
-            'local_api_retry_delay': _get_typed_value(local_api_section, 'local_api_retry_delay', 5, int),
+            'local_api_timeout': _get_typed_value(api_section, 'local_api_timeout', 90, int), # Note: this was also in Local-API Settings before
+            'local_api_retries': _get_typed_value(api_section, 'local_api_retry', 3, int), # Key name consistency
+            'local_api_retry_delay': _get_typed_value(api_section, 'local_api_retry_delay', 5, int),
         },
         "output_path": _get_typed_value(paths_section, 'output_path', 'results', Path),
         "system_preferences": {
@@ -822,9 +821,9 @@ API_MODELS_BY_PROVIDER = {
                    "mistralai/mistral-nemo", "google/gemini-2.5-flash-preview-05-20", ],
 }
 LOCAL_PROVIDERS = {
-    "Llama.cpp": ["None"],
+    "llama_cpp": ["None"],
     "Oobabooga": ["None"],
-    "KoboldCpp": ["None"],
+    "koboldcpp": ["None"],
     "Ollama": ["gemma3:12b", "gemma3:4b", "gemma3:27b", "qwen3:4b", "qwen3:8b", "qwen3:14b", "qwen3:30b",
                "qwen3:32b", "qwen3:235b", "devstral:24b", "deepseek-r1:671b"],
     "vLLM": ["vllm-model-z", "vllm-model-x", "vllm-model-y", "vllm-model-a"],
@@ -884,8 +883,8 @@ media_db_path = "~/.local/share/tldw_cli/tldw_cli_media_v2.db"
 [api_endpoints]
 # Optional: Specify URLs for local/custom endpoints if they differ from library defaults
 # These keys should match the provider names used in the app (adjust if needed)
-Llama_cpp = "http://localhost:8080" # Check if your API provider uses this address
-KoboldCpp = "http://localhost:5001/api" # Check if your API provider uses this address
+llama_cpp = "http://localhost:8080" # Check if your API provider uses this address
+koboldcpp = "http://localhost:5001/api" # Check if your API provider uses this address
 Oobabooga = "http://localhost:5000/api" # Check if your API provider uses this address
 Ollama = "http://localhost:11434"
 vLLM = "http://localhost:8000" # Check if your API provider uses this address
@@ -907,7 +906,7 @@ MistralAI = ["open-mistral-nemo", "mistral-medium-2505", "codestral-2501", "mist
 OpenRouter = ["openai/gpt-4o-mini", "anthropic/claude-3.7-sonnet", "google/gemini-2.0-flash-001", "google/gemini-2.5-pro-preview", "google/gemini-2.5-flash-preview", "deepseek/deepseek-chat-v3-0324:free", "deepseek/deepseek-chat-v3-0324", "openai/gpt-4.1", "anthropic/claude-sonnet-4", "deepseek/deepseek-r1:free", "anthropic/claude-3.7-sonnet:thinking", "google/gemini-flash-1.5-8b", "mistralai/mistral-nemo", "google/gemini-2.5-flash-preview-05-20", ]
 # Local Providers
 Llama_cpp = ["None"]
-KoboldCpp = ["None"]
+koboldcpp = ["None"]
 Oobabooga = ["None"]
 Ollama = ["gemma3:12b", "gemma3:4b", "gemma3:27b", "qwen3:4b", "qwen3:8b", "qwen3:14b", "qwen3:30b", "qwen3:32b", "qwen3:235b", "devstral:24b", "deepseek-r1:671b"]
 vLLM = ["vllm-model-z", "vllm-model-x", "vllm-model-y", "vllm-model-a"]

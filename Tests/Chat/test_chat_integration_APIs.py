@@ -66,13 +66,13 @@ def provider_config(request):
     # For cloud services, API key is essential.
     # For local services, URL is essential.
 
-    is_local_type = provider_name in ["ollama", "llama_cpp", "ooba", "kobold_cpp", "local-llm", "vllm",
+    is_local_type = provider_name in ["ollama", "llama_cpp", "ooba", "koboldcpp", "local-llm", "vllm",
                                       "tabbyapi"]  # Add more if needed
 
     if not env_vars.get("model") and "model" in params_map:  # If model is an expected param for the handler
         # Some local models might have the model fixed by the server, so model in payload is optional
         # For now, let's assume test model should be specified for clarity.
-        if not (is_local_type and provider_name == "kobold_cpp"):  # Kobold native doesn't take model in payload
+        if not (is_local_type and provider_name == "koboldcpp"):  # Kobold native doesn't take model in payload
             pytest.skip(f"{provider_name.upper()}_TEST_MODEL not set. Skipping integration test for {provider_name}.")
 
     if not is_local_type and not env_vars.get("api_key") and "api_key" in params_map:
@@ -176,7 +176,7 @@ def test_provider_api_basic_call(provider_config: Dict[str, Any]):
         assert "message" in response["choices"][0]
         content = response["choices"][0]["message"].get("content")
         assert isinstance(content, str) and len(content) > 0
-        print(f"KoboldCPP Response: {content[:100]}")
+        print(f"kobold_cpp Response: {content[:100]}")
     else:  # Assuming OpenAI-compatible response structure for others
         assert "choices" in response and len(response["choices"]) > 0
         assert "message" in response["choices"][0]

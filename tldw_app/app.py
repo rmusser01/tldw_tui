@@ -13,6 +13,8 @@ from pathlib import Path
 import traceback
 import os
 from typing import Union, Generator, Optional, List, Dict, Any
+
+from loguru import logger
 #
 # 3rd-Party Libraries
 from rich.text import Text
@@ -78,12 +80,12 @@ if API_IMPORTS_SUCCESSFUL:
         "DeepSeek": chat_with_deepseek,
         "Google": chat_with_google, # Key from config
         "Groq": chat_with_groq,
-        "KoboldCpp": chat_with_kobold,  # Key from config
-        "Llama_cpp": chat_with_llama,  # Key from config
+        "koboldcpp": chat_with_kobold,  # Key from config
+        "llama_cpp": chat_with_llama,  # Key from config
         "MistralAI": chat_with_mistral,  # Key from config
         "Oobabooga": chat_with_oobabooga,  # Key from config
         "OpenRouter": chat_with_openrouter,
-        "vLLM": chat_with_vllm,  # Key from config
+        "vllm": chat_with_vllm,  # Key from config
         "TabbyAPI": chat_with_tabbyapi,  # Key from config
         "Aphrodite": chat_with_aphrodite,  # Key from config
         "Ollama": chat_with_ollama,  # Key from config
@@ -447,7 +449,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
     def _setup_logging(self):
         """Sets up all logging handlers. Call from on_mount."""
-        print("--- _setup_logging START ---")  # Use print for initial debug
+        logging.info("--- _setup_logging START ---")  # Use print for initial debug
         # Configure the root logger FIRST
         root_logger = logging.getLogger()
         initial_log_level_str = self.app_config.get("general", {}).get("log_level", "INFO").upper()
@@ -468,21 +470,21 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             )
             textual_console_handler.setFormatter(console_formatter)
             root_logger.addHandler(textual_console_handler)
-            print(f"Added TextualHandler to root logger (Level: {logging.getLevelName(initial_log_level)}).")
+            logger.info(f"Added TextualHandler to root logger (Level: {logging.getLevelName(initial_log_level)}).")
         else:
-            print("TextualHandler already exists on root logger.")
+            logger.info("TextualHandler already exists on root logger.")
 
         # --- Setup RichLog Handler ---
         try:
             log_display_widget = self.query_one("#app-log-display", RichLog)
             # Prevent adding multiple RichLog Handlers
             if self._rich_log_handler and self._rich_log_handler in root_logger.handlers:
-                print("RichLogHandler already exists and is added.")
+                logger.info("RichLogHandler already exists and is added.")
             elif not self._rich_log_handler:
                 self._rich_log_handler = RichLogHandler(log_display_widget)
                 self._rich_log_handler.setLevel(logging.DEBUG)  # Set level explicitly
                 root_logger.addHandler(self._rich_log_handler)
-                print(
+                logger.info(
                     f"Added RichLogHandler to root logger (Level: {logging.getLevelName(self._rich_log_handler.level)}).")
             else:
                 # Handler exists but wasn't added? Add it.
@@ -490,7 +492,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 print(f"Re-added existing RichLogHandler instance to root logger.")
 
         except QueryError:
-            print("!!! ERROR: Failed to find #app-log-display widget for RichLogHandler setup.")
+            logger.error("!!! ERROR: Failed to find #app-log-display widget for RichLogHandler setup.")
             logging.error("Failed to find #app-log-display widget for RichLogHandler setup.")
             self._rich_log_handler = None
         except Exception as e:
@@ -544,8 +546,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             print(f"Final Root logger level set to: {logging.getLevelName(root_logger.level)}")
         else:
             print(f"No handlers found on root logger after setup!")
-        logging.info("Logging setup complete.")
-        print("--- _setup_logging END ---")
+        logger.info("Logging setup complete.")
+        logger.info("--- _setup_logging END ---")
 
     def compose(self) -> ComposeResult:
         logging.debug("App composing UI...")
@@ -825,13 +827,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 except Exception as e:
                     logging.error(f"Error removing file handler: {e}")
         logging.shutdown()  # Ensure logs are flushed
-        print("--- App Unmounted ---")  # Use print as logging might be shut down
+        logger.info("--- App Unmounted ---")  # Use print as logging might be shut down
 
     # WATCHER - Handles UI changes when current_tab's VALUE changes
     def watch_current_tab(self, old_tab: Optional[str], new_tab: str) -> None:
         """Shows/hides the relevant content window when the tab changes."""
         # (Your existing watcher code is likely fine, just ensure the QueryErrors aren't hiding a problem)
-        print(f"\n>>> DEBUG: watch_current_tab triggered! Old: '{old_tab}', New: '{new_tab}'")
+        logger.debug(f"\n>>> DEBUG: watch_current_tab triggered! Old: '{old_tab}', New: '{new_tab}'")
         if not isinstance(new_tab, str) or not new_tab:
             print(f">>> DEBUG: watch_current_tab: Invalid new_tab '{new_tab!r}', aborting.")
             logging.error(f"Watcher received invalid new_tab value: {new_tab!r}. Aborting tab switch.")
@@ -912,7 +914,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             print(f">>> DEBUG: Error showing new window #{new_tab}-window: {e}")
             logging.error(f"Watcher: Error showing new window: {e}", exc_info=True)
 
-        print(">>> DEBUG: watch_current_tab finished.")
+        logger.debug(">>> DEBUG: watch_current_tab finished.")
 
         # If the new tab is TAB_NOTES, load the notes
         if new_tab == TAB_NOTES:
@@ -2534,16 +2536,209 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 except Exception as exc:  # noqa: BLE001
                     logging.error("Failed to delete message: %s", exc, exc_info=True)
 
+            # FIXME - lol 1shot idk
+            # ── REGENERATE an AI message ──────────────────────────────────────────
             elif "regenerate-button" in button_classes and message_role == "AI":
-                logging.info(f"Action: Regenerate clicked for AI message.")
+                logging.info(f"Action: Regenerate clicked for AI message ID: {action_widget.message_id_internal}")
+
+                prefix = "chat"  # Assuming regeneration only happens in the main chat tab for now
+                chat_container: Optional[VerticalScroll] = None
                 try:
-                    text_widget = action_widget.query_one(".message-text", Static)
-                    text_widget.update(Text("[REGENERATING...]"))
+                    chat_container = self.query_one(f"#{prefix}-log", VerticalScroll)
                 except QueryError:
-                    logging.error("Could not find .message-text Static widget for regenerating placeholder.")
-                except Exception as e:
-                    logging.error(f"Error updating regenerate placeholder: {e}")
-                # FIXME - Implement actual regeneration (find previous user message, call API worker again)
+                    logging.error(f"Regenerate: Could not find chat container #{prefix}-log. Aborting.")
+                    self.notify("Error: Chat log not found for regeneration.", severity="error")
+                    return
+
+                # 1. Build history up to (but not including) the message being regenerated
+                history_for_regeneration = []
+                widgets_to_remove = []
+                found_target_ai_message = False
+
+                # Iterate through existing ChatMessage widgets in the chat_log
+                # We need to be careful modifying the list while iterating, so collect widgets to remove.
+                all_message_widgets_in_log = list(chat_container.query(ChatMessage))
+
+                for msg_widget in all_message_widgets_in_log:
+                    if msg_widget is action_widget:
+                        found_target_ai_message = True
+                        widgets_to_remove.append(msg_widget)  # Add the AI message itself to remove
+                        continue  # Don't add it to history
+
+                    if found_target_ai_message:
+                        # If we've found the target, all subsequent messages also need to be removed
+                        widgets_to_remove.append(msg_widget)
+                    else:
+                        # This message is before the one we're regenerating
+                        if msg_widget.role in ("User", "AI") and msg_widget.generation_complete:
+                            role_for_api = "assistant" if msg_widget.role == "AI" else "user"
+                            # Ensure content is the plain text, not Rich Text object for history
+                            content_for_history = msg_widget.message_text
+                            history_for_regeneration.append({"role": role_for_api, "content": content_for_history})
+
+                if not history_for_regeneration:
+                    logging.warning("Regenerate: No history found before the target AI message. Cannot regenerate.")
+                    self.notify("Cannot regenerate: No preceding messages found.", severity="warning")
+                    # Optionally, remove the AI message if it's the first one and regenerate makes no sense
+                    # await action_widget.remove()
+                    return
+
+                logging.debug(
+                    f"History for regeneration (count: {len(history_for_regeneration)}): {history_for_regeneration}")
+
+                # 2. Remove the target AI message and subsequent messages from UI
+                for widget_to_remove in widgets_to_remove:
+                    logging.debug(f"Regenerate: Removing widget {widget_to_remove.id} (Role: {widget_to_remove.role})")
+                    await widget_to_remove.remove()
+
+                # Ensure the current_ai_message_widget reference is cleared if it was one of the removed ones
+                if self.current_ai_message_widget in widgets_to_remove:
+                    self.current_ai_message_widget = None
+
+                # 3. Fetch current chat settings (similar to send-chat button logic)
+                try:
+                    provider_widget = self.query_one(f"#{prefix}-api-provider", Select)
+                    model_widget = self.query_one(f"#{prefix}-api-model", Select)
+                    system_prompt_widget = self.query_one(f"#{prefix}-system-prompt", TextArea)
+                    temp_widget = self.query_one(f"#{prefix}-temperature", Input)
+                    top_p_widget = self.query_one(f"#{prefix}-top-p", Input)
+                    min_p_widget = self.query_one(f"#{prefix}-min-p", Input)
+                    top_k_widget = self.query_one(f"#{prefix}-top-k", Input)
+                    # --- Query "Full Chat Settings" widgets ---
+                    llm_max_tokens_widget = self.query_one(f"#{prefix}-llm-max-tokens", Input)
+                    llm_seed_widget = self.query_one(f"#{prefix}-llm-seed", Input)
+                    llm_stop_widget = self.query_one(f"#{prefix}-llm-stop", Input)
+                    llm_response_format_widget = self.query_one(f"#{prefix}-llm-response-format", Select)
+                    llm_n_widget = self.query_one(f"#{prefix}-llm-n", Input)
+                    llm_user_identifier_widget = self.query_one(f"#{prefix}-llm-user-identifier", Input)
+                    llm_logprobs_widget = self.query_one(f"#{prefix}-llm-logprobs", Checkbox)
+                    llm_top_logprobs_widget = self.query_one(f"#{prefix}-llm-top-logprobs", Input)
+                    llm_logit_bias_widget = self.query_one(f"#{prefix}-llm-logit-bias", TextArea)
+                    llm_presence_penalty_widget = self.query_one(f"#{prefix}-llm-presence-penalty", Input)
+                    llm_frequency_penalty_widget = self.query_one(f"#{prefix}-llm-frequency-penalty", Input)
+                    llm_tools_widget = self.query_one(f"#{prefix}-llm-tools", TextArea)
+                    llm_tool_choice_widget = self.query_one(f"#{prefix}-llm-tool-choice", Input)
+                except QueryError as e:
+                    logging.error(f"Regenerate: Could not find UI settings widgets for '{prefix}': {e}")
+                    await chat_container.mount(
+                        ChatMessage(
+                            Text.from_markup("[bold red]Internal Error:[/]\nMissing UI settings for regeneration."),
+                            role="System", classes="-error"))
+                    return
+
+                selected_provider = str(provider_widget.value) if provider_widget.value else None
+                selected_model = str(model_widget.value) if model_widget.value else None
+                system_prompt = system_prompt_widget.text
+                temperature = self._safe_float(temp_widget.value, 0.7, "temperature")
+                top_p = self._safe_float(top_p_widget.value, 0.95, "top_p")
+                min_p = self._safe_float(min_p_widget.value, 0.05, "min_p")
+                top_k = self._safe_int(top_k_widget.value, 50, "top_k")
+
+                llm_max_tokens_value = self._safe_int(llm_max_tokens_widget.value, 1024, "llm_max_tokens")
+                llm_seed_value = self._safe_int(llm_seed_widget.value, None, "llm_seed")
+                llm_stop_value = llm_stop_widget.value.split(',') if llm_stop_widget.value.strip() else None
+                llm_response_format_value = {"type": str(llm_response_format_widget.value)}
+                llm_n_value = self._safe_int(llm_n_widget.value, 1, "llm_n")
+                llm_user_identifier_value = llm_user_identifier_widget.value.strip() or None
+                llm_logprobs_value = llm_logprobs_widget.value
+                llm_top_logprobs_value = self._safe_int(llm_top_logprobs_widget.value, 0, "llm_top_logprobs")
+                llm_presence_penalty_value = self._safe_float(llm_presence_penalty_widget.value, 0.0,
+                                                              "llm_presence_penalty")
+                llm_frequency_penalty_value = self._safe_float(llm_frequency_penalty_widget.value, 0.0,
+                                                               "llm_frequency_penalty")
+                llm_tool_choice_value = llm_tool_choice_widget.value.strip() or None
+                try:
+                    llm_logit_bias_text = llm_logit_bias_widget.text.strip()
+                    llm_logit_bias_value = json.loads(llm_logit_bias_text) if llm_logit_bias_text else None
+                except json.JSONDecodeError:
+                    llm_logit_bias_value = None
+                try:
+                    llm_tools_text = llm_tools_widget.text.strip()
+                    llm_tools_value = json.loads(llm_tools_text) if llm_tools_text else None
+                except json.JSONDecodeError:
+                    llm_tools_value = None
+
+                if not selected_provider or not selected_model:
+                    logging.warning("Regenerate: Provider or model not selected.")
+                    await chat_container.mount(
+                        ChatMessage(
+                            Text.from_markup("[bold red]Error:[/]\nPlease select provider and model for regeneration."),
+                            role="System", classes="-error"))
+                    return
+
+                # API Key (copied from your send-chat logic, ensure it's robust)
+                api_key_for_call = None
+                provider_settings_key = selected_provider.lower()
+                provider_config_settings = self.app_config.get("api_settings", {}).get(provider_settings_key, {})
+                if provider_config_settings.get("api_key"):
+                    api_key_for_call = provider_config_settings["api_key"]
+                elif provider_config_settings.get("api_key_env_var"):
+                    api_key_for_call = os.environ.get(provider_config_settings["api_key_env_var"])
+
+                # Re-check API key presence for cloud providers (copied from send logic)
+                providers_requiring_key = ["OpenAI", "Anthropic", "Google", "MistralAI", "Groq", "Cohere", "OpenRouter",
+                                           "HuggingFace", "DeepSeek"]
+                if selected_provider in providers_requiring_key and not api_key_for_call:
+                    logging.error(
+                        f"Regenerate aborted: API Key for required provider '{selected_provider}' is missing.")
+                    await chat_container.mount(ChatMessage(
+                        Text.from_markup(f"[bold red]API Key for {selected_provider} is missing for regeneration.[/]"),
+                        role="System", classes="-error"))
+                    return
+
+                # 4. Mount placeholder and dispatch worker
+                ai_placeholder_widget = ChatMessage(
+                    message=f"AI {get_char(EMOJI_THINKING, FALLBACK_THINKING)} (Regenerating...)",
+                    role="AI",
+                    generation_complete=False
+                )
+                await chat_container.mount(ai_placeholder_widget)
+                chat_container.scroll_end(animate=False)
+                self.current_ai_message_widget = ai_placeholder_widget
+
+                # For regeneration, the 'message' to chat_wrapper is effectively the context ending
+                # with the last user message. The history *is* that context.
+                # chat_wrapper's 'message' param might need to be empty or None if history is primary.
+                # Let's pass an empty message as the "new" input, and the history.
+                worker_target_regen = lambda: self.chat_wrapper(
+                    message="",  # No new user message, we are regenerating based on history
+                    history=history_for_regeneration,  # The crucial part
+                    api_endpoint=selected_provider,
+                    api_key=api_key_for_call,
+                    custom_prompt="",  # Not typically used for regeneration directly, baked into history/system_prompt
+                    temperature=temperature,
+                    system_message=system_prompt,  # Use current system prompt
+                    streaming=False,  # Or get from UI if you have a streaming checkbox
+                    minp=min_p,
+                    model=selected_model,
+                    topp=top_p,
+                    topk=top_k,
+                    llm_max_tokens=llm_max_tokens_value,
+                    llm_seed=llm_seed_value,
+                    llm_stop=llm_stop_value,
+                    llm_response_format=llm_response_format_value,
+                    llm_n=llm_n_value,
+                    llm_user_identifier=llm_user_identifier_value,
+                    llm_logprobs=llm_logprobs_value,
+                    llm_top_logprobs=llm_top_logprobs_value,
+                    llm_logit_bias=llm_logit_bias_value,
+                    llm_presence_penalty=llm_presence_penalty_value,
+                    llm_frequency_penalty=llm_frequency_penalty_value,
+                    llm_tools=llm_tools_value,
+                    llm_tool_choice=llm_tool_choice_value,
+                    media_content={}, selected_parts=[], chatdict_entries=None,
+                    max_tokens=500, strategy="sorted_evenly"  # Existing chatdict params
+                )
+
+                logging.debug(f"Regenerate: Running worker 'API_Call_{prefix}_regenerate' to execute chat_wrapper")
+                self.run_worker(
+                    worker_target_regen,
+                    name=f"API_Call_{prefix}_regenerate",  # Slightly different name for clarity
+                    group="api_calls",
+                    thread=True,
+                    description=f"Regenerating for {selected_provider}"
+                )
+                return  # Finished handling regenerate
 
         else:
             # This handles buttons not inside a ChatMessage or unhandled IDs
@@ -2748,6 +2943,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                                 except QueryError:
                                     pass
 
+                    # FIXME - Enable streaming processing
                     # Start the stream processing task
                     self.run_task(process_stream(), name=f"stream_processor_{prefix}", group="streams")
 
@@ -2759,32 +2955,52 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     text_to_display_escaped = ""
                     original_text_for_storage = ""
 
-                    if isinstance(result, dict):  # Standard OpenAI non-streaming
+                    if isinstance(result, dict):  # Standard OpenAI non-streaming success
                         try:
-                            original_text_for_storage = result['choices'][0]['message']['content']
+                            original_text_for_internal_storage = result['choices'][0]['message']['content']
+                            text_to_display_final = escape_markup(original_text_for_internal_storage)
                         except (KeyError, IndexError, TypeError) as e:
-                            logging.error(f"Error parsing non-streaming dict result: {e}. Response: {result}",
+                            logging.error(f"Error parsing non-streaming dict result: {e}. Resp: {result}",
                                           exc_info=True)
-                            original_text_for_storage = "[AI: Error parsing response.]"
-                    elif isinstance(result,
-                                    str):  # Could be an error string from chat_wrapper or direct string response
-                        original_text_for_storage = result
+                            original_text_for_internal_storage = "[AI: Error parsing response.]"
+                            text_to_display_final = Text.from_markup(
+                                f"[bold red]{escape_markup(original_text_for_internal_storage)}[/]")
+
+                    elif isinstance(result, str):
+                        original_text_for_internal_storage = result
+                        # Check if the string result is an error message from chat_wrapper
+                        # chat_wrapper returns f"[bold red]Error during chat processing:[/]\n{escape(str(e))}"
+                        if original_text_for_internal_storage.startswith(
+                                "[bold red]Error during chat processing:[/]") or \
+                                original_text_for_internal_storage.startswith(
+                                    "An error occurred in the chat function:"):  # From your log
+                            # This string from chat_wrapper might already have some Rich markup
+                            # and the dynamic part (exception message) is already escaped by chat_wrapper.
+                            # Or, if chat_wrapper returns a plain string that your app wraps in markup...
+                            # For safety, if it's an error string from chat_wrapper that might contain unescaped user data
+                            # from an exception message string, ensure proper escaping.
+                            # The log shows "An error occurred...", which is a plain string returned.
+                            text_to_display_final = escape_markup(original_text_for_internal_storage)
+                        else:
+                            # Assume it's a normal successful string response that needs escaping
+                            text_to_display_final = escape_markup(original_text_for_internal_storage)
+
                     elif result is None:
-                        original_text_for_storage = "[AI: Error – No response received.]"
-                    else:  # Fallback for unexpected types
+                        original_text_for_internal_storage = "[AI: Error – No response received.]"
+                        text_to_display_final = Text.from_markup(
+                            f"[bold red]{escape_markup(original_text_for_internal_storage)}[/]")
+
+                    else:  # Fallback for truly unexpected types
                         logging.error(f"Unexpected result type from API: {type(result)}. Content: {result!r}")
-                        original_text_for_storage = "[Error: Unexpected result type from API.]"
+                        original_text_for_internal_storage = "[Error: Unexpected result type from API.]"
+                        text_to_display_final = Text.from_markup(
+                            f"[bold red]{escape_markup(original_text_for_internal_storage)}[/]")
 
-                    # Now, check if the original text was an error message that already contains markup
-                    if original_text_for_storage.startswith(("[bold red]Error:", "[bold red]AI Error:")):
-                        text_to_display_escaped = original_text_for_storage  # Assume it's safe, pre-formatted markup
-                    else:
-                        text_to_display_escaped = escape_markup(original_text_for_storage)
-
-                    ai_message_widget.message_text = original_text_for_storage  # Store original, unescaped
-                    static_text_widget.update(text_to_display_escaped)  # Display escaped (or pre-formatted)
+                    ai_message_widget.message_text = original_text_for_internal_storage  # Store original
+                    static_text_widget.update(
+                        text_to_display_final)  # Update UI with potentially escaped string or Text object
                     ai_message_widget.mark_generation_complete()
-                    self.current_ai_message_widget = None  # Clear reference
+                    self.current_ai_message_widget = None
 
             elif event.state is WorkerState.ERROR:
                 error_from_worker = event.worker.error
@@ -3233,11 +3449,11 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         # Map provider names (case-insensitive keys from config/UI) to endpoint keys in config.toml
         # Ensure these keys match your config.toml [api_endpoints] section
         provider_key_map = {
-            "Llama.cpp": "Llama_cpp",
+            "llama_cpp": "llama_cpp",
             "Ollama": "Ollama",  # Assuming key in config is "Ollama"
             "Oobabooga": "Oobabooga",
-            "KoboldCpp": "KoboldCpp",
-            "vLLM": "vLLM",
+            "koboldcpp": "koboldcpp",
+            "vllm": "vllm",
             "Custom": "Custom",
             "Custom-2": "Custom_2",
             # Add other mappings if needed (TabbyAPI, Aphrodite?)
@@ -3409,9 +3625,9 @@ if __name__ == "__main__":
 
     # --- Emoji Check ---
     emoji_is_supported = supports_emoji() # Call it once
-    print(f"Terminal emoji support detected: {emoji_is_supported}")
-    print(f"Using brain: {get_char(EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN)}")
-    print("-" * 30)
+    logger.info(f"Terminal emoji support detected: {emoji_is_supported}")
+    logger.info(f"Using brain: {get_char(EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN)}")
+    logger.info("-" * 30)
 
     # --- CSS definition ---
     # (Keep your CSS content here, make sure IDs match widgets)
@@ -3631,26 +3847,20 @@ ChatMessage.-ai .message-actions.-generating {
     # --- Run the App ---
     logging.info("Starting Textual App...")
     # Pass the loaded config to the App instance
-    print("--- INSTANTIATING TldwCli ---")
-    logging.info("--- INSTANTIATING TldwCli ---")
+    logger.info("--- INSTANTIATING TldwCli ---")
     app = TldwCli()
-    print("--- INSTANTIATED TldwCli ---")
-    logging.info("--- INSTANTIATED TldwCli ---")
-    print("--- CALLING app.run() ---")
-    logging.info("--- CALLING app.run() ---")
+    logger.info("--- INSTANTIATED TldwCli ---")
+    logger.info("--- CALLING app.run() ---")
     try:
         app.run()
     except Exception as e:
-        print(f"--- CRITICAL ERROR DURING app.run() ---")
-        logging.exception("--- CRITICAL ERROR DURING app.run() ---")
+        logger.exception("--- CRITICAL ERROR DURING app.run() ---")
         traceback.print_exc()  # Make sure traceback prints
     finally:
         # This might run even if app exits early internally in run()
-        print("--- FINALLY block after app.run() ---")
-        logging.info("--- FINALLY block after app.run() ---")
+        logger.info("--- FINALLY block after app.run() ---")
 
-    print("--- AFTER app.run() call (if not crashed hard) ---")
-    logging.info("--- AFTER app.run() call (if not crashed hard) ---")
+    logger.info("--- AFTER app.run() call (if not crashed hard) ---")
 
 #
 # End of app.py

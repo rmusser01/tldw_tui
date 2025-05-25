@@ -1412,7 +1412,7 @@ def summarize_with_openrouter(api_key, input_data, custom_prompt_arg, temp=None,
             session.mount("http://", adapter)
             session.mount("https://", adapter)
             logging.debug("OpenRouter: Submitting request to API endpoint")
-            print("OpenRouter: Submitting request to API endpoint")
+            logging.info("OpenRouter: Submitting request to API endpoint")
             response = session.post(
                 url="https://openrouter.ai/api/v1/chat/completions",
                 headers={
@@ -1438,7 +1438,7 @@ def summarize_with_openrouter(api_key, input_data, custom_prompt_arg, temp=None,
                 if 'choices' in response_data and len(response_data['choices']) > 0:
                     summary = response_data['choices'][0]['message']['content'].strip()
                     logging.debug("openrouter: Summarization successful")
-                    print("openrouter: Summarization successful.")
+                    logging.info("openrouter: Summarization successful.")
                     return summary
                 else:
                     logging.error("openrouter: Expected data not found in API response.")

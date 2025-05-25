@@ -313,17 +313,17 @@ if __name__ == '__main__':
 
     try:
         # 1. Initialize
-        print("\n--- Initializing Interop Library ---")
+        logging.info("\n--- Initializing Interop Library ---")
         initialize_interop(db_path=EXAMPLE_DB_PATH, client_id=EXAMPLE_CLIENT_ID)
-        print(f"Interop initialized: {is_initialized()}")
-        print(f"DB instance client ID: {get_db_instance().client_id}")
+        logging.info(f"Interop initialized: {is_initialized()}")
+        logging.info(f"DB instance client ID: {get_db_instance().client_id}")
 
         # 2. Add some data using interop functions
-        print("\n--- Adding Data ---")
+        logging.info("\n--- Adding Data ---")
         kw_id1, kw_uuid1 = add_keyword("test")
-        print(f"Added keyword 'test': ID {kw_id1}, UUID {kw_uuid1}")
+        logging.info(f"Added keyword 'test': ID {kw_id1}, UUID {kw_uuid1}")
         kw_id2, kw_uuid2 = add_keyword("example")
-        print(f"Added keyword 'example': ID {kw_id2}, UUID {kw_uuid2}")
+        logging.info(f"Added keyword 'example': ID {kw_id2}, UUID {kw_uuid2}")
 
         p_id1, p_uuid1, msg1 = add_prompt(
             name="My First Prompt",
@@ -333,7 +333,7 @@ if __name__ == '__main__':
             user_prompt="Tell me a joke.",
             keywords=["test", "funny"] # "funny" will be newly created
         )
-        print(f"Added prompt: {msg1} (ID: {p_id1}, UUID: {p_uuid1})")
+        logging.info(f"Added prompt: {msg1} (ID: {p_id1}, UUID: {p_uuid1})")
 
         p_id2, p_uuid2, msg2 = add_or_update_prompt_interop(
             name="My Second Prompt",
@@ -343,68 +343,68 @@ if __name__ == '__main__':
             user_prompt="Write a short story.",
             keywords=["example", "story"]
         )
-        print(f"Added/Updated prompt via interop wrapper: {msg2} (ID: {p_id2}, UUID: {p_uuid2})")
+        logging.info(f"Added/Updated prompt via interop wrapper: {msg2} (ID: {p_id2}, UUID: {p_uuid2})")
 
 
         # 3. Read data
-        print("\n--- Reading Data ---")
+        logging.info("\n--- Reading Data ---")
         prompt1_details = fetch_prompt_details(p_id1)
         if prompt1_details:
-            print(f"Details for Prompt ID {p_id1} ('{prompt1_details.get('name')}'):")
-            print(f"  Author: {prompt1_details.get('author')}")
-            print(f"  Keywords: {prompt1_details.get('keywords')}")
+            logging.info(f"Details for Prompt ID {p_id1} ('{prompt1_details.get('name')}'):")
+            logging.info(f"  Author: {prompt1_details.get('author')}")
+            logging.info(f"  Keywords: {prompt1_details.get('keywords')}")
         else:
-            print(f"Could not fetch details for Prompt ID {p_id1}")
+            logging.info(f"Could not fetch details for Prompt ID {p_id1}")
 
         all_prompts, total_pages, _, total_items = list_prompts()
-        print(f"List Prompts (Page 1): {len(all_prompts)} items. Total items: {total_items}, Total pages: {total_pages}")
+        logging.info(f"List Prompts (Page 1): {len(all_prompts)} items. Total items: {total_items}, Total pages: {total_pages}")
         for p in all_prompts:
-            print(f"  - {p.get('name')} (Author: {p.get('author')})")
+            logging.info(f"  - {p.get('name')} (Author: {p.get('author')})")
 
         all_kws = fetch_all_keywords()
-        print(f"All active keywords: {all_kws}")
+        logging.info(f"All active keywords: {all_kws}")
 
 
         # 4. Search
-        print("\n--- Searching Data ---")
+        logging.info("\n--- Searching Data ---")
         search_results, total_matches = search_prompts(search_query="test", search_fields=["details", "keywords"])
-        print(f"Search results for 'test': {len(search_results)} matches (Total found: {total_matches})")
+        logging.info(f"Search results for 'test': {len(search_results)} matches (Total found: {total_matches})")
         for res in search_results:
-            print(f"  - Found: {res.get('name')} (Keywords: {res.get('keywords')})")
+            logging.info(f"  - Found: {res.get('name')} (Keywords: {res.get('keywords')})")
 
 
         # 5. Using other interop-wrapped standalone functions
-        print("\n--- Using Other Interop Functions ---")
+        logging.info("\n--- Using Other Interop Functions ---")
         markdown_keywords = view_prompt_keywords_markdown_interop()
-        print("Keywords in Markdown:")
-        print(markdown_keywords)
+        logging.info("Keywords in Markdown:")
+        logging.info(markdown_keywords)
 
         csv_export_status, csv_file_path = export_prompts_formatted_interop(export_format='csv')
-        print(f"CSV Export: {csv_export_status} -> {csv_file_path}")
+        logging.info(f"CSV Export: {csv_export_status} -> {csv_file_path}")
         if csv_file_path != "None" and EXAMPLE_DB_PATH == ":memory:":
-             print(f" (Note: CSV file '{csv_file_path}' would exist if not using in-memory DB)")
+             logging.info(f" (Note: CSV file '{csv_file_path}' would exist if not using in-memory DB)")
 
 
         # 6. Soft delete
-        print("\n--- Soft Deleting ---")
+        logging.info("\n--- Soft Deleting ---")
         if p_id1:
             deleted = soft_delete_prompt(p_id1)
-            print(f"Soft deleted prompt ID {p_id1}: {deleted}")
+            logging.info(f"Soft deleted prompt ID {p_id1}: {deleted}")
             prompt1_after_delete = get_prompt_by_id(p_id1)
-            print(f"Prompt ID {p_id1} after delete (should be None): {prompt1_after_delete}")
+            logging.info(f"Prompt ID {p_id1} after delete (should be None): {prompt1_after_delete}")
             prompt1_deleted_rec = get_prompt_by_id(p_id1, include_deleted=True)
-            print(f"Prompt ID {p_id1} after delete (fetching deleted, should exist): {prompt1_deleted_rec is not None}")
+            logging.info(f"Prompt ID {p_id1} after delete (fetching deleted, should exist): {prompt1_deleted_rec is not None}")
 
 
         # 7. Sync Log (Example)
-        print("\n--- Sync Log ---")
+        logging.info("\n--- Sync Log ---")
         sync_entries = get_sync_log_entries(limit=5)
-        print(f"First 5 sync log entries:")
+        logging.info(f"First 5 sync log entries:")
         for entry in sync_entries:
-            print(f"  ID: {entry['change_id']}, Entity: {entry['entity']}, Op: {entry['operation']}, UUID: {entry['entity_uuid']}")
+            logging.info(f"  ID: {entry['change_id']}, Entity: {entry['entity']}, Op: {entry['operation']}, UUID: {entry['entity_uuid']}")
         if sync_entries:
             deleted_count = delete_sync_log_entries([e['change_id'] for e in sync_entries])
-            print(f"Deleted {deleted_count} sync log entries.")
+            logging.info(f"Deleted {deleted_count} sync log entries.")
 
 
     except (DatabaseError, SchemaError, InputError, ConflictError, RuntimeError, ValueError) as e:
@@ -413,9 +413,9 @@ if __name__ == '__main__':
         logger.error(f"An unexpected error occurred: {type(e).__name__} - {e}", exc_info=True)
     finally:
         # 8. Shutdown
-        print("\n--- Shutting Down Interop Library ---")
+        logging.info("\n--- Shutting Down Interop Library ---")
         shutdown_interop()
-        print(f"Interop initialized after shutdown: {is_initialized()}")
+        logging.info(f"Interop initialized after shutdown: {is_initialized()}")
 
         # If using a file-based DB for testing, you might want to clean it up
         # if EXAMPLE_DB_PATH != ":memory:":

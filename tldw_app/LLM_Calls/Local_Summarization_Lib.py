@@ -305,7 +305,7 @@ def summarize_with_llama(input_data, custom_prompt, api_key=None, temp=None, sys
                     logging.debug(response_data)
                     summary = response_data['content'].strip()
                     logging.debug("llama: Summarization successful")
-                    print("Summarization successful.")
+                    logging.info("Summarization successful.")
                     return summary
                 else:
                     logging.error("Llama: No choices in response data")
@@ -390,7 +390,7 @@ def summarize_with_kobold(input_data, api_key, custom_prompt_input,  system_mess
         }
 
         logging.debug("Kobold Summarization: Submitting request to API endpoint")
-        print("Kobold Summarization: Submitting request to API endpoint")
+        logging.info("Kobold Summarization: Submitting request to API endpoint")
         kobold_api_ip = loaded_config_data['local_api_ip']['kobold']
 
         if streaming:
