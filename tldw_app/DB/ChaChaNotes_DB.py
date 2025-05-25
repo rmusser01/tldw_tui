@@ -42,6 +42,10 @@ from pathlib import Path
 import threading
 import logging
 from typing import List, Dict, Optional, Any, Union, Set
+
+from loguru import logger
+
+
 #
 # Third-Party Libraries
 #
@@ -50,17 +54,6 @@ from typing import List, Dict, Optional, Any, Union, Set
 ########################################################################################################################
 #
 # Functions:
-
-
-# --- Logging Setup ---
-# It's good practice to have a logger. If not configured elsewhere,
-# a basic configuration can be uncommented or set up in the application.
-logger = logging.getLogger(__name__)
-
-
-# Example basic config:
-# logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(name)s - %(threadName)s - %(message)s')
-
 
 # --- Custom Exceptions ---
 class CharactersRAGDBError(Exception):

@@ -19,7 +19,7 @@ from loguru import logger
 # from PIL.Image import Image as PILImage # More specific for type hints if needed
 #
 # Local Imports
-from tldw_Server_API.app.core.DB_Management.ChaChaNotes_DB import CharactersRAGDB, CharactersRAGDBError, ConflictError, InputError
+from tldw_app.DB.ChaChaNotes_DB import CharactersRAGDB, CharactersRAGDBError, ConflictError, InputError
 #
 ###############################################
 #

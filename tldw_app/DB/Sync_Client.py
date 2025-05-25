@@ -6,6 +6,9 @@ import logging
 import os
 import sqlite3 # For specific error types
 from typing import List, Dict, Optional, Tuple
+
+from loguru import logger
+
 #
 # Third-Party Imports
 #
@@ -18,11 +21,6 @@ except ImportError:
 #######################################################################################################################
 #
 # Functions:
-
-# --- Logging Setup ---
-# Configure this as needed for your client application
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("ClientSyncEngine")
 
 # --- Configuration ---
 # These should ideally come from a config file or environment variables

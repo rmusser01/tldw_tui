@@ -450,6 +450,26 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     def _setup_logging(self):
         """Sets up all logging handlers. Call from on_mount."""
         logging.info("--- _setup_logging START ---")  # Use print for initial debug
+        # --- BEGIN LOGURU MANAGEMENT ---
+        # Try to remove the default Loguru handler (usually stderr)
+        # This prevents Loguru from printing directly to the console
+        # when Textual is active.
+        try:
+            logger.remove(0)  # Handler ID 0 is often the default.
+            # If you have other Loguru sinks (e.g., to a file via Loguru)
+            # you'll need to manage their IDs or remove them more specifically.
+            logging.info("Attempted to remove Loguru's default console sink.")
+            # Optionally, if you want Loguru's formatted messages in your app's RichLog:
+            # you can add a handler that bridges Loguru to standard logging
+            # class PropagateHandler(logging.Handler):
+            #     def emit(self, record):
+            #         logging.getLogger(record.name).handle(record)
+            # logger.add(PropagateHandler(), format="{message}") # Adjust format as needed
+            # logging.info("Added Loguru to standard logging bridge.")
+
+        except ValueError:
+            logging.info("Loguru default sink likely not present or already removed.")
+        # --- END LOGURU MANAGEMENT ---
         # Configure the root logger FIRST
         root_logger = logging.getLogger()
         initial_log_level_str = self.app_config.get("general", {}).get("log_level", "INFO").upper()
@@ -2908,60 +2928,62 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     # Start the stream processing task
                     self.run_task(process_stream(), name=f"stream_processor_{prefix}", group="streams")
 
-
                 else:  # Non-streaming result
                     worker_result_str = str(result) if result is not None else ""
                     logging.debug(f"NON-STREAMING RESULT for '{prefix}': {worker_result_str!r}")
-
-                    text_to_display_escaped = ""
-                    original_text_for_storage = ""
+                    final_display_text_obj: Text  # Will hold the rich.text.Text object for display
+                    # original_text_for_storage will hold the raw string (plain or markup) from the worker
+                    # This is useful if ChatMessage needs to store the original form for other purposes (e.g. copy)
+                    original_text_for_storage: str
 
                     if isinstance(result, dict):  # Standard OpenAI non-streaming success
                         try:
-                            original_text_for_internal_storage = result['choices'][0]['message']['content']
-                            text_to_display_final = escape_markup(original_text_for_internal_storage)
+                            original_text_for_storage = result['choices'][0]['message']['content']
+                            # Assume the content from a successful API call is plain text
+                            final_display_text_obj = Text(original_text_for_storage)
                         except (KeyError, IndexError, TypeError) as e:
                             logging.error(f"Error parsing non-streaming dict result: {e}. Resp: {result}",
                                           exc_info=True)
-                            original_text_for_internal_storage = "[AI: Error parsing response.]"
-                            text_to_display_final = Text.from_markup(
-                                f"[bold red]{escape_markup(original_text_for_internal_storage)}[/]")
+                            original_text_for_storage = "[AI: Error parsing successful response structure.]"
+                            # This error message for UI can use markup
+                            final_display_text_obj = Text.from_markup(
+                                f"[bold red]{escape_markup(original_text_for_storage)}[/]")
 
                     elif isinstance(result, str):
-                        original_text_for_internal_storage = result
-                        # Check if the string result is an error message from chat_wrapper
-                        # chat_wrapper returns f"[bold red]Error during chat processing:[/]\n{escape(str(e))}"
-                        if original_text_for_internal_storage.startswith(
-                                "[bold red]Error during chat processing:[/]") or \
-                                original_text_for_internal_storage.startswith(
-                                    "An error occurred in the chat function:"):  # From your log
-                            # This string from chat_wrapper might already have some Rich markup
-                            # and the dynamic part (exception message) is already escaped by chat_wrapper.
-                            # Or, if chat_wrapper returns a plain string that your app wraps in markup...
-                            # For safety, if it's an error string from chat_wrapper that might contain unescaped user data
-                            # from an exception message string, ensure proper escaping.
-                            # The log shows "An error occurred...", which is a plain string returned.
-                            text_to_display_final = escape_markup(original_text_for_internal_storage)
+                        original_text_for_storage = result  # Store the raw string result
+                        # Check the source/type of string error
+                        if result.startswith("[bold red]Error during chat processing:[/]"):
+                            # This result is from chat_wrapper and is already Rich markup
+                            final_display_text_obj = Text.from_markup(result)
+                        elif result.startswith("An error occurred in the chat function:"):
+                            # This result is a plain string error message from the chat()function.
+                            # It might contain special characters like '[', which should be displayed literally.
+                            # Using Text() constructor achieves this.
+                            final_display_text_obj = Text(result)
                         else:
-                            # Assume it's a normal successful string response that needs escaping
-                            text_to_display_final = escape_markup(original_text_for_internal_storage)
+                            # Assume any other string result is plain text (e.g., from a successful non-streaming API)
+                            # and should be displayed literally.
+                            final_display_text_obj = Text(result)
 
                     elif result is None:
-                        original_text_for_internal_storage = "[AI: Error – No response received.]"
-                        text_to_display_final = Text.from_markup(
-                            f"[bold red]{escape_markup(original_text_for_internal_storage)}[/]")
+                        original_text_for_storage = "[AI: Error – No response received from API.]"
+                        final_display_text_obj = Text.from_markup(
+                            f"[bold red]{escape_markup(original_text_for_storage)}[/]")
 
-                    else:  # Fallback for truly unexpected types
+                    else:  # Fallback for truly unexpected result types
                         logging.error(f"Unexpected result type from API: {type(result)}. Content: {result!r}")
-                        original_text_for_internal_storage = "[Error: Unexpected result type from API.]"
-                        text_to_display_final = Text.from_markup(
-                            f"[bold red]{escape_markup(original_text_for_internal_storage)}[/]")
-
-                    ai_message_widget.message_text = original_text_for_internal_storage  # Store original
-                    static_text_widget.update(
-                        text_to_display_final)  # Update UI with potentially escaped string or Text object
+                        original_text_for_storage = f"[Error: Unexpected result type ({type(result).__name__}) from API.]"
+                        final_display_text_obj = Text.from_markup(
+                            f"[bold red]{escape_markup(original_text_for_storage)}[/]")
+                    # Update the ChatMessage's internal text state (e.g., for copying raw content)
+                    # This depends on how ChatMessage is implemented. If its message_text reactive property
+                    # triggers its own display update, ensure it handles raw vs. Text objects correctly or
+                    # assign final_display_text_obj to it. For now, we assume it stores raw.
+                    ai_message_widget.message_text = original_text_for_storage
+                    # Update the Static widget with the prepared Text object
+                    static_text_widget.update(final_display_text_obj)
                     ai_message_widget.mark_generation_complete()
-                    self.current_ai_message_widget = None
+                    self.current_ai_message_widget = None  # Clear reference
 
             elif event.state is WorkerState.ERROR:
                 error_from_worker = event.worker.error
