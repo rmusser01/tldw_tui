@@ -442,7 +442,7 @@ def test_save_chat_history_new_conversation_default_char(mock_load_settings_glob
 @pytest.mark.unit
 def test_save_chat_history_resave_conversation_specific_char(mock_load_settings_globally):
     mock_db = MagicMock(spec=CharactersRAGDB)
-    # ... (setup from your original test) ...
+    mock_db.client_id = "unit_test_client_resave"
     existing_conv_id = "existing_conv_456"
     char_id_for_resave = 77
     char_name_for_resave = "SpecificResaveChar"
@@ -608,6 +608,7 @@ def test_property_chat_api_call_param_passing(
     and passes through known parameters, mapping them if necessary.
     """
     mock_handler = mock_llm_handlers[api_endpoint]
+    mock_handler.reset_mock()
     mock_handler.return_value = "Property test success"
     param_map_for_provider = PROVIDER_PARAM_MAP.get(api_endpoint, {})
 

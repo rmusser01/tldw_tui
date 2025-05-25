@@ -1679,94 +1679,70 @@ def parse_user_dict_markdown_file(file_path: str) -> Dict[str, str]:
 class ChatDictionary:
     def __init__(self, key: str, content: str, probability: int = 100, group: Optional[str] = None,
                  timed_effects: Optional[Dict[str, int]] = None, max_replacements: int = 1):
-        """
-        Initializes a ChatDictionary entry.
-        Args:
-            key: The key to match (plain text or /regex/flags).
-            content: The replacement content.
-            probability: Probability of triggering (0-100). Defaults to 100.
-            group: Optional group name. Defaults to None.
-            timed_effects: Optional dictionary for timed effects.
-                           Defaults to `{"sticky": 0, "cooldown": 0, "delay": 0}`.
-            max_replacements: Max number of replacements for this entry per input. Defaults to 1.
-        """
         self.raw_key = key # Store the original key string
         self.content = content
-        self.is_regex = False # Initialize is_regex attribute
-        self.key = self.compile_key(key) # key will store re.Pattern or str
+        self.is_regex = False
+        self.key_pattern_str = "" # Store pattern string for regex for debugging
+        self.key_flags = 0      # Store flags for regex for debugging
+        self.key = self._compile_key_internal(key) # key will store re.Pattern or str
 
         self.probability = probability
         self.group = group
         self.timed_effects = timed_effects or {"sticky": 0, "cooldown": 0, "delay": 0}
-        # Ensure datetime is imported if you use it here
-        # from datetime import datetime # At the top of your file
-        self.last_triggered: Optional[datetime] = None # Assuming datetime is imported
+        self.last_triggered: Optional[datetime] = None
         self.max_replacements = max_replacements
 
-
-    def compile_key(self, key_str: str) -> Union[re.Pattern, str]:
-        """
-        Compiles the key string. If it's a regex (e.g., /pattern/i),
-        it compiles it into a regex object. Otherwise, returns the string.
-        Sets self.is_regex accordingly.
-        """
-        flags = 0
+    def _compile_key_internal(self, key_str: str) -> Union[re.Pattern, str]:
+        self.is_regex = False # Reset for this compilation
+        self.key_flags = 0
         pattern_to_compile = key_str
 
         # Check for /pattern/flags format
-        if key_str.startswith("/") and key_str.rfind("/") > 0: # Check for at least two slashes
+        # Regex to capture pattern and flags: r^/(.+)/([ismx箋]*)$
+        # Using string methods for simplicity here:
+        if key_str.startswith("/") and len(key_str) > 1:
             last_slash_idx = key_str.rfind("/")
-            if last_slash_idx > 0: # Ensure the second slash is not the first character
-                potential_pattern = key_str[1:last_slash_idx]
-                potential_flags = key_str[last_slash_idx+1:]
-
-                # Validate that flags only contain valid regex flag characters
-                # and pattern does not contain unescaped slashes if this is truly a regex
-                # For simplicity here, we assume if it fits /.../f, it's intended as regex.
-                # A more robust check might be needed if keys can naturally contain many slashes.
-
-                pattern_to_compile = potential_pattern
-                if 'i' in potential_flags:
-                    flags |= re.IGNORECASE
-                if 'm' in potential_flags:
-                    flags |= re.MULTILINE
-                if 's' in potential_flags:
-                    flags |= re.DOTALL
-                # Add other common flags if needed (e.g., 'x' for VERBOSE, 'u' for UNICODE)
-
+            if last_slash_idx > 0: # Found a second slash, potential flags
+                pattern_to_compile = key_str[1:last_slash_idx]
+                flag_chars = key_str[last_slash_idx+1:]
+                if 'i' in flag_chars: self.key_flags |= re.IGNORECASE
+                if 'm' in flag_chars: self.key_flags |= re.MULTILINE
+                if 's' in flag_chars: self.key_flags |= re.DOTALL
+                # Add other common flags if needed (e.g., 'x' for VERBOSE, 'u' for UNICODE automatically on in Py3)
                 self.is_regex = True
-        # Simpler check if only /pattern/ (no explicit flags) is also considered regex
-        elif key_str.startswith("/") and key_str.endswith("/") and len(key_str) > 1:
-            pattern_to_compile = key_str[1:-1]
-            self.is_regex = True
-        else: # Not a /regex/ or /regex/flags pattern, treat as plain string
-            self.is_regex = False
-            return pattern_to_compile # Return as string
+            elif key_str.endswith("/") and len(key_str) > 2: # Only /pattern/, no flags after last /
+                pattern_to_compile = key_str[1:-1]
+                self.is_regex = True
+            # else: it's like "/foo" or just "/" which are not valid regex delimiters here
+
+        self.key_pattern_str = pattern_to_compile # Store for debugging
 
         if self.is_regex:
             try:
-                return re.compile(pattern_to_compile, flags)
+                # If pattern_to_compile is empty after stripping slashes (e.g. "//i"), it's an error
+                if not pattern_to_compile:
+                    logging.warning(f"Empty regex pattern from raw key '{self.raw_key}'. Treating as literal.")
+                    self.is_regex = False
+                    return self.raw_key
+                return re.compile(pattern_to_compile, self.key_flags)
             except re.error as e:
                 logging.warning(
-                    f"Invalid regex '{pattern_to_compile}' with flags '{flags}' (from raw key '{self.raw_key}'): {e}. "
+                    f"Invalid regex '{pattern_to_compile}' with flags '{self.key_flags}' (from raw key '{self.raw_key}'): {e}. "
                     f"Treating as literal string."
                 )
                 self.is_regex = False # Fallback
                 return self.raw_key # Return the original key string on error
-        else: # Should not be reached if logic is correct, but as a fallback
-            return key_str
+        else: # Not a /regex/ or /regex/flags pattern, treat as plain string
+            return key_str # Return the original string
 
     def matches(self, text: str) -> bool:
-        """Checks if the given text matches the key."""
         if self.is_regex and isinstance(self.key, re.Pattern):
             return bool(self.key.search(text))
         elif not self.is_regex and isinstance(self.key, str):
-            # For simple string matching, decide on case sensitivity.
-            # If your non-regex keys should also be case-insensitive, use:
+            # For plain string, if you want case-insensitivity by default:
             # return self.key.lower() in text.lower()
-            # Otherwise, for case-sensitive:
-            return self.key in text
-        return False # Should not happen if self.key is always Pattern or str
+            return self.key in text # Current: case-sensitive plain match
+        return False
 
 
 def apply_strategy(entries: List[ChatDictionary], strategy: str = "sorted_evenly") -> List[ChatDictionary]:
