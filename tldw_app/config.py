@@ -1178,10 +1178,10 @@ local-llm = ["None"] # Add if you have a specific local-llm provider entry
 
 [chat_defaults]
 # Default settings specifically for the 'Chat' tab
-provider = "Ollama"
-model = "llama3:latest"
+provider = "DeepSeek"
+model = "deepseek-chat"
 system_prompt = "You are a helpful AI assistant."
-temperature = 0.7
+temperature = 1.3
 top_p = 0.95
 min_p = 0.05
 top_k = 50

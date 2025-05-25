@@ -367,7 +367,7 @@ PROVIDER_PARAM_MAP = {
         'messages_payload': 'input_data',
         'prompt': 'custom_prompt', # This is 'prompt' for generate, 'messages' for chat
         'temp': 'temperature',
-        'system_message': 'system', # Part of request body
+        'system_message': 'system_message', # Part of request body
         'streaming': 'stream',
         'topp': 'top_p',
         'topk': 'top_k',
