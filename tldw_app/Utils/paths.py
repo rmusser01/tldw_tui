@@ -13,14 +13,12 @@ from typing import Union, AnyStr
 from tldw_Server_API.app.core.Utils.Utils import load_comprehensive_config, get_user_database_path
 from ..Utils.Utils import PROJECT_DATABASES_DIR, log, PROJECT_ROOT_DIR, CONFIG_FILE_PATH, USER_DB_PATH, \
     USER_DB_DIR
-
-
 #
 #######################################################################################################################
 #
 # Functions:
 
-
+# Remove ALL PRINT statements from this file, replacing them with appropriate logging calls.
 
 
 def get_project_root():
@@ -93,7 +91,7 @@ def get_project_relative_path(relative_path_str: Union[str, os.PathLike[AnyStr]]
 
 # --- Example Usage within Utils.py (for testing) ---
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s:%(name)s] %(message)s')
+    #logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s:%(name)s] %(message)s')
     print("\n--- Testing Utility Functions ---")
 
     print(f"\nProject Root: {get_project_root()}")

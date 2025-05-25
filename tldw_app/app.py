@@ -13,10 +13,9 @@ from pathlib import Path
 import traceback
 import os
 from typing import Union, Generator, Optional, List, Dict, Any
-
-from loguru import logger
 #
 # 3rd-Party Libraries
+from loguru import logger as loguru_logger
 from rich.text import Text
 from rich.markup import escape
 # --- Textual Imports ---
@@ -321,7 +320,7 @@ class RichLogHandler(logging.Handler):
                 #    except asyncio.QueueEmpty: break
                 break  # Exit the loop on cancellation
             except Exception as e:
-                logger.critical(f"!!! CRITICAL ERROR in RichLog processor: {e}")  # Use print as fallback
+                loguru_logger.critical(f"!!! CRITICAL ERROR in RichLog processor: {e}")  # Use print as fallback
                 traceback.print_exc()
                 # Avoid continuous loop on error, maybe sleep?
                 await asyncio.sleep(1)
@@ -337,7 +336,7 @@ class RichLogHandler(logging.Handler):
             else:  # Fallback during startup/shutdown
                 if record.levelno >= logging.WARNING: logging.warning(f"LOG_FALLBACK: {message}")
         except Exception:
-            logger.warning(f"!!!!!!!! ERROR within RichLogHandler.emit !!!!!!!!!!")  # Use print as fallback
+            loguru_logger.warning(f"!!!!!!!! ERROR within RichLogHandler.emit !!!!!!!!!!")  # Use print as fallback
             traceback.print_exc()
 
 
@@ -446,128 +445,261 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         self._conv_char_search_timer = None
         self._conversation_search_timer = None
 
-
     def _setup_logging(self):
-        """Sets up all logging handlers. Call from on_mount."""
-        logging.info("--- _setup_logging START ---")  # Use print for initial debug
-        # --- BEGIN LOGURU MANAGEMENT ---
-        # Try to remove the default Loguru handler (usually stderr)
-        # This prevents Loguru from printing directly to the console
-        # when Textual is active.
-        try:
-            logger.remove(0)  # Handler ID 0 is often the default.
-            # If you have other Loguru sinks (e.g., to a file via Loguru)
-            # you'll need to manage their IDs or remove them more specifically.
-            logging.info("Attempted to remove Loguru's default console sink.")
-            # Optionally, if you want Loguru's formatted messages in your app's RichLog:
-            # you can add a handler that bridges Loguru to standard logging
-            # class PropagateHandler(logging.Handler):
-            #     def emit(self, record):
-            #         logging.getLogger(record.name).handle(record)
-            # logger.add(PropagateHandler(), format="{message}") # Adjust format as needed
-            # logging.info("Added Loguru to standard logging bridge.")
+        """Sets up all logging handlers, including Loguru integration."""
+        # Use standard logging for messages during this setup phase itself,
+        # as Loguru is being reconfigured.
+        logging.info("--- _setup_logging START ---")
+        logging.getLogger("requests").setLevel(logging.WARNING)
+        logging.getLogger("urllib3").setLevel(logging.WARNING)
+        logging.getLogger("httpx").setLevel(logging.WARNING)
 
-        except ValueError:
-            logging.info("Loguru default sink likely not present or already removed.")
+        # --- BEGIN LOGURU MANAGEMENT (Improved) ---
+        try:
+            # Remove ALL existing Loguru handlers. This ensures we clear out the
+            # default stderr sink and any other sinks that might have been added
+            # by Loguru or other parts of the code before this point.
+            loguru_logger.remove()
+            logging.info("Loguru: All pre-existing sinks removed.")
+
+            # Now, add a handler that bridges Loguru to Python's standard logging.
+            # This PropagateHandler takes Loguru's records and passes them to standard logging.
+            class PropagateHandler(logging.Handler):
+                def emit(self, record: logging.LogRecord):  # Standard logging LogRecord
+                    # This handler is added to standard logging, but it's meant to be
+                    # used as a target for Loguru. The logic for Loguru to *send* to
+                    # standard logging is simpler.
+
+                    # Let's redefine: We want a Loguru *sink* that pushes to standard logging.
+                    # Loguru's documentation shows how to do this:
+                    # https://loguru.readthedocs.io/en/stable/overview.html#entirely-compatible-with-standard-logging
+                    pass  # This handler isn't used in the Loguru -> standard logging direction
+
+            # The official way to make Loguru messages available to standard logging:
+            # Create a standard logging handler that Loguru will write to.
+            class InterceptHandler(logging.Handler):
+                def emit(self, record):
+                    # Get corresponding Loguru level if it exists
+                    try:
+                        level = loguru_logger.level(record.levelname).name
+                    except ValueError:
+                        level = record.levelno
+
+                    # Find caller from where Loguru was logged
+                    frame, depth = logging.currentframe(), 0
+                    # IMPORTANT: Adjust depth if emit is called from another helper.
+                    # We want the frame where loguru_loguru_logger.info() etc. was called.
+                    # This simple depth calculation might need tweaking if emit is nested.
+                    # For direct calls from loguru_logger.add(InterceptHandler()), depth might be low.
+                    # If InterceptHandler is added to root logger and loguru calls logging.getLogger().log(),
+                    # then depth should find the original loguru call site.
+
+                    # A simpler approach for depth might be needed if the above is complex.
+                    # For now, let's assume a reasonable depth or let Loguru infer it.
+                    # The crucial part is that Loguru has an `opt(depth=...)`
+
+                    # Re-evaluate how to get the correct call site information
+                    # For this use case, we are configuring Loguru to send its messages
+                    # TO standard logging.
+                    # So when you call loguru_loguru_logger.info(), it should go to a sink that
+                    # then calls logging.getLogger().handle().
+
+                    # Let's use Loguru's recommended way for its messages to be caught by standard logging handlers:
+                    # Standard logging.LogRecord attributes:
+                    # record.name, record.levelno, record.pathname, record.lineno,
+                    # record.msg, record.args, record.exc_info, record.funcName
+
+                    # Create a new standard logging record from Loguru's record
+                    # This is tricky because Loguru's record object is internal.
+                    # The easiest way is for Loguru to have a sink that *calls* standard logging.
+                    pass  # This will be replaced
+
+            # --- Loguru Configuration to send its logs to standard logging handlers ---
+            # This configuration ensures that when `loguru_loguru_logger.info("...")` is called,
+            # it will be passed to your standard logging handlers (TextualHandler, RichLogHandler).
+
+            # 1. Remove any default/existing Loguru sinks.
+            loguru_logger.remove()  # Already did this above.
+
+            # 2. Add a new Loguru sink that calls the standard `logging` module.
+            #    This effectively forwards Loguru messages.
+            def sink_to_standard_logging(message):
+                """
+                A Loguru sink function that takes a Loguru Message object
+                and logs it using the standard Python logging module.
+                """
+                record = message.record  # Loguru's internal record
+
+                # Map Loguru level to standard logging level
+                level_mapping = {
+                    "TRACE": logging.DEBUG,  # Or a custom level if you define TRACE
+                    "DEBUG": logging.DEBUG,
+                    "INFO": logging.INFO,
+                    "SUCCESS": logging.INFO,  # Standard logging doesn't have SUCCESS, map to INFO
+                    "WARNING": logging.WARNING,
+                    "ERROR": logging.ERROR,
+                    "CRITICAL": logging.CRITICAL,
+                }
+                std_level = level_mapping.get(record["level"].name, logging.INFO)
+
+                # Get a standard logger instance (e.g., based on Loguru's record name)
+                std_logger = logging.getLogger(record["name"])
+
+                # Log using standard logger
+                # We need to pass message, and potentially exc_info etc.
+                # record["message"] is the formatted string from Loguru
+                if record["exception"]:
+                    std_logger.log(
+                        std_level,
+                        record["message"],  # Loguru has already formatted the message
+                        exc_info=record["exception"]
+                    )
+                else:
+                    std_logger.log(
+                        std_level,
+                        record["message"]  # Loguru has already formatted the message
+                    )
+
+            # Add this custom sink to Loguru.
+            # You can choose a format for how Loguru prepares the message
+            # before it hits your standard logging formatters.
+            # Using a simple format here, as standard logging will reformat.
+            loguru_logger.add(
+                sink_to_standard_logging,
+                format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
+                # Loguru's own formatting
+                level="TRACE"  # Capture all levels from Loguru to pass to standard logging
+            )
+            logging.info("Loguru: Configured to forward its messages to standard Python logging system.")
+
+        except Exception as e:
+            logging.error(f"Loguru: Error during Loguru reconfiguration: {e}", exc_info=True)
         # --- END LOGURU MANAGEMENT ---
-        # Configure the root logger FIRST
+
+        # Configure the root logger FIRST (standard logging)
         root_logger = logging.getLogger()
+        # Determine initial log level for standard logging from app_config
+        # If loguru messages are now going to standard logging, the root_logger's level
+        # will also affect if they are processed by standard logging handlers.
         initial_log_level_str = self.app_config.get("general", {}).get("log_level", "INFO").upper()
         initial_log_level = getattr(logging, initial_log_level_str, logging.INFO)
-        # Set root level - handlers can have higher levels but not lower
-        root_logger.setLevel(initial_log_level)
-        logger.info(f"Root logger level initially set to: {logging.getLevelName(root_logger.level)}")
+        root_logger.setLevel(initial_log_level)  # Set overall level for standard logging
 
-        # --- Add TextualHandler ---
-        # Check if one already exists to prevent duplicates if setup runs multiple times
+        # Important: Loguru's own level (in `loguru_logger.add`) determines what it SENDS.
+        # Standard logging's root_logger.setLevel and handler levels determine what they PROCESS.
+        # For example, if Loguru sends a DEBUG, but root_logger is INFO, the DEBUG won't be processed
+        # by standard handlers unless a specific standard handler has its level set to DEBUG.
+
+        # Log this message using standard logging, now that Loguru should be forwarding.
+        logging.info(f"Standard Logging: Root logger level initially set to: {logging.getLevelName(root_logger.level)}")
+        # You can test with loguru here too, it should appear in your Textual logs if bridge is working
+        loguru_logger.info("Loguru Test: This message from Loguru should appear in Textual logs.")
+
+        # --- Add TextualHandler (to standard logging) ---
+        # (Your existing TextualHandler setup code is fine)
         has_textual_handler = any(isinstance(h, TextualHandler) for h in root_logger.handlers)
         if not has_textual_handler:
             textual_console_handler = TextualHandler()
-            textual_console_handler.setLevel(initial_log_level)
+            textual_console_handler.setLevel(initial_log_level)  # Respects app_config
+            # Formatter for Textual's dev console
             console_formatter = logging.Formatter(
-                "%(asctime)s [%(levelname)-8s] %(name)s:%(lineno)d - %(message)s",
+                "%(asctime)s [%(levelname)-8s] %(name)s:%(lineno)d - %(message)s",  # Standard format
                 datefmt="%Y-%m-%d %H:%M:%S"
             )
             textual_console_handler.setFormatter(console_formatter)
             root_logger.addHandler(textual_console_handler)
-            logger.info(f"Added TextualHandler to root logger (Level: {logging.getLevelName(initial_log_level)}).")
+            logging.info(
+                f"Standard Logging: Added TextualHandler (Level: {logging.getLevelName(textual_console_handler.level)}).")
         else:
-            logger.info("TextualHandler already exists on root logger.")
+            logging.info("Standard Logging: TextualHandler already exists.")
 
-        # --- Setup RichLog Handler ---
+        # --- Setup RichLog Handler (to standard logging) ---
+        # (Your existing RichLogHandler setup code is fine)
         try:
             log_display_widget = self.query_one("#app-log-display", RichLog)
-            # Prevent adding multiple RichLog Handlers
             if self._rich_log_handler and self._rich_log_handler in root_logger.handlers:
-                logger.info("RichLogHandler already exists and is added.")
+                logging.info("Standard Logging: RichLogHandler already exists and is added.")
             elif not self._rich_log_handler:
                 self._rich_log_handler = RichLogHandler(log_display_widget)
-                self._rich_log_handler.setLevel(logging.DEBUG)  # Set level explicitly
+                # RichLogHandler can have its own level, e.g., DEBUG to see more details in-app
+                rich_log_handler_level_str = self.app_config.get("logging", {}).get("rich_log_level", "DEBUG").upper()
+                rich_log_handler_level = getattr(logging, rich_log_handler_level_str, logging.DEBUG)
+                self._rich_log_handler.setLevel(rich_log_handler_level)
+                # RichLogHandler will use its own formatter defined in its class
                 root_logger.addHandler(self._rich_log_handler)
-                logger.info(
-                    f"Added RichLogHandler to root logger (Level: {logging.getLevelName(self._rich_log_handler.level)}).")
-            else:
-                # Handler exists but wasn't added? Add it.
-                root_logger.addHandler(self._rich_log_handler)
-                logger.info(f"Re-added existing RichLogHandler instance to root logger.")
-
+                logging.info(
+                    f"Standard Logging: Added RichLogHandler (Level: {logging.getLevelName(self._rich_log_handler.level)}).")
+            # ... (rest of your RichLogHandler error handling)
         except QueryError:
-            logger.error("!!! ERROR: Failed to find #app-log-display widget for RichLogHandler setup.")
-            logging.error("Failed to find #app-log-display widget for RichLogHandler setup.")
+            logging.error("!!! ERROR: Failed to find #app-log-display widget for RichLogHandler setup.")
             self._rich_log_handler = None
         except Exception as e:
-            logger.error(f"!!! ERROR setting up RichLogHandler: {e}")
-            logging.exception("Error setting up RichLogHandler")
+            logging.error(f"!!! ERROR setting up RichLogHandler: {e}", exc_info=True)
             self._rich_log_handler = None
 
-        # --- Setup File Logging ---
+        # --- Setup File Logging (to standard logging) ---
+        # (Your existing FileHandler setup code is fine)
         try:
-            log_file_path = get_cli_log_file_path()  # Get path from config module
+            log_file_path = get_cli_log_file_path()
             log_dir = log_file_path.parent
-            log_dir.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
-            logger.info(f"Ensured log directory exists: {log_dir}")
+            log_dir.mkdir(parents=True, exist_ok=True)
 
-            # Prevent adding multiple File Handlers
             has_file_handler = any(
                 isinstance(h, logging.handlers.RotatingFileHandler) and h.baseFilename == str(log_file_path) for h in
                 root_logger.handlers)
 
             if not has_file_handler:
-                max_bytes = int(get_cli_setting("logging", "log_max_bytes", self.app_config["logging"]["log_max_bytes"]))
-                backup_count = int(
-                    get_cli_setting("logging", "log_backup_count", self.app_config["logging"]["log_backup_count"]))
-                file_log_level_str = get_cli_setting("logging", "file_log_level", "INFO").upper()
+                # Max bytes and backup count from config, with direct defaults if not found
+                max_bytes_default = 10485760  # 10MB
+                backup_count_default = 5
+                file_log_level_default_str = "INFO"
+
+                max_bytes = int(get_cli_setting("logging", "log_max_bytes", max_bytes_default))
+                backup_count = int(get_cli_setting("logging", "log_backup_count", backup_count_default))
+                file_log_level_str = get_cli_setting("logging", "file_log_level", file_log_level_default_str).upper()
                 file_log_level = getattr(logging, file_log_level_str, logging.INFO)
 
-            # Use standard RotatingFileHandler
-            file_handler = logging.handlers.RotatingFileHandler(
-                log_file_path, maxBytes=max_bytes, backupCount=backup_count, encoding='utf-8'
-            )
-            file_handler.setLevel(file_log_level)
-            file_formatter = logging.Formatter(
-                # Use standard %()s placeholders for standard handler
-                "%(asctime)s [%(levelname)-8s] %(name)s:%(lineno)d - %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S"
-            )
-            file_handler.setFormatter(file_formatter)
-            root_logger.addHandler(file_handler)
-            logger.info(
-                f"Added RotatingFileHandler to root logger (File: '{log_file_path}', Level: {logging.getLevelName(file_log_level)}).")
-
+                file_handler = logging.handlers.RotatingFileHandler(
+                    log_file_path, maxBytes=max_bytes, backupCount=backup_count, encoding='utf-8'
+                )
+                file_handler.setLevel(file_log_level)
+                # Formatter for the file
+                file_formatter = logging.Formatter(
+                    "%(asctime)s [%(levelname)-8s] %(name)s:%(lineno)d - %(message)s",  # Standard format
+                    datefmt="%Y-%m-%d %H:%M:%S"
+                )
+                file_handler.setFormatter(file_formatter)
+                root_logger.addHandler(file_handler)
+                logging.info(
+                    f"Standard Logging: Added RotatingFileHandler (File: '{log_file_path}', Level: {logging.getLevelName(file_log_level)}).")
+            else:
+                logging.info("Standard Logging: RotatingFileHandler already exists for this file path.")
         except Exception as e:
-            logger.warning(f"!!! ERROR setting up file logging: {e}")
-            logging.exception("Error setting up file logging")
+            logging.warning(f"!!! ERROR setting up file logging: {e}", exc_info=True)
 
-        # Re-evaluate lowest level
-        all_handlers = root_logger.handlers
-        if all_handlers:
-            lowest_level = min(h.level for h in all_handlers if h.level > 0)  # Ignore level 0 handlers
-            root_logger.setLevel(lowest_level)
-            logger.warning(f"Final Root logger level set to: {logging.getLevelName(root_logger.level)}")
+        # Re-evaluate lowest level for standard logging root logger
+        # This ensures the root logger is at least as verbose as its most verbose handler.
+        all_std_handlers = root_logger.handlers
+        if all_std_handlers:
+            # Filter out level 0 handlers if any (shouldn't be typical)
+            handler_levels = [h.level for h in all_std_handlers if h.level > 0]
+            if handler_levels:
+                lowest_effective_level = min(handler_levels)
+                # Also consider the initial_log_level explicitly set on root_logger
+                # The root logger's level should be min(its_explicit_level, lowest_handler_level)
+                # but practically, setting it to the lowest handler level is common.
+                # However, if root_logger.setLevel(INFO) was called, and a handler is DEBUG,
+                # root needs to be at least DEBUG.
+                if root_logger.level > lowest_effective_level:
+                    logging.info(
+                        f"Standard Logging: Adjusting root logger level from {logging.getLevelName(root_logger.level)} to {logging.getLevelName(lowest_effective_level)} to match most verbose handler.")
+                    root_logger.setLevel(lowest_effective_level)
+            logging.info(f"Standard Logging: Final Root logger level is: {logging.getLevelName(root_logger.level)}")
         else:
-            logger.warning(f"No handlers found on root logger after setup!")
-        logger.info("Logging setup complete.")
-        logger.info("--- _setup_logging END ---")
+            logging.warning("Standard Logging: No handlers found on root logger after setup!")
+
+        logging.info("Logging setup complete.")
+        logging.info("--- _setup_logging END ---")
 
     def compose(self) -> ComposeResult:
         logging.debug("App composing UI...")
@@ -719,12 +851,12 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # --- Add explicit methods to update reactives from Select changes ---
     def update_chat_provider_reactive(self, new_value: Optional[str]) -> None:
         """Called when the chat provider Select value changes internally."""
-        logger.debug(f">>> DEBUG: update_chat_provider_reactive called with: {new_value!r}")
+        loguru_logger.debug(f">>> DEBUG: update_chat_provider_reactive called with: {new_value!r}")
         self.chat_api_provider_value = new_value
 
     def update_character_provider_reactive(self, new_value: Optional[str]) -> None:
         """Called when the character provider Select value changes internally."""
-        logger.debug(f">>> DEBUG: update_character_provider_reactive called with: {new_value!r}")
+        loguru_logger.debug(f">>> DEBUG: update_character_provider_reactive called with: {new_value!r}")
         self.character_api_provider_value = new_value
 
     # --- END Add explicit methods ---
@@ -734,7 +866,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         self._setup_logging()
 
         if self._rich_log_handler:
-            logger.debug("Starting RichLogHandler processor task...")
+            loguru_logger.debug("Starting RichLogHandler processor task...")
             self._rich_log_handler.start_processor(self)
 
         # --- Bind Select Widgets ---
@@ -744,10 +876,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             chat_select = self.query_one(f"#{TAB_CHAT}-api-provider", Select)
             self.watch(chat_select, "value", self.update_chat_provider_reactive, init=False)
             logging.debug(f"Bound chat provider Select ({chat_select.id}) value to update_chat_provider_reactive")
-            logger.warning(f">>> DEBUG: Bound chat provider Select to reactive update method.")
+            loguru_logger.warning(f">>> DEBUG: Bound chat provider Select to reactive update method.")
         except QueryError:
             logging.error(f"on_mount: Failed to find chat provider select: #{TAB_CHAT}-api-provider")
-            logger.debug(f">>> DEBUG: ERROR - Failed to bind chat provider select.")
+            loguru_logger.debug(f">>> DEBUG: ERROR - Failed to bind chat provider select.")
         except Exception as e:
             logging.error(f"on_mount: Error binding chat provider select: {e}", exc_info=True)
             print(f">>> DEBUG: ERROR - Exception during chat provider select binding: {e}")
@@ -757,13 +889,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.watch(char_select, "value", self.update_character_provider_reactive, init=False)
             logging.debug(
                 f"Bound character provider Select ({char_select.id}) value to update_character_provider_reactive")
-            logger.debug(f">>> DEBUG: Bound character provider Select to reactive update method.")
+            loguru_logger.debug(f">>> DEBUG: Bound character provider Select to reactive update method.")
         except QueryError:
             logging.error(f"on_mount: Failed to find character provider select: #{TAB_CONV_CHAR}-api-provider")
-            logger.debug(f">>> DEBUG: ERROR - Failed to bind character provider select.")
+            loguru_logger.debug(f">>> DEBUG: ERROR - Failed to bind character provider select.")
         except Exception as e:
             logging.error(f"on_mount: Error binding character provider select: {e}", exc_info=True)
-            logger.debug(f">>> DEBUG: ERROR - Exception during character provider select binding: {e}")
+            loguru_logger.debug(f">>> DEBUG: ERROR - Exception during character provider select binding: {e}")
         # --- END BINDING LOGIC ---
 
         # --- Set initial reactive tab value ---
@@ -829,13 +961,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 except Exception as e:
                     logging.error(f"Error removing file handler: {e}")
         logging.shutdown()  # Ensure logs are flushed
-        logger.info("--- App Unmounted ---")  # Use print as logging might be shut down
+        loguru_logger.info("--- App Unmounted ---")  # Use print as logging might be shut down
 
     # WATCHER - Handles UI changes when current_tab's VALUE changes
     def watch_current_tab(self, old_tab: Optional[str], new_tab: str) -> None:
         """Shows/hides the relevant content window when the tab changes."""
         # (Your existing watcher code is likely fine, just ensure the QueryErrors aren't hiding a problem)
-        logger.debug(f"\n>>> DEBUG: watch_current_tab triggered! Old: '{old_tab}', New: '{new_tab}'")
+        loguru_logger.debug(f"\n>>> DEBUG: watch_current_tab triggered! Old: '{old_tab}', New: '{new_tab}'")
         if not isinstance(new_tab, str) or not new_tab:
             print(f">>> DEBUG: watch_current_tab: Invalid new_tab '{new_tab!r}', aborting.")
             logging.error(f"Watcher received invalid new_tab value: {new_tab!r}. Aborting tab switch.")
@@ -916,7 +1048,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             print(f">>> DEBUG: Error showing new window #{new_tab}-window: {e}")
             logging.error(f"Watcher: Error showing new window: {e}", exc_info=True)
 
-        logger.debug(">>> DEBUG: watch_current_tab finished.")
+        loguru_logger.debug(">>> DEBUG: watch_current_tab finished.")
 
         # If the new tab is TAB_NOTES, load the notes
         if new_tab == TAB_NOTES:
@@ -2299,17 +2431,17 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                             f"Please add this section and specify how to obtain the API key (e.g., using an 'api_key' field or an 'api_key_env_var' field)."
                         )
 
+                    error_message_markup = (
+                        f"API Key for {selected_provider} is missing.\n\n"
+                        "Please add it to your config file under:\n"
+                        f"\\[api_settings.{provider_settings_key}\\]\n"  # Python sees \\ -> \, Rich sees \[
+                        "api_key = \"YOUR_KEY\"\n\n"
+                        "Or set the environment variable specified in 'api_key_env_var'."
+                    )
                     await chat_container.mount(
-                        ChatMessage(
-                            # Use Text.from_markup to handle escaped characters correctly
-                            Text.from_markup(
-                                f"API Key for {selected_provider} is missing.\n\n"
-                                f"Please add it to your config file under:\n"
-                                f"\[api_settings.{provider_settings_key}]\n"  # Note the escaped \[ and \]
-                                f"api_key = \"YOUR_KEY\"\n\n"
-                                f"Or set the environment variable specified in 'api_key_env_var'."
-                            ),
-                            role="AI", classes="-error"
+                        ChatMessage(Text.from_markup(error_message_markup),
+                                    role="AI",
+                                    classes="-error"
                         )
                     )
                     # Remove the placeholder "thinking" message if it exists
@@ -3608,9 +3740,9 @@ if __name__ == "__main__":
 
     # --- Emoji Check ---
     emoji_is_supported = supports_emoji() # Call it once
-    logger.info(f"Terminal emoji support detected: {emoji_is_supported}")
-    logger.info(f"Using brain: {get_char(EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN)}")
-    logger.info("-" * 30)
+    loguru_logger.info(f"Terminal emoji support detected: {emoji_is_supported}")
+    loguru_logger.info(f"Using brain: {get_char(EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN)}")
+    loguru_logger.info("-" * 30)
 
     # --- CSS definition ---
     # (Keep your CSS content here, make sure IDs match widgets)
@@ -3830,20 +3962,20 @@ ChatMessage.-ai .message-actions.-generating {
     # --- Run the App ---
     logging.info("Starting Textual App...")
     # Pass the loaded config to the App instance
-    logger.info("--- INSTANTIATING TldwCli ---")
+    loguru_logger.info("--- INSTANTIATING TldwCli ---")
     app = TldwCli()
-    logger.info("--- INSTANTIATED TldwCli ---")
-    logger.info("--- CALLING app.run() ---")
+    loguru_logger.info("--- INSTANTIATED TldwCli ---")
+    loguru_logger.info("--- CALLING app.run() ---")
     try:
         app.run()
     except Exception as e:
-        logger.exception("--- CRITICAL ERROR DURING app.run() ---")
+        loguru_logger.exception("--- CRITICAL ERROR DURING app.run() ---")
         traceback.print_exc()  # Make sure traceback prints
     finally:
         # This might run even if app exits early internally in run()
-        logger.info("--- FINALLY block after app.run() ---")
+        loguru_logger.info("--- FINALLY block after app.run() ---")
 
-    logger.info("--- AFTER app.run() call (if not crashed hard) ---")
+    loguru_logger.info("--- AFTER app.run() call (if not crashed hard) ---")
 
 #
 # End of app.py

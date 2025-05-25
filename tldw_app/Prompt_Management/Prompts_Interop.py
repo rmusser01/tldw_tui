@@ -301,7 +301,7 @@ if __name__ == '__main__':
     # Ensure Prompts_DB_v2.py is in the same directory or Python path
 
     # Setup basic logging for the example
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    #logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     logger.info("Running prompts_interop.py example usage...")
 
     # --- Configuration ---

@@ -16,7 +16,7 @@ from loguru import logger
 try:
     from tldw_cli.tldw_app.DB.Media_DB import Database, ConflictError, DatabaseError, InputError
 except ImportError:
-    print("ERROR: Could not import the 'Media_DB' library. Make sure Media_DB.py is accessible.")
+    logger.error("ERROR: Could not import the 'Media_DB' library. Make sure Media_DB.py is accessible.")
 #
 #######################################################################################################################
 #
