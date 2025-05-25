@@ -3192,7 +3192,7 @@ if __name__ == "__main__":
     print(f"Terminal emoji support detected: {emoji_is_supported}")
     print(f"Using brain: {get_char(EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN)}")
     print("-" * 30)
-    
+
     # --- CSS definition ---
     # (Keep your CSS content here, make sure IDs match widgets)
     css_content = """
