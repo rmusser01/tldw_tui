@@ -153,7 +153,7 @@ def generate_and_search(question: str, search_params: Dict) -> Dict:
         # Check for errors or invalid data
         if not isinstance(raw_results, dict) or raw_results.get("processing_error"):
             logging.error(f"Error or invalid data returned for query '{q}': {raw_results}")
-            print(f"Error or invalid data returned for query '{q}': {raw_results}")
+            logging.error(f"Error or invalid data returned for query '{q}': {raw_results}")
             continue
 
         logging.info(f"Search results found for query '{q}': {len(raw_results.get('results', []))}")
@@ -236,7 +236,7 @@ async def test_perplexity_pipeline():
     # Review the results here if needed
     # Phase 2: Analyze relevance and aggregate final answer
     phase2_results = await analyze_and_aggregate(phase1_results["web_search_results_dict"], phase1_results["sub_query_dict"], search_params)
-    print(phase2_results["final_answer"])
+    logging.info(phase2_results["final_answer"])
 
 
 ######################### Question Analysis #########################
@@ -491,12 +491,12 @@ def review_and_select_results(web_search_results_dict: Dict) -> Dict:
         Dict: A dictionary containing only the user-selected relevant results.
     """
     relevant_results = {}
-    print("Review the search results and select the relevant ones:")
+    logging.info("Review the search results and select the relevant ones:")
     for idx, result in enumerate(web_search_results_dict["results"]):
-        print(f"\nResult {idx + 1}:")
-        print(f"Title: {result['title']}")
-        print(f"URL: {result['url']}")
-        print(f"Content: {result['content'][:200]}...")  # Show a preview of the content
+        logging.info(f"\nResult {idx + 1}:")
+        logging.info(f"Title: {result['title']}")
+        logging.info(f"URL: {result['url']}")
+        logging.info(f"Content: {result['content'][:200]}...")  # Show a preview of the content
         user_input = input("Is this result relevant? (y/n): ").strip().lower()
         if user_input == 'y':
             relevant_results[str(idx)] = result

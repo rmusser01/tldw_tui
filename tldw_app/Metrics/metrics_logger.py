@@ -54,7 +54,7 @@ def timeit(func):
         elapsed = time.time() - start
 
         # Print to console (optional)
-        print(f"{func.__name__} executed in {elapsed:.2f} seconds.")
+        logging.info(f"{func.__name__} executed in {elapsed:.2f} seconds.")
 
         # Log how long the function took (histogram)
         log_histogram(
@@ -78,7 +78,7 @@ def log_resource_usage():
     process = psutil.Process()
     memory = process.memory_info().rss / (1024 ** 2)  # Convert to MB
     cpu = process.cpu_percent(interval=0.1)
-    print(f"Memory: {memory:.2f} MB, CPU: {cpu:.2f}%")
+    logging.info(f"Memory: {memory:.2f} MB, CPU: {cpu:.2f}%")
 
 #
 # End of Functions

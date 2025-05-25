@@ -221,7 +221,7 @@ def truncate_content(content: Optional[str], max_length: int = 200) -> Optional[
 def save_to_file(video_urls, filename):
     with open(filename, 'w') as file:
         file.write('\n'.join(video_urls))
-    print(f"Video URLs saved to {filename}")
+    logging.info(f"Video URLs saved to {filename}")
 
 
 def save_segments_to_json(segments, file_name="transcription_segments.json"):

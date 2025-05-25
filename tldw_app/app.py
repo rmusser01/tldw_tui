@@ -321,7 +321,7 @@ class RichLogHandler(logging.Handler):
                 #    except asyncio.QueueEmpty: break
                 break  # Exit the loop on cancellation
             except Exception as e:
-                print(f"!!! CRITICAL ERROR in RichLog processor: {e}")  # Use print as fallback
+                logger.critical(f"!!! CRITICAL ERROR in RichLog processor: {e}")  # Use print as fallback
                 traceback.print_exc()
                 # Avoid continuous loop on error, maybe sleep?
                 await asyncio.sleep(1)
@@ -335,9 +335,9 @@ class RichLogHandler(logging.Handler):
             if hasattr(self.rich_log_widget, 'app') and self.rich_log_widget.app:
                 self.rich_log_widget.app._loop.call_soon_threadsafe(self.log_queue.put_nowait, message)
             else:  # Fallback during startup/shutdown
-                if record.levelno >= logging.WARNING: print(f"LOG_FALLBACK: {message}")
+                if record.levelno >= logging.WARNING: logging.warning(f"LOG_FALLBACK: {message}")
         except Exception:
-            print(f"!!!!!!!! ERROR within RichLogHandler.emit !!!!!!!!!!")  # Use print as fallback
+            logger.warning(f"!!!!!!!! ERROR within RichLogHandler.emit !!!!!!!!!!")  # Use print as fallback
             traceback.print_exc()
 
 
@@ -456,7 +456,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         initial_log_level = getattr(logging, initial_log_level_str, logging.INFO)
         # Set root level - handlers can have higher levels but not lower
         root_logger.setLevel(initial_log_level)
-        print(f"Root logger level initially set to: {logging.getLevelName(root_logger.level)}")
+        logger.info(f"Root logger level initially set to: {logging.getLevelName(root_logger.level)}")
 
         # --- Add TextualHandler ---
         # Check if one already exists to prevent duplicates if setup runs multiple times
@@ -489,14 +489,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             else:
                 # Handler exists but wasn't added? Add it.
                 root_logger.addHandler(self._rich_log_handler)
-                print(f"Re-added existing RichLogHandler instance to root logger.")
+                logger.info(f"Re-added existing RichLogHandler instance to root logger.")
 
         except QueryError:
             logger.error("!!! ERROR: Failed to find #app-log-display widget for RichLogHandler setup.")
             logging.error("Failed to find #app-log-display widget for RichLogHandler setup.")
             self._rich_log_handler = None
         except Exception as e:
-            print(f"!!! ERROR setting up RichLogHandler: {e}")
+            logger.error(f"!!! ERROR setting up RichLogHandler: {e}")
             logging.exception("Error setting up RichLogHandler")
             self._rich_log_handler = None
 
@@ -505,7 +505,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             log_file_path = get_cli_log_file_path()  # Get path from config module
             log_dir = log_file_path.parent
             log_dir.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
-            print(f"Ensured log directory exists: {log_dir}")
+            logger.info(f"Ensured log directory exists: {log_dir}")
 
             # Prevent adding multiple File Handlers
             has_file_handler = any(
@@ -531,11 +531,11 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             )
             file_handler.setFormatter(file_formatter)
             root_logger.addHandler(file_handler)
-            print(
+            logger.info(
                 f"Added RotatingFileHandler to root logger (File: '{log_file_path}', Level: {logging.getLevelName(file_log_level)}).")
 
         except Exception as e:
-            print(f"!!! ERROR setting up file logging: {e}")
+            logger.warning(f"!!! ERROR setting up file logging: {e}")
             logging.exception("Error setting up file logging")
 
         # Re-evaluate lowest level
@@ -543,9 +543,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         if all_handlers:
             lowest_level = min(h.level for h in all_handlers if h.level > 0)  # Ignore level 0 handlers
             root_logger.setLevel(lowest_level)
-            print(f"Final Root logger level set to: {logging.getLevelName(root_logger.level)}")
+            logger.warning(f"Final Root logger level set to: {logging.getLevelName(root_logger.level)}")
         else:
-            print(f"No handlers found on root logger after setup!")
+            logger.warning(f"No handlers found on root logger after setup!")
         logger.info("Logging setup complete.")
         logger.info("--- _setup_logging END ---")
 
@@ -699,12 +699,12 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # --- Add explicit methods to update reactives from Select changes ---
     def update_chat_provider_reactive(self, new_value: Optional[str]) -> None:
         """Called when the chat provider Select value changes internally."""
-        print(f">>> DEBUG: update_chat_provider_reactive called with: {new_value!r}")
+        logger.debug(f">>> DEBUG: update_chat_provider_reactive called with: {new_value!r}")
         self.chat_api_provider_value = new_value
 
     def update_character_provider_reactive(self, new_value: Optional[str]) -> None:
         """Called when the character provider Select value changes internally."""
-        print(f">>> DEBUG: update_character_provider_reactive called with: {new_value!r}")
+        logger.debug(f">>> DEBUG: update_character_provider_reactive called with: {new_value!r}")
         self.character_api_provider_value = new_value
 
     # --- END Add explicit methods ---
@@ -714,26 +714,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         self._setup_logging()
 
         if self._rich_log_handler:
-            logging.debug("Starting RichLogHandler processor task...")
+            logger.debug("Starting RichLogHandler processor task...")
             self._rich_log_handler.start_processor(self)
-
-        # --- REMOVE THIS BLOCK ---
-        # print(f">>> DEBUG: on_mount: Setting initial window visibility for tab: {self._initial_tab_value}")
-        # logging.debug(f"on_mount: Setting initial window visibility based on tab: {self._initial_tab_value}")
-        # for tab_id in ALL_TABS:
-        #     try:
-        #         window = self.query_one(f"#{tab_id}-window")
-        #         is_visible = (tab_id == self._initial_tab_value)
-        #         print(f">>> DEBUG: Setting #{tab_id}-window display to {is_visible}")
-        #         window.display = is_visible # <<<--- REMOVE THIS LOOP
-        #         logging.debug(f"  - Window #{tab_id}-window display set to {is_visible}")
-        #     except QueryError:
-        #         print(f">>> DEBUG: ERROR - Could not find window #{tab_id}-window in on_mount")
-        #         logging.error(f"on_mount: Could not find window '#{tab_id}-window' to set initial display.")
-        #     except Exception as e:
-        #         print(f">>> DEBUG: ERROR - Setting display for #{tab_id}-window: {e}")
-        #         logging.error(f"on_mount: Error setting display for '#{tab_id}-window': {e}", exc_info=True)
-        # --- END REMOVED BLOCK ---
 
         # --- Bind Select Widgets ---
         logging.info("App on_mount: Binding Select widgets to reactive updaters...")
@@ -742,10 +724,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             chat_select = self.query_one(f"#{TAB_CHAT}-api-provider", Select)
             self.watch(chat_select, "value", self.update_chat_provider_reactive, init=False)
             logging.debug(f"Bound chat provider Select ({chat_select.id}) value to update_chat_provider_reactive")
-            print(f">>> DEBUG: Bound chat provider Select to reactive update method.")
+            logger.warning(f">>> DEBUG: Bound chat provider Select to reactive update method.")
         except QueryError:
             logging.error(f"on_mount: Failed to find chat provider select: #{TAB_CHAT}-api-provider")
-            print(f">>> DEBUG: ERROR - Failed to bind chat provider select.")
+            logger.debug(f">>> DEBUG: ERROR - Failed to bind chat provider select.")
         except Exception as e:
             logging.error(f"on_mount: Error binding chat provider select: {e}", exc_info=True)
             print(f">>> DEBUG: ERROR - Exception during chat provider select binding: {e}")
@@ -755,13 +737,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.watch(char_select, "value", self.update_character_provider_reactive, init=False)
             logging.debug(
                 f"Bound character provider Select ({char_select.id}) value to update_character_provider_reactive")
-            print(f">>> DEBUG: Bound character provider Select to reactive update method.")
+            logger.debug(f">>> DEBUG: Bound character provider Select to reactive update method.")
         except QueryError:
             logging.error(f"on_mount: Failed to find character provider select: #{TAB_CONV_CHAR}-api-provider")
-            print(f">>> DEBUG: ERROR - Failed to bind character provider select.")
+            logger.debug(f">>> DEBUG: ERROR - Failed to bind character provider select.")
         except Exception as e:
             logging.error(f"on_mount: Error binding character provider select: {e}", exc_info=True)
-            print(f">>> DEBUG: ERROR - Exception during character provider select binding: {e}")
+            logger.debug(f">>> DEBUG: ERROR - Exception during character provider select binding: {e}")
         # --- END BINDING LOGIC ---
 
         # --- Set initial reactive tab value ---

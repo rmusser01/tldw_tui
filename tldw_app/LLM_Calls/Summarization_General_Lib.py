@@ -1373,7 +1373,7 @@ def summarize_with_openrouter(api_key, input_data, custom_prompt_arg, temp=None,
                                     delta = json_data['choices'][0].get('delta', {})
                                     if 'content' in delta:
                                         content = delta['content']
-                                        print(content, end='', flush=True)  # Print streaming output
+                                        logging.info(content, end='', flush=True)  # Print streaming output
                                         full_response += content
                             except json.JSONDecodeError:
                                 continue

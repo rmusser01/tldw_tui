@@ -16,6 +16,9 @@ import sqlite3
 import struct
 import sys
 #
+# Third-Party Imports
+from loguru import logger
+#
 ########################################################################################################################
 #
 # Chrome Cookies
@@ -254,7 +257,7 @@ def get_edge_cookies(domain_name):
         return cookies
 
     except Exception as e:
-        print(f"An error occurred while retrieving Edge cookies: {e}")
+        logger.error(f"An error occurred while retrieving Edge cookies: {e}")
         return {}
 
 def decrypt_edge_cookie(encrypted_value, key):
@@ -356,7 +359,7 @@ def get_cookies(domain_name, browser='all'):
             chrome_cookies = get_chrome_cookies(domain_name)
             cookies.update(chrome_cookies)
         except Exception as e:
-            print(f"Failed to get Chrome cookies: {e}")
+            logger.error(f"Failed to get Chrome cookies: {e}")
 
     if browser in ('all', 'firefox'):
         # Get cookies from Firefox
@@ -364,7 +367,7 @@ def get_cookies(domain_name, browser='all'):
             firefox_cookies = get_firefox_cookies(domain_name)
             cookies.update(firefox_cookies)
         except Exception as e:
-            print(f"Failed to get Firefox cookies: {e}")
+            logger.error(f"Failed to get Firefox cookies: {e}")
 
     if browser in ('all', 'edge'):
         # Get cookies from Edge
@@ -372,7 +375,7 @@ def get_cookies(domain_name, browser='all'):
             edge_cookies = get_edge_cookies(domain_name)
             cookies.update(edge_cookies)
         except Exception as e:
-            print(f"Failed to get Edge cookies: {e}")
+            logger.error(f"Failed to get Edge cookies: {e}")
 
     if sys.platform == 'darwin' and browser in ('all', 'safari'):
         # Get cookies from Safari (macOS only)
@@ -380,10 +383,10 @@ def get_cookies(domain_name, browser='all'):
             safari_cookies = get_safari_cookies(domain_name)
             cookies.update(safari_cookies)
         except Exception as e:
-            print(f"Failed to get Safari cookies: {e}")
+            logger.error(f"Failed to get Safari cookies: {e}")
 
     if not cookies:
-        print(f"No cookies found for {domain_name} using browser: {browser}")
+        logger.error(f"No cookies found for {domain_name} using browser: {browser}")
 
     return cookies
 

@@ -1964,7 +1964,7 @@ def alert_token_budget_exceeded(entries: List[ChatDictionary], max_tokens: int):
     if token_usage > max_tokens:
         warning_msg = f"Alert: Token budget exceeded for chat dictionary! Used: {token_usage}, Allowed: {max_tokens}"
         warnings.warn(TokenBudgetExceededWarning(warning_msg))
-        print(warning_msg)
+        logging.warning(warning_msg)
 
 def apply_replacement_once(text: str, entry: ChatDictionary) -> Tuple[str, int]:
     """
