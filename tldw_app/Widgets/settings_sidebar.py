@@ -103,10 +103,13 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
                 id=f"{id_prefix}-api-key-placeholder",
             )
             yield Static("System prompt", classes="sidebar-label")
+            system_prompt_classes = "sidebar-textarea"
+            if id_prefix == "chat":
+                system_prompt_classes += " chat-system-prompt-styling"
             yield TextArea(
                 id=f"{id_prefix}-system-prompt",
                 text=default_system_prompt,
-                classes="sidebar-textarea",
+                classes=system_prompt_classes,
             )
             yield Static("Temperature", classes="sidebar-label")
             yield Input(

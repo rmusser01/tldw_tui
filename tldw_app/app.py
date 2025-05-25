@@ -2833,10 +2833,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             # Attempt to log a generic error to the main chat container if the placeholder is gone
             try:
                 chat_container_fallback: VerticalScroll = self.query_one(f"#{prefix}-log", VerticalScroll)
-                error_msg_text = f"[bold red]Error:[/]\nWorker '{worker_name}' response received, but its display widget was missing. Check logs."
-                # IMPORTANT: Escape the error_msg_text itself if it could contain user-generated parts or complex symbols
-                # For this specific pre-defined message, direct markup is okay.
-                error_widget_fallback = ChatMessage(Text.from_markup(error_msg_text), role="System", classes="-error")
+                error_msg_text_str = f"[bold red]Error: AI response for worker '{worker_name}' received, but its display widget was missing. Check logs.[/]"
+                error_widget_fallback = ChatMessage(error_msg_text_str, role="System",
+                                                    classes="-error")
                 self.call_soon(chat_container_fallback.mount, error_widget_fallback)
                 self.call_soon(chat_container_fallback.scroll_end, animate=False)
             except QueryError:
@@ -2864,27 +2863,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 if is_streaming_result:
                     logging.info("API call (%s) returned a generator – streaming.", prefix)
 
-                    # ... (your existing streaming logic from 'async def process_stream()')
-                    # Important for streaming: Ensure EACH chunk is escaped before updating the widget
-                    # Example within process_stream:
-                    # async for chunk in result:
-                    #     text_chunk = str(chunk)
-                    #     full_original_text += text_chunk
-                    #     escaped_chunk_for_display = escape_markup(text_chunk)
-                    #     # ... then append escaped_chunk_for_display to static_text_widget ...
-                    #     # (Your existing logic for appending to Text object or string is okay,
-                    #     # as long as the input to that logic is the escaped_chunk_for_display)
-                    #     current_display_text = stream_static_text_widget.renderable # Assuming stream_static_text_widget is static_text_widget
-                    #     if isinstance(current_display_text, Text):
-                    #         new_text_obj = Text(current_display_text.plain + escaped_chunk_for_display, end="")
-                    #         stream_static_text_widget.update(new_text_obj)
-                    #         ai_message_widget.message_text += text_chunk # Store original UNESCAPED chunk
-                    #     else:
-                    #         existing_plain = str(current_display_text)
-                    #         stream_static_text_widget.update(existing_plain + escaped_chunk_for_display)
-                    #         ai_message_widget.message_text += text_chunk # Store original UNESCAPED chunk
-
-                    # Re-pasting your streaming part with the escape fix:
                     async def process_stream() -> None:
                         full_original_text = ""
                         if not ai_message_widget or not ai_message_widget.is_mounted:
