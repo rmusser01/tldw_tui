@@ -1,15 +1,19 @@
 # tests/unit/core/chat/test_chat_functions.py
+#
+#
+# Imports
 import base64
 import re
-import textwrap
-
-import pytest
 from unittest.mock import patch, MagicMock, call
+#
+# 3rd-party Libraries
+import pytest
+import textwrap
 from typing import List, Dict, Any
 import requests  # For mocking requests.exceptions
-
-# Imports from your application
-from tldw_Server_API.app.core.Chat.Chat_Functions import (
+#
+# Local Imports
+from tldw_app.Chat.Chat_Functions import (
     chat_api_call,
     chat,  # This is the multimodal chat coordinator
     save_chat_history_to_db_wrapper,  # Assuming you want to test this too
@@ -18,28 +22,21 @@ from tldw_Server_API.app.core.Chat.Chat_Functions import (
     # Import other functions you might want to unit test from Chat_Functions.py
     # e.g., process_user_input, parse_user_dict_markdown_file, etc.
 )
-from tldw_Server_API.app.core.Chat.Chat_Deps import (
+from tldw_app.Chat.Chat_Deps import (
     ChatAuthenticationError, ChatRateLimitError, ChatBadRequestError,
     ChatConfigurationError, ChatProviderError, ChatAPIError
 )
-# Import Pydantic models from your schema file to construct valid `history` for the `chat` function tests
-# Note: The `chat` function itself expects `history` as List[Dict[str, Any]],
-# but for clarity in test setup, using Pydantic models first and then dumping is fine.
-# However, the `chat` function's direct input type hint is List[Dict[str, Any]].
-# For these unit tests, we'll construct the history as list of dicts directly.
+from tldw_app.DB.ChaChaNotes_DB import CharactersRAGDB  # For mocking
+#
+########################################################################################################################
+#
+# Functions:
 
-from tldw_Server_API.app.core.DB_Management.ChaChaNotes_DB import CharactersRAGDB  # For mocking
-
-
-# Mock for load_and_log_configs as it's used in `chat` and `chat_api_call` (indirectly via LLM_API_Calls)
-# It's better to mock it at the point of use within the functions being tested if it's too global.
-# For now, let's assume it's used by the LLM call functions that are mocked out by mock_llm_api_call_handlers.
-# If `chat` itself calls it directly, that patch needs to be in the `chat` function tests.
 
 @pytest.fixture(autouse=True)  # Applied to all tests in this module
 def mock_global_load_and_log_configs():
     """Mocks load_and_log_configs where it's used by Chat_Functions.py."""
-    with patch("tldw_Server_API.app.core.Chat.Chat_Functions.load_and_log_configs", return_value={
+    with patch("tldw_app.Chat.Chat_Functions.load_and_log_configs", return_value={
         "chat_dictionaries": {},
         # You might need to add more default keys here if Chat_Functions or its callees expect them
         # For example, if chat_api_call indirectly uses parts of the config via its LLM handlers:
@@ -65,7 +62,7 @@ def mock_llm_api_call_handlers_for_chat_functions_unit():
         mock_handler.__name__ = original_func_name  # Explicitly set it
         mocked_handlers_dict[provider_name_key] = mock_handler
 
-    with patch("tldw_Server_API.app.core.Chat.Chat_Functions.API_CALL_HANDLERS", new=mocked_handlers_dict):
+    with patch("tldw_app.Chat.Chat_Functions.API_CALL_HANDLERS", new=mocked_handlers_dict):
         yield mocked_handlers_dict
 
 
@@ -224,9 +221,9 @@ def test_chat_api_call_exception_propagation_and_mapping_unit(
 # --- Tests for the `chat` function (multimodal chat coordinator) ---
 
 @pytest.mark.unit
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.chat_api_call")
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.process_user_input")
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.load_and_log_configs")  # Patch it where `chat` uses it
+@patch("tldw_app.Chat.Chat_Functions.chat_api_call")
+@patch("tldw_app.Chat.Chat_Functions.process_user_input")
+@patch("tldw_app.Chat.Chat_Functions.load_and_log_configs")  # Patch it where `chat` uses it
 def test_chat_function_basic_text_call_unit(
         mock_load_configs_chat, mock_process_input, mock_chat_api_call_shim
 ):
@@ -261,9 +258,9 @@ def test_chat_function_basic_text_call_unit(
 
 
 @pytest.mark.unit
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.chat_api_call")
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.process_user_input", side_effect=lambda x, *a, **kw: x)
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.load_and_log_configs", return_value={"chat_dictionaries": {}})
+@patch("tldw_app.Chat.Chat_Functions.chat_api_call")
+@patch("tldw_app.Chat.Chat_Functions.process_user_input", side_effect=lambda x, *a, **kw: x)
+@patch("tldw_app.Chat.Chat_Functions.load_and_log_configs", return_value={"chat_dictionaries": {}})
 def test_chat_function_with_text_history_unit(mock_configs, mock_proc_input, mock_chat_shim):
     mock_chat_shim.return_value = "LLM Response with history"
     history_for_chat_func = [
@@ -290,9 +287,9 @@ def test_chat_function_with_text_history_unit(mock_configs, mock_proc_input, moc
 
 
 @pytest.mark.unit
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.chat_api_call")
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.process_user_input", side_effect=lambda x, *a, **kw: x)
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.load_and_log_configs", return_value={"chat_dictionaries": {}})
+@patch("tldw_app.Chat.Chat_Functions.chat_api_call")
+@patch("tldw_app.Chat.Chat_Functions.process_user_input", side_effect=lambda x, *a, **kw: x)
+@patch("tldw_app.Chat.Chat_Functions.load_and_log_configs", return_value={"chat_dictionaries": {}})
 def test_chat_function_with_current_image_unit(mock_configs, mock_proc_input, mock_chat_shim):
     mock_chat_shim.return_value = "LLM image Response"
     current_image = {"base64_data": "fakeb64imagedata", "mime_type": "image/png"}
@@ -314,9 +311,9 @@ def test_chat_function_with_current_image_unit(mock_configs, mock_proc_input, mo
 
 
 @pytest.mark.unit
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.chat_api_call")
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.process_user_input", side_effect=lambda x, *a, **kw: x)
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.load_and_log_configs", return_value={"chat_dictionaries": {}})
+@patch("tldw_app.Chat.Chat_Functions.chat_api_call")
+@patch("tldw_app.Chat.Chat_Functions.process_user_input", side_effect=lambda x, *a, **kw: x)
+@patch("tldw_app.Chat.Chat_Functions.load_and_log_configs", return_value={"chat_dictionaries": {}})
 def test_chat_function_image_history_tag_past_unit(mock_configs, mock_proc_input, mock_chat_shim):
     mock_chat_shim.return_value = "Tagged image history response"
     # History with multimodal content (list of parts)
@@ -351,9 +348,9 @@ def test_chat_function_image_history_tag_past_unit(mock_configs, mock_proc_input
 
 
 @pytest.mark.unit
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.chat_api_call")
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.process_user_input")
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.load_and_log_configs")
+@patch("tldw_app.Chat.Chat_Functions.chat_api_call")
+@patch("tldw_app.Chat.Chat_Functions.process_user_input")
+@patch("tldw_app.Chat.Chat_Functions.load_and_log_configs")
 def test_chat_function_streaming_passthrough(mock_load_configs, mock_process_input, mock_chat_api_call_shim):
     mock_load_configs.return_value = {"chat_dictionaries": {}}
     mock_process_input.side_effect = lambda text, *args, **kwargs: text
@@ -380,7 +377,7 @@ def test_chat_function_streaming_passthrough(mock_load_configs, mock_process_inp
 
 # --- Tests for save_chat_history_to_db_wrapper ---
 @pytest.mark.unit
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.DEFAULT_CHARACTER_NAME", "TestDefaultChar")
+@patch("tldw_app.Chat.Chat_Functions.DEFAULT_CHARACTER_NAME", "TestDefaultChar")
 def test_save_chat_history_new_conversation_default_char():
     mock_db = MagicMock(spec=CharactersRAGDB)
     mock_db.client_id = "unit_test_client"
@@ -539,8 +536,8 @@ def test_chat_api_call_tools_and_tool_choice_unit(mock_llm_api_call_handlers_for
 # --- New Tests for chat function (multimodal coordinator) ---
 
 @pytest.mark.unit
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.chat_api_call")
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.process_user_input", side_effect=lambda x, *a, **kw: x)
+@patch("tldw_app.Chat.Chat_Functions.chat_api_call")
+@patch("tldw_app.Chat.Chat_Functions.process_user_input", side_effect=lambda x, *a, **kw: x)
 # mock_global_load_and_log_configs is already active via autouse=True
 def test_chat_function_image_history_send_all_unit(mock_process_input, mock_chat_api_call_shim):
     mock_chat_api_call_shim.return_value = "Response"
@@ -569,8 +566,8 @@ def test_chat_function_image_history_send_all_unit(mock_process_input, mock_chat
 
 
 @pytest.mark.unit
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.chat_api_call")
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.process_user_input", side_effect=lambda x, *a, **kw: x)
+@patch("tldw_app.Chat.Chat_Functions.chat_api_call")
+@patch("tldw_app.Chat.Chat_Functions.process_user_input", side_effect=lambda x, *a, **kw: x)
 def test_chat_function_image_history_send_last_user_image_unit(mock_process_input, mock_chat_api_call_shim):
     mock_chat_api_call_shim.return_value = "Response"
     history = [
@@ -608,8 +605,8 @@ def test_chat_function_image_history_send_last_user_image_unit(mock_process_inpu
 
 
 @pytest.mark.unit
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.chat_api_call")
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.process_user_input", side_effect=lambda x, *a, **kw: x)
+@patch("tldw_app.Chat.Chat_Functions.chat_api_call")
+@patch("tldw_app.Chat.Chat_Functions.process_user_input", side_effect=lambda x, *a, **kw: x)
 def test_chat_function_with_rag_content_unit(mock_process_input, mock_chat_api_call_shim):
     mock_chat_api_call_shim.return_value = "RAG Response"
     media_content = {"summary": "This is a summary.", "content": "Full content here."}
@@ -673,8 +670,8 @@ def test_chat_dictionary_class_methods():
 
 
 @pytest.mark.unit
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.load_and_log_configs")
-@patch("tldw_Server_API.app.core.Chat.Chat_Functions.parse_user_dict_markdown_file")
+@patch("tldw_app.Chat.Chat_Functions.load_and_log_configs")
+@patch("tldw_app.Chat.Chat_Functions.parse_user_dict_markdown_file")
 def test_chat_function_with_chat_dictionary_post_replacement(
         mock_parse_dict, mock_load_configs_chat_func, tmp_path
 ):
@@ -698,7 +695,7 @@ def test_chat_function_with_chat_dictionary_post_replacement(
     }
 
     # Mock chat_api_call (the one inside Chat_Functions, not the one in the endpoint)
-    with patch("tldw_Server_API.app.core.Chat.Chat_Functions.chat_api_call") as mock_chat_api_call_inner:
+    with patch("tldw_app.Chat.Chat_Functions.chat_api_call") as mock_chat_api_call_inner:
         raw_llm_response = "The AI assistant uses an LLM."
         mock_chat_api_call_inner.return_value = raw_llm_response
 
@@ -802,3 +799,7 @@ def test_load_characters_empty_and_with_data_unit():
 # - DB errors during operations (add_conversation, add_message, delete, update)
 # - History with only system messages (should save no messages)
 # - History with malformed image data URI
+
+#
+# End of test_chat_functions.py
+########################################################################################################################

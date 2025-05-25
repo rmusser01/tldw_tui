@@ -1,10 +1,10 @@
-# tldw_Server_API/tests/Chat/test_prompt_template_manager.py
+# Tests/Chat/test_prompt_template_manager.py
 import pytest
 import json
 from pathlib import Path
 from unittest.mock import patch, mock_open
 
-from tldw_Server_API.app.core.Chat.prompt_template_manager import (
+from tldw_app.Chat.prompt_template_manager import (
     PromptTemplate,
     load_template,
     apply_template_to_string,
@@ -50,7 +50,7 @@ def mock_templates_dir(tmp_path: Path):
 
 @pytest.mark.unit
 def test_load_template_success(mock_templates_dir):
-    with patch("tldw_Server_API.app.core.Chat.prompt_template_manager.PROMPT_TEMPLATES_DIR", mock_templates_dir):
+    with patch("tldw_app.Chat.prompt_template_manager.PROMPT_TEMPLATES_DIR", mock_templates_dir):
         template = load_template("test_valid")
         assert template is not None
         assert template.name == "test_valid"
@@ -62,21 +62,21 @@ def test_load_template_success(mock_templates_dir):
 
 @pytest.mark.unit
 def test_load_template_not_found(mock_templates_dir):
-    with patch("tldw_Server_API.app.core.Chat.prompt_template_manager.PROMPT_TEMPLATES_DIR", mock_templates_dir):
+    with patch("tldw_app.Chat.prompt_template_manager.PROMPT_TEMPLATES_DIR", mock_templates_dir):
         template = load_template("non_existent_template")
         assert template is None
 
 
 @pytest.mark.unit
 def test_load_template_invalid_json(mock_templates_dir):
-    with patch("tldw_Server_API.app.core.Chat.prompt_template_manager.PROMPT_TEMPLATES_DIR", mock_templates_dir):
+    with patch("tldw_app.Chat.prompt_template_manager.PROMPT_TEMPLATES_DIR", mock_templates_dir):
         template = load_template("test_invalid_json")
         assert template is None  # Should fail to parse
 
 
 @pytest.mark.unit
 def test_load_template_empty_json_fails_validation(mock_templates_dir):
-    with patch("tldw_Server_API.app.core.Chat.prompt_template_manager.PROMPT_TEMPLATES_DIR", mock_templates_dir):
+    with patch("tldw_app.Chat.prompt_template_manager.PROMPT_TEMPLATES_DIR", mock_templates_dir):
         template = load_template("test_empty")
         # Pydantic will raise validation error because 'name' is missing,
         # load_template should catch this and return None.
@@ -103,7 +103,7 @@ def test_apply_template_to_string():
 
 @pytest.mark.unit
 def test_get_available_templates(mock_templates_dir):
-    with patch("tldw_Server_API.app.core.Chat.prompt_template_manager.PROMPT_TEMPLATES_DIR", mock_templates_dir):
+    with patch("tldw_app.Chat.prompt_template_manager.PROMPT_TEMPLATES_DIR", mock_templates_dir):
         available = get_available_templates()
         assert isinstance(available, list)
         assert "test_valid" in available
@@ -114,7 +114,7 @@ def test_get_available_templates(mock_templates_dir):
 
 @pytest.mark.unit
 def test_get_available_templates_no_dir():
-    with patch("tldw_Server_API.app.core.Chat.prompt_template_manager.PROMPT_TEMPLATES_DIR", Path("/non/existent/dir")):
+    with patch("tldw_app.Chat.prompt_template_manager.PROMPT_TEMPLATES_DIR", Path("/non/existent/dir")):
         available = get_available_templates()
         assert available == []
 
