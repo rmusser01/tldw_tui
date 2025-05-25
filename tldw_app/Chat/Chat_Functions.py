@@ -85,7 +85,7 @@ API_CALL_HANDLERS = {
     'huggingface': chat_with_huggingface,
     'llama_cpp': chat_with_llama,
     'koboldcpp': chat_with_kobold,
-    'ooba': chat_with_oobabooga,
+    'oobabooga': chat_with_oobabooga,
     'tabbyapi': chat_with_tabbyapi,
     'vllm': chat_with_vllm,
     'local-llm': chat_with_local_llm,
@@ -298,7 +298,7 @@ PROVIDER_PARAM_MAP = {
         'n': 'num_responses',
         'seed': 'seed',
     },
-    'ooba': { # api_url also a consideration like llama.cpp
+    'oobabooga': { # api_url also a consideration like llama.cpp
         'api_key': 'api_key',
         'messages_payload': 'input_data',
         'prompt': 'custom_prompt',

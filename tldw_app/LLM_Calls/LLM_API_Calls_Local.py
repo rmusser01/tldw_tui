@@ -587,8 +587,8 @@ def chat_with_oobabooga(
 
     # --- Settings Load ---
     cfg = settings.get('ooba_api', {})
-    api_base_url = cfg.get('api_ip')  # api_url passed via chat_api_call or from config
-    if not api_base_url:
+    api_url = cfg.get('api_ip')  # api_url passed via chat_api_call or from config
+    if not api_url:
         raise ChatConfigurationError(
             provider="ooba_api",
             message="Ooba API URL (api_url) is required and could not be determined from arguments or configuration."
@@ -626,7 +626,7 @@ def chat_with_oobabooga(
 
     # Oobabooga with OpenAI extension uses the generic OpenAI compatible handler
     return _chat_with_openai_compatible_local_server(
-        api_base_url=api_base_url,
+        api_base_url=api_url,
         model_name=current_model,
         input_data=input_data,
         api_key=current_api_key,
@@ -1113,7 +1113,8 @@ def chat_with_custom_openai(
     if model and (model.lower() == "none" or model.strip() == ""): model = None
 
     # --- Settings Load ---
-    cfg = settings.get('ollama_api', {})
+    cli_api_settings = settings.get('api_settings', {})
+    cfg = cli_api_settings.get('custom', {})  # Key for custom_openai_api in CLI is 'custom'
     current_api_base_url = cfg.get('api_url')  # api_url passed via chat_api_call or from config
     if not current_api_base_url:
         raise ChatConfigurationError(

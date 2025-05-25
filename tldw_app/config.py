@@ -787,10 +787,6 @@ def load_settings() -> Dict:
             logger.error(f"Could not create server user data base directory {user_data_base_dir_server}: {e}")
     return config_dict
 
-
-# --- Global Settings Object ---
-settings = load_settings()
-
 # --- Define API Models (Combined Cloud & Local) ---
 # (Keep your existing API_MODELS_BY_PROVIDER and LOCAL_PROVIDERS dictionaries)
 API_MODELS_BY_PROVIDER = {
@@ -832,26 +828,6 @@ LOCAL_PROVIDERS = {
     "Custom": ["custom-model-alpha", "custom-model-beta"],
     "Custom-2": ["custom-model-gamma", "custom-model-delta"],
 }
-
-# --- Global default_api_endpoint (example of using the new settings) ---
-try:
-    # Accessing deeply nested key safely
-    default_api_endpoint = settings.get('llm_api_settings', {}).get('default_api', 'openai')
-    logger.info(f"Default API Endpoint (from config.py global scope): {default_api_endpoint}")
-except Exception as e:
-    logger.error(f"Critical error setting default_api_endpoint in config.py global scope: {str(e)}", exc_info=True)
-    default_api_endpoint = "openai"  # Fallback
-
-# --- Optional: Export individual variables if needed (generally prefer using settings dict) ---
-# SINGLE_USER_MODE = settings["SINGLE_USER_MODE"]
-# OPENAI_API_KEY = settings["OPENAI_API_KEY"]
-# ... etc.
-
-# Make APP_CONFIG, DATABASE_CONFIG, RAG_SEARCH_CONFIG available globally if needed
-# These are now loaded from TOML into the `settings` dictionary.
-APP_CONFIG = settings.get("APP_TTS_CONFIG", DEFAULT_APP_TTS_CONFIG) # Fallback if not in settings for some reason
-DATABASE_CONFIG = settings.get("APP_DATABASE_CONFIG", DEFAULT_DATABASE_CONFIG)
-RAG_SEARCH_CONFIG = settings.get("APP_RAG_SEARCH_CONFIG", DEFAULT_RAG_SEARCH_CONFIG)
 
 #######################################################################################################################
 # --- CLI User Configuration Section ---
@@ -1225,10 +1201,11 @@ def deep_merge_dicts(base: Dict, update: Dict) -> Dict:
 # --- Primary Configuration Loading Logic for the CLI ---
 _CONFIG_CACHE: Optional[Dict[str, Any]] = None
 
-def load_settings(force_reload: bool = False) -> Dict[str, Any]: # Renamed from load_cli_config
+def load_cli_config_and_ensure_existence(force_reload: bool = False) -> Dict[str, Any]: # Renamed from load_cli_config
     """
     Loads settings for the CLI application from ~/.config/tldw_cli/config.toml.
-    If the file doesn't exist, it's created with default values.
+    If the file doesn't exist, it's created with default values from CONFIG_TOML_CONTENT.
+    Uses programmatic defaults (from CONFIG_TOML_CONTENT) as a base.
     """
     global _CONFIG_CACHE
     if _CONFIG_CACHE is not None and not force_reload:
@@ -1242,10 +1219,9 @@ def load_settings(force_reload: bool = False) -> Dict[str, Any]: # Renamed from 
         try:
             DEFAULT_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
             with open(DEFAULT_CONFIG_PATH, "w", encoding="utf-8") as f:
-                # Write the default TOML content, not the parsed dictionary
-                f.write(CONFIG_TOML_CONTENT)
+                f.write(CONFIG_TOML_CONTENT) # Write the raw TOML string
             logger.info(f"Created default CLI config file at {DEFAULT_CONFIG_PATH}")
-            # Since the file was just created with defaults, loaded_config is already correct.
+            # loaded_config is already correct as it's from DEFAULT_CONFIG_FROM_TOML
         except OSError as e:
             logger.error(f"Could not create default CLI config file {DEFAULT_CONFIG_PATH}: {e}. Using internal defaults.")
     else:
@@ -1265,11 +1241,11 @@ def load_settings(force_reload: bool = False) -> Dict[str, Any]: # Renamed from 
 
     _CONFIG_CACHE = loaded_config
     # Log the keys of the configuration being returned to verify its structure
-    logger.debug(f"load_settings returning config with top-level keys: {list(loaded_config.keys())}")
+    logger.debug(f"load_cli_config_and_ensure_existence returning config with top-level keys: {list(loaded_config.keys())}")
     if "api_settings" in loaded_config:
         logger.debug(f"  'api_settings' found with keys: {list(loaded_config.get('api_settings', {}).keys())}")
     else:
-        logger.warning("  'api_settings' key NOT FOUND in the loaded configuration for load_settings.")
+        logger.warning("  'api_settings' key NOT FOUND in the loaded configuration for load_cli_config_and_ensure_existence.")
 
     return _CONFIG_CACHE
 
@@ -1277,7 +1253,7 @@ def load_settings(force_reload: bool = False) -> Dict[str, Any]: # Renamed from 
 # --- CLI Setting Getter ---
 def get_cli_setting(section: str, key: str, default: Any = None) -> Any:
     """Helper to get a specific setting from the loaded CLI configuration."""
-    config = load_settings() # Ensures config is loaded
+    config = load_cli_config_and_ensure_existence() # Ensures config is loaded
     # Use `config.get(section, {})` to safely access potentially missing sections
     section_data = config.get(section)
     if isinstance(section_data, dict):
@@ -1403,9 +1379,33 @@ if not API_MODELS_BY_PROVIDER and not LOCAL_PROVIDERS: # Fallback if [providers]
     LOCAL_PROVIDERS = { "Ollama": ["llama3"] } # Minimal fallback
 
 
+# --- Global default_api_endpoint (example of using the new settings) ---
+
+# --- Global Settings Object ---
+load_cli_config_and_ensure_existence()
+settings = load_settings()
+
+try:
+    # Accessing deeply nested key safely
+    default_api_endpoint = settings.get('llm_api_settings', {}).get('default_api', 'openai')
+    logger.info(f"Default API Endpoint (from config.py global scope): {default_api_endpoint}")
+except Exception as e:
+    logger.error(f"Critical error setting default_api_endpoint in config.py global scope: {str(e)}", exc_info=True)
+    default_api_endpoint = "openai"  # Fallback
+
+# --- Optional: Export individual variables if needed (generally prefer using settings dict) ---
+# SINGLE_USER_MODE = settings["SINGLE_USER_MODE"]
+# OPENAI_API_KEY = settings["OPENAI_API_KEY"]
+
+# Make APP_CONFIG, DATABASE_CONFIG, RAG_SEARCH_CONFIG available globally if needed
+# These are now loaded from TOML into the `settings` dictionary.
+APP_CONFIG = settings.get("APP_TTS_CONFIG", DEFAULT_APP_TTS_CONFIG) # Fallback if not in settings for some reason
+DATABASE_CONFIG = settings.get("APP_DATABASE_CONFIG", DEFAULT_DATABASE_CONFIG)
+RAG_SEARCH_CONFIG = settings.get("APP_RAG_SEARCH_CONFIG", DEFAULT_RAG_SEARCH_CONFIG)
+
+
 # --- Load CLI Config and Initialize Databases on module import ---
 # The `settings` global variable is now the result of the unified load_settings()
-settings = load_settings()
 initialize_all_databases()
 
 # Make APP_CONFIG available globally if needed by other modules that import from config.py
