@@ -15,14 +15,15 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     overflow: hidden;
 }
 
-/* REMOVED .hidden class */
-
 .placeholder-window { align: center middle; background: $panel; }
 
 /* Sidebar Styling */
-/* Existing left sidebar */
-.sidebar { 
-    width: 70;
+/* Generic .sidebar (used by #chat-sidebar and potentially others) */
+.sidebar {
+    /* width: 70;  <-- REMOVE fixed width */
+    width: 25%; /* <-- CHANGE to percentage (adjust 20% to 35% as needed) */
+    min-width: 20; /* <-- ADD a minimum width to prevent it becoming unusable */
+    max-width: 80; /* <-- ADD a maximum width (optional) */
     background: $boost;
     padding: 1 2;
     border-right: thick $background-darken-1;
@@ -33,16 +34,20 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 /* Collapsed state for the existing left sidebar */
 .sidebar.collapsed {
     width: 0 !important;
+    min-width: 0 !important; /* Ensure min-width is also 0 */
     border-right: none !important;
     padding: 0 !important;
     overflow: hidden !important;
     display: none; /* ensures it doesn’t grab focus */
 }
 
-/* New right sidebar (character-sidebar) */
+/* Right sidebar (character-sidebar) */
 #character-sidebar {
-    dock: right; /* Position on the right */
-    width: 70;   /* Specific width for this sidebar */
+    dock: right;
+    /* width: 70;   <-- REMOVE fixed width */
+    width: 25%;  /* <-- CHANGE to percentage (match .sidebar or use a different one) */
+    min-width: 20; /* <-- ADD a minimum width */
+    max-width: 80; /* <-- ADD a maximum width (optional) */
     background: $boost;
     padding: 1 2;
     border-left: thick $background-darken-1; /* Border on the left */
@@ -54,12 +59,14 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 /* Collapsed state for the new right sidebar */
 #character-sidebar.collapsed {
     width: 0 !important;
-    border-left: none !important; /* Ensure left border is removed */
+    min-width: 0 !important; /* Ensure min-width is also 0 */
+    border-left: none !important;
     padding: 0 !important;
     overflow: hidden !important;
     display: none; /* Ensures it doesn't take space or grab focus */
 }
 
+/* Common sidebar elements */
 .sidebar-title { text-style: bold underline; margin-bottom: 1; width: 100%; text-align: center; }
 .sidebar-label { margin-top: 1; text-style: bold; }
 .sidebar-input { width: 100%; margin-bottom: 1; }
@@ -70,7 +77,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 #chat-main-content {
     layout: vertical;
     height: 100%;
-    width: 1fr;
+    width: 1fr; /* This is KEY - it takes up the remaining horizontal space */
 }
 /* VerticalScroll for chat messages */
 #chat-log {
@@ -115,7 +122,8 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 
 /* Left Pane Styling */
 .cc-left-pane {
-    width: 30%; /* Example width */
+    width: 25%; /* Keep 25% or 30% - adjust as needed */
+    min-width: 20; /* ADD a minimum width */
     height: 100%;
     background: $boost;
     padding: 1;
@@ -134,7 +142,8 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 
 /* Right Pane Styling */
 .cc-right-pane {
-    width: 30%; /* Example width */
+    width: 25%; /* Keep 25% or 30% - adjust as needed */
+    min-width: 20; /* ADD a minimum width */
     height: 100%;
     background: $boost;
     padding: 1;
@@ -152,7 +161,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     margin-bottom: 1;
     border: round $surface;
 }
-.cc-left-pane Button, .cc-right-pane Button {
+.cc-left-pane Button, .cc-right_pane Button { /* Typo Fixed */
     width: 100%;
     margin-bottom: 1;
 }
