@@ -9,6 +9,7 @@ import json
 import os
 import re
 import time  # For default titles, etc.
+from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any, Union, Set
 
 import yaml
@@ -23,6 +24,316 @@ from tldw_app.DB.ChaChaNotes_DB import CharactersRAGDB, CharactersRAGDBError, Co
 #
 ###############################################
 #
+# Constants
+DEFAULT_CHARACTER_ID = 1
+#
+
+
+
+
+
+
+
+
+
+
+# --- New Functions
+def create_conversation(
+        db: CharactersRAGDB,
+        title: Optional[str] = None,
+        character_id: Optional[int] = None,
+        initial_messages: Optional[List[Dict[str, Any]]] = None,
+        # e.g., [{'sender': 'User', 'content': 'Hi'}, {'sender': 'AI', 'content': 'Hello'}]
+        system_keywords: Optional[List[str]] = None,
+        user_name_for_placeholders: Optional[str] = "User"  # For processing initial messages if any
+) -> Optional[str]:
+    """
+    Creates a new conversation record, optionally with initial messages and keywords.
+    Uses default character ID if character_id is None.
+    """
+    logger.debug(
+        f"Creating new conversation. Title: {title}, Char ID: {character_id}, Initial Msgs: {bool(initial_messages)}, Keywords: {system_keywords}")
+    target_character_id = character_id if character_id is not None else DEFAULT_CHARACTER_ID
+
+    char_details = db.get_character_card_by_id(target_character_id)
+    if not char_details:
+        logger.error(f"Character ID {target_character_id} not found. Cannot create conversation.")
+        # Note: Schema change should ensure ID 1 exists. If it's another ID, this is a valid error.
+        return None
+
+    char_name_for_title = char_details.get('name', f"Character {target_character_id}")
+
+    final_title = title
+    if not final_title:
+        # Try to make title from first user message if saving ephemeral
+        if initial_messages and initial_messages[0].get('sender', '').lower() == 'user':
+            first_user_content = initial_messages[0].get('content', '')
+            final_title = f"Chat: {first_user_content[:30]}..." if first_user_content else f"Chat with {char_name_for_title}"
+        else:
+            final_title = f"Chat with {char_name_for_title} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+
+    conv_payload = {
+        'character_id': target_character_id,
+        'title': final_title
+    }
+
+    try:
+        with db.transaction():  # Ensure atomicity
+            new_conv_id = db.add_conversation(conv_payload)
+            if not new_conv_id:
+                logger.error("Failed to add conversation to DB.")
+                return None
+
+            logger.info(
+                f"Created new conversation ID: {new_conv_id} with title '{final_title}' for char ID {target_character_id}")
+
+            if initial_messages:
+                logger.debug(f"Adding {len(initial_messages)} initial messages to new conversation {new_conv_id}")
+                for msg_data in initial_messages:
+                    # 'sender' in initial_messages should be "User" or the character's actual name.
+                    # If from UI, ChatMessage.role is 'User' or 'AI'. Map 'AI' to character's name.
+                    sender_for_db = msg_data.get('sender', 'Unknown')
+                    if sender_for_db == "AI":  # Convention from ChatMessage.role
+                        sender_for_db = char_name_for_title
+
+                    # Placeholder replacement for content being saved from ephemeral
+                    # This assumes ephemeral content might have placeholders if it was, for example, a character's first_mes.
+                    # Usually, user/AI typed content wouldn't have {{user}} or {{char}} that needs replacing *at save time*.
+                    # If it's purely typed content, replacement is not strictly needed here.
+                    # For safety, let's include it, assuming it does no harm.
+                    content_to_save = msg_data.get('content', '')
+                    # processed_content = replace_placeholders(content_to_save, char_name_for_title, user_name_for_placeholders)
+
+                    db.add_message({
+                        'conversation_id': new_conv_id,
+                        'sender': sender_for_db,
+                        'content': content_to_save,  # Store processed content
+                        'image_data': msg_data.get('image_data'),
+                        'image_mime_type': msg_data.get('image_mime_type'),
+                        # timestamp can be faked or omitted for add_message to use default
+                    })
+
+            if system_keywords:
+                for kw_text in system_keywords:
+                    kw_id = db.add_keyword(kw_text)
+                    if kw_id:
+                        db.link_conversation_to_keyword(new_conv_id, kw_id)
+                    else:
+                        logger.warning(f"Could not get/create keyword_id for '{kw_text}'")
+        return new_conv_id
+    except Exception as e:
+        logger.error(f"Error in create_conversation: {e}", exc_info=True)
+        return None
+
+
+def get_conversation_details_and_messages(db: CharactersRAGDB, conversation_id: str) -> Optional[Dict[str, Any]]:
+    logger.debug(f"Getting details and messages for conversation_id: {conversation_id}")
+    conv_metadata = db.get_conversation_by_id(conversation_id)
+    if not conv_metadata:
+        logger.warning(f"Conversation metadata not found for ID: {conversation_id}")
+        return None
+
+    character_name = "AI"  # Default
+    if conv_metadata.get('character_id') is not None:
+        char_card = db.get_character_card_by_id(conv_metadata['character_id'])
+        if char_card and char_card.get('name'):
+            character_name = char_card['name']
+        else:
+            character_name = f"Character {conv_metadata['character_id']}"
+            if conv_metadata['character_id'] == DEFAULT_CHARACTER_ID:
+                default_char_name_from_db = "Default Assistant"  # Should match schema
+                if char_card and char_card.get('name'): default_char_name_from_db = char_card.get('name')
+                character_name = default_char_name_from_db
+
+    # Fetch messages (already ordered ASC by timestamp usually from DB)
+    # The schema's get_messages_for_conversation already sorts by timestamp ASC
+    messages = db.get_messages_for_conversation(conversation_id, limit=10000)  # High limit for full history
+
+    # Keywords
+    keywords_list = db.get_keywords_for_conversation(conversation_id)
+    keywords_str = ", ".join([kw['keyword'] for kw in keywords_list if not kw['keyword'].startswith("__")])
+    conv_metadata['keywords_display'] = keywords_str  # Add for UI convenience
+
+    return {
+        'metadata': conv_metadata,
+        'messages': messages,  # These are raw DB messages
+        'character_name': character_name
+    }
+
+
+def add_message_to_conversation(
+        db: CharactersRAGDB,
+        conversation_id: str,
+        sender: str,  # Actual sender name ("User" or character's name)
+        content: str,
+        image_data: Optional[bytes] = None,
+        image_mime_type: Optional[str] = None,
+        # parent_message_id: Optional[str] = None # Not used by main chat flow yet
+) -> Optional[str]:
+    logger.debug(f"Adding message from '{sender}' to conv_id '{conversation_id}'")
+    if not conversation_id:
+        logger.error("conversation_id required to add message.")
+        return None
+
+    msg_payload = {
+        'conversation_id': conversation_id,
+        'sender': sender,
+        'content': content,
+        'image_data': image_data,
+        'image_mime_type': image_mime_type,
+        # 'parent_message_id': parent_message_id # if needed later
+    }
+    try:
+        message_id = db.add_message(msg_payload)
+        if message_id:
+            logger.info(f"Added message ID {message_id} to conversation {conversation_id}.")
+        return message_id
+    except Exception as e:
+        logger.error(f"Error in add_message_to_conversation: {e}", exc_info=True)
+        return None
+
+
+def update_conversation_metadata_and_keywords(  # Renamed for clarity
+        db: CharactersRAGDB,
+        conversation_id: str,
+        expected_version: int,
+        user_id_for_keyword_ops: str,  # For db.add_keyword which takes user_id
+        title: Optional[str] = None,
+        keywords_str: Optional[str] = None  # Comma-separated string of keywords
+) -> bool:
+    logger.debug(f"Updating metadata/keywords for conv_id: {conversation_id}. Title: {title}, Keywords: {keywords_str}")
+    if title is None and keywords_str is None:
+        logger.info("No title or keywords provided for update.")
+        return False  # Or True if just touching version is desired, but current DB update needs fields
+
+    updated_successfully = False
+    current_expected_version = expected_version
+
+    if title is not None:
+        # Fetch current title to see if it actually changed
+        conv_details_for_title = db.get_conversation_by_id(conversation_id)
+        if not conv_details_for_title:
+            logger.error(f"Conversation {conversation_id} not found for title update.")
+            return False
+        if conv_details_for_title.get('version') != current_expected_version:
+            logger.error(
+                f"Version mismatch for title update. DB: {conv_details_for_title.get('version')}, Expected: {current_expected_version}")
+            raise ConflictError("Version mismatch before title update.")
+
+        if title != conv_details_for_title.get('title'):
+            title_update_payload = {'title': title}
+            if db.update_conversation(conversation_id, title_update_payload, current_expected_version):
+                logger.info(f"Conversation {conversation_id} title updated to '{title}'.")
+                current_expected_version += 1  # Version was bumped
+                updated_successfully = True
+            else:
+                logger.error(f"Failed to update title for conversation {conversation_id}.")
+                # If title update fails due to conflict, keywords should not proceed with old version.
+                # The caller should handle ConflictError from db.update_conversation.
+                return False  # Or raise, db.update_conversation would raise ConflictError
+
+    if keywords_str is not None:
+        # Get current keywords from DB
+        db_keywords_data = db.get_keywords_for_conversation(conversation_id)
+        db_keywords_set = {kw['keyword'].lower() for kw in db_keywords_data if not kw['keyword'].startswith("__")}
+
+        # Parse UI keywords string
+        ui_keywords_set = {kw.strip().lower() for kw in keywords_str.split(',') if
+                           kw.strip() and not kw.strip().startswith("__")}
+
+        keywords_to_add = ui_keywords_set - db_keywords_set
+        keywords_to_remove = db_keywords_set - ui_keywords_set
+
+        keywords_actually_changed = False
+
+        if keywords_to_add:
+            for kw_text in keywords_to_add:
+                # db.add_keyword is case-insensitive for existing, adds new if not found
+                # It now takes user_id implicitly if it's a global keyword table not user-specific,
+                # or explicitly as per your library design. Assuming it's fine.
+                # The provided ChaChaNotes_DB add_keyword doesn't take user_id.
+                # Assuming add_keyword returns the integer ID.
+                kw_id_result = db.add_keyword(kw_text)
+                if isinstance(kw_id_result, int):  # Check if it's an ID
+                    db.link_conversation_to_keyword(conversation_id, kw_id_result)
+                    keywords_actually_changed = True
+                    logger.debug(f"Linked keyword '{kw_text}' (ID: {kw_id_result}) to conv {conversation_id}")
+                else:  # It was None or an error string
+                    logger.error(f"Failed to add/get keyword '{kw_text}'. Received: {kw_id_result}")
+
+        if keywords_to_remove:
+            for kw_text_to_remove in keywords_to_remove:
+                # Find the ID of the keyword to remove the link
+                found_kw_id_to_remove = None
+                for kw_data in db_keywords_data:
+                    if kw_data['keyword'].lower() == kw_text_to_remove:
+                        found_kw_id_to_remove = kw_data['id']
+                        break
+                if found_kw_id_to_remove:
+                    db.unlink_conversation_from_keyword(conversation_id, found_kw_id_to_remove)
+                    keywords_actually_changed = True
+                    logger.debug(
+                        f"Unlinked keyword '{kw_text_to_remove}' (ID: {found_kw_id_to_remove}) from conv {conversation_id}")
+
+        if keywords_actually_changed:
+            updated_successfully = True
+            # If only keywords changed and title did not, the conversation record itself (version) might not have been bumped
+            # We might need to "touch" the conversation record if keywords changed to update its last_modified and version
+            # This requires an update_conversation call even if only keywords changed.
+            if not title_update_payload and keywords_actually_changed:  # if title wasn't updated but keywords were
+                # Touch the conversation to bump its version and last_modified
+                if db.update_conversation(conversation_id, {}, current_expected_version):
+                    logger.info(
+                        f"Touched conversation {conversation_id} to update version/timestamp after keyword change.")
+                else:
+                    logger.warning(
+                        f"Failed to touch conversation {conversation_id} after keyword change (version conflict or other issue).")
+
+    return updated_successfully
+
+
+def search_conversations_lib( # Renamed to avoid conflict with app's method
+    db: CharactersRAGDB,
+    search_term: str,
+    character_id: Optional[int] = None, # Specific character to filter by
+    # include_non_character_chats: bool = True, # Replaced by character_id=None or character_id=DEFAULT_CHARACTER_ID
+    # only_regular_chats: bool = False, # If true, character_id should be DEFAULT_CHARACTER_ID
+    limit: int = 100
+) -> List[Dict[str, Any]]:
+    logger.debug(f"Lib searching conversations. Term: '{search_term}', Char ID: {character_id}, Limit: {limit}")
+    # ChaChaNotes_DB.search_conversations_by_title handles character_id=None as "no filter by character"
+    # If character_id is DEFAULT_CHARACTER_ID, it will filter for those.
+    return db.search_conversations_by_title(
+        title_query=search_term,
+        character_id=character_id,
+        limit=limit
+    )
+
+
+def get_character_name_for_conversation(db: CharactersRAGDB, conversation_id: str) -> str:
+    """Retrieves the name of the character associated with a conversation."""
+    conv_details = db.get_conversation_by_id(conversation_id)
+    if not conv_details:
+        logger.warning(f"Conversation {conversation_id} not found for getting character name.")
+        return "AI"  # Default if conversation is gone
+
+    char_id = conv_details.get('character_id')
+    if char_id is None:  # Should not happen if default char is always used.
+        logger.warning(f"Conversation {conversation_id} has no character_id.")
+        return "AI"
+
+    char_data = db.get_character_card_by_id(char_id)
+    if char_data and char_data.get('name'):
+        return char_data['name']
+
+    # Fallback if character data is missing for a valid ID (data integrity issue)
+    logger.warning(f"Character data not found for ID {char_id} (linked to conv {conversation_id}).")
+    if char_id == DEFAULT_CHARACTER_ID:
+        return "Default Assistant"  # Consistent fallback name
+    return f"Character {char_id}"
+
+
+
 # Placeholder functions:
 
 def replace_placeholders(text: Optional[str], char_name: Optional[str], user_name: Optional[str]) -> str:

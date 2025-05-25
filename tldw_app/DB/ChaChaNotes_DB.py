@@ -171,6 +171,18 @@ CREATE TABLE IF NOT EXISTS character_cards(
   version       INTEGER  NOT NULL DEFAULT 1
 );
 
+/* Ensure default character card (ID 1) exists */
+INSERT OR IGNORE INTO character_cards
+    (id, name, description, personality, scenario, system_prompt, image,
+     post_history_instructions, first_message, message_example,
+     creator_notes, alternate_greetings, tags, creator, character_version, extensions,
+     created_at, last_modified, client_id, version, deleted)
+VALUES
+    (1, 'Default Assistant', 'A general-purpose assistant.', NULL, NULL, NULL, NULL, NULL,
+     'Hello! How can I help you today?', NULL, NULL, '[]', '[]', 'System', '1.0', '{}',
+     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'system_init', 1, 0);
+/* End of insertion of default character card */
+
 CREATE VIRTUAL TABLE IF NOT EXISTS character_cards_fts
 USING fts5(
   name, description, personality, scenario, system_prompt,
