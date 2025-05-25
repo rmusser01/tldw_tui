@@ -143,10 +143,10 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
             # ===================================================================
             with Collapsible(title="Full Chat Settings", collapsed=True):
                 yield Static("LLM Max Tokens", classes="sidebar-label")
-                yield Input(id=f"{id_prefix}-llm-max-tokens", value="1024", placeholder="e.g., 1024",
+                yield Input(id=f"{id_prefix}-llm-max-tokens", value="2048", placeholder="e.g., 1024",
                             classes="sidebar-input")
                 yield Static("LLM Seed", classes="sidebar-label")
-                yield Input(id=f"{id_prefix}-llm-seed", value="42", placeholder="e.g., 42", classes="sidebar-input")
+                yield Input(id=f"{id_prefix}-llm-seed", value="0", placeholder="e.g., 42", classes="sidebar-input")
                 yield Static("LLM Stop Sequences (comma-sep)", classes="sidebar-label")
                 yield Input(id=f"{id_prefix}-llm-stop", placeholder="e.g., <|endoftext|>,<|eot_id|>",
                             classes="sidebar-input")
