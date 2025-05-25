@@ -1874,22 +1874,20 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 return
 
             # --- Build History ---
-            chat_history = []
+            chat_history = []  # This will be a list of dictionaries
             try:
-                # Iterate through existing ChatMessage widgets in the container
                 message_widgets = chat_container.query(ChatMessage)
-                user_msg = None
                 for msg_widget in message_widgets:
-                    if msg_widget.role == "User":
-                        user_msg = msg_widget.message_text  # Store user message
-                    elif msg_widget.role == "AI" and user_msg is not None:
-                        # Pair the last user message with this AI response
-                        chat_history.append((user_msg, msg_widget.message_text))
-                        user_msg = None  # Reset user message
-                logging.debug(f"Built chat history with {len(chat_history)} turns.")
+                    # Only include User and AI messages that are complete
+                    if msg_widget.role in ("User", "AI") and msg_widget.generation_complete:
+                        # Use 'assistant' for AI role if that's what your backend/API expects
+                        # Or map 'AI' to 'assistant' if needed in Chat_Functions.py
+                        role_for_api = "assistant" if msg_widget.role == "AI" else "user"
+                        chat_history.append({"role": role_for_api, "content": msg_widget.message_text})
+
+                logging.debug(f"Built chat history with {len(chat_history)} messages (alternating roles).")
             except Exception as e:
                 logging.error(f"Failed to build chat history: {e}", exc_info=True)
-                # Decide whether to proceed without history or show an error
                 await chat_container.mount(
                     ChatMessage("Internal Error: Could not retrieve chat history.", role="AI", classes="-error"))
                 return
@@ -2466,24 +2464,44 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
                     # ──────────────── non-streaming (plain string / None) ─────────────
                     display_text_renderable: Union[str, Text]
+                    actual_ai_response_text = ""
 
-                    if isinstance(result, str):
+                    if isinstance(result, dict):  # OpenAI non-streaming returns a dict
+                        try:
+                            actual_ai_response_text = result['choices'][0]['message']['content']
+                            # Now that we have the string, escape it for display
+                            display_text_renderable = escape_markup(actual_ai_response_text)
+                            ai_message_widget.message_text = actual_ai_response_text  # Store plain text
+                            static_text_widget.update(display_text_renderable)
+                        except (KeyError, IndexError, TypeError) as e:
+                            logging.error(
+                                f"Error parsing non-streaming dict result for '{prefix}': {e}. Response: {result}",
+                                exc_info=True)
+                            display_text_renderable = "[bold red]AI: Error parsing response.[/]"
+                            ai_message_widget.message_text = display_text_renderable  # Store error
+                            static_text_widget.update(display_text_renderable)
+
+                    elif isinstance(result, str):  # If it's already a string (e.g., an error message from chat_wrapper)
+                        actual_ai_response_text = result
                         if result.startswith(("[bold red]API Error", "[bold red]AI: Error", "[bold red]Error:")):
-                            display_text_renderable = result # Assume these are safe pre-formatted markup
+                            display_text_renderable = result  # Assume pre-formatted markup
                         else:
-                            # CORRECTED ESCAPING
-                            display_text_renderable = escape_markup(raw_result_text)
-                        # Update internal message_text of ChatMessage with the raw (or pre-formatted error) string
-                        ai_message_widget.message_text = result
+                            display_text_renderable = escape_markup(actual_ai_response_text)
+                        ai_message_widget.message_text = actual_ai_response_text
                         static_text_widget.update(display_text_renderable)
+
                     elif result is None:
-                        display_text_renderable = "[bold red]AI: Error – No response received.[/]"
-                        ai_message_widget.message_text = display_text_renderable # Store the error string
+                        actual_ai_response_text = "[AI: Error – No response received.]"
+                        display_text_renderable = f"[bold red]{actual_ai_response_text}[/]"
+                        ai_message_widget.message_text = actual_ai_response_text
                         static_text_widget.update(display_text_renderable)
-                    else:
-                        display_text_renderable = "[bold red]Error: Unexpected result type from API.[/]"
-                        logging.error(f"Unexpected result type from API for '{prefix}': {type(result)}")
-                        ai_message_widget.message_text = display_text_renderable # Store the error string
+
+                    else:  # Fallback for truly unexpected types
+                        logging.error(
+                            f"Unexpected result type from API for '{prefix}': {type(result)}. Content: {result!r}")
+                        actual_ai_response_text = "[Error: Unexpected result type from API.]"
+                        display_text_renderable = f"[bold red]{actual_ai_response_text}[/]"
+                        ai_message_widget.message_text = actual_ai_response_text
                         static_text_widget.update(display_text_renderable)
 
                     ai_message_widget.mark_generation_complete()
