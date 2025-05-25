@@ -34,8 +34,16 @@ from textual.css.query import QueryError  # For specific error handling
 #
 # --- Local API library Imports ---
 from tldw_app.Chat.Chat_Functions import chat
-from .config import CONFIG_TOML_CONTENT, load_settings, get_cli_setting, get_cli_log_file_path, DEFAULT_CONFIG, \
-    DEFAULT_CONFIG_PATH, get_cli_providers_and_models, API_MODELS_BY_PROVIDER, LOCAL_PROVIDERS
+from .config import (
+    CONFIG_TOML_CONTENT,
+    DEFAULT_CONFIG_PATH,
+    load_settings,
+    get_cli_setting,
+    get_cli_log_file_path,
+    get_cli_providers_and_models,
+    API_MODELS_BY_PROVIDER,
+    LOCAL_PROVIDERS
+)
 from .Notes.Notes_Library import NotesInteropService
 from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
 from .Widgets.chat_message import ChatMessage
@@ -447,9 +455,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 root_logger.handlers)
 
             if not has_file_handler:
-                max_bytes = int(get_cli_setting("logging", "log_max_bytes", DEFAULT_CONFIG["logging"]["log_max_bytes"]))
+                max_bytes = int(get_cli_setting("logging", "log_max_bytes", self.app_config["logging"]["log_max_bytes"]))
                 backup_count = int(
-                    get_cli_setting("logging", "log_backup_count", DEFAULT_CONFIG["logging"]["log_backup_count"]))
+                    get_cli_setting("logging", "log_backup_count", self.app_config["logging"]["log_backup_count"]))
                 file_log_level_str = get_cli_setting("logging", "file_log_level", "INFO").upper()
                 file_log_level = getattr(logging, file_log_level_str, logging.INFO)
 
@@ -1916,6 +1924,18 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             text_area.clear()
             text_area.focus()
 
+            # --- DEBUG Check for Config loading ---
+            logging.debug(f"SENDBUTTON: self.app_config keys: {list(self.app_config.keys())}")
+            if "api_settings" in self.app_config:
+                logging.debug(
+                    f"SENDBUTTON: self.app_config['api_settings'] keys: {list(self.app_config['api_settings'].keys())}")
+                if "openai" in self.app_config["api_settings"]:
+                    logging.debug(
+                        f"SENDBUTTON: self.app_config['api_settings']['openai'] content: {self.app_config['api_settings']['openai']}")
+                else:
+                    logging.debug(f"SENDBUTTON: 'openai' key NOT FOUND in self.app_config['api_settings']")
+            else:
+                logging.debug(f"SENDBUTTON: 'api_settings' key NOT FOUND in self.app_config")
             # --- Prepare and Dispatch API Call via Worker calling chat_wrapper ---
             # Fetch API key (adjust based on your actual key management)
             api_key_for_call = None
@@ -1928,16 +1948,23 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             # Assuming self.app_config holds the merged config dictionary
             provider_settings = self.app_config.get("api_settings", {}).get(provider_settings_key, {})
 
+            direct_config_key_checked = False
+            direct_config_key_empty = False
+
             if provider_settings:
-                # 2. Check for hardcoded API key in config FIRST
-                config_api_key = provider_settings.get("api_key", "").strip()
-                if config_api_key:
-                    api_key_for_call = config_api_key
-                    config_key_found = True
-                    logging.debug(
-                        f"Using API key for '{selected_provider}' from config file [api_settings.{provider_settings_key}].api_key.")
-                else:
-                    # 3. If no config key, check environment variable specified in config
+                if "api_key" in provider_settings:
+                    direct_config_key_checked = True
+                    config_api_key = provider_settings.get("api_key", "").strip()
+                    if config_api_key:
+                        api_key_for_call = config_api_key
+                        logging.debug(
+                            f"Using API key for '{selected_provider}' from config file field [api_settings.{provider_settings_key}].api_key.")
+                    else:
+                        direct_config_key_empty = True # Mark that 'api_key' was present but empty
+                        logging.debug(
+                            f"Config field [api_settings.{provider_settings_key}].api_key for '{selected_provider}' is present but empty.")
+
+                if not api_key_for_call: # If not found via direct 'api_key' field or field was empty/missing
                     env_var_name = provider_settings.get("api_key_env_var", "").strip()
                     if env_var_name:
                         env_api_key = os.environ.get(env_var_name, "").strip()
@@ -1945,7 +1972,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                             api_key_for_call = env_api_key
                             env_key_found = True
                             logging.debug(
-                                f"Using API key for '{selected_provider}' from environment variable '{env_var_name}'.")
+                                f"Using API key for '{selected_provider}' from environment variable '{env_var_name}' (specified in config).")
                         else:
                             logging.debug(
                                 f"Environment variable '{env_var_name}' for '{selected_provider}' not found or empty.")
@@ -1965,6 +1992,34 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 # Check if the selected provider requires a key
                 if selected_provider in providers_requiring_key:
                     logging.error(f"API call aborted: API Key for required provider '{selected_provider}' is missing.")
+
+                    error_message_parts = [f"API Key for {selected_provider} could not be found."]
+
+                    if provider_settings:
+                        config_field_checked_msg = ""
+                        if direct_config_key_checked:
+                            if direct_config_key_empty:
+                                config_field_checked_msg = f"The 'api_key' field in your config (under [api_settings.{provider_settings_key}]) was found but is empty."
+                            # If it was checked and NOT empty, api_key_for_call would be set, so we wouldn't be here.
+                        else: # Direct 'api_key' field was not present in provider_settings
+                            config_field_checked_msg = f"The 'api_key' field was not found in your config under [api_settings.{provider_settings_key}]."
+                        error_message_parts.append(config_field_checked_msg)
+
+                        env_var_name_from_config = provider_settings.get("api_key_env_var", "").strip()
+                        if env_var_name_from_config:
+                            error_message_parts.append(f"The environment variable '{env_var_name_from_config}' (specified in config) was also checked and was not found or is empty.")
+                            error_message_parts.append(f"\nPlease set the 'api_key' field in your config or the '{env_var_name_from_config}' environment variable.")
+                        else: # No api_key_env_var configured for this provider
+                            error_message_parts.append(f"No 'api_key_env_var' was specified in your config for this provider.")
+                            error_message_parts.append(f"\nPlease set the 'api_key' field in your config under [api_settings.{provider_settings_key}].")
+                    else: # No provider_settings section at all for this provider
+                        error_message_parts.append(
+                            f"\nThe configuration section [api_settings.{provider_settings_key}] for {selected_provider} is missing entirely from your config file."
+                        )
+                        error_message_parts.append(
+                            f"Please add this section and specify how to obtain the API key (e.g., using an 'api_key' field or an 'api_key_env_var' field)."
+                        )
+
                     await chat_container.mount(
                         ChatMessage(
                             # Use Text.from_markup to handle escaped characters correctly

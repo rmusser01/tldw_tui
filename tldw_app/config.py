@@ -98,6 +98,16 @@ if _openai_mappings:
     openai_tts_mappings["models"].update(_openai_mappings.get("models", {}))
     openai_tts_mappings["voices"].update(_openai_mappings.get("voices", {}))
 
+def deep_merge_dicts(base: Dict, update: Dict) -> Dict:
+    """Recursively merges update_dict into base_dict."""
+    merged = copy.deepcopy(base)
+    for key, value in update.items():
+        if isinstance(value, dict) and key in merged and isinstance(merged[key], dict):
+            merged[key] = deep_merge_dicts(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
 
 def _get_typed_value(data_dict: Dict, key: str, default: Any, target_type: type = str) -> Any:
     """Helper to get value from dict and cast to type, with logging for type errors."""
@@ -121,7 +131,11 @@ def _get_typed_value(data_dict: Dict, key: str, default: Any, target_type: type 
         return default
 
 def load_settings() -> Dict:
-    """Loads all settings from TOML config file, environment variables, or defaults into a dictionary."""
+    """
+    Loads all settings from TOML config files, environment variables, or defaults into a dictionary.
+    It first loads a base config (e.g., server-local), then attempts to load a user-specific
+    CLI config which can override or extend the base settings.
+    """
 
     current_file_path = Path(__file__).resolve()
     # config.py is in project_root/tldw_server_api/app/core/config.py
@@ -131,40 +145,73 @@ def load_settings() -> Dict:
     logger.info(f"Determined APP_COMPONENT_ROOT for config files: {APP_COMPONENT_ROOT}")
 
     # --- Load Comprehensive Config from TOML ---
-    toml_config_data = {}
-    config_toml_path = APP_COMPONENT_ROOT / "Config_Files" / "config.toml" # This is for the server/API part
-    logger.info(f"Attempting to load comprehensive TOML config from: {str(config_toml_path)}")
+    base_config_data = {}
+    user_override_config_data = {}
+
+    # 1. Load the primary (e.g., server/application component) config file
+    # This path is assumed to be the original target for load_settings()
+    primary_config_toml_path = APP_COMPONENT_ROOT / "Config_Files" / "config.toml"
+    logger.info(f"Attempting to load primary TOML config from: {str(primary_config_toml_path)}")
     try:
-        with open(config_toml_path, "rb") as f: # TOML library recommends 'rb'
-            toml_config_data = toml.load(f)
-        logger.info(f"Successfully loaded TOML config from: {str(config_toml_path)}")
+        with open(primary_config_toml_path, "rb") as f: # Use "rb" for tomllib.load
+            base_config_data = tomllib.load(f)
+        logger.info(f"Successfully loaded primary TOML config from: {str(primary_config_toml_path)}")
     except FileNotFoundError:
-        logger.warning(f"TOML Config file not found at {config_toml_path}. Using defaults and environment variables for many settings.")
-    except toml.TomlDecodeError as e:
-        logger.error(f"Error decoding TOML config file {config_toml_path}: {e}. Using defaults and environment variables.", exc_info=True)
+        logger.warning(f"Primary TOML Config file not found at {primary_config_toml_path}. Proceeding without it.")
+    except tomllib.TOMLDecodeError as e:
+        logger.error(f"Error decoding primary TOML config file {primary_config_toml_path}: {e}. Proceeding with potentially empty base config.", exc_info=True)
     except Exception as e:
-        logger.error(f"An unexpected error occurred while loading {config_toml_path}: {e}", exc_info=True)
+        logger.error(f"An unexpected error occurred while loading primary TOML {primary_config_toml_path}: {e}. Proceeding with potentially empty base config.", exc_info=True)
 
+    # 2. Load the user-specific CLI config file (as potential overrides or additions)
+    # This is the path DEFAULT_CONFIG_PATH used by load_cli_config()
+    user_cli_config_toml_path = Path.home() / ".config" / "tldw_cli" / "config.toml"
+    logger.info(f"Attempting to load user-specific CLI TOML config for overrides from: {str(user_cli_config_toml_path)}")
+    if user_cli_config_toml_path.exists():
+        try:
+            with open(user_cli_config_toml_path, "rb") as f: # Use "rb" for tomllib.load
+                user_override_config_data = tomllib.load(f)
+            logger.info(f"Successfully loaded user-specific CLI TOML config from: {str(user_cli_config_toml_path)}")
+        except tomllib.TOMLDecodeError as e:
+            logger.error(f"Error decoding user-specific CLI TOML config file {user_cli_config_toml_path}: {e}. User overrides will not be applied from this file.", exc_info=True)
+            user_override_config_data = {} # Ensure it's empty if decode fails, to prevent merging bad data
+        except Exception as e:
+            logger.error(f"An unexpected error occurred while loading user-specific CLI TOML {user_cli_config_toml_path}: {e}. User overrides will not be applied from this file.", exc_info=True)
+            user_override_config_data = {} # Ensure it's empty on other errors
+    else:
+        logger.info(f"User-specific CLI TOML config file not found at {user_cli_config_toml_path}. No user overrides will be applied from this file.")
 
-    # --- Extract settings from TOML, with fallbacks ---
-    # Helper to get values from specific TOML sections
+    # 3. Merge configs: user_override_config_data will overwrite/extend keys in base_config_data
+    # The deep_merge_dicts function is assumed to be available in this file.
+    if user_override_config_data: # Only merge if user config was loaded and is not empty
+        toml_config_data = deep_merge_dicts(base_config_data, user_override_config_data)
+        logger.info("Merged user-specific CLI config on top of primary config for load_settings().")
+    else:
+        toml_config_data = base_config_data # Use base if no user overrides or user config was empty/failed to load
+
+    # logger.debug(f"Final toml_config_data after potential merge: {toml_config_data}") # Optional: for verbose debugging
+
+    # --- Extract settings from the (potentially merged) TOML, with fallbacks ---
+    # Helper to get values from specific TOML sections within the final toml_config_data
     def get_toml_section(section_name: str) -> Dict:
         return toml_config_data.get(section_name, {})
 
-    api_section = get_toml_section('API')
-    local_api_section = get_toml_section('LocalAPI') # Renamed for TOML convention
+    api_section = get_toml_section('API') # This will now check the merged config
+    # If [API] exists in user_override_config_data, it would have merged with/overridden base_config_data's [API]
+    # Same applies to all other sections retrieved below.
+
+    local_api_section = get_toml_section('LocalAPI')
     paths_section = get_toml_section('Paths')
-    logging_section_server = get_toml_section('Logging') # Renamed to avoid conflict with CLI logging section
+    logging_section_server = get_toml_section('Logging')
     processing_section = get_toml_section('Processing')
     chunking_section = get_toml_section('Chunking')
     embeddings_section = get_toml_section('Embeddings')
-    # prompts_section = get_toml_section('Prompts') # For specific prompt strings
     chat_dicts_section = get_toml_section('ChatDictionaries')
     auto_save_section = get_toml_section('AutoSave')
     stt_settings_section = get_toml_section('STTSettings')
     tts_settings_section = get_toml_section('TTSSettings')
-    search_engines_section = get_toml_section('SearchEngines') # Contains API keys for search engines
-    search_settings_section = get_toml_section('SearchSettings') # Contains general search behavior
+    search_engines_section = get_toml_section('SearchEngines')
+    search_settings_section = get_toml_section('SearchSettings')
     web_scraper_section = get_toml_section('WebScraper')
     file_validation_section = get_toml_section('FileValidation')
 
@@ -181,7 +228,7 @@ def load_settings() -> Dict:
     user_data_base_dir_str = os.getenv("USER_DB_BASE_DIR", _get_typed_value(paths_section, "user_db_base_dir", str(default_user_data_base_dir.resolve())))
     user_data_base_dir = Path(user_data_base_dir_str)
 
-    default_main_db_path = (user_data_base_dir / str(single_user_fixed_id) / "tldw.db").resolve() # Adjusted to use resolved user_data_base_dir
+    default_main_db_path = (user_data_base_dir / str(single_user_fixed_id) / "tldw.db").resolve()
     if single_user_mode:
          # For single user, db path might be simpler or directly under project root if not user-specific
         default_main_db_path = (ACTUAL_PROJECT_ROOT / "user_databases" / "single_user" / "tldw.db").resolve()
@@ -193,7 +240,6 @@ def load_settings() -> Dict:
     users_db_configured = os.getenv("USERS_DB_ENABLED", _get_typed_value(processing_section, "users_db_enabled", "false", str)).lower() == "true"
     log_level_env = os.getenv("LOG_LEVEL", "INFO").upper()
     log_level_toml = _get_typed_value(logging_section_server, "log_level", log_level_env, str).upper()
-
 
     # --- Load specific configurations from TOML or use defaults ---
     app_tts_config = get_toml_section('AppTTSConfig') # For APP_CONFIG related values
@@ -212,7 +258,7 @@ def load_settings() -> Dict:
     openrouter_api_key = get_api_key('openrouter_api_key', 'OPENROUTER_API_KEY')
     deepseek_api_key = get_api_key('deepseek_api_key', 'DEEPSEEK_API_KEY')
     mistral_api_key = get_api_key('mistral_api_key', 'MISTRAL_API_KEY')
-    google_api_key = get_api_key('google_api_key', 'GOOGLE_API_KEY') # For Google Generative AI
+    google_api_key = get_api_key('google_api_key', 'GOOGLE_API_KEY')
     elevenlabs_api_key = get_api_key('elevenlabs_api_key', 'ELEVENLABS_API_KEY')
 
 
@@ -220,7 +266,7 @@ def load_settings() -> Dict:
         # General App
         "APP_MODE_STR": single_user_mode_str,
         "SINGLE_USER_MODE": single_user_mode,
-        "LOG_LEVEL": log_level_toml, # This is for the server/API part
+        "LOG_LEVEL": log_level_toml,
         "PROJECT_ROOT": ACTUAL_PROJECT_ROOT,
         "API_COMPONENT_ROOT": APP_COMPONENT_ROOT, # Added for clarity
 
@@ -272,7 +318,7 @@ def load_settings() -> Dict:
         },
         "google_generative_api": { # Renamed to avoid confusion with Google Search API
             'api_key': google_api_key,
-            'model': _get_typed_value(api_section, 'google_model', 'gemini-1.5-pro'),
+            'model': _get_typed_value(api_section, 'google_model', 'gemini-2.5-pro'),
             'streaming': _get_typed_value(api_section, 'google_streaming', False, bool),
             'temperature': _get_typed_value(api_section, 'google_temperature', 0.7, float),
             'top_p': _get_typed_value(api_section, 'google_top_p', 0.95, float),
@@ -888,6 +934,7 @@ local-llm = ["None"] # Add if you have a specific local-llm provider entry
 
     [api_settings.anthropic]
     api_key_env_var = "ANTHROPIC_API_KEY"
+    # api_key = "" # Less secure fallback - use env var instead
     model = "claude-3-haiku-20240307"
     temperature = 0.7
     top_p = 1.0 # Anthropic uses top_p (represented as topp in UI)
@@ -912,6 +959,7 @@ local-llm = ["None"] # Add if you have a specific local-llm provider entry
 
     [api_settings.mistralai] # Matches key in [providers]
     api_key_env_var = "MISTRAL_API_KEY"
+    # api_key = "" # Less secure fallback - use env var instead
     model = "mistral-large-latest"
     temperature = 0.7
     top_p = 1.0 # Mistral uses top_p (represented as topp in UI)
@@ -923,6 +971,7 @@ local-llm = ["None"] # Add if you have a specific local-llm provider entry
 
     [api_settings.groq]
     api_key_env_var = "GROQ_API_KEY"
+    # api_key = "" # Less secure fallback - use env var instead
     model = "llama3-70b-8192"
     temperature = 0.7
     top_p = 1.0 # Groq uses top_p (represented as maxp in UI)
@@ -934,6 +983,7 @@ local-llm = ["None"] # Add if you have a specific local-llm provider entry
 
     [api_settings.cohere]
     api_key_env_var = "COHERE_API_KEY"
+    # api_key = "" # Less secure fallback - use env var instead
     model = "command-r-plus"
     temperature = 0.3
     top_p = 0.75 # Cohere uses 'p' (represented as topp in UI)
@@ -946,6 +996,7 @@ local-llm = ["None"] # Add if you have a specific local-llm provider entry
 
     [api_settings.openrouter]
     api_key_env_var = "OPENROUTER_API_KEY"
+    # api_key = "" # Less secure fallback - use env var instead
     model = "meta-llama/Llama-3.1-8B-Instruct"
     temperature = 0.7
     top_p = 1.0 # OpenRouter uses top_p
@@ -959,6 +1010,7 @@ local-llm = ["None"] # Add if you have a specific local-llm provider entry
 
     [api_settings.huggingface]
     api_key_env_var = "HUGGINGFACE_API_KEY"
+    # api_key = "" # Less secure fallback - use env var instead
     model = "mistralai/Mixtral-8x7B-Instruct-v0.1"
     temperature = 0.7
     top_p = 1.0 # HF Inference API uses top_p
@@ -971,6 +1023,7 @@ local-llm = ["None"] # Add if you have a specific local-llm provider entry
 
     [api_settings.deepseek]
     api_key_env_var = "DEEPSEEK_API_KEY"
+    # api_key = "" # Less secure fallback - use env var instead
     model = "deepseek-chat"
     temperature = 0.7
     top_p = 1.0 # Deepseek uses top_p (represented as topp in UI)
@@ -1153,13 +1206,13 @@ top_k = 100 # Check if API supports this
 # ...
 """
 
-# --- Python dictionary representation of the default configuration for the CLI ---
-DEFAULT_CONFIG: Dict[str, Any] = tomllib.loads(CONFIG_TOML_CONTENT)
+try:
+    DEFAULT_CONFIG_FROM_TOML: Dict[str, Any] = tomllib.loads(CONFIG_TOML_CONTENT)
+except tomllib.TOMLDecodeError as e:
+    logger.critical(f"FATAL: Could not parse internal DEFAULT_CONFIG_TOML_CONTENT: {e}. Application cannot start correctly.")
+    DEFAULT_CONFIG_FROM_TOML = {} # Should not happen with valid TOML string
 
-
-# --- Configuration Loading Logic for the CLI ---
-_CONFIG_CACHE: Optional[Dict[str, Any]] = None
-
+# --- Helper for deep merging dictionaries ---
 def deep_merge_dicts(base: Dict, update: Dict) -> Dict:
     """Recursively merges update_dict into base_dict."""
     merged = copy.deepcopy(base)
@@ -1170,91 +1223,115 @@ def deep_merge_dicts(base: Dict, update: Dict) -> Dict:
             merged[key] = value
     return merged
 
+# --- Primary Configuration Loading Logic for the CLI ---
+_CONFIG_CACHE: Optional[Dict[str, Any]] = None
 
-def load_cli_config(force_reload: bool = False) -> Dict[str, Any]: # Renamed from load_config
+def load_settings(force_reload: bool = False) -> Dict[str, Any]: # Renamed from load_cli_config
+    """
+    Loads settings for the CLI application from ~/.config/tldw_cli/config.toml.
+    If the file doesn't exist, it's created with default values.
+    """
     global _CONFIG_CACHE
     if _CONFIG_CACHE is not None and not force_reload:
         return _CONFIG_CACHE
 
-    loaded_config = copy.deepcopy(DEFAULT_CONFIG)
+    # Start with the programmatic defaults defined in CONFIG_TOML_CONTENT
+    loaded_config = copy.deepcopy(DEFAULT_CONFIG_FROM_TOML)
 
     if not DEFAULT_CONFIG_PATH.exists():
-        logger.info(f"CLI Config file not found at {DEFAULT_CONFIG_PATH}. Creating with default values.")
+        logger.info(f"CLI Config file not found at {DEFAULT_CONFIG_PATH}. Creating with default values from CONFIG_TOML_CONTENT.")
         try:
             DEFAULT_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
             with open(DEFAULT_CONFIG_PATH, "w", encoding="utf-8") as f:
+                # Write the default TOML content, not the parsed dictionary
                 f.write(CONFIG_TOML_CONTENT)
             logger.info(f"Created default CLI config file at {DEFAULT_CONFIG_PATH}")
+            # Since the file was just created with defaults, loaded_config is already correct.
         except OSError as e:
-            logger.error(f"Could not create default CLI config file {DEFAULT_CONFIG_PATH}: {e}")
+            logger.error(f"Could not create default CLI config file {DEFAULT_CONFIG_PATH}: {e}. Using internal defaults.")
     else:
+        logger.info(f"Attempting to load CLI config from: {DEFAULT_CONFIG_PATH}")
         try:
             with open(DEFAULT_CONFIG_PATH, "rb") as f:
-                user_config = tomllib.load(f)
-            loaded_config = deep_merge_dicts(loaded_config, user_config)
+                user_config_from_file = tomllib.load(f)
+            # Merge user's file settings on top of the programmatic defaults
+            loaded_config = deep_merge_dicts(loaded_config, user_config_from_file)
             logger.info(f"Successfully loaded and merged CLI config from {DEFAULT_CONFIG_PATH}")
         except tomllib.TOMLDecodeError as e:
-            logger.error(f"Error decoding CLI TOML config file {DEFAULT_CONFIG_PATH}: {e}. Using default configuration.", exc_info=True)
+            logger.error(f"Error decoding CLI TOML config file {DEFAULT_CONFIG_PATH}: {e}. Using internal defaults + any previous successful load.", exc_info=True)
+            # `loaded_config` remains the programmatic defaults in this case.
         except Exception as e:
-            logger.error(f"An unexpected error occurred while loading CLI config {DEFAULT_CONFIG_PATH}: {e}. Using default configuration.", exc_info=True)
+            logger.error(f"An unexpected error occurred while loading CLI config {DEFAULT_CONFIG_PATH}: {e}. Using internal defaults + any previous successful load.", exc_info=True)
+            # `loaded_config` remains the programmatic defaults.
 
     _CONFIG_CACHE = loaded_config
+    # Log the keys of the configuration being returned to verify its structure
+    logger.debug(f"load_settings returning config with top-level keys: {list(loaded_config.keys())}")
+    if "api_settings" in loaded_config:
+        logger.debug(f"  'api_settings' found with keys: {list(loaded_config.get('api_settings', {}).keys())}")
+    else:
+        logger.warning("  'api_settings' key NOT FOUND in the loaded configuration for load_settings.")
+
     return _CONFIG_CACHE
 
 
 # --- CLI Setting Getter ---
-def get_cli_setting(section: str, key: str, default: Any = None) -> Any: # Renamed from get_setting
-    config = load_cli_config()
+def get_cli_setting(section: str, key: str, default: Any = None) -> Any:
+    """Helper to get a specific setting from the loaded CLI configuration."""
+    config = load_settings() # Ensures config is loaded
+    # Use `config.get(section, {})` to safely access potentially missing sections
+    section_data = config.get(section)
+    if isinstance(section_data, dict):
+        return section_data.get(key, default)
+    # If section is not a dict or not found, return default
     if default is not None:
-        return config.get(section, {}).get(key, default)
-    else:
-        return config.get(section, {}).get(key)
+        return default
+    # If no default and key/section not found, standard dict behavior would raise KeyError
+    # or return None if that's preferred for missing keys without defaults.
+    # For simplicity, returning None if not found and no default.
+    return None
 
 
 # --- CLI Providers and Models Getter ---
-def get_cli_providers_and_models() -> Dict[str, List[str]]: # Renamed
-    config = load_cli_config()
-    providers_data = config.get("providers", {})
+def get_cli_providers_and_models() -> Dict[str, List[str]]:
+    config = load_settings()
+    providers_data = config.get("providers", {}) # Default to empty dict if "providers" isn't there
     valid_providers: Dict[str, List[str]] = {}
     if isinstance(providers_data, dict):
         for provider, models in providers_data.items():
             if isinstance(models, list) and all(isinstance(m, str) for m in models):
                 valid_providers[provider] = models
             else:
-                logger.warning(f"Invalid model list for provider '{provider}' in CLI config [providers]. Skipping.")
+                logger.warning(f"Invalid model list for provider '{provider}' in CLI config [providers]. Models: {models}. Skipping.")
     else:
-        logger.error(f"CLI Config 'providers' section is not a dictionary. No provider/model data available.")
+        logger.error(f"CLI Config 'providers' section is not a dictionary. Found: {type(providers_data)}. No provider/model data available.")
     return valid_providers
 
 
 # --- CLI Database and Log File Path Getters ---
-BASE_DATA_DIR = Path.home() / ".local" / "share" / "tldw_cli"
+BASE_DATA_DIR_CLI = Path.home() / ".local" / "share" / "tldw_cli" # Renamed for clarity
 
 def get_chachanotes_db_path() -> Path:
-    config = load_cli_config()
-    default_db_path_str = DEFAULT_CONFIG.get("database", {}).get("chachanotes_db_path", "~/.local/share/tldw_cli/tldw_cli_data.db")
+    default_db_path_str = DEFAULT_CONFIG_FROM_TOML.get("database", {}).get("chachanotes_db_path", str(BASE_DATA_DIR_CLI / "tldw_cli_data.db"))
     db_path_str = get_cli_setting("database", "chachanotes_db_path", default_db_path_str)
     db_path = Path(db_path_str).expanduser().resolve()
-    # Directory creation is handled by the DB class constructor
     return db_path
 
 def get_prompts_db_path() -> Path:
-    config = load_cli_config()
-    default_db_path_str = DEFAULT_CONFIG.get("database", {}).get("prompts_db_path", "~/.local/share/tldw_cli/tldw_cli_prompts.db")
+    default_db_path_str = DEFAULT_CONFIG_FROM_TOML.get("database", {}).get("prompts_db_path", str(BASE_DATA_DIR_CLI / "tldw_cli_prompts.db"))
     db_path_str = get_cli_setting("database", "prompts_db_path", default_db_path_str)
     db_path = Path(db_path_str).expanduser().resolve()
     return db_path
 
 def get_media_db_path() -> Path:
-    config = load_cli_config()
-    default_db_path_str = DEFAULT_CONFIG.get("database", {}).get("media_db_path", "~/.local/share/tldw_cli/tldw_cli_media_v2.db")
+    default_db_path_str = DEFAULT_CONFIG_FROM_TOML.get("database", {}).get("media_db_path", str(BASE_DATA_DIR_CLI / "tldw_cli_media_v2.db"))
     db_path_str = get_cli_setting("database", "media_db_path", default_db_path_str)
     db_path = Path(db_path_str).expanduser().resolve()
     return db_path
 
-def get_cli_log_file_path() -> Path: # Renamed
-    chachanotes_parent_dir = get_chachanotes_db_path().parent # Log file relative to main data DB dir
-    default_log_filename = DEFAULT_CONFIG.get("logging", {}).get("log_filename", "tldw_cli_app.log")
+def get_cli_log_file_path() -> Path:
+    chachanotes_parent_dir = get_chachanotes_db_path().parent
+    default_log_filename = DEFAULT_CONFIG_FROM_TOML.get("logging", {}).get("log_filename", "tldw_cli_app.log")
     log_filename = get_cli_setting("logging", "log_filename", default_log_filename)
     log_file_path = chachanotes_parent_dir / log_filename
     try:
@@ -1264,56 +1341,77 @@ def get_cli_log_file_path() -> Path: # Renamed
     return log_file_path
 
 # --- Global CLI Database Instances ---
-# These will be initialized by initialize_all_databases()
 chachanotes_db: Optional[CharactersRAGDB] = None
 prompts_db: Optional[PromptsDatabase] = None
 media_db: Optional[MediaDatabase] = None
 
-# --- Database Initialization Function ---
+# --- Database Initialization Function (remains largely the same) ---
 def initialize_all_databases():
-    """
-    Initializes all CLI-specific databases.
-    The __init__ method of each DB class handles file creation and schema setup.
-    """
     global chachanotes_db, prompts_db, media_db
     logger.info("Initializing CLI databases...")
-
     # ChaChaNotes DB
     chachanotes_path = get_chachanotes_db_path()
     logger.info(f"Attempting to initialize ChaChaNotes_DB at: {chachanotes_path}")
     try:
         chachanotes_db = CharactersRAGDB(db_path=chachanotes_path, client_id=CLI_APP_CLIENT_ID)
         logger.success(f"ChaChaNotes_DB initialized successfully at {chachanotes_path}")
-    except (CharactersRAGDBError, ChaChaSchemaError, ChaChaConflictError, Exception) as e: # Catch specific and general errors
+    except Exception as e:
         logger.error(f"Failed to initialize ChaChaNotes_DB at {chachanotes_path}: {e}", exc_info=True)
-        chachanotes_db = None # Ensure it's None on failure
-
+        chachanotes_db = None
     # Prompts DB
     prompts_path = get_prompts_db_path()
     logger.info(f"Attempting to initialize Prompts_DB at: {prompts_path}")
     try:
         prompts_db = PromptsDatabase(db_path=prompts_path, client_id=CLI_APP_CLIENT_ID)
         logger.success(f"Prompts_DB initialized successfully at {prompts_path}")
-    except (PromptsDBError, PromptsSchemaError, PromptsConflictError, Exception) as e:
+    except Exception as e:
         logger.error(f"Failed to initialize Prompts_DB at {prompts_path}: {e}", exc_info=True)
         prompts_db = None
-
     # Media DB
     media_path = get_media_db_path()
     logger.info(f"Attempting to initialize Media_DB_v2 at: {media_path}")
     try:
         media_db = MediaDatabase(db_path=media_path, client_id=CLI_APP_CLIENT_ID)
         logger.success(f"Media_DB_v2 initialized successfully at {media_path}")
-    except (MediaDBError, MediaSchemaError, MediaConflictError, Exception) as e:
+    except Exception as e:
         logger.error(f"Failed to initialize Media_DB_v2 at {media_path}: {e}", exc_info=True)
         media_db = None
-
     logger.info("CLI database initialization complete.")
 
 
-# --- Load CLI Config and Initialize Databases on import ---
-cli_configuration = load_cli_config() # Load CLI config when module is imported
+# --- API Models (should be defined based on CONFIG_TOML_CONTENT or loaded from it) ---
+# These can be loaded dynamically from the config or kept as fallback statics
+# For simplicity, if CONFIG_TOML_CONTENT has [providers], use that.
+_temp_loaded_config_for_models = tomllib.loads(CONFIG_TOML_CONTENT)
+API_MODELS_BY_PROVIDER: Dict[str, List[str]] = {}
+LOCAL_PROVIDERS: Dict[str, List[str]] = {}
+
+_config_providers = _temp_loaded_config_for_models.get("providers", {})
+_cloud_provider_keys = ["OpenAI", "Anthropic", "Cohere", "DeepSeek", "Groq", "Google", "HuggingFace", "MistralAI", "OpenRouter"] # Example list
+
+for provider_name, models_list in _config_providers.items():
+    if isinstance(models_list, list):
+        if provider_name in _cloud_provider_keys: # Crude way to separate, adjust as needed
+            API_MODELS_BY_PROVIDER[provider_name] = models_list
+        else:
+            LOCAL_PROVIDERS[provider_name] = models_list
+    else:
+        logger.warning(f"Models for provider '{provider_name}' in CONFIG_TOML_CONTENT is not a list. Skipping.")
+
+if not API_MODELS_BY_PROVIDER and not LOCAL_PROVIDERS: # Fallback if [providers] was empty or malformed
+    logger.warning("No providers found in CONFIG_TOML_CONTENT's [providers] section. Using hardcoded fallbacks for API_MODELS_BY_PROVIDER and LOCAL_PROVIDERS.")
+    API_MODELS_BY_PROVIDER = { "OpenAI": ["gpt-4o"] } # Minimal fallback
+    LOCAL_PROVIDERS = { "Ollama": ["llama3"] } # Minimal fallback
+
+
+# --- Load CLI Config and Initialize Databases on module import ---
+# The `settings` global variable is now the result of the unified load_settings()
+settings = load_settings()
 initialize_all_databases()
+
+# Make APP_CONFIG available globally if needed by other modules that import from config.py
+# This will be the same as `settings` if `load_settings` is the sole config loader.
+APP_CONFIG_GLOBAL = settings
 
 #
 # End of tldw_cli/config.py
