@@ -2828,7 +2828,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         if ai_message_widget is None or not ai_message_widget.is_mounted:
             logging.warning(
                 "Worker '%s' finished, but its AI placeholder widget is missing or not mounted. Cannot update directly.",
-                worker_name
+                worker_name,
+                getattr(self.current_ai_message_widget, 'id', 'N/A') if self.current_ai_message_widget else 'N/A'
             )
             # Attempt to log a generic error to the main chat container if the placeholder is gone
             try:
@@ -2836,8 +2837,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 error_msg_text_str = f"[bold red]Error: AI response for worker '{worker_name}' received, but its display widget was missing. Check logs.[/]"
                 error_widget_fallback = ChatMessage(error_msg_text_str, role="System",
                                                     classes="-error")
-                self.call_soon(chat_container_fallback.mount, error_widget_fallback)
-                self.call_soon(chat_container_fallback.scroll_end, animate=False)
+                await chat_container_fallback.mount(error_widget_fallback)
+                chat_container_fallback.scroll_end(animate=False)
             except QueryError:
                 logging.error("Fallback: Could not find chat container '#%s-log' to report missing AI placeholder.",
                               prefix)
