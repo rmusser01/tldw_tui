@@ -8,6 +8,7 @@ import logging
 import logging.handlers
 import platform
 import sys
+from datetime import datetime
 from pathlib import Path
 import traceback
 import os
@@ -104,13 +105,13 @@ else:
 # --- Constants ---
 TAB_CHAT = "chat"
 TAB_CONV_CHAR = "conversations_characters"
+TAB_NOTES = "notes"
 TAB_MEDIA = "media"
 TAB_SEARCH = "search"
 TAB_INGEST = "ingest"
-TAB_LOGS = "logs"
 TAB_STATS = "stats"
-TAB_NOTES = "notes"
-ALL_TABS = [TAB_CHAT, TAB_CONV_CHAR, TAB_MEDIA, TAB_SEARCH, TAB_INGEST, TAB_LOGS, TAB_STATS, TAB_NOTES]  # Updated list
+TAB_LOGS = "logs"
+ALL_TABS = [TAB_CHAT, TAB_CONV_CHAR, TAB_NOTES, TAB_MEDIA, TAB_SEARCH, TAB_INGEST, TAB_LOGS, TAB_STATS]  # Updated list
 
 
 # FIXME - this is only referenced in the sidebar, should consolidate with the config loading so there's only one set of these
@@ -156,8 +157,14 @@ def supports_emoji() -> bool:
         # Some terminals might still render emojis with other encodings,
         # but UTF-8 is the most reliable indicator.
         # For cmd.exe, even with chcp 65001 (UTF-8), font support is the main issue.
-        pass # Don't immediately fail, let OS checks decide more
+        # Don't immediately fail, let OS checks decide more
+        #_emoji_support_cached = False
+        #return False
+        pass
 
+    #####################################
+    # 3. OS-specific checks
+    #####################################
     os_name = platform.system()
 
     if os_name == 'Windows':
@@ -231,6 +238,17 @@ FALLBACK_EDIT = "Edit"
 EMOJI_SAVE_EDIT = "💾" # Or use check/OK
 FALLBACK_SAVE_EDIT = "Save"
 
+ROCKET_EMOJI = "🚀"
+ROCKET_FALLBACK = "[Go!]"
+
+CHECK_EMOJI = "✅"
+CHECK_FALLBACK = "[OK]"
+
+CROSS_EMOJI = "❌"
+CROSS_FALLBACK = "[FAIL]"
+
+SPARKLES_EMOJI = "✨"
+SPARKLES_FALLBACK = "*"
 
 def get_char(emoji_char: str, fallback_char: str) -> str:
     """Returns the emoji if supported, otherwise the fallback."""
@@ -1457,50 +1475,116 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             if new_keywords != conversation_details.get('keywords'):  # Assuming 'keywords' can be None
                 update_data['keywords'] = new_keywords
 
-            if update_data:
-                try:
-                    if not db_instance:  # Should have been set if conversation_details was fetched
-                        logging.error("DB instance not available for update_conversation.")
-                        # self.notify("Database service not available.", severity="error")
-                        return
+            if not self.current_chat_conversation_id:
+                logging.warning("Save Conversation Details: No active chat conversation ID.")
+                self.notify("No active conversation selected.", severity="warning", timeout=3)
+                return
 
-                    success = db_instance.update_conversation(
-                        conversation_id=self.current_chat_conversation_id,
-                        update_data=update_data,
-                        expected_version=current_version
-                    )
-                    if success:
-                        logging.info(
-                            f"Successfully updated conversation {self.current_chat_conversation_id} with: {update_data}")
-                        # self.notify("Conversation details saved!", severity="information")
-                        # To ensure the next save uses the correct version, we should update our idea of the version.
-                        # A simple way is to re-fetch, or if update_conversation returned the new version, use that.
-                        # For now, let's assume a re-fetch or manual increment would be needed in a more complex scenario.
-                        # For this task, the immediate save is the focus.
-                        # To update UI if title changed on TitleBar:
-                        # if 'title' in update_data:
-                        title_bar = self.query_one(TitleBar)
-                        title_bar.reset_title()
+            conversation_id = self.current_chat_conversation_id
+            logging.info(f"Saving details for conversation ID: {conversation_id}")
+
+            try:
+                title_input = self.query_one("#chat-conversation-title-input", Input)
+                keywords_input_widget = self.query_one("#chat-conversation-keywords-input", TextArea)
+            except QueryError as e:
+                logging.error(f"Save Conversation Details: UI component not found: {e}", exc_info=True)
+                self.notify("Error accessing UI fields.", severity="error", timeout=3)
+                return
+
+            new_title = title_input.value.strip()
+            new_keywords_str = keywords_input_widget.text.strip()
+
+            if not self.notes_service:
+                logging.error("Save Conversation Details: Notes service not available.")
+                self.notify("Database service not available.", severity="error", timeout=3)
+                return
+
+            db = self.notes_service._get_db(self.notes_user_id)
+
+            try:
+                conv_details = db.get_conversation_by_id(conversation_id)
+                if not conv_details:
+                    logging.error(f"Save Conversation Details: Conversation {conversation_id} not found in DB.")
+                    self.notify("Error: Conversation not found.", severity="error", timeout=3)
+                    return
+
+                current_version = conv_details.get('version')
+                if current_version is None:
+                    logging.error(f"Save Conversation Details: Conversation {conversation_id} is missing version information.")
+                    self.notify("Error: Conversation version missing.", severity="error", timeout=3)
+                    return
+
+                title_changed = False
+                if new_title != conv_details.get('title'):
+                    logging.debug(f"Attempting title update for {conversation_id} from '{conv_details.get('title')}' to '{new_title}' at version {current_version}.")
+                    db.update_conversation(conversation_id, {'title': new_title}, current_version)
+                    current_version += 1  # Increment version locally for subsequent keyword ops
+                    title_changed = True
+                    logging.info(f"Title updated for conversation {conversation_id}. New version: {current_version}")
+                    try:
+                        self.query_one(TitleBar).update_title(f"Chat - {new_title}")
+                        logging.debug(f"TitleBar updated to: Chat - {new_title}")
+                    except QueryError:
+                        logging.error("Failed to update TitleBar after title save.")
+
+                # Keywords Update
+                all_db_keywords_list = db.get_keywords_for_conversation(conversation_id)
+                db_system_keywords_set = {kw['keyword'] for kw in all_db_keywords_list if kw['keyword'].startswith("__")}
+                db_user_keywords_map = {kw['keyword']: kw['id'] for kw in all_db_keywords_list if not kw['keyword'].startswith("__")}
+                db_user_keywords_set = set(db_user_keywords_map.keys())
+
+                ui_user_keywords_set = {kw.strip() for kw in new_keywords_str.split(',') if kw.strip() and not kw.strip().startswith("__")}
+
+                keywords_to_add = ui_user_keywords_set - db_user_keywords_set
+                keywords_to_remove = db_user_keywords_set - ui_user_keywords_set
+
+                keywords_changed = False
+
+                for keyword_text in keywords_to_add:
+                    keyword_detail = db.get_keyword_by_text(keyword_text)
+                    keyword_id_to_link = None
+                    if not keyword_detail:
+                        added_kw_id = db.add_keyword(keyword_text) # add_keyword returns int ID
+                        if isinstance(added_kw_id, int):
+                           keyword_id_to_link = added_kw_id
+                        else:
+                            logging.error(f"Failed to add keyword '{keyword_text}', received: {added_kw_id}")
+                            continue # skip if add_keyword failed
                     else:
-                        # This path might not be hit if update_conversation raises ConflictError directly
-                        logging.warning(
-                            f"Update_conversation call returned False for {self.current_chat_conversation_id}.")
-                        # self.notify("Failed to save conversation details (returned false).", severity="error")
-                except ConflictError as e:
-                    logging.error(f"Conflict saving conversation details for {self.current_chat_conversation_id}: {e}",
-                                  exc_info=True)
-                    # self.notify(f"Save conflict: {e}. Details may have been changed elsewhere. Please reload.", severity="error")
-                except CharactersRAGDBError as e:
-                    logging.error(f"DB error saving conversation details for {self.current_chat_conversation_id}: {e}",
-                                  exc_info=True)
-                    # self.notify("Database error saving details.", severity="error")
-                except Exception as e:
-                    logging.error(f"Unexpected error saving conversation details: {e}", exc_info=True)
-                    # self.notify("Unexpected error saving details.", severity="error")
-            else:
-                logging.info(
-                    f"No changes detected in title or keywords for conversation {self.current_chat_conversation_id}.")
-                # self.notify("No changes to save.", severity="info")
+                        keyword_id_to_link = keyword_detail['id']
+
+                    if keyword_id_to_link:
+                        db.link_conversation_to_keyword(conversation_id, keyword_id_to_link)
+                        logging.debug(f"Linked keyword '{keyword_text}' (ID: {keyword_id_to_link}) to conversation {conversation_id}")
+                        keywords_changed = True
+
+                for keyword_text_to_remove in keywords_to_remove:
+                    keyword_id_to_unlink = db_user_keywords_map.get(keyword_text_to_remove)
+                    if keyword_id_to_unlink:
+                        db.unlink_conversation_from_keyword(conversation_id, keyword_id_to_unlink)
+                        logging.debug(f"Unlinked keyword '{keyword_text_to_remove}' (ID: {keyword_id_to_unlink}) from conversation {conversation_id}")
+                        keywords_changed = True
+
+                if title_changed or keywords_changed:
+                    self.notify("Conversation details saved!", severity="information", timeout=3)
+                    logging.info(f"Details saved for conversation {conversation_id}. Title changed: {title_changed}, Keywords changed: {keywords_changed}")
+                    # Refresh keywords in UI to reflect any changes (e.g. from add_keyword if casing was off)
+                    final_db_keywords = db.get_keywords_for_conversation(conversation_id)
+                    final_user_keywords = [kw['keyword'] for kw in final_db_keywords if not kw['keyword'].startswith("__")]
+                    keywords_input_widget.text = ", ".join(final_user_keywords)
+                else:
+                    self.notify("No changes to save.", severity="information", timeout=2)
+                    logging.info(f"No changes detected to save for conversation {conversation_id}.")
+
+            except ConflictError as e:
+                logging.error(f"Conflict saving conversation details for {conversation_id}: {e}", exc_info=True)
+                self.notify(f"Save conflict: {e}. Please reload.", severity="error", timeout=5)
+            except CharactersRAGDBError as e:
+                logging.error(f"DB error saving conversation details for {conversation_id}: {e}", exc_info=True)
+                self.notify("Database error saving details.", severity="error", timeout=3)
+            except Exception as e:
+                logging.error(f"Unexpected error saving conversation details for {conversation_id}: {e}", exc_info=True)
+                self.notify("Unexpected error saving details.", severity="error", timeout=3)
             return
 
         if button_id == "chat-conversation-load-selected-button":
@@ -1525,16 +1609,45 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                         return
 
                     # Populate title and keywords fields
-                    title_input = self.query_one("#chat-conversation-title-input", Input)
-                    title_input.value = conv_details.get('title', '')
+                    try:
+                        title_input = self.query_one("#chat-conversation-title-input", Input)
+                        title_input.value = conv_details.get('title', '')
+                        logging.debug(f"Set #chat-conversation-title-input to: {conv_details.get('title', '')}")
+                    except QueryError:
+                        logging.error("Failed to find #chat-conversation-title-input to update.")
 
-                    keywords_input = self.query_one("#chat-conversation-keywords-input", TextArea)
-                    keywords_input.text = conv_details.get('keywords', '')
+                    try:
+                        uuid_display = self.query_one("#chat-conversation-uuid-display", Input)
+                        uuid_display.value = loaded_conversation_id
+                        logging.debug(f"Set #chat-conversation-uuid-display to: {loaded_conversation_id}")
+                    except QueryError:
+                        logging.error("Failed to find #chat-conversation-uuid-display to update.")
+
+                    try:
+                        keywords_input = self.query_one("#chat-conversation-keywords-input", TextArea)
+                        all_keywords_list = db.get_keywords_for_conversation(loaded_conversation_id)
+                        visible_keywords = [kw['keyword'] for kw in all_keywords_list if not kw['keyword'].startswith("__")]
+                        keywords_input.text = ", ".join(visible_keywords)
+                        logging.debug(f"Set #chat-conversation-keywords-input to: {', '.join(visible_keywords)}")
+                    except CharactersRAGDBError as e_kw_db:
+                        logging.error(f"Database error fetching keywords for conversation {loaded_conversation_id}: {e_kw_db}", exc_info=True)
+                        if 'keywords_input' in locals(): keywords_input.text = "Error loading keywords."
+                    except QueryError:
+                        logging.error("Failed to find #chat-conversation-keywords-input to update.")
+                    except Exception as e_kw_gen:
+                        logging.error(f"Unexpected error processing keywords for conversation {loaded_conversation_id}: {e_kw_gen}", exc_info=True)
+                        if 'keywords_input' in locals(): keywords_input.text = "Unexpected error loading keywords."
+
 
                     # Update the main TitleBar
-                    title_bar = self.query_one(TitleBar)
-                    title_bar.update_title(f"Chat - {conv_details.get('title', 'Untitled Conversation')}")
-
+                    try:
+                        title_bar = self.query_one(TitleBar)
+                        title_bar.update_title(f"Chat - {conv_details.get('title', 'Untitled Conversation')}")
+                        logging.debug(f"Updated TitleBar title for conversation {loaded_conversation_id}")
+                    except QueryError:
+                        logging.error("Failed to find TitleBar to update.")
+                    except Exception as e_title_bar:
+                        logging.error(f"Unexpected error updating TitleBar: {e_title_bar}", exc_info=True)
                     # Clear existing messages from chat log
                     chat_log = self.query_one("#chat-log", VerticalScroll)
                     await chat_log.remove_children()
@@ -1769,6 +1882,127 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 logging.error(f"Unexpected error saving keywords for note {self.current_selected_note_id}: {e}",
                               exc_info=True)
                 # self.notify("Unexpected error saving keywords.", severity="error")
+            return
+
+        # --- New Chat Button ---
+        elif event.button.id == "chat-new-conversation-button":
+            logging.info("New Chat button pressed.")
+            try:
+                new_chat_title = f"Untitled_Chat-{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}"
+                logging.debug(f"Generated new chat title: {new_chat_title}")
+
+                if not self.notes_service:
+                    logging.error("Notes service is not available. Cannot create new chat.")
+                    # self.notify("Database service not available.", severity="error") # If notifier is set up
+                    return
+
+                db = self.notes_service._get_db(self.notes_user_id)
+                new_conversation_id = None
+                try:
+                    new_conversation_id = db.add_conversation({'title': new_chat_title, 'character_id': None})
+                    if not new_conversation_id:
+                        logging.error("db.add_conversation returned None for new chat.")
+                        # self.notify("Failed to create new conversation in database.", severity="error")
+                        return
+                    logging.info(f"New conversation created with ID: {new_conversation_id} and title: {new_chat_title}")
+                except ConflictError as e:
+                    logging.error(f"Conflict error creating new conversation: {e}", exc_info=True)
+                    # self.notify("Failed to create conversation: Conflict.", severity="error")
+                    return
+                except CharactersRAGDBError as e:
+                    logging.error(f"Database error creating new conversation: {e}", exc_info=True)
+                    # self.notify("Database error creating conversation.", severity="error")
+                    return
+                except Exception as e:
+                    logging.error(f"Unexpected error creating new conversation: {e}", exc_info=True)
+                    # self.notify("Unexpected error creating conversation.", severity="error")
+                    return
+
+                self.current_chat_conversation_id = new_conversation_id
+                logging.debug(f"Set current_chat_conversation_id to: {new_conversation_id}")
+
+                system_keywords = ["__regular_chat", "user_chat"]
+                for keyword_text in system_keywords:
+                    keyword_id = None
+                    try:
+                        keyword_details = db.get_keyword_by_text(keyword_text)
+                        if keyword_details and 'id' in keyword_details:
+                            keyword_id = keyword_details['id']
+                            logging.debug(f"Found existing keyword '{keyword_text}' with ID: {keyword_id}")
+                        else:
+                            # add_keyword in ChaChaNotes_DB handles undeletion or creation.
+                            # It's expected to return an int ID.
+                            keyword_id_result = db.add_keyword(keyword_text) # Pass only keyword_text
+                            if isinstance(keyword_id_result, int):
+                                keyword_id = keyword_id_result
+                                logging.info(f"Added/Undeleted keyword '{keyword_text}' with ID: {keyword_id}")
+                            else: # Should not happen if add_keyword works as expected
+                                logging.error(f"Failed to add/get keyword '{keyword_text}'. Result: {keyword_id_result}")
+                                continue # Skip linking this keyword
+                    except CharactersRAGDBError as e:
+                        logging.error(f"Database error getting/adding keyword '{keyword_text}': {e}", exc_info=True)
+                        continue # Skip linking this keyword
+                    except Exception as e:
+                        logging.error(f"Unexpected error processing keyword '{keyword_text}': {e}", exc_info=True)
+                        continue # Skip linking this keyword
+
+                    if keyword_id:
+                        try:
+                            db.link_conversation_to_keyword(new_conversation_id, keyword_id)
+                            logging.debug(f"Linked keyword '{keyword_text}' (ID: {keyword_id}) to conversation {new_conversation_id}")
+                        except CharactersRAGDBError as e:
+                            logging.error(f"Database error linking keyword '{keyword_text}' to conversation {new_conversation_id}: {e}", exc_info=True)
+                        except Exception as e:
+                            logging.error(f"Unexpected error linking keyword '{keyword_text}': {e}", exc_info=True)
+
+                # Update UI elements
+                try:
+                    title_input_widget = self.query_one("#chat-conversation-title-input", Input)
+                    title_input_widget.value = new_chat_title
+                    logging.debug(f"Set #chat-conversation-title-input to: {new_chat_title}")
+                except QueryError:
+                    logging.error("Failed to find #chat-conversation-title-input to update.")
+
+                try:
+                    keywords_input_widget = self.query_one("#chat-conversation-keywords-input", TextArea)
+                    keywords_input_widget.text = "" # System keywords are hidden
+                    logging.debug("Cleared #chat-conversation-keywords-input.")
+                except QueryError:
+                    logging.error("Failed to find #chat-conversation-keywords-input to clear.")
+
+                try:
+                    uuid_display_widget = self.query_one("#chat-conversation-uuid-display", Input)
+                    uuid_display_widget.value = new_conversation_id
+                    logging.debug(f"Set #chat-conversation-uuid-display to: {new_conversation_id}")
+                except QueryError:
+                    logging.error("Failed to find #chat-conversation-uuid-display to update.")
+
+                try:
+                    chat_log_widget = self.query_one("#chat-log", VerticalScroll)
+                    await chat_log_widget.remove_children()
+                    logging.debug("Cleared #chat-log.")
+                except QueryError:
+                    logging.error("Failed to find #chat-log to clear messages.")
+
+                try:
+                    title_bar_widget = self.query_one(TitleBar)
+                    title_bar_widget.update_title(f"Chat - {new_chat_title}")
+                    logging.debug(f"Updated TitleBar title to: Chat - {new_chat_title}")
+                except QueryError:
+                    logging.error("Failed to find TitleBar to update title.")
+
+                try:
+                    chat_input_widget = self.query_one("#chat-input", TextArea)
+                    chat_input_widget.focus()
+                    logging.debug("Focused #chat-input.")
+                except QueryError:
+                    logging.error("Failed to find #chat-input to focus.")
+
+                logging.info(f"Successfully initialized new chat session: {new_conversation_id}")
+
+            except Exception as e: # Catch-all for unexpected issues during the "New Chat" process
+                logging.error(f"An unexpected error occurred during 'New Chat' button processing: {e}", exc_info=True)
+                # self.notify("An unexpected error occurred while starting a new chat.", severity="error")
             return
 
         # --- Send Message ---

@@ -14,7 +14,7 @@ from urllib3 import Retry
 
 from tldw_app.Chat.Chat_Deps import ChatProviderError, ChatBadRequestError, ChatConfigurationError
 from tldw_app.Utils.Utils import logging
-from tldw_app.config import load_settings
+from tldw_app.config import load_settings, settings
 
 
 ####################
@@ -234,14 +234,16 @@ def chat_with_local_llm(
         tool_choice: Optional[Union[str, Dict[str, Any]]] = None,
 ):
     if model and (model.lower() == "none" or model.strip() == ""): model = None
-    loaded_config_data = load_settings()
-    cfg_section = 'local_llm' # Generic section for "local-llm" type
-    cfg = loaded_config_data.get(cfg_section, {})
 
-    api_base_url = cfg.get('api_ip', 'http://127.0.0.1:8080') # Default from config
-    api_key = cfg.get('api_key') # Local servers might not need a key
+    # --- Settings Load ---
+    cfg = settings.get('local_llm', {})
+    api_base_url = cfg.get('api_ip')  # api_url passed via chat_api_call or from config
+    if not api_base_url:
+        raise ChatConfigurationError(
+            provider="local_llm",
+            message="Llamafile/Local LLM API URL (api_url) is required and could not be determined from arguments or configuration."
+        )
 
-    current_model = model or cfg.get('model')
     current_temp = temp if temp is not None else float(cfg.get('temperature', 0.7))
     current_streaming = streaming if streaming is not None else cfg.get('streaming', False)
     current_top_k = top_k if top_k is not None else cfg.get('top_k')
@@ -269,14 +271,11 @@ def chat_with_local_llm(
     if isinstance(current_streaming, str): current_streaming = current_streaming.lower() == "true"
     if isinstance(current_logprobs, str): current_logprobs = current_logprobs.lower() == "true"
 
-    if custom_prompt_arg:
-        logging.info(f"{cfg_section}: 'custom_prompt_arg' received. Ensure it's incorporated into 'input_data' or 'system_message' by the calling function if intended for the prompt, as this handler uses OpenAI message format.")
-
     return _chat_with_openai_compatible_local_server(
         api_base_url=api_base_url,
-        model_name=current_model,
+        model_name=None if model is None else model.strip(),
         input_data=input_data,
-        api_key=api_key,
+        api_key=None,
         temp=current_temp,
         system_message=system_message,
         streaming=current_streaming,
@@ -296,7 +295,7 @@ def chat_with_local_llm(
         logprobs=current_logprobs,
         top_logprobs=current_top_logprobs,
         user_identifier=current_user_identifier,
-        provider_name=cfg_section.capitalize(),
+        provider_name=cfg.capitalize(),
         timeout=timeout,
         api_retries=api_retries,
         api_retry_delay=api_retry_delay
@@ -330,15 +329,23 @@ def chat_with_llama(
         api_url: Optional[str] = None # This is specific to this function's call from API_CALL_HANDLERS if special handling exists
 ):
     if model and (model.lower() == "none" or model.strip() == ""): model = None
-    loaded_config_data = load_settings()
-    cfg = loaded_config_data.get('llama_api', {})
 
-    current_api_base_url = api_url or cfg.get('api_ip')
-    if not current_api_base_url:
-        raise ChatConfigurationError(provider="llama.cpp", message="Llama.cpp API URL/IP is required but not found in config or arguments.")
-
+    # --- Settings Load ---
+    cfg = settings.get('kobold_api', {})
+    api_base_url = cfg.get('api_ip')  # api_url passed via chat_api_call or from config
+    if not api_base_url:
+        raise ChatConfigurationError(
+            provider="llama_api",
+            message="Llama.cpp API URL (api_url) is required and could not be determined from arguments or configuration."
+        )
     current_api_key = api_key or cfg.get('api_key')
     current_model = model or cfg.get('model')
+    if not current_model:
+        raise ChatConfigurationError(
+            provider="llama_api",
+            message="Llama.cpp API model name is required and could not be determined from arguments or configuration."
+        )
+
     current_temp = temp if temp is not None else float(cfg.get('temperature', 0.7)) # llama.cpp native name is temperature
     current_streaming = streaming if streaming is not None else cfg.get('streaming', False)
     current_top_k = top_k if top_k is not None else cfg.get('top_k')
@@ -369,7 +376,7 @@ def chat_with_llama(
 
     # Assuming llama.cpp server uses an OpenAI-compatible endpoint
     return _chat_with_openai_compatible_local_server(
-        api_base_url=current_api_base_url,
+        api_base_url=api_base_url,
         model_name=current_model,
         input_data=input_data,
         api_key=current_api_key,
@@ -415,17 +422,22 @@ def chat_with_kobold(
 ):
     if model and (model.lower() == "none" or model.strip() == ""): model = None
     logging.debug("KoboldAI (Native): Chat request starting...")
-    loaded_config_data = load_settings()
-    cfg = loaded_config_data.get('kobold_api', {})
 
+    # --- Settings Load ---
+    cfg = settings.get('kobold_api', {})
+    api_base_url = cfg.get('api_ip')  # api_url passed via chat_api_call or from config
+    if not api_base_url:
+        raise ChatConfigurationError(
+            provider="kobold_api",
+            message="Kobold API URL (api_url) is required and could not be determined from arguments or configuration."
+        )
     current_api_key = api_key or cfg.get('api_key')
-    api_url = cfg.get('api_ip') # URL for /api/v1/generate
-    # Kobold's native /api/v1/generate doesn't take 'model' in payload, it's server-fixed.
-    # The 'model' param from chat_api_call is noted here if cfg needs it for other reasons.
-    # cfg_model = model or cfg.get('model') # if needed for logic, not for payload
-
-    if not api_url:
-        raise ChatConfigurationError(provider="kobold", message="KoboldAI API URL (api_ip) is required but not found.")
+    current_model = model or cfg.get('model')
+    if not current_model:
+        raise ChatConfigurationError(
+            provider="kobold_api",
+            message="Kobold API model name is required and could not be determined from arguments or configuration."
+        )
 
     current_temp = temp if temp is not None else float(cfg.get('temperature', 0.7)) # Kobold native 'temp'
     current_top_k = top_k if top_k is not None else cfg.get('top_k')
@@ -494,7 +506,7 @@ def chat_with_kobold(
     if cfg.get('rep_pen') is not None: payload['rep_pen'] = float(cfg['rep_pen'])
     # Other kobold params: typical_p, tfs, top_a, etc. could be added from cfg
 
-    logging.debug(f"KoboldAI (Native): Posting to {api_url}. Prompt (first 200 chars): '{final_prompt_string[:200]}...'")
+    logging.debug(f"KoboldAI (Native): Posting to {api_base_url}. Prompt (first 200 chars): '{final_prompt_string[:200]}...'")
     logging.debug(f"KoboldAI (Native) Payload details: {payload}")
 
 
@@ -505,7 +517,7 @@ def chat_with_kobold(
         session.mount("http://", adapter)
         session.mount("https://", adapter)
 
-        response = session.post(api_url, headers=headers, json=payload, timeout=timeout)
+        response = session.post(api_base_url, headers=headers, json=payload, timeout=timeout)
         response.raise_for_status()
         response_data = response.json()
 
@@ -557,16 +569,22 @@ def chat_with_oobabooga(
     api_url: Optional[str] = None # Specific, not from generic map unless handled
 ):
     if model and (model.lower() == "none" or model.strip() == ""): model = None
-    loaded_config_data = load_settings()
-    cfg = loaded_config_data.get('ooba_api', {})
 
-    current_api_base_url = api_url or cfg.get('api_ip')
-    if not current_api_base_url:
-        raise ChatConfigurationError(provider="ooba", message="Oobabooga API URL/IP is required.")
-
-    # Oobabooga's OpenAI extension usually doesn't require an API key, but can be passed if set
+    # --- Settings Load ---
+    cfg = settings.get('ooba_api', {})
+    api_base_url = cfg.get('api_ip')  # api_url passed via chat_api_call or from config
+    if not api_base_url:
+        raise ChatConfigurationError(
+            provider="ooba_api",
+            message="Ooba API URL (api_url) is required and could not be determined from arguments or configuration."
+        )
     current_api_key = api_key or cfg.get('api_key')
-    current_model = model or cfg.get('model') # Model loaded in Ooba, can be passed in payload
+    current_model = model or cfg.get('model')
+    if not current_model:
+        raise ChatConfigurationError(
+            provider="ooba_api",
+            message="Ooba API model name is required and could not be determined from arguments or configuration."
+        )
 
     current_temp = temp if temp is not None else float(cfg.get('temperature', 0.7)) # ooba native 'temperature'
     current_streaming = streaming if streaming is not None else cfg.get('streaming', False)
@@ -593,7 +611,7 @@ def chat_with_oobabooga(
 
     # Oobabooga with OpenAI extension uses the generic OpenAI compatible handler
     return _chat_with_openai_compatible_local_server(
-        api_base_url=current_api_base_url,
+        api_base_url=api_base_url,
         model_name=current_model,
         input_data=input_data,
         api_key=current_api_key,
@@ -641,28 +659,24 @@ def chat_with_tabbyapi(
     # Add them to signature if TabbyAPI (OpenAI compatible) supports them.
 ):
     if model and (model.lower() == "none" or model.strip() == ""): model = None
-    loaded_config_data = load_settings()
-    cfg = loaded_config_data.get('tabby_api', {})
 
-    api_base_url = cfg.get('api_ip')
+    # --- Settings Load ---
+    cfg = settings.get('tabby_api', {})
+    api_base_url = cfg.get('api_url')  # api_url passed via chat_api_call or from config
     if not api_base_url:
-        raise ChatConfigurationError(provider="tabbyapi", message="TabbyAPI URL (api_ip) is required.")
-
+        raise ChatConfigurationError(
+            provider="tabby_api",
+            message="Tabby_API API URL (api_url) is required and could not be determined from arguments or configuration."
+        )
     current_api_key = api_key or cfg.get('api_key')
     current_model = model or cfg.get('model')
-    # TabbyAPI's map uses 'temp' for 'temperature', which matches generic.
-    # So, current_temp = temperature (from chat_api_call's temp arg)
-    # Your map has: 'temp': 'temperature'. This seems like an error in the map, it should be:
-    # 'temperature': 'temperature' (if tabby expects 'temperature') or
-    # 'temp': 'temp' (if tabby expects 'temp' and generic is 'temp').
-    # Assuming generic is 'temp' and TabbyAPI also takes 'temp' or 'temperature'.
-    # If PROVIDER_PARAM_MAP has 'temp':'temperature', then chat_api_call passes `temp` as `temperature` kwarg.
-    # Let's assume tabby expects 'temperature' based on common OpenAI compat.
-    # The `temp` param in this function signature comes from `PROVIDER_PARAM_MAP` key `temperature` and its value `temp`
-    # This is confusing. Let's assume `temp` is the actual parameter name for Tabby from your map.
+    if not current_model:
+        raise ChatConfigurationError(
+            provider="tabby_api",
+            message="Tabby_API model name is required and could not be determined from arguments or configuration."
+        )
+
     current_temp_val = temp if temp is not None else float(cfg.get('temperature', cfg.get('temp', 0.7)))
-
-
     current_streaming = streaming if streaming is not None else cfg.get('streaming', False)
     current_top_k = top_k if top_k is not None else cfg.get('top_k')
     current_top_p = top_p if top_p is not None else cfg.get('top_p')
@@ -729,17 +743,22 @@ def chat_with_vllm(
                                        # Could be loaded from cfg or passed if chat_api_call handles it
 ):
     if model and (model.lower() == "none" or model.strip() == ""): model = None
-    loaded_config_data = load_settings()
-    cfg = loaded_config_data.get('vllm_api', {})
 
-    # vllm_api_url is a specific argument for this function if it's set up in API_CALL_HANDLERS call
-    # otherwise, it falls back to config.
-    current_api_base_url = vllm_api_url or cfg.get('api_ip')
-    if not current_api_base_url:
-        raise ChatConfigurationError(provider="vllm", message="vLLM API URL (api_ip / vllm_api_url) is required.")
-
-    current_api_key = api_key or cfg.get('api_key') # vLLM might not require a key
+    # --- Settings Load ---
+    cfg = settings.get('vllm_api', {})
+    vllm_api_url = cfg.get('api_url')  # api_url passed via chat_api_call or from config
+    if not vllm_api_url:
+        raise ChatConfigurationError(
+            provider="vllm",
+            message="vLLM API URL (api_url) is required and could not be determined from arguments or configuration."
+        )
+    current_api_key = api_key or cfg.get('api_key')
     current_model = model or cfg.get('model')
+    if not current_model:
+        raise ChatConfigurationError(
+            provider="vllm",
+            message="vLLM model name is required and could not be determined from arguments or configuration."
+        )
 
     current_temp = temperature if temperature is not None else float(cfg.get('temperature', 0.7)) # func arg 'temperature' is vLLM's name
     current_streaming = streaming if streaming is not None else cfg.get('streaming', False)
@@ -771,7 +790,7 @@ def chat_with_vllm(
         logging.info("vLLM: 'custom_prompt_input' received. Ensure incorporated if needed.")
 
     return _chat_with_openai_compatible_local_server(
-        api_base_url=current_api_base_url,
+        api_base_url=vllm_api_url,
         model_name=current_model,
         input_data=input_data,
         api_key=current_api_key,
@@ -826,23 +845,22 @@ def chat_with_aphrodite(
     # top_logprobs, tools, tool_choice not in Aphrodite's map currently
 ):
     if model and (model.lower() == "none" or model.strip() == ""): model = None
-    loaded_config_data = load_settings()
-    cfg = loaded_config_data.get('aphrodite_api', {})
 
-    api_base_url = cfg.get('api_ip')
+    # --- Settings Load ---
+    cfg = settings.get('aphrodite_api', {})
+    api_base_url = cfg.get('api_url')  # api_url passed via chat_api_call or from config
     if not api_base_url:
-        raise ChatConfigurationError(provider="aphrodite", message="Aphrodite API URL (api_ip) is required.")
-
+        raise ChatConfigurationError(
+            provider="aphrodite",
+            message="Aphrodite API URL (api_url) is required and could not be determined from arguments or configuration."
+        )
     current_api_key = api_key or cfg.get('api_key')
-    # Aphrodite might require a key if it's a hosted service or proxying to OpenAI
-    if not current_api_key and "127.0.0.1" not in api_base_url and "localhost" not in api_base_url:
-        logging.warning("Aphrodite: API key is missing and URL doesn't look local. This might be required.")
-
     current_model = model or cfg.get('model')
-    if not current_model: # Model is usually required for OpenAI compatible
-        # Some servers might have a default, but it's better to be explicit.
-        logging.warning("Aphrodite: Model name is not specified. The server might use a default or fail.")
-
+    if not current_model:
+        raise ChatConfigurationError(
+            provider="aphrodite",
+            message="Aphrodite model name is required and could not be determined from arguments or configuration."
+        )
 
     current_temp = temperature if temperature is not None else float(cfg.get('temperature', 0.7))
     current_streaming = streaming if streaming is not None else cfg.get('streaming', False)
@@ -913,7 +931,7 @@ def chat_with_ollama(
     num_predict: Optional[int] = None,      # from map (mapped from generic 'max_tokens')
     seed: Optional[int] = None,             # from map
     stop: Optional[Union[str, List[str]]] = None, # from map
-    format_str: Optional[str] = None,       # from map (mapped from generic 'response_format', e.g. "json")
+    format: Optional[str] = None,       # from map (mapped from generic 'response_format', e.g. "json")
                                             # _chat_with_openai_compatible_local_server expects dict {"type": "json_object"}
     presence_penalty: Optional[float] = None, # from map
     frequency_penalty: Optional[float] = None, # from map
@@ -923,18 +941,24 @@ def chat_with_ollama(
     # logit_bias, n (num_choices), user_identifier, logprobs, top_logprobs, tools, tool_choice, min_p
     # Add to signature and pass if Ollama supports them.
 ):
+    format_str = format  # 'format' is the key in PROVIDER_PARAM_MAP, but we use 'format_str' for clarity
     if model and (model.lower() == "none" or model.strip() == ""): model = None
-    loaded_config_data = load_settings()
-    cfg = loaded_config_data.get('ollama_api', {})
 
-    current_api_base_url = api_url or cfg.get('api_url') # api_url from args takes precedence
+    # --- Settings Load ---
+    cfg = settings.get('ollama_api', {})
+    current_api_base_url = api_url or cfg.get('api_url')  # api_url passed via chat_api_call or from config
     if not current_api_base_url:
-        raise ChatConfigurationError(provider="ollama", message="Ollama API URL (api_url) is required.")
-
-    current_api_key = api_key # Ollama generally doesn't use an API key, but pass if provided
+        raise ChatConfigurationError(
+            provider="ollama",
+            message="Ollama API URL (api_url) is required and could not be determined from arguments or configuration."
+        )
+    current_api_key = api_key or cfg.get('api_key')
     current_model = model or cfg.get('model')
     if not current_model:
-        raise ChatConfigurationError(provider="ollama", message="Ollama model name is required.")
+        raise ChatConfigurationError(
+            provider="ollama",
+            message="Ollama model name is required and could not be determined from arguments or configuration."
+        )
 
     current_temp = temperature if temperature is not None else float(cfg.get('temperature', 0.7)) # Ollama uses 'temperature'
     current_streaming = streaming if streaming is not None else cfg.get('streaming', False)
@@ -1029,21 +1053,22 @@ def chat_with_custom_openai(
     top_logprobs: Optional[int] = None
 ):
     if model and (model.lower() == "none" or model.strip() == ""): model = None
-    loaded_config_data = load_settings()
-    cfg_section = 'custom_openai_api'
-    cfg = loaded_config_data.get(cfg_section, {})
 
-    api_base_url = cfg.get('api_ip')
-    if not api_base_url:
-        raise ChatConfigurationError(provider=cfg_section, message=f"{cfg_section} API URL (api_ip) required.")
-
+    # --- Settings Load ---
+    cfg = settings.get('ollama_api', {})
+    current_api_base_url = cfg.get('api_url')  # api_url passed via chat_api_call or from config
+    if not current_api_base_url:
+        raise ChatConfigurationError(
+            provider="ollama",
+            message="Ollama API URL (api_url) is required and could not be determined from arguments or configuration."
+        )
     current_api_key = api_key or cfg.get('api_key')
-    if not current_api_key: # Custom OpenAI usually implies a key
-        raise ChatConfigurationError(provider=cfg_section, message=f"{cfg_section} API Key required.")
-
     current_model = model or cfg.get('model')
     if not current_model:
-        raise ChatConfigurationError(provider=cfg_section, message=f"{cfg_section} Model required.")
+        raise ChatConfigurationError(
+            provider="ollama",
+            message="Ollama model name is required and could not be determined from arguments or configuration."
+        )
 
     current_temp = temp if temp is not None else float(cfg.get('temperature', cfg.get('temp', 0.7))) # Mapped param is 'temp'
     current_streaming = streaming if streaming is not None else cfg.get('streaming', False)
@@ -1070,11 +1095,9 @@ def chat_with_custom_openai(
 
     if isinstance(current_streaming, str): current_streaming = current_streaming.lower() == "true"
     if isinstance(current_logprobs, str): current_logprobs = current_logprobs.lower() == "true"
-    if custom_prompt_arg:
-        logging.info(f"{cfg_section}: 'custom_prompt_arg' received. Ensure incorporated if needed.")
 
     return _chat_with_openai_compatible_local_server(
-        api_base_url=api_base_url,
+        api_base_url=current_api_base_url,
         model_name=current_model,
         input_data=input_data,
         api_key=current_api_key,
@@ -1097,7 +1120,7 @@ def chat_with_custom_openai(
         logprobs=current_logprobs,
         top_logprobs=current_top_logprobs,
         user_identifier=current_user_identifier,
-        provider_name=cfg_section.capitalize(),
+        provider_name=cfg.capitalize(),
         timeout=timeout,
         api_retries=api_retries,
         api_retry_delay=api_retry_delay

@@ -180,6 +180,12 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
         # ===================================================================
         if id_prefix == "chat":  # Assuming "chat" is the id_prefix for the main chat tab
             with Collapsible(title="Conversation Details", collapsed=False):
+                yield Button(
+                    "New Chat",
+                    id=f"{id_prefix}-new-conversation-button", # Ensures id is chat-new-conversation-button
+                    variant="primary",
+                    classes="sidebar-button"
+                )
                 yield Static("Current Conversation Title:", classes="sidebar-label")
                 yield Input(
                     id=f"{id_prefix}-conversation-title-input",
@@ -199,6 +205,14 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
                     variant="primary",
                     classes="sidebar-button"
                 )
+                uuid_display_input = Input(
+                    id=f"{id_prefix}-conversation-uuid-display", # Ensures id is chat-conversation-uuid-display
+                    placeholder="Chat UUID",
+                    # readonly=True, # Removed
+                    classes="sidebar-input"
+                )
+                uuid_display_input.disabled = True # Set disabled to True
+                yield uuid_display_input
 
             # ===================================================================
             # Prompts (only for chat tab)
