@@ -182,19 +182,17 @@ def load_settings() -> Dict:
         logger.info(f"User-specific CLI TOML config file not found at {user_cli_config_toml_path}. No user overrides will be applied from this file.")
 
     # 3. Merge configs: user_override_config_data will overwrite/extend keys in base_config_data
-    # The deep_merge_dicts function is assumed to be available in this file.
-    if user_override_config_data: # Only merge if user config was loaded and is not empty
-        toml_config_data = deep_merge_dicts(base_config_data, user_override_config_data)
-        logger.info("Merged user-specific CLI config on top of primary config for load_settings().")
-    else:
-        toml_config_data = base_config_data # Use base if no user overrides or user config was empty/failed to load
-
+    #    Start with DEFAULT_CONFIG_FROM_TOML as the absolute base to ensure all CLI sections are present.
+    toml_config_data = copy.deepcopy(DEFAULT_CONFIG_FROM_TOML) # Start with CLI defaults
+    toml_config_data = deep_merge_dicts(toml_config_data, base_config_data) # Merge primary config
+    toml_config_data = deep_merge_dicts(toml_config_data, user_override_config_data) # Merge user CLI overrides
+    logger.info("Merged all configurations: CLI Defaults < Primary Config < User CLI Config.")
     # logger.debug(f"Final toml_config_data after potential merge: {toml_config_data}") # Optional: for verbose debugging
 
     # --- Extract settings from the (potentially merged) TOML, with fallbacks ---
     # Helper to get values from specific TOML sections within the final toml_config_data
-    def get_toml_section(section_name: str) -> Dict:
-        return toml_config_data.get(section_name, {})
+    def get_toml_section(section_name: str, default_val: Optional[Dict] = None) -> Dict:
+        return toml_config_data.get(section_name, default_val if default_val is not None else {})
 
     api_section = get_toml_section('API') # This will now check the merged config
     # If [API] exists in user_override_config_data, it would have merged with/overridden base_config_data's [API]
@@ -213,6 +211,15 @@ def load_settings() -> Dict:
     search_settings_section = get_toml_section('SearchSettings')
     web_scraper_section = get_toml_section('WebScraper')
     file_validation_section = get_toml_section('FileValidation')
+    providers_section_from_toml = get_toml_section('providers')  # Get the [providers] table
+
+    final_api_settings = get_toml_section('api_settings')
+    final_logging_settings = get_toml_section('logging')
+    final_providers_settings = get_toml_section('providers')
+    final_general_settings_cli = get_toml_section('general')
+    final_database_settings_cli = get_toml_section('database')
+    final_chat_defaults_cli = get_toml_section('chat_defaults')
+    final_character_defaults_cli = get_toml_section('character_defaults')
 
     # --- Application Mode ---
     single_user_mode_str = os.getenv("APP_MODE", _get_typed_value(processing_section, "app_mode", "single")).lower()
@@ -232,6 +239,10 @@ def load_settings() -> Dict:
          # For single user, db path might be simpler or directly under project root if not user-specific
         default_main_db_path = (ACTUAL_PROJECT_ROOT / "user_databases" / "single_user" / "tldw.db").resolve()
 
+    api_section_legacy = get_toml_section('API')  # For legacy direct API key access if any
+    paths_section_legacy = get_toml_section('Paths')
+    processing_section_legacy = get_toml_section('Processing')
+    chunking_section_legacy = get_toml_section('Chunking')
 
     default_database_url = f"sqlite:///{default_main_db_path}"
     database_url = os.getenv("DATABASE_URL", _get_typed_value(paths_section, "database_url", default_database_url))
@@ -246,7 +257,7 @@ def load_settings() -> Dict:
     app_rag_search_config = get_toml_section('AppRAGSearchConfig') # For RAG_SEARCH_CONFIG
 
     # API Keys (Prioritize ENV, then TOML, then None)
-    def get_api_key(toml_key: str, env_var: str, section: Dict = api_section) -> Optional[str]:
+    def get_api_key(toml_key: str, env_var: str, section: Dict = api_section_legacy) -> Optional[str]:
         return os.getenv(env_var, section.get(toml_key))
 
     openai_api_key = get_api_key('openai_api_key', 'OPENAI_API_KEY')
@@ -265,253 +276,263 @@ def load_settings() -> Dict:
         # General App
         "APP_MODE_STR": single_user_mode_str,
         "SINGLE_USER_MODE": single_user_mode,
-        "LOG_LEVEL": log_level_toml,
+        "LOG_LEVEL": final_logging_settings.get("file_log_level", "INFO").upper(),
         "PROJECT_ROOT": ACTUAL_PROJECT_ROOT,
-        "API_COMPONENT_ROOT": APP_COMPONENT_ROOT, # Added for clarity
+        "API_COMPONENT_ROOT": APP_COMPONENT_ROOT,
+
+        # --- Pass through the full tables ---
+        "general": final_general_settings_cli,  # For TUI settings like default_tab
+        "logging": final_logging_settings,  # For TUI log settings like log_max_bytes
+        "database": final_database_settings_cli,  # For TUI DB paths
+        "api_settings": final_api_settings,  # CRUCIAL for local API calls
+        "providers": final_providers_settings,  # For UI dropdowns
+        "chat_defaults": final_chat_defaults_cli,
+        "character_defaults": final_character_defaults_cli,
 
         # Single User
         "SINGLE_USER_FIXED_ID": single_user_fixed_id,
-        "SINGLE_USER_API_KEY": single_user_api_key,
 
         # Auth
-        "DATABASE_URL": database_url,
+        "SINGLE_USER_API_KEY": get_api_key("single_user_api_key", "API_KEY", section=api_section_legacy) or "default-secret-key-for-single-user",
+        "DATABASE_URL": os.getenv("DATABASE_URL", paths_section_legacy.get("database_url",
+                                                                           f"sqlite:///{ACTUAL_PROJECT_ROOT / 'user_databases' / 'single_user' / 'tldw.db'}")),
         "USER_DB_BASE_DIR": user_data_base_dir,
         "USERS_DB_CONFIGURED": users_db_configured,
 
         # --- Configurations migrated from load_and_log_configs ---
         "anthropic_api": {
             'api_key': anthropic_api_key,
-            'model': _get_typed_value(api_section, 'anthropic_model', 'claude-3-5-sonnet-20240620'),
-            'streaming': _get_typed_value(api_section, 'anthropic_streaming', False, bool),
-            'temperature': _get_typed_value(api_section, 'anthropic_temperature', 0.7, float),
-            'top_p': _get_typed_value(api_section, 'anthropic_top_p', 0.95, float),
-            'top_k': _get_typed_value(api_section, 'anthropic_top_k', 100, int),
-            'max_tokens': _get_typed_value(api_section, 'anthropic_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(api_section, 'anthropic_api_timeout', 90, int),
-            'api_retries': _get_typed_value(api_section, 'anthropic_api_retry', 3, int), # Key name consistency
-            'api_retry_delay': _get_typed_value(api_section, 'anthropic_api_retry_delay', 5, int)
+            'model': api_section_legacy.get('anthropic_model', 'claude-3-5-sonnet-20240620'),
+            'streaming': api_section_legacy.get("anthropic_streaming", False),
+            'temperature': api_section_legacy.get('anthropic_temperature', 0.7),
+            'top_p': api_section_legacy.get('anthropic_top_p', 0.95),
+            'top_k': api_section_legacy.get('anthropic_top_k', 100),
+            'max_tokens': api_section_legacy.get('anthropic_max_tokens', 4096),
+            'api_timeout': api_section_legacy.get('anthropic_api_timeout', 90),
+            'api_retries': api_section_legacy.get('anthropic_api_retry', 3), # Key name consistency
+            'api_retry_delay': api_section_legacy.get('anthropic_api_retry_delay', 5)
         },
         "cohere_api": {
             'api_key': cohere_api_key,
-            'model': _get_typed_value(api_section, 'cohere_model', 'command-r-plus'),
-            'streaming': _get_typed_value(api_section, 'cohere_streaming', False, bool),
-            'temperature': _get_typed_value(api_section, 'cohere_temperature', 0.7, float),
-            'max_p': _get_typed_value(api_section, 'cohere_max_p', 0.95, float), # Note: check param name, Cohere might use 'p' or 'top_p'
-            'top_k': _get_typed_value(api_section, 'cohere_top_k', 100, int),
-            'max_tokens': _get_typed_value(api_section, 'cohere_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(api_section, 'cohere_api_timeout', 90, int),
-            'api_retries': _get_typed_value(api_section, 'cohere_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(api_section, 'cohere_api_retry_delay', 5, int)
+            'model': api_section_legacy.get('cohere_model', 'command-r-plus'),
+            'streaming': api_section_legacy.get('cohere_streaming', False),
+            'temperature': api_section_legacy.get('cohere_temperature', 0.7),
+            'max_p': api_section_legacy.get('cohere_max_p', 0.95), # Note: check param name, Cohere might use 'p' or 'top_p'
+            'top_k': api_section_legacy.get('cohere_top_k', 100),
+            'max_tokens': api_section_legacy.get('cohere_max_tokens', 4096),
+            'api_timeout': api_section_legacy.get('cohere_api_timeout', 90),
+            'api_retries': api_section_legacy.get('cohere_api_retry', 3),
+            'api_retry_delay': api_section_legacy.get('cohere_api_retry_delay', 5)
         },
         "deepseek_api": {
             'api_key': deepseek_api_key,
-            'model': _get_typed_value(api_section, 'deepseek_model', 'deepseek-chat'),
-            'streaming': _get_typed_value(api_section, 'deepseek_streaming', False, bool),
-            'temperature': _get_typed_value(api_section, 'deepseek_temperature', 0.7, float),
-            'top_p': _get_typed_value(api_section, 'deepseek_top_p', 0.95, float),
-            'min_p': _get_typed_value(api_section, 'deepseek_min_p', 0.05, float),
-            'max_tokens': _get_typed_value(api_section, 'deepseek_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(api_section, 'deepseek_api_timeout', 90, int),
-            'api_retries': _get_typed_value(api_section, 'deepseek_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(api_section, 'deepseek_api_retry_delay', 5, int)
+            'model': api_section_legacy.get('deepseek_model', 'deepseek-chat'),
+            'streaming': api_section_legacy.get('deepseek_streaming', False),
+            'temperature': api_section_legacy.get('deepseek_temperature', 0.7),
+            'top_p': api_section_legacy.get('deepseek_top_p', 0.95),
+            'min_p': api_section_legacy.get('deepseek_min_p', 0.05),
+            'max_tokens': api_section_legacy.get('deepseek_max_tokens', 4096),
+            'api_timeout': api_section_legacy.get('deepseek_api_timeout', 90),
+            'api_retries': api_section_legacy.get('deepseek_api_retry', 3),
+            'api_retry_delay': api_section_legacy.get('deepseek_api_retry_delay', 5)
         },
         "google_generative_api": { # Renamed to avoid confusion with Google Search API
             'api_key': google_api_key,
-            'model': _get_typed_value(api_section, 'google_model', 'gemini-2.5-pro'),
-            'streaming': _get_typed_value(api_section, 'google_streaming', False, bool),
-            'temperature': _get_typed_value(api_section, 'google_temperature', 0.7, float),
-            'top_p': _get_typed_value(api_section, 'google_top_p', 0.95, float),
-            'min_p': _get_typed_value(api_section, 'google_min_p', 0.05, float), # Check if 'min_p' is valid for Gemini
-            'max_tokens': _get_typed_value(api_section, 'google_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(api_section, 'google_api_timeout', 90, int),
-            'api_retries': _get_typed_value(api_section, 'google_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(api_section, 'google_api_retry_delay', 5, int)
+            'model': api_section_legacy.get('google_model', 'gemini-2.5-pro'),
+            'streaming': api_section_legacy.get('google_streaming', False),
+            'temperature': api_section_legacy.get('google_temperature', 0.7),
+            'top_p': api_section_legacy.get('google_top_p', 0.95),
+            'min_p': api_section_legacy.get('google_min_p', 0.05), # Check if 'min_p' is valid for Gemini
+            'max_tokens': api_section_legacy.get('google_max_tokens', 4096),
+            'api_timeout': api_section_legacy.get('google_api_timeout', 90),
+            'api_retries': api_section_legacy.get('google_api_retry', 3),
+            'api_retry_delay': api_section_legacy.get('google_api_retry_delay', 5)
         },
         "groq_api": {
             'api_key': groq_api_key,
-            'model': _get_typed_value(api_section, 'groq_model', 'llama3-70b-8192'),
-            'streaming': _get_typed_value(api_section, 'groq_streaming', False, bool),
-            'temperature': _get_typed_value(api_section, 'groq_temperature', 0.7, float),
-            'top_p': _get_typed_value(api_section, 'groq_top_p', 0.95, float),
-            'max_tokens': _get_typed_value(api_section, 'groq_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(api_section, 'groq_api_timeout', 90, int),
-            'api_retries': _get_typed_value(api_section, 'groq_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(api_section, 'groq_api_retry_delay', 5, int)
+            'model': api_section_legacy.get('groq_model', 'llama3-70b-8192'),
+            'streaming': api_section_legacy.get('groq_streaming', False),
+            'temperature': api_section_legacy.get('groq_temperature', 0.7),
+            'top_p': api_section_legacy.get('groq_top_p', 0.95),
+            'max_tokens': api_section_legacy.get('groq_max_tokens', 4096),
+            'api_timeout': api_section_legacy.get('groq_api_timeout', 90),
+            'api_retries': api_section_legacy.get('groq_api_retry', 3),
+            'api_retry_delay': api_section_legacy.get('groq_api_retry_delay', 5)
         },
         "huggingface_api": {
             'api_key': huggingface_api_key,
-            'huggingface_use_router_url_format': _get_typed_value(api_section, 'huggingface_use_router_url_format', False, bool),
-            'huggingface_router_base_url': _get_typed_value(api_section, 'huggingface_router_base_url', 'https://router.huggingface.co/hf-inference'),
-            'api_base_url': _get_typed_value(api_section, 'huggingface_api_base_url', 'https://router.huggingface.co/hf-inference/models'), # Redundant if router_base_url is used for construction
-            'model': _get_typed_value(api_section, 'huggingface_model', '/Qwen/Qwen3-235B-A22B'),
-            'streaming': _get_typed_value(api_section, 'huggingface_streaming', False, bool),
-            'temperature': _get_typed_value(api_section, 'huggingface_temperature', 0.7, float),
-            'top_p': _get_typed_value(api_section, 'huggingface_top_p', 0.95, float),
-            'min_p': _get_typed_value(api_section, 'huggingface_min_p', 0.05, float),
-            'max_tokens': _get_typed_value(api_section, 'huggingface_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(api_section, 'huggingface_api_timeout', 90, int),
-            'api_retries': _get_typed_value(api_section, 'huggingface_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(api_section, 'huggingface_api_retry_delay', 5, int)
+            'huggingface_use_router_url_format': api_section_legacy.get('huggingface_use_router_url_format', False),
+            'huggingface_router_base_url': api_section_legacy.get('huggingface_router_base_url', 'https://router.huggingface.co/hf-inference'),
+            'api_base_url': api_section_legacy.get('huggingface_api_base_url', 'https://router.huggingface.co/hf-inference/models'), # Redundant if router_base_url is used for construction
+            'model': api_section_legacy.get('huggingface_model', '/Qwen/Qwen3-235B-A22B'),
+            'streaming': api_section_legacy.get('huggingface_streaming', False),
+            'temperature': api_section_legacy.get('huggingface_temperature', 0.7),
+            'top_p': api_section_legacy.get('huggingface_top_p', 0.95),
+            'min_p': api_section_legacy.get('huggingface_min_p', 0.05),
+            'max_tokens': api_section_legacy.get('huggingface_max_tokens', 4096),
+            'api_timeout': api_section_legacy.get('huggingface_api_timeout', 90),
+            'api_retries': api_section_legacy.get('huggingface_api_retry', 3),
+            'api_retry_delay': api_section_legacy.get('huggingface_api_retry_delay', 5)
         },
         "mistral_api": {
             'api_key': mistral_api_key,
-            'model': _get_typed_value(api_section, 'mistral_model', 'mistral-large-latest'),
-            'streaming': _get_typed_value(api_section, 'mistral_streaming', False, bool),
-            'temperature': _get_typed_value(api_section, 'mistral_temperature', 0.7, float),
-            'top_p': _get_typed_value(api_section, 'mistral_top_p', 0.95, float),
-            'max_tokens': _get_typed_value(api_section, 'mistral_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(api_section, 'mistral_api_timeout', 90, int),
-            'api_retries': _get_typed_value(api_section, 'mistral_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(api_section, 'mistral_api_retry_delay', 5, int)
+            'model': api_section_legacy.get('mistral_model', 'mistral-large-latest'),
+            'streaming': api_section_legacy.get('mistral_streaming', False),
+            'temperature': api_section_legacy.get('mistral_temperature', 0.7),
+            'top_p': api_section_legacy.get('mistral_top_p', 0.95),
+            'max_tokens': api_section_legacy.get('mistral_max_tokens', 4096),
+            'api_timeout': api_section_legacy.get('mistral_api_timeout', 90),
+            'api_retries': api_section_legacy.get('mistral_api_retry', 3),
+            'api_retry_delay': api_section_legacy.get('mistral_api_retry_delay', 5)
         },
         "openrouter_api": {
             'api_key': openrouter_api_key,
-            'model': _get_typed_value(api_section, 'openrouter_model', 'microsoft/wizardlm-2-8x22b'),
-            'streaming': _get_typed_value(api_section, 'openrouter_streaming', False, bool),
-            'temperature': _get_typed_value(api_section, 'openrouter_temperature', 0.7, float),
-            'top_p': _get_typed_value(api_section, 'openrouter_top_p', 0.95, float),
-            'min_p': _get_typed_value(api_section, 'openrouter_min_p', 0.05, float),
-            'top_k': _get_typed_value(api_section, 'openrouter_top_k', 100, int),
-            'max_tokens': _get_typed_value(api_section, 'openrouter_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(api_section, 'openrouter_api_timeout', 90, int),
-            'api_retries': _get_typed_value(api_section, 'openrouter_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(api_section, 'openrouter_api_retry_delay', 5, int)
+            'model': api_section_legacy.get('openrouter_model', 'microsoft/wizardlm-2-8x22b'),
+            'streaming': api_section_legacy.get('openrouter_streaming', False),
+            'temperature': api_section_legacy.get('openrouter_temperature', 0.7),
+            'top_p': api_section_legacy.get('openrouter_top_p', 0.95),
+            'min_p': api_section_legacy.get('openrouter_min_p', 0.05),
+            'top_k': api_section_legacy.get('openrouter_top_k', 100),
+            'max_tokens': api_section_legacy.get('openrouter_max_tokens', 4096),
+            'api_timeout': api_section_legacy.get('openrouter_api_timeout', 90),
+            'api_retries': api_section_legacy.get('openrouter_api_retry', 3),
+            'api_retry_delay': api_section_legacy.get('openrouter_api_retry_delay', 5)
         },
         "openai_api": { # OpenAI specific model params, API key is separate
             'api_key': openai_api_key, # This is now the primary OpenAI API key
-            'model': _get_typed_value(api_section, 'openai_model', 'gpt-4o'),
-            'streaming': _get_typed_value(api_section, 'openai_streaming', False, bool),
-            'temperature': _get_typed_value(api_section, 'openai_temperature', 0.7, float),
-            'top_p': _get_typed_value(api_section, 'openai_top_p', 0.95, float),
-            'max_tokens': _get_typed_value(api_section, 'openai_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(api_section, 'openai_api_timeout', 90, int),
-            'api_retries': _get_typed_value(api_section, 'openai_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(api_section, 'openai_api_retry_delay', 5, int)
+            'model': api_section_legacy.get('openai_model', 'gpt-4o'),
+            'streaming': api_section_legacy.get('openai_streaming', False),
+            'temperature': api_section_legacy.get('openai_temperature', 0.7),
+            'top_p': api_section_legacy.get('openai_top_p', 0.95),
+            'max_tokens': api_section_legacy.get('openai_max_tokens', 4096),
+            'api_timeout': api_section_legacy.get('openai_api_timeout', 90),
+            'api_retries': api_section_legacy.get('openai_api_retry', 3),
+            'api_retry_delay': api_section_legacy.get('openai_api_retry_delay', 5)
         },
         "elevenlabs_api": { # Primarily for the API key, other settings in TTS
             'api_key': elevenlabs_api_key,
         },
         # Local APIs from LocalAPI section
         "kobold_api": {
-            'api_ip': _get_typed_value(api_section, 'kobold_api_IP', 'http://127.0.0.1:5000/api/v1/generate'),
-            'api_streaming_ip': _get_typed_value(api_section, 'kobold_openai_api_IP', 'http://127.0.0.1:5001/v1/chat/completions'),
-            'api_key': _get_typed_value(api_section, 'kobold_api_key', ''),
-            'streaming': _get_typed_value(api_section, 'kobold_streaming', False, bool),
-            'temperature': _get_typed_value(api_section, 'kobold_temperature', 0.7, float),
-            'top_p': _get_typed_value(api_section, 'kobold_top_p', 0.95, float),
-            'top_k': _get_typed_value(api_section, 'kobold_top_k', 100, int),
-            'max_tokens': _get_typed_value(api_section, 'kobold_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(api_section, 'kobold_api_timeout', 90, int),
-            'api_retries': _get_typed_value(api_section, 'kobold_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(api_section, 'kobold_api_retry_delay', 5, int)
+            'api_ip': api_section_legacy.get('kobold_api_IP', 'http://127.0.0.1:5000/api/v1/generate'),
+            'api_streaming_ip': api_section_legacy.get('kobold_openai_api_IP', 'http://127.0.0.1:5001/v1/chat/completions'),
+            'api_key': api_section_legacy.get('kobold_api_key', ''),
+            'streaming': api_section_legacy.get('kobold_streaming', False),
+            'temperature': api_section_legacy.get('kobold_temperature', 0.7),
+            'top_p': api_section_legacy.get('kobold_top_p', 0.95),
+            'top_k': api_section_legacy.get('kobold_top_k', 100),
+            'max_tokens': api_section_legacy.get('kobold_max_tokens', 4096),
+            'api_timeout': api_section_legacy.get('kobold_api_timeout', 90),
+            'api_retries': api_section_legacy.get('kobold_api_retry', 3),
+            'api_retry_delay': api_section_legacy.get('kobold_api_retry_delay', 5)
         },
         "llama_cpp_api": { # Renamed for clarity, assuming llama.cpp server
-            'api_ip': _get_typed_value(api_section, 'llama_api_IP', 'http://127.0.0.1:8080/v1/chat/completions'),
-            'api_key': _get_typed_value(api_section, 'llama_api_key', ''),
-            'streaming': _get_typed_value(api_section, 'llama_streaming', False, bool),
-            'temperature': _get_typed_value(api_section, 'llama_temperature', 0.7, float),
-            'top_p': _get_typed_value(api_section, 'llama_top_p', 0.95, float),
-            'min_p': _get_typed_value(api_section, 'llama_min_p', 0.05, float),
-            'top_k': _get_typed_value(api_section, 'llama_top_k', 100, int),
-            'max_tokens': _get_typed_value(api_section, 'llama_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(api_section, 'llama_api_timeout', 90, int),
-            'api_retries': _get_typed_value(api_section, 'llama_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(api_section, 'llama_api_retry_delay', 5, int)
+            'api_ip': api_section_legacy.get('llama_api_IP', 'http://127.0.0.1:8080/v1/chat/completions'),
+            'api_key': api_section_legacy.get('llama_api_key', ''),
+            'streaming': api_section_legacy.get('llama_streaming', False),
+            'temperature': api_section_legacy.get('llama_temperature', 0.7),
+            'top_p': api_section_legacy.get('llama_top_p', 0.95),
+            'min_p': api_section_legacy.get('llama_min_p', 0.05),
+            'top_k': api_section_legacy.get('llama_top_k', 100),
+            'max_tokens': api_section_legacy.get('llama_max_tokens', 4096),
+            'api_timeout': api_section_legacy.get('llama_api_timeout', 90),
+            'api_retries': api_section_legacy.get('llama_api_retry', 3),
+            'api_retry_delay': api_section_legacy.get('llama_api_retry_delay', 5)
         },
         "ooba_api": {
-            'api_ip': _get_typed_value(api_section, 'ooba_api_IP', 'http://127.0.0.1:5000/v1/chat/completions'),
-            'api_key': _get_typed_value(api_section, 'ooba_api_key', ''),
-            'streaming': _get_typed_value(api_section, 'ooba_streaming', False, bool),
-            'temperature': _get_typed_value(api_section, 'ooba_temperature', 0.7, float),
-            'top_p': _get_typed_value(api_section, 'ooba_top_p', 0.95, float),
-            'min_p': _get_typed_value(api_section, 'ooba_min_p', 0.05, float),
-            'top_k': _get_typed_value(api_section, 'ooba_top_k', 100, int),
-            'max_tokens': _get_typed_value(api_section, 'ooba_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(api_section, 'ooba_api_timeout', 90, int),
-            'api_retries': _get_typed_value(api_section, 'ooba_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(api_section, 'ooba_api_retry_delay', 5, int)
+            'api_ip': api_section_legacy.get('ooba_api_IP', 'http://127.0.0.1:5000/v1/chat/completions'),
+            'api_key': api_section_legacy.get('ooba_api_key', ''),
+            'streaming': api_section_legacy.get('ooba_streaming', False),
+            'temperature': api_section_legacy.get('ooba_temperature', 0.7),
+            'top_p': api_section_legacy.get('ooba_top_p', 0.95),
+            'min_p': api_section_legacy.get('ooba_min_p', 0.05),
+            'top_k': api_section_legacy.get('ooba_top_k', 100),
+            'max_tokens': api_section_legacy.get('ooba_max_tokens', 4096),
+            'api_timeout': api_section_legacy.get('ooba_api_timeout', 90),
+            'api_retries': api_section_legacy.get('ooba_api_retry', 3),
+            'api_retry_delay': api_section_legacy.get('ooba_api_retry_delay', 5)
         },
          "tabby_api": {
-            'api_ip': _get_typed_value(api_section, 'tabby_api_IP', 'http://127.0.0.1:5000/api/v1/generate'),
-            'api_key': _get_typed_value(api_section, 'tabby_api_key', None),
-            'model': _get_typed_value(api_section, 'tabby_model', None), # Tabby model might be part of URL or configured in Tabby
-            'streaming': _get_typed_value(api_section, 'tabby_streaming', False, bool),
-            'temperature': _get_typed_value(api_section, 'tabby_temperature', 0.7, float),
-            'top_p': _get_typed_value(api_section, 'tabby_top_p', 0.95, float),
-            'top_k': _get_typed_value(api_section, 'tabby_top_k', 100, int),
-            'min_p': _get_typed_value(api_section, 'tabby_min_p', 0.05, float),
-            'max_tokens': _get_typed_value(api_section, 'tabby_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(api_section, 'tabby_api_timeout', 90, int),
-            'api_retries': _get_typed_value(api_section, 'tabby_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(api_section, 'tabby_api_retry_delay', 5, int)
+            'api_ip': api_section_legacy.get('tabby_api_IP', 'http://127.0.0.1:5000/api/v1/generate'),
+            'api_key': api_section_legacy.get('tabby_api_key', None),
+            'model': api_section_legacy.get('tabby_model', None), # Tabby model might be part of URL or configured in Tabby
+            'streaming': api_section_legacy.get('tabby_streaming', False),
+            'temperature': api_section_legacy.get('tabby_temperature', 0.7),
+            'top_p': api_section_legacy.get('tabby_top_p', 0.95),
+            'top_k': api_section_legacy.get('tabby_top_k', 100),
+            'min_p': api_section_legacy.get('tabby_min_p', 0.05),
+            'max_tokens': api_section_legacy.get('tabby_max_tokens', 4096),
+            'api_timeout': api_section_legacy.get('tabby_api_timeout', 90),
+            'api_retries': api_section_legacy.get('tabby_api_retry', 3),
+            'api_retry_delay': api_section_legacy.get('tabby_api_retry_delay', 5)
         },
         "vllm_api": {
-            'api_ip': _get_typed_value(api_section, 'vllm_api_IP', 'http://127.0.0.1:5000/v1/chat/completions'), # Corrected key
-            'api_key': _get_typed_value(api_section, 'vllm_api_key', None),
-            'model': _get_typed_value(api_section, 'vllm_model', None),
-            'streaming': _get_typed_value(api_section, 'vllm_streaming', False, bool),
-            'temperature': _get_typed_value(api_section, 'vllm_temperature', 0.7, float),
-            'top_p': _get_typed_value(api_section, 'vllm_top_p', 0.95, float),
-            'top_k': _get_typed_value(api_section, 'vllm_top_k', 100, int),
-            'min_p': _get_typed_value(api_section, 'vllm_min_p', 0.05, float),
-            'max_tokens': _get_typed_value(api_section, 'vllm_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(api_section, 'vllm_api_timeout', 90, int),
-            'api_retries': _get_typed_value(api_section, 'vllm_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(api_section, 'vllm_api_retry_delay', 5, int)
+            'api_ip': api_section_legacy.get('vllm_api_IP', 'http://127.0.0.1:5000/v1/chat/completions'), # Corrected key
+            'api_key': api_section_legacy.get('vllm_api_key', None),
+            'model': api_section_legacy.get('vllm_model', None),
+            'streaming': api_section_legacy.get('vllm_streaming', False),
+            'temperature': api_section_legacy.get('vllm_temperature', 0.7),
+            'top_p': api_section_legacy.get('vllm_top_p', 0.95),
+            'top_k': api_section_legacy.get('vllm_top_k', 100),
+            'min_p': api_section_legacy.get('vllm_min_p', 0.05),
+            'max_tokens': api_section_legacy.get('vllm_max_tokens', 4096),
+            'api_timeout': api_section_legacy.get('vllm_api_timeout', 90),
+            'api_retries': api_section_legacy.get('vllm_api_retry', 3),
+            'api_retry_delay': api_section_legacy.get('vllm_api_retry_delay', 5)
         },
         "ollama_api": {
-            'api_url': _get_typed_value(api_section, 'ollama_api_IP', 'http://127.0.0.1:11434/api/generate'), # ollama_api_url or IP
-            'api_key': _get_typed_value(api_section, 'ollama_api_key', None), # Ollama doesn't typically use API keys
-            'model': _get_typed_value(api_section, 'ollama_model', None),
-            'streaming': _get_typed_value(api_section, 'ollama_streaming', False, bool),
-            'temperature': _get_typed_value(api_section, 'ollama_temperature', 0.7, float),
-            'top_p': _get_typed_value(api_section, 'ollama_top_p', 0.95, float),
-            'max_tokens': _get_typed_value(api_section, 'ollama_max_tokens', 4096, int), # Ollama might handle max_tokens differently (num_predict)
-            'api_timeout': _get_typed_value(api_section, 'ollama_api_timeout', 90, int),
-            'api_retries': _get_typed_value(api_section, 'ollama_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(api_section, 'ollama_api_retry_delay', 5, int)
+            'api_url': api_section_legacy.get('ollama_api_IP', 'http://127.0.0.1:11434/api/generate'), # ollama_api_url or IP
+            'api_key': api_section_legacy.get('ollama_api_key', None), # Ollama doesn't typically use API keys
+            'model': api_section_legacy.get('ollama_model', None),
+            'streaming': api_section_legacy.get('ollama_streaming', False),
+            'temperature': api_section_legacy.get('ollama_temperature', 0.7),
+            'top_p': api_section_legacy.get('ollama_top_p', 0.95),
+            'max_tokens': api_section_legacy.get('ollama_max_tokens', 4096), # Ollama might handle max_tokens differently (num_predict)
+            'api_timeout': api_section_legacy.get('ollama_api_timeout', 90),
+            'api_retries': api_section_legacy.get('ollama_api_retry', 3),
+            'api_retry_delay': api_section_legacy.get('ollama_api_retry_delay', 5)
         },
         "aphrodite_api": {
-            'api_ip': _get_typed_value(api_section, 'aphrodite_api_IP', 'http://127.0.0.1:8080/v1/chat/completions'),
-            'api_key': _get_typed_value(api_section, 'aphrodite_api_key', ''),
-            'model': _get_typed_value(api_section, 'aphrodite_model', ''),
-            'max_tokens': _get_typed_value(api_section, 'aphrodite_max_tokens', 4096, int),
-            'streaming': _get_typed_value(api_section, 'aphrodite_streaming', False, bool),
-            'api_timeout': _get_typed_value(api_section, 'aphrodite_api_timeout', 90, int), # Original used llama_api_timeout
-            'api_retries': _get_typed_value(api_section, 'aphrodite_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(api_section, 'aphrodite_api_retry_delay', 5, int)
+            'api_ip': api_section_legacy.get('aphrodite_api_IP', 'http://127.0.0.1:8080/v1/chat/completions'),
+            'api_key': api_section_legacy.get('aphrodite_api_key', ''),
+            'model': api_section_legacy.get('aphrodite_model', ''),
+            'max_tokens': api_section_legacy.get('aphrodite_max_tokens', 4096),
+            'streaming': api_section_legacy.get('aphrodite_streaming', False),
+            'api_timeout': api_section_legacy.get('aphrodite_api_timeout', 90), # Original used llama_api_timeout
+            'api_retries': api_section_legacy.get('aphrodite_api_retry', 3),
+            'api_retry_delay': api_section_legacy.get('aphrodite_api_retry_delay', 5)
         },
         "custom_openai_api": {
-            'api_ip': _get_typed_value(api_section, 'custom_openai_api_ip', 'http://127.0.0.1:5000/v1/chat/completions'),
-            'api_key': _get_typed_value(api_section, 'custom_openai_api_key', None),
-            'model': _get_typed_value(api_section, 'custom_openai_api_model', None),
-            'streaming': _get_typed_value(api_section, 'custom_openai_api_streaming', False, bool),
-            'temperature': _get_typed_value(api_section, 'custom_openai_api_temperature', 0.7, float),
-            'top_p': _get_typed_value(api_section, 'custom_openai_api_top_p', 0.95, float),
-            'min_p': _get_typed_value(api_section, 'custom_openai_api_min_p', 0.05, float), # Original used top_k, ensure consistency
-            'max_tokens': _get_typed_value(api_section, 'custom_openai_api_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(api_section, 'custom_openai_api_timeout', 90, int),
-            'api_retries': _get_typed_value(api_section, 'custom_openai_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(api_section, 'custom_openai_api_retry_delay', 5, int)
+            'api_ip': api_section_legacy.get('custom_openai_api_ip', 'http://127.0.0.1:5000/v1/chat/completions'),
+            'api_key': api_section_legacy.get('custom_openai_api_key', None),
+            'model': api_section_legacy.get('custom_openai_api_model', None),
+            'streaming': api_section_legacy.get('custom_openai_api_streaming', False),
+            'temperature': api_section_legacy.get('custom_openai_api_temperature', 0.7),
+            'top_p': api_section_legacy.get('custom_openai_api_top_p', 0.95),
+            'min_p': api_section_legacy.get('custom_openai_api_min_p', 0.05), # Original used top_k, ensure consistency
+            'max_tokens': api_section_legacy.get('custom_openai_api_max_tokens', 4096),
+            'api_timeout': api_section_legacy.get('custom_openai_api_timeout', 90),
+            'api_retries': api_section_legacy.get('custom_openai_api_retry', 3),
+            'api_retry_delay': api_section_legacy.get('custom_openai_api_retry_delay', 5)
         },
         "custom_openai_api_2": { # Ensure key names are consistent e.g. custom_openai2_api_min_p
-            'api_ip': _get_typed_value(api_section, 'custom_openai2_api_ip', 'http://127.0.0.1:5000/v1/chat/completions'),
-            'api_key': _get_typed_value(api_section, 'custom_openai2_api_key', None),
-            'model': _get_typed_value(api_section, 'custom_openai2_api_model', None),
-            'streaming': _get_typed_value(api_section, 'custom_openai2_api_streaming', False, bool),
-            'temperature': _get_typed_value(api_section, 'custom_openai2_api_temperature', 0.7, float),
-            'top_p': _get_typed_value(api_section, 'custom_openai2_api_top_p', 0.95, float), # original had custom_openai_api2_top_p
-            'min_p': _get_typed_value(api_section, 'custom_openai2_api_min_p', 0.05, float), # original had custom_openai_api2_top_k
-            'max_tokens': _get_typed_value(api_section, 'custom_openai2_api_max_tokens', 4096, int),
-            'api_timeout': _get_typed_value(api_section, 'custom_openai2_api_timeout', 90, int),
-            'api_retries': _get_typed_value(api_section, 'custom_openai2_api_retry', 3, int),
-            'api_retry_delay': _get_typed_value(api_section, 'custom_openai2_api_retry_delay', 5, int)
+            'api_ip': api_section_legacy.get('custom_openai2_api_ip', 'http://127.0.0.1:5000/v1/chat/completions'),
+            'api_key': api_section_legacy.get('custom_openai2_api_key', None),
+            'model': api_section_legacy.get('custom_openai2_api_model', None),
+            'streaming': api_section_legacy.get('custom_openai2_api_streaming', False),
+            'temperature': api_section_legacy.get('custom_openai2_api_temperature', 0.7),
+            'top_p': api_section_legacy.get('custom_openai2_api_top_p', 0.95), # original had custom_openai_api2_top_p
+            'min_p': api_section_legacy.get('custom_openai2_api_min_p', 0.05), # original had custom_openai_api2_top_k
+            'max_tokens': api_section_legacy.get('custom_openai2_api_max_tokens', 4096),
+            'api_timeout': api_section_legacy.get('custom_openai2_api_timeout', 90),
+            'api_retries': api_section_legacy.get('custom_openai2_api_retry', 3),
+            'api_retry_delay': api_section_legacy.get('custom_openai2_api_retry_delay', 5)
         },
         "llm_api_settings": { # General LLM settings
-            'default_api': _get_typed_value(api_section, 'default_api', 'openai'),
-            'local_api_timeout': _get_typed_value(api_section, 'local_api_timeout', 90, int), # Note: this was also in Local-API Settings before
-            'local_api_retries': _get_typed_value(api_section, 'local_api_retry', 3, int), # Key name consistency
-            'local_api_retry_delay': _get_typed_value(api_section, 'local_api_retry_delay', 5, int),
+            'default_api': api_section_legacy.get('default_api', 'openai'),
+            'local_api_timeout': api_section_legacy.get('local_api_timeout', 90), # Note: this was also in Local-API Settings before
+            'local_api_retries': api_section_legacy.get('local_api_retry', 3), # Key name consistency
+            'local_api_retry_delay': api_section_legacy.get('local_api_retry_delay', 5),
         },
         "output_path": _get_typed_value(paths_section, 'output_path', 'results', Path),
         "system_preferences": {
