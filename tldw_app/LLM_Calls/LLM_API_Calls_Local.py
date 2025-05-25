@@ -248,7 +248,8 @@ def chat_with_llama(  # llama.cpp server with OpenAI compatible endpoint
         top_k: Optional[int] = None,
         top_p: Optional[float] = None,
         min_p: Optional[float] = None,
-        model: Optional[str] = None  # Model name for the payload
+        model: Optional[str] = None,  # Model name for the payload
+        max_tokens: Optional[int] = None  # Optional, can be set in config
 ):
     if model == "None" or "none":
         model = None
@@ -270,7 +271,10 @@ def chat_with_llama(  # llama.cpp server with OpenAI compatible endpoint
     current_top_k = top_k if top_k is not None else cfg.get('top_k')
     current_top_p = top_p if top_p is not None else cfg.get('top_p')
     current_min_p = min_p if min_p is not None else cfg.get('min_p')
-    current_max_tokens = int(cfg.get('max_tokens', 4096))
+    if max_tokens is not None:
+        current_max_tokens = max_tokens
+    else:
+        current_max_tokens = int(cfg.get('max_tokens', 4096))
     timeout = int(cfg.get('api_timeout', 120))
     api_retries = int(cfg.get('api_retries', 1))
     api_retry_delay = int(cfg.get('api_retry_delay', 1))
@@ -672,7 +676,13 @@ def chat_with_ollama(
     system_message: Optional[str] = None, # Mapped
     model: Optional[str] = None,          # Mapped
     streaming: Optional[bool] = False,
-    top_p: Optional[float] = None         # Mapped from 'topp'
+    top_p: Optional[float] = None,         # Mapped from 'topp'
+    frequency_penalty: Optional[float] = None,  # Mapped from 'freq_pen'
+    presence_penalty: Optional[float] = None,  # Mapped from 'pres_pen'
+    seed: Optional[int] = None,              # Mapped from 'seed'
+    max_tokens: Optional[int] = None,         # Mapped from 'max_tokens'
+    stop: Optional[List[str]] = None,         # Mapped from 'stop'
+    tools: Optional[List[Dict[str, Any]]] = None,  # Mapped from 'tools'
 ):
     temp = temperature if temperature is not None else 0.7  # Default temp if not provided
     loaded_config_data = load_settings()
@@ -718,7 +728,12 @@ def chat_with_ollama(
         provider_name="Ollama",
         timeout=timeout,
         api_retries=api_retries,
-        api_retry_delay=api_retry_delay
+        api_retry_delay=api_retry_delay,
+        frequency_penalty=frequency_penalty,  # Mapped from 'freq_pen'
+        presence_penalty=presence_penalty,    # Mapped from 'pres_pen'
+        seed=seed,                            # Mapped from 'seed'
+        stop=stop,                            # Mapped from 'stop'
+        tools=tools                           # Mapped from 'tools'
     )
 
 

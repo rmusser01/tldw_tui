@@ -10,16 +10,8 @@
   - [ ] Remove the 'speak' buttons
   - 
 - **Chat Functionality**
-  - [x] API selection
-  - [x] Selection of model for API
-  - [x] Selection of temperature for API
-  - [x] Selection of Top_p for API
-  - [x] Selection of Min-P for API
-  - [ ] Selection of max tokens for current chat
   - [ ] Support for uploading files in chat
 - **Character Chat Functionality**
-  - [ ] Add support for character cards
-  - [ ] Add support for selection from multiple characters
   - [ ] Add support for multiple files
 - **Media Endpoint Functionality**
   - [ ] Add support for media endpoint
@@ -41,7 +33,6 @@
     - So requests, responses, errors, etc.
     - Also a way to file bug reports if one is encountered. (maybe from main menu?)
 - **Local DB Functionality**
-  - [ ] Add support for local storage of chats/character cards(in a sqlite db)
   - [ ] Allow for ingestion of media files that have been processed by the tldw API (process-* endpoints)
   - [ ] Allow for editing/modifications/deletion of locally stored media files/character cards/chats
 
