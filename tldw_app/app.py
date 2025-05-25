@@ -447,189 +447,123 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
     def _setup_logging(self):
         """Sets up all logging handlers, including Loguru integration."""
-        # Use standard logging for messages during this setup phase itself,
-        # as Loguru is being reconfigured.
+        # This first logging.info will go to the stderr handler from the initial basicConfig
         logging.info("--- _setup_logging START ---")
         logging.getLogger("requests").setLevel(logging.WARNING)
         logging.getLogger("urllib3").setLevel(logging.WARNING)
         logging.getLogger("httpx").setLevel(logging.WARNING)
 
-        # --- BEGIN LOGURU MANAGEMENT (Improved) ---
+        # --- BEGIN LOGURU MANAGEMENT (Your existing code is mostly fine here) ---
         try:
-            # Remove ALL existing Loguru handlers. This ensures we clear out the
-            # default stderr sink and any other sinks that might have been added
-            # by Loguru or other parts of the code before this point.
-            loguru_logger.remove()
+            loguru_logger.remove()  # Good: removes Loguru's default stderr sink
             logging.info("Loguru: All pre-existing sinks removed.")
 
-            # Now, add a handler that bridges Loguru to Python's standard logging.
-            # This PropagateHandler takes Loguru's records and passes them to standard logging.
-            class PropagateHandler(logging.Handler):
-                def emit(self, record: logging.LogRecord):  # Standard logging LogRecord
-                    # This handler is added to standard logging, but it's meant to be
-                    # used as a target for Loguru. The logic for Loguru to *send* to
-                    # standard logging is simpler.
-
-                    # Let's redefine: We want a Loguru *sink* that pushes to standard logging.
-                    # Loguru's documentation shows how to do this:
-                    # https://loguru.readthedocs.io/en/stable/overview.html#entirely-compatible-with-standard-logging
-                    pass  # This handler isn't used in the Loguru -> standard logging direction
-
-            # The official way to make Loguru messages available to standard logging:
-            # Create a standard logging handler that Loguru will write to.
-            class InterceptHandler(logging.Handler):
-                def emit(self, record):
-                    # Get corresponding Loguru level if it exists
-                    try:
-                        level = loguru_logger.level(record.levelname).name
-                    except ValueError:
-                        level = record.levelno
-
-                    # Find caller from where Loguru was logged
-                    frame, depth = logging.currentframe(), 0
-                    # IMPORTANT: Adjust depth if emit is called from another helper.
-                    # We want the frame where loguru_loguru_logger.info() etc. was called.
-                    # This simple depth calculation might need tweaking if emit is nested.
-                    # For direct calls from loguru_logger.add(InterceptHandler()), depth might be low.
-                    # If InterceptHandler is added to root logger and loguru calls logging.getLogger().log(),
-                    # then depth should find the original loguru call site.
-
-                    # A simpler approach for depth might be needed if the above is complex.
-                    # For now, let's assume a reasonable depth or let Loguru infer it.
-                    # The crucial part is that Loguru has an `opt(depth=...)`
-
-                    # Re-evaluate how to get the correct call site information
-                    # For this use case, we are configuring Loguru to send its messages
-                    # TO standard logging.
-                    # So when you call loguru_loguru_logger.info(), it should go to a sink that
-                    # then calls logging.getLogger().handle().
-
-                    # Let's use Loguru's recommended way for its messages to be caught by standard logging handlers:
-                    # Standard logging.LogRecord attributes:
-                    # record.name, record.levelno, record.pathname, record.lineno,
-                    # record.msg, record.args, record.exc_info, record.funcName
-
-                    # Create a new standard logging record from Loguru's record
-                    # This is tricky because Loguru's record object is internal.
-                    # The easiest way is for Loguru to have a sink that *calls* standard logging.
-                    pass  # This will be replaced
-
-            # --- Loguru Configuration to send its logs to standard logging handlers ---
-            # This configuration ensures that when `loguru_loguru_logger.info("...")` is called,
-            # it will be passed to your standard logging handlers (TextualHandler, RichLogHandler).
-
-            # 1. Remove any default/existing Loguru sinks.
-            loguru_logger.remove()  # Already did this above.
-
-            # 2. Add a new Loguru sink that calls the standard `logging` module.
-            #    This effectively forwards Loguru messages.
             def sink_to_standard_logging(message):
-                """
-                A Loguru sink function that takes a Loguru Message object
-                and logs it using the standard Python logging module.
-                """
-                record = message.record  # Loguru's internal record
-
-                # Map Loguru level to standard logging level
+                # ... (your existing sink_to_standard_logging function)
+                record = message.record
                 level_mapping = {
-                    "TRACE": logging.DEBUG,  # Or a custom level if you define TRACE
-                    "DEBUG": logging.DEBUG,
-                    "INFO": logging.INFO,
-                    "SUCCESS": logging.INFO,  # Standard logging doesn't have SUCCESS, map to INFO
-                    "WARNING": logging.WARNING,
-                    "ERROR": logging.ERROR,
+                    "TRACE": logging.DEBUG, "DEBUG": logging.DEBUG, "INFO": logging.INFO,
+                    "SUCCESS": logging.INFO, "WARNING": logging.WARNING, "ERROR": logging.ERROR,
                     "CRITICAL": logging.CRITICAL,
                 }
                 std_level = level_mapping.get(record["level"].name, logging.INFO)
-
-                # Get a standard logger instance (e.g., based on Loguru's record name)
                 std_logger = logging.getLogger(record["name"])
-
-                # Log using standard logger
-                # We need to pass message, and potentially exc_info etc.
-                # record["message"] is the formatted string from Loguru
                 if record["exception"]:
-                    std_logger.log(
-                        std_level,
-                        record["message"],  # Loguru has already formatted the message
-                        exc_info=record["exception"]
-                    )
+                    std_logger.log(std_level, record["message"], exc_info=record["exception"])
                 else:
-                    std_logger.log(
-                        std_level,
-                        record["message"]  # Loguru has already formatted the message
-                    )
+                    std_logger.log(std_level, record["message"])
 
-            # Add this custom sink to Loguru.
-            # You can choose a format for how Loguru prepares the message
-            # before it hits your standard logging formatters.
-            # Using a simple format here, as standard logging will reformat.
             loguru_logger.add(
                 sink_to_standard_logging,
                 format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
-                # Loguru's own formatting
-                level="TRACE"  # Capture all levels from Loguru to pass to standard logging
+                level="TRACE"
             )
+            # This log message will also currently go to the initial basicConfig stderr handler
             logging.info("Loguru: Configured to forward its messages to standard Python logging system.")
-
         except Exception as e:
+            # This log message will also currently go to the initial basicConfig stderr handler
             logging.error(f"Loguru: Error during Loguru reconfiguration: {e}", exc_info=True)
         # --- END LOGURU MANAGEMENT ---
 
-        # Configure the root logger FIRST (standard logging)
+        # --- CONFIGURE STANDARD PYTHON LOGGING ROOT LOGGER ---
         root_logger = logging.getLogger()
-        # Determine initial log level for standard logging from app_config
-        # If loguru messages are now going to standard logging, the root_logger's level
-        # will also affect if they are processed by standard logging handlers.
+
+        # !!! IMPORTANT FIX: Remove all existing handlers from the root logger !!!
+        # This will get rid of the StreamHandler (to stderr) added by the initial
+        # global logging.basicConfig() call.
+        initial_handlers_removed_count = 0
+        for handler in root_logger.handlers[:]:  # Iterate over a copy
+            root_logger.removeHandler(handler)
+            if hasattr(handler, 'close') and callable(handler.close):
+                try:
+                    handler.close()
+                except Exception:
+                    pass  # Ignore errors during close of old handlers
+            initial_handlers_removed_count += 1
+
+        # Log this removal using Loguru, as standard logging has no handlers yet.
+        # This message will go to Loguru's sink (which forwards to std logging,
+        # but std logging has no handlers yet, so it might hit Python's "last resort" stderr).
+        # Or, better, print to stderr just for this one-off setup message if needed, then rely on proper handlers.
+        if initial_handlers_removed_count > 0:
+            # Using print here because logging state is actively being changed.
+            # This should be one of the last messages to hit raw stderr if setup is correct.
+            print(
+                f"INFO: _setup_logging: Removed {initial_handlers_removed_count} pre-existing handler(s) from root logger.",
+                file=sys.stderr)
+
+        # Now that root_logger is clean, set its overall level.
+        # This level acts as a filter before messages reach any of its handlers.
         initial_log_level_str = self.app_config.get("general", {}).get("log_level", "INFO").upper()
         initial_log_level = getattr(logging, initial_log_level_str, logging.INFO)
-        root_logger.setLevel(initial_log_level)  # Set overall level for standard logging
-
-        # Important: Loguru's own level (in `loguru_logger.add`) determines what it SENDS.
-        # Standard logging's root_logger.setLevel and handler levels determine what they PROCESS.
-        # For example, if Loguru sends a DEBUG, but root_logger is INFO, the DEBUG won't be processed
-        # by standard handlers unless a specific standard handler has its level set to DEBUG.
-
-        # Log this message using standard logging, now that Loguru should be forwarding.
-        logging.info(f"Standard Logging: Root logger level initially set to: {logging.getLevelName(root_logger.level)}")
-        # You can test with loguru here too, it should appear in your Textual logs if bridge is working
-        loguru_logger.info("Loguru Test: This message from Loguru should appear in Textual logs.")
+        root_logger.setLevel(initial_log_level)
+        # (A temporary print to confirm, as logging to root_logger now might go to "last resort" until a handler is added)
+        print(f"INFO: _setup_logging: Root logger level set to {logging.getLevelName(root_logger.level)}",
+              file=sys.stderr)
 
         # --- Add TextualHandler (to standard logging) ---
         # (Your existing TextualHandler setup code is fine)
+        # Ensure it's added AFTER clearing old handlers and setting root level.
+        # ...
         has_textual_handler = any(isinstance(h, TextualHandler) for h in root_logger.handlers)
         if not has_textual_handler:
             textual_console_handler = TextualHandler()
             textual_console_handler.setLevel(initial_log_level)  # Respects app_config
-            # Formatter for Textual's dev console
             console_formatter = logging.Formatter(
-                "%(asctime)s [%(levelname)-8s] %(name)s:%(lineno)d - %(message)s",  # Standard format
+                "%(asctime)s [%(levelname)-8s] %(name)s:%(lineno)d - %(message)s",
                 datefmt="%Y-%m-%d %H:%M:%S"
             )
             textual_console_handler.setFormatter(console_formatter)
             root_logger.addHandler(textual_console_handler)
+            # Now, logging.info should go to Textual's dev console (and other handlers added below)
             logging.info(
                 f"Standard Logging: Added TextualHandler (Level: {logging.getLevelName(textual_console_handler.level)}).")
         else:
             logging.info("Standard Logging: TextualHandler already exists.")
 
+        # Test Loguru message again. It should now go to TextualHandler (and others).
+        loguru_logger.info(
+            "Loguru Test: This message from Loguru should now appear in Textual dev console (and other configured handlers).")
+
         # --- Setup RichLog Handler (to standard logging) ---
-        # (Your existing RichLogHandler setup code is fine)
+        # (Your existing RichLogHandler setup code is fine, ensure it's added AFTER clearing)
+        # ...
         try:
             log_display_widget = self.query_one("#app-log-display", RichLog)
-            if self._rich_log_handler and self._rich_log_handler in root_logger.handlers:
-                logging.info("Standard Logging: RichLogHandler already exists and is added.")
-            elif not self._rich_log_handler:
-                self._rich_log_handler = RichLogHandler(log_display_widget)
-                # RichLogHandler can have its own level, e.g., DEBUG to see more details in-app
+            # Check if it's already added by a previous call (should not happen if _setup_logging is called once)
+            if not any(isinstance(h, RichLogHandler) and h.rich_log_widget is log_display_widget for h in
+                       root_logger.handlers):
+                if not self._rich_log_handler:  # Create if it doesn't exist
+                    self._rich_log_handler = RichLogHandler(log_display_widget)
+                # Configure and add
                 rich_log_handler_level_str = self.app_config.get("logging", {}).get("rich_log_level", "DEBUG").upper()
                 rich_log_handler_level = getattr(logging, rich_log_handler_level_str, logging.DEBUG)
                 self._rich_log_handler.setLevel(rich_log_handler_level)
-                # RichLogHandler will use its own formatter defined in its class
                 root_logger.addHandler(self._rich_log_handler)
                 logging.info(
                     f"Standard Logging: Added RichLogHandler (Level: {logging.getLevelName(self._rich_log_handler.level)}).")
-            # ... (rest of your RichLogHandler error handling)
+            else:
+                logging.info("Standard Logging: RichLogHandler already exists and is added.")
         except QueryError:
             logging.error("!!! ERROR: Failed to find #app-log-display widget for RichLogHandler setup.")
             self._rich_log_handler = None
@@ -638,7 +572,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self._rich_log_handler = None
 
         # --- Setup File Logging (to standard logging) ---
-        # (Your existing FileHandler setup code is fine)
+        # (Your existing FileHandler setup code is fine, ensure it's added AFTER clearing)
+        # ... (your existing code to add file_handler to root_logger) ...
         try:
             log_file_path = get_cli_log_file_path()
             log_dir = log_file_path.parent
@@ -649,11 +584,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 root_logger.handlers)
 
             if not has_file_handler:
-                # Max bytes and backup count from config, with direct defaults if not found
-                max_bytes_default = 10485760  # 10MB
-                backup_count_default = 5
+                max_bytes_default = 10485760;
+                backup_count_default = 5;
                 file_log_level_default_str = "INFO"
-
                 max_bytes = int(get_cli_setting("logging", "log_max_bytes", max_bytes_default))
                 backup_count = int(get_cli_setting("logging", "log_backup_count", backup_count_default))
                 file_log_level_str = get_cli_setting("logging", "file_log_level", file_log_level_default_str).upper()
@@ -663,9 +596,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     log_file_path, maxBytes=max_bytes, backupCount=backup_count, encoding='utf-8'
                 )
                 file_handler.setLevel(file_log_level)
-                # Formatter for the file
                 file_formatter = logging.Formatter(
-                    "%(asctime)s [%(levelname)-8s] %(name)s:%(lineno)d - %(message)s",  # Standard format
+                    "%(asctime)s [%(levelname)-8s] %(name)s:%(lineno)d - %(message)s",
                     datefmt="%Y-%m-%d %H:%M:%S"
                 )
                 file_handler.setFormatter(file_formatter)
@@ -678,21 +610,18 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             logging.warning(f"!!! ERROR setting up file logging: {e}", exc_info=True)
 
         # Re-evaluate lowest level for standard logging root logger
-        # This ensures the root logger is at least as verbose as its most verbose handler.
+        # (Your existing logic for this is fine)
         all_std_handlers = root_logger.handlers
         if all_std_handlers:
-            # Filter out level 0 handlers if any (shouldn't be typical)
             handler_levels = [h.level for h in all_std_handlers if h.level > 0]
             if handler_levels:
                 lowest_effective_level = min(handler_levels)
-                # Also consider the initial_log_level explicitly set on root_logger
-                # The root logger's level should be min(its_explicit_level, lowest_handler_level)
-                # but practically, setting it to the lowest handler level is common.
-                # However, if root_logger.setLevel(INFO) was called, and a handler is DEBUG,
-                # root needs to be at least DEBUG.
-                if root_logger.level > lowest_effective_level:
+                current_root_level = root_logger.level
+                # Only adjust root logger level if it's currently *less* verbose (higher numeric value)
+                # than the most verbose handler.
+                if current_root_level > lowest_effective_level:
                     logging.info(
-                        f"Standard Logging: Adjusting root logger level from {logging.getLevelName(root_logger.level)} to {logging.getLevelName(lowest_effective_level)} to match most verbose handler.")
+                        f"Standard Logging: Adjusting root logger level from {logging.getLevelName(current_root_level)} to {logging.getLevelName(lowest_effective_level)} to match most verbose handler.")
                     root_logger.setLevel(lowest_effective_level)
             logging.info(f"Standard Logging: Final Root logger level is: {logging.getLevelName(root_logger.level)}")
         else:
