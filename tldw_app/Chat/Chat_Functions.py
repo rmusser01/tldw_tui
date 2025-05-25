@@ -108,7 +108,7 @@ PROVIDER_PARAM_MAP = {
         'api_key': 'api_key',
         'messages_payload': 'input_data',
         'prompt': 'custom_prompt_arg',
-        'temperature': 'temp',
+        'temp': 'temp',
         'system_message': 'system_message',
         'streaming': 'streaming',
         'maxp': 'maxp',
@@ -131,7 +131,7 @@ PROVIDER_PARAM_MAP = {
         'api_key': 'api_key',
         'messages_payload': 'input_data',
         'prompt': 'custom_prompt_arg',
-        'temperature': 'temp',
+        'temp': 'temp',
         'system_message': 'system_prompt',
         'streaming': 'streaming',
         'model': 'model',
@@ -1677,29 +1677,12 @@ def parse_user_dict_markdown_file(file_path: str) -> Dict[str, str]:
 
 
 class ChatDictionary:
-    """
-    Represents an entry in the chat dictionary for keyword replacement or expansion.
-
-    Attributes:
-        key_raw (str): The original key string (can be plain text or /regex/).
-        key (Union[str, re.Pattern]): The compiled key, either a string or a regex pattern.
-        content (str): The content to replace the key with or to use in expansion.
-        probability (int): The probability (0-100) of this entry being triggered.
-        group (Optional[str]): An optional group name for scoring and selection logic.
-        timed_effects (Dict[str, int]): Dictionary for timed effects:
-            - "sticky" (int): Duration in seconds the effect remains active (0 if not sticky). (Currently not directly used in provided pipeline)
-            - "cooldown" (int): Duration in seconds before this entry can be triggered again.
-            - "delay" (int): Duration in seconds to wait after trigger conditions met before applying.
-        last_triggered (Optional[datetime]): Timestamp of when this entry was last triggered.
-        max_replacements (int): Maximum number of times this entry can replace its key in a single input.
-    """
     def __init__(self, key: str, content: str, probability: int = 100, group: Optional[str] = None,
                  timed_effects: Optional[Dict[str, int]] = None, max_replacements: int = 1):
         """
         Initializes a ChatDictionary entry.
-
         Args:
-            key: The key to match (plain text or /regex/).
+            key: The key to match (plain text or /regex/flags).
             content: The replacement content.
             probability: Probability of triggering (0-100). Defaults to 100.
             group: Optional group name. Defaults to None.
@@ -1707,47 +1690,83 @@ class ChatDictionary:
                            Defaults to `{"sticky": 0, "cooldown": 0, "delay": 0}`.
             max_replacements: Max number of replacements for this entry per input. Defaults to 1.
         """
-        self.key_raw = key
-        self.key = self.compile_key(key)
+        self.raw_key = key # Store the original key string
         self.content = content
+        self.is_regex = False # Initialize is_regex attribute
+        self.key = self.compile_key(key) # key will store re.Pattern or str
+
         self.probability = probability
         self.group = group
         self.timed_effects = timed_effects or {"sticky": 0, "cooldown": 0, "delay": 0}
-        self.last_triggered: Optional[datetime] = None
+        # Ensure datetime is imported if you use it here
+        # from datetime import datetime # At the top of your file
+        self.last_triggered: Optional[datetime] = None # Assuming datetime is imported
         self.max_replacements = max_replacements
 
-    @staticmethod
-    def compile_key(key: str) -> Union[str, re.Pattern]:
-        """
-        Compiles a key string into a regex pattern if it's wrapped in '/'.
 
-        Args:
-            key: The key string. If it starts and ends with '/', it's treated as a regex.
-
-        Returns:
-            A compiled `re.Pattern` if the key is a regex, otherwise the original string.
+    def compile_key(self, key_str: str) -> Union[re.Pattern, str]:
         """
-        if key.startswith("/") and key.endswith("/"):
-            return re.compile(key[1:-1], re.IGNORECASE)
-        return key
+        Compiles the key string. If it's a regex (e.g., /pattern/i),
+        it compiles it into a regex object. Otherwise, returns the string.
+        Sets self.is_regex accordingly.
+        """
+        flags = 0
+        pattern_to_compile = key_str
+
+        # Check for /pattern/flags format
+        if key_str.startswith("/") and key_str.rfind("/") > 0: # Check for at least two slashes
+            last_slash_idx = key_str.rfind("/")
+            if last_slash_idx > 0: # Ensure the second slash is not the first character
+                potential_pattern = key_str[1:last_slash_idx]
+                potential_flags = key_str[last_slash_idx+1:]
+
+                # Validate that flags only contain valid regex flag characters
+                # and pattern does not contain unescaped slashes if this is truly a regex
+                # For simplicity here, we assume if it fits /.../f, it's intended as regex.
+                # A more robust check might be needed if keys can naturally contain many slashes.
+
+                pattern_to_compile = potential_pattern
+                if 'i' in potential_flags:
+                    flags |= re.IGNORECASE
+                if 'm' in potential_flags:
+                    flags |= re.MULTILINE
+                if 's' in potential_flags:
+                    flags |= re.DOTALL
+                # Add other common flags if needed (e.g., 'x' for VERBOSE, 'u' for UNICODE)
+
+                self.is_regex = True
+        # Simpler check if only /pattern/ (no explicit flags) is also considered regex
+        elif key_str.startswith("/") and key_str.endswith("/") and len(key_str) > 1:
+            pattern_to_compile = key_str[1:-1]
+            self.is_regex = True
+        else: # Not a /regex/ or /regex/flags pattern, treat as plain string
+            self.is_regex = False
+            return pattern_to_compile # Return as string
+
+        if self.is_regex:
+            try:
+                return re.compile(pattern_to_compile, flags)
+            except re.error as e:
+                logging.warning(
+                    f"Invalid regex '{pattern_to_compile}' with flags '{flags}' (from raw key '{self.raw_key}'): {e}. "
+                    f"Treating as literal string."
+                )
+                self.is_regex = False # Fallback
+                return self.raw_key # Return the original key string on error
+        else: # Should not be reached if logic is correct, but as a fallback
+            return key_str
 
     def matches(self, text: str) -> bool:
-        """
-        Checks if this entry's key matches the given text.
-
-        Args:
-            text: The text to check for a match.
-
-        Returns:
-            True if a match is found, False otherwise.
-        """
-        if isinstance(self.key, re.Pattern):
-            return self.key.search(text) is not None
-        # For plain string keys, `process_user_input` uses `match_whole_words`
-        # which applies \b for whole word matching. This method is a simpler check.
-        # Consider if this direct `in` check is sufficient or if it should also use whole-word.
-        # For now, it reflects the direct check before `match_whole_words` in the pipeline.
-        return self.key in text
+        """Checks if the given text matches the key."""
+        if self.is_regex and isinstance(self.key, re.Pattern):
+            return bool(self.key.search(text))
+        elif not self.is_regex and isinstance(self.key, str):
+            # For simple string matching, decide on case sensitivity.
+            # If your non-regex keys should also be case-insensitive, use:
+            # return self.key.lower() in text.lower()
+            # Otherwise, for case-sensitive:
+            return self.key in text
+        return False # Should not happen if self.key is always Pattern or str
 
 
 def apply_strategy(entries: List[ChatDictionary], strategy: str = "sorted_evenly") -> List[ChatDictionary]:

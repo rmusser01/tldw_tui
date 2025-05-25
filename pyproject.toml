@@ -74,3 +74,8 @@ exclude = ["Tests*"]  # Example: exclude a tests directory if you have one
 "tldw_app.css" = ["*.tcss"] # Include .tcss files in the tldw_app.css package
 # If you have other assets inside tldw_app (e.g., tldw_app/assets/), add them here:
 # "tldw_app.assets" = ["*"]
+
+[pytest]
+markers = [
+    "unit: marks tests as unit tests",
+]
