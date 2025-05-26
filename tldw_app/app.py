@@ -142,6 +142,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
     # Define reactive at class level with a placeholder default and type hint
     current_tab: reactive[str] = reactive("chat", layout=True)
+    ccp_active_view: reactive[str] = reactive("conversation_details_view", layout=True)
 
     # Add state to hold the currently streaming AI message widget
     current_ai_message_widget: Optional[ChatMessage] = None
@@ -264,6 +265,12 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             # Consider if app should notify user or degrade gracefully
 
         self._prompt_search_timer = None  # Initialize here
+
+        # --- Setup Default view for CCP tab ---
+        # Initialize self.ccp_active_view based on initial tab or default state if needed
+        if self._initial_tab_value == TAB_CCP:
+            self.ccp_active_view = "conversation_details_view"  # Default view for CCP tab
+        # else: it will default to "conversation_details_view" anyway
 
     def _setup_logging(self):
         """Sets up all logging handlers, including Loguru integration."""
@@ -478,6 +485,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         with Container(id="content"):
             # --- Chat Window ---
             # Assign specific reactive variables to the Select widgets
+            chat_window = Container(id=f"{TAB_CHAT}-window", classes="window")
+            if self._initial_tab_value != TAB_CHAT:
+                chat_window.styles.display = False  # Hide if not the initial tab
             with Container(id=f"{TAB_CHAT}-window", classes="window"):
                 # Pass self.current_chat_is_ephemeral to create_character_sidebar if it needs to adjust UI
                 yield from create_settings_sidebar(TAB_CHAT, self.app_config) # This is fine
@@ -502,97 +512,100 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
             # --- Conversations, Characters & Prompts Window ---
             with Container(id=f"{TAB_CCP}-window", classes="window"):
-                # Left Pane
+                # Left Pane (remains the same)
                 with VerticalScroll(id="conv-char-left-pane", classes="cc-left-pane"):
                     yield Static("CCP Menu", classes="sidebar-title cc-section-title-text")
-
                     with Collapsible(title="Characters", id="conv-char-characters-collapsible"):
-                        yield Select(
-                            options=[("", "<placeholder>")],  # Placeholder option
-                            prompt="Select Character...",
-                            allow_blank=True,
-                            id="conv-char-character-select"
-                        )
-                        # Add other character-related buttons here later if needed
-
+                        yield Select(options=[("", "<placeholder>")], prompt="Select Character...",
+                                     allow_blank=True, id="conv-char-character-select")
                     with Collapsible(title="Conversations", id="conv-char-conversations-collapsible"):
                         yield Input(id="conv-char-search-input", placeholder="Search conversations...",
-                                    classes="sidebar-input")  # Moved
-                        yield Button("Search", id="conv-char-conversation-search-button",
-                                     classes="sidebar-button")  # New
-                        yield ListView(
-                            id="conv-char-search-results-list")  # Moved
-                        yield Button("Load Selected", id="conv-char-load-button",
-                                     classes="sidebar-button")  # Moved
-
-                    # --- NEW: Prompts Section in Left Pane ---
+                                    classes="sidebar-input")
+                        yield Button("Search", id="conv-char-conversation-search-button", classes="sidebar-button")
+                        yield ListView(id="conv-char-search-results-list")
+                        yield Button("Load Selected", id="conv-char-load-button", classes="sidebar-button")
                     with Collapsible(title="Prompts", id="ccp-prompts-collapsible"):
                         yield Button("Create New Prompt", id="ccp-prompt-create-new-button",
                                      classes="sidebar-button")
                         yield Input(id="ccp-prompt-search-input", placeholder="Search prompts...",
                                     classes="sidebar-input")
-                        # Search button is optional if using on_input_changed with timer
-                        # yield Button("Search Prompts", id="ccp-prompt-search-button", classes="sidebar-button")
-                        yield ListView(id="ccp-prompts-listview",
-                                       classes="sidebar-listview")  # New ListView for prompts
+                        yield ListView(id="ccp-prompts-listview", classes="sidebar-listview")
                         yield Button("Load Selected Prompt", id="ccp-prompt-load-selected-button",
                                      classes="sidebar-button")
 
-                yield Button("☰", id="toggle-conv-char-left-sidebar", classes="cc-sidebar-toggle-button")
+                yield Button(get_char(EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE),
+                             id="toggle-conv-char-left-sidebar", classes="cc-sidebar-toggle-button")
 
-                # Center Pane
+                # Center Pane (dynamic content)
                 with VerticalScroll(id="conv-char-center-pane", classes="cc-center-pane"):
-                    yield Static("Conversation History", classes="pane-title")
-                    # Message widgets will be mounted here dynamically
+                    # Container for conversation messages - visible by default CSS
+                    with Container(id="ccp-conversation-messages-view", classes="ccp-view-area"):
+                        yield Static("Conversation History", classes="pane-title", id="ccp-center-pane-title-conv")
+                        # Messages will be mounted dynamically here
 
-                yield Button("☰", id="toggle-conv-char-right-sidebar", classes="cc-sidebar-toggle-button")
+                    # Container for prompt editing UI (initially hidden)
+                    # Create it first
+                    prompt_editor_container = Container(id="ccp-prompt-editor-view", classes="ccp-view-area")
+                    # Then set its initial style
+                    prompt_editor_container.styles.display = "none"  # Hide it initially
 
-                # --- Right Pane (Details & Settings) ---
-                with VerticalScroll(id="conv-char-right-pane", classes="cc-right-pane"):
-                    #yield Static("Character/Conversation Details", classes="sidebar-title")  # Reusing sidebar-title
-                    yield from create_settings_sidebar(TAB_CCP, self.app_config)
+                    with prompt_editor_container:  # Now compose its children
+                        yield Static("Prompt Editor", classes="pane-title", id="ccp-center-pane-title-prompt")
+                        yield Label("Prompt Name:", classes="sidebar-label")
+                        yield Input(id="ccp-editor-prompt-name-input", placeholder="Unique prompt name...",
+                                    classes="sidebar-input")
+                        yield Label("Author:", classes="sidebar-label")
+                        yield Input(id="ccp-editor-prompt-author-input", placeholder="Author name...",
+                                    classes="sidebar-input")
+                        yield Label("Details/Description:", classes="sidebar-label")
+                        yield TextArea("", id="ccp-editor-prompt-description-textarea",
+                                       classes="sidebar-textarea ccp-prompt-textarea")
+                        yield Label("System Prompt:", classes="sidebar-label")
+                        yield TextArea("", id="ccp-editor-prompt-system-textarea",
+                                       classes="sidebar-textarea ccp-prompt-textarea")
+                        yield Label("User Prompt (Template):", classes="sidebar-label")
+                        yield TextArea("", id="ccp-editor-prompt-user-textarea",
+                                       classes="sidebar-textarea ccp-prompt-textarea")
+                        yield Label("Keywords (comma-separated):", classes="sidebar-label")
+                        yield TextArea("", id="ccp-editor-prompt-keywords-textarea",
+                                       classes="sidebar-textarea ccp-prompt-textarea")
+                        with Horizontal(classes="ccp-prompt-action-buttons"):
+                            yield Button("Save Prompt", id="ccp-editor-prompt-save-button", variant="success",
+                                         classes="sidebar-button")
+                            yield Button("Clone Prompt", id="ccp-editor-prompt-clone-button",
+                                         classes="sidebar-button")
+                            yield Button("Delete Prompt", id="ccp-editor-prompt-delete-button", variant="error",
+                                         classes="sidebar-button")
 
-                    # --- Conversation Details Section (Collapsible) ---
+                # Button to toggle the right sidebar for CCP tab
+                yield Button(get_char(EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE),
+                             id="toggle-conv-char-right-sidebar", classes="cc-sidebar-toggle-button")
+
+                # Right Pane (dynamic content visibility)
+                with VerticalScroll(id="conv-char-right-pane",
+                                    classes="cc-right-pane"):  # Ensure this ID is unique if used elsewhere for styling
+                    # Container for LLM settings (visibility toggled)
+                    with Container(id="ccp-right-pane-llm-settings-container"):  # Initially visible by default CSS
+                        yield from create_settings_sidebar(TAB_CCP, self.app_config)
+
+                    # Conversation Details (always present, expanded/collapsed state might change by watcher)
                     with Collapsible(title="Conversation Details", id="ccp-conversation-details-collapsible",
-                                     collapsed=True):
+                                     collapsed=False):  # Start expanded
                         yield Static("Title:", classes="sidebar-label")
                         yield Input(id="conv-char-title-input", placeholder="Conversation title...",
                                     classes="sidebar-input")
                         yield Static("Keywords:", classes="sidebar-label")
                         yield TextArea("", id="conv-char-keywords-input", classes="conv-char-keywords-textarea")
                         yield Button("Save Conversation Details", id="conv-char-save-details-button",
-                                     classes="sidebar-button")  # Added in previous step
+                                     classes="sidebar-button")
                         yield Static("Export Options", classes="sidebar-label export-label")
                         yield Button("Export as Text", id="conv-char-export-text-button", classes="sidebar-button")
                         yield Button("Export as JSON", id="conv-char-export-json-button", classes="sidebar-button")
 
-                    # --- NEW: Prompt Details Section (Collapsible) ---
-                    with Collapsible(title="Prompt Details", id="ccp-prompt-details-collapsible", collapsed=True):
-                        yield Label("Prompt Name:", classes="sidebar-label")
-                        yield Input(id="ccp-prompt-name-input", placeholder="Unique prompt name...",
-                                    classes="sidebar-input")
-                        yield Label("Author:", classes="sidebar-label")
-                        yield Input(id="ccp-prompt-author-input", placeholder="Author name...", classes="sidebar-input")
-                        yield Label("Details/Description:", classes="sidebar-label")
-                        yield TextArea("", id="ccp-prompt-description-textarea",
-                                       classes="sidebar-textarea ccp-prompt-textarea")
-                        yield Label("System Prompt:", classes="sidebar-label")
-                        yield TextArea("", id="ccp-prompt-system-textarea",
-                                       classes="sidebar-textarea ccp-prompt-textarea")
-                        yield Label("User Prompt (Template):", classes="sidebar-label")
-                        yield TextArea("", id="ccp-prompt-user-textarea",
-                                       classes="sidebar-textarea ccp-prompt-textarea")
-                        yield Label("Keywords (comma-separated):", classes="sidebar-label")
-                        yield TextArea("", id="ccp-prompt-keywords-textarea",
-                                       classes="sidebar-textarea ccp-prompt-textarea")
-
-                        with Horizontal(classes="ccp-prompt-action-buttons"):  # Container for buttons
-                            yield Button("Save Prompt", id="ccp-prompt-save-button", variant="success",
-                                         classes="sidebar-button")
-                            yield Button("Clone Prompt", id="ccp-prompt-clone-button", classes="sidebar-button")
-                            yield Button("Delete Prompt", id="ccp-prompt-delete-button", variant="error",
-                                         classes="sidebar-button")
             # --- Notes Tab Window ---
+            chat_window = Container(id=f"{TAB_CHAT}-window", classes="window")
+            if self._initial_tab_value != TAB_CHAT:
+                chat_window.styles.display = False  # Hide if not the initial tab
             with Container(id=f"{TAB_NOTES}-window", classes="window"):
                 # Instantiate the left sidebar (ensure it has a unique ID for the watcher)
                 yield NotesSidebarLeft(id="notes-sidebar-left", classes="sidebar")
@@ -611,12 +624,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 # Instantiate the right sidebar (ensure it has a unique ID for the watcher)
                 yield NotesSidebarRight(id="notes-sidebar-right", classes="sidebar")
 
-            # --- Logs Window (Placeholder) ---
-            # Media Tab Goes Here
+            # --- Logs Tab ---
 
-            # ---- Search Window (Placeholder) ---
+            # --- Media Tab Goes Here
 
-            # ---- Ingest Window (Placeholder) ---
+            # ---- Search Tab ---
+
+            # ---- Ingest Tab ---
 
             # --- Logs Window ---
             with Container(id=f"{TAB_LOGS}-window", classes="window"):
@@ -634,6 +648,154 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     with Container(id=f"{tab_id}-window", classes="window placeholder-window"):
                         yield Static(f"{tab_id.replace('_', ' ').capitalize()} Window Placeholder")
                         yield Button("Coming Soon", id=f"{tab_id}-placeholder-button", disabled=True)
+
+    # --- Watcher for CCP Active View ---
+    def watch_ccp_active_view(self, old_view: Optional[str], new_view: str) -> None:
+        loguru_logger.debug(f"CCP active view changing from '{old_view}' to: '{new_view}'")
+        try:
+            conversation_messages_view = self.query_one("#ccp-conversation-messages-view")
+            prompt_editor_view = self.query_one("#ccp-prompt-editor-view")
+
+            # Right pane elements
+            llm_settings_container_right = self.query_one("#ccp-right-pane-llm-settings-container")
+            conv_details_collapsible_right = self.query_one("#ccp-conversation-details-collapsible", Collapsible)
+
+            if new_view == "prompt_editor_view":
+                # Center Pane: Show Prompt Editor, Hide Conversation Messages
+                conversation_messages_view.display = False
+                prompt_editor_view.display = True
+
+                # Right Pane: Hide LLM Settings, Keep Conversation Details (can be collapsed)
+                llm_settings_container_right.display = False
+                conv_details_collapsible_right.display = True  # Ensure it's displayed
+                # conv_details_collapsible_right.collapsed = True # Optionally collapse it
+
+                # Focus an element in prompt editor
+                try:
+                    self.query_one("#ccp-editor-prompt-name-input", Input).focus()
+                except QueryError:
+                    loguru_logger.warning("Could not focus prompt name input in editor view.")
+
+            elif new_view == "conversation_details_view":
+                # Center Pane: Show Conversation Messages, Hide Prompt Editor
+                conversation_messages_view.display = True
+                prompt_editor_view.display = False
+
+                # Right Pane: Show LLM Settings, Show and Expand Conversation Details
+                llm_settings_container_right.display = True
+                conv_details_collapsible_right.display = True
+                conv_details_collapsible_right.collapsed = False  # Expand when viewing conversation
+
+                # Potentially focus conversation search or title in the left/right pane
+                try:
+                    # If a conversation is loaded, maybe focus its title in right pane
+                    if self.current_conv_char_tab_conversation_id:
+                        self.query_one("#conv-char-title-input", Input).focus()
+                    else:  # Otherwise, maybe focus the search in left pane
+                        self.query_one("#conv-char-search-input", Input).focus()
+                except QueryError:
+                    loguru_logger.warning("Could not focus default element in conversation details view.")
+            else:  # Default or unknown view (treat as conversation_details_view)
+                conversation_messages_view.display = True
+                prompt_editor_view.display = False
+                llm_settings_container_right.display = True
+                conv_details_collapsible_right.display = True
+                conv_details_collapsible_right.collapsed = False
+                loguru_logger.warning(
+                    f"Unknown ccp_active_view: {new_view}, defaulting to conversation_details_view.")
+
+        except QueryError as e:
+            loguru_logger.error(f"UI component not found during CCP view switch: {e}", exc_info=True)
+        except Exception as e_watch:
+            loguru_logger.error(f"Unexpected error in watch_ccp_active_view: {e_watch}", exc_info=True)
+
+    # --- Watcher for Right Sidebar in CCP Tab ---
+    # The existing `watch_conv_char_sidebar_right_collapsed` should work if you target
+    # `#conv-char-right-pane` and use `add_class("collapsed")` or `remove_class("collapsed")`
+    # in conjunction with the CSS you'll add. Or, stick to `display = not collapsed`.
+    # Let's use the class-based approach for consistency with your provided CSS for other sidebars.
+    def watch_conv_char_sidebar_right_collapsed(self, collapsed: bool) -> None:
+        """Hide or show the Conversations, Characters & Prompts right sidebar pane."""
+        try:
+            sidebar_pane = self.query_one("#conv-char-right-pane")  # Target the VerticalScroll itself
+            if collapsed:
+                sidebar_pane.add_class("collapsed")
+            else:
+                sidebar_pane.remove_class("collapsed")
+            # The .cc-right-pane.collapsed CSS rule will handle display:none and width:0
+            loguru_logger.debug(f"CCP right pane collapsed state: {collapsed}")
+        except QueryError:
+            loguru_logger.error("CCP right pane (#conv-char-right-pane) not found for collapse toggle.")
+        except Exception as e:
+            loguru_logger.error(f"Error toggling CCP right pane: {e}", exc_info=True)
+
+    # --- Modify _clear_prompt_fields and _load_prompt_for_editing ---
+    def _clear_prompt_fields(self) -> None:
+        """Clears prompt input fields in the CENTER PANE editor."""
+        try:
+            self.query_one("#ccp-editor-prompt-name-input", Input).value = ""
+            self.query_one("#ccp-editor-prompt-author-input", Input).value = ""
+            self.query_one("#ccp-editor-prompt-description-textarea", TextArea).text = ""
+            self.query_one("#ccp-editor-prompt-system-textarea", TextArea).text = ""
+            self.query_one("#ccp-editor-prompt-user-textarea", TextArea).text = ""
+            self.query_one("#ccp-editor-prompt-keywords-textarea", TextArea).text = ""
+            loguru_logger.debug("Cleared prompt editor fields in center pane.")
+        except QueryError as e:
+            loguru_logger.error(f"Error clearing prompt editor fields in center pane: {e}")
+
+    async def _load_prompt_for_editing(self, prompt_id: Optional[int], prompt_uuid: Optional[str] = None) -> None:
+        if not self.prompts_service_initialized:
+            self.notify("Prompts service not available.", severity="error")
+            return
+
+        # Switch to prompt editor view
+        self.ccp_active_view = "prompt_editor_view"  # This will trigger the watcher
+
+        identifier_to_fetch = prompt_id if prompt_id is not None else prompt_uuid
+        if identifier_to_fetch is None:
+            self._clear_prompt_fields()
+            self.current_prompt_id = None  # Reset all reactive prompt states
+            self.current_prompt_uuid = None
+            self.current_prompt_name = None
+            # ... etc. for other prompt reactives
+            loguru_logger.warning("_load_prompt_for_editing called with no ID/UUID after view switch.")
+            return
+
+        try:
+            prompt_details = prompts_interop.fetch_prompt_details(identifier_to_fetch)
+
+            if prompt_details:
+                self.current_prompt_id = prompt_details.get('id')
+                self.current_prompt_uuid = prompt_details.get('uuid')
+                self.current_prompt_name = prompt_details.get('name', '')
+                self.current_prompt_author = prompt_details.get('author', '')
+                self.current_prompt_details = prompt_details.get('details', '')
+                self.current_prompt_system = prompt_details.get('system_prompt', '')
+                self.current_prompt_user = prompt_details.get('user_prompt', '')
+                self.current_prompt_keywords_str = ", ".join(prompt_details.get('keywords', []))
+                self.current_prompt_version = prompt_details.get('version')
+
+                # Populate UI in the CENTER PANE editor
+                self.query_one("#ccp-editor-prompt-name-input", Input).value = self.current_prompt_name
+                self.query_one("#ccp-editor-prompt-author-input", Input).value = self.current_prompt_author
+                self.query_one("#ccp-editor-prompt-description-textarea",
+                               TextArea).text = self.current_prompt_details
+                self.query_one("#ccp-editor-prompt-system-textarea", TextArea).text = self.current_prompt_system
+                self.query_one("#ccp-editor-prompt-user-textarea", TextArea).text = self.current_prompt_user
+                self.query_one("#ccp-editor-prompt-keywords-textarea",
+                               TextArea).text = self.current_prompt_keywords_str
+
+                self.query_one("#ccp-editor-prompt-name-input", Input).focus()  # Focus after loading
+                self.notify(f"Prompt '{self.current_prompt_name}' loaded for editing.", severity="info")
+            else:
+                self.notify(f"Failed to load prompt (ID/UUID: {identifier_to_fetch}).", severity="error")
+                self._clear_prompt_fields()  # Clear editor if load fails
+                self.current_prompt_id = None  # Reset reactives
+        except Exception as e:
+            loguru_logger.error(f"Error loading prompt for editing: {e}", exc_info=True)
+            self.notify(f"Error loading prompt: {type(e).__name__}", severity="error")
+            self._clear_prompt_fields()
+            self.current_prompt_id = None  # Reset reactives
 
     def watch_current_chat_is_ephemeral(self, is_ephemeral: bool) -> None:
         loguru_logger.debug(f"Chat ephemeral state changed to: {is_ephemeral}")
@@ -1024,15 +1186,17 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             await self._perform_conv_char_search()
             return
 
-        elif button_id == "conv-char-load-button":
-            logging.info("conv-char-load-button pressed.")
+        # --- CCP Tab: Load Conversation Button ---
+        if button_id == "conv-char-load-button":
+            loguru_logger.info("conv-char-load-button pressed.")
+            self.ccp_active_view = "conversation_details_view" # Ensure correct view
+
             try:
                 results_list_view = self.query_one("#conv-char-search-results-list", ListView)
                 highlighted_item = results_list_view.highlighted_child
 
                 if not (highlighted_item and hasattr(highlighted_item, 'details')):
-                    logging.warning("No conversation selected in conv-char list or item has no details.")
-                    # self.notify("Please select a conversation to load.", severity="warning") # If notifier is set up
+                    self.notify("Please select a conversation to load.", severity="warning")
                     return
 
                 # FIXME
@@ -1040,85 +1204,370 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 loaded_conversation_id = conv_details.get('id')
 
                 if not loaded_conversation_id:
-                    logging.error("Selected item in conv-char list is missing conversation ID.")
-                    # self.notify("Selected item is invalid.", severity="error")
+                    self.notify("Selected item is invalid (missing ID).", severity="error")
                     return
 
                 self.current_conv_char_tab_conversation_id = loaded_conversation_id
-                logging.info(f"Current conv-char tab conversation ID set to: {loaded_conversation_id}")
+                loguru_logger.info(f"Current CCP tab conversation ID set to: {loaded_conversation_id}")
 
-                # Populate Right Pane
-                title_input = self.query_one("#conv-char-title-input", Input)
-                keywords_input = self.query_one("#conv-char-keywords-input", TextArea) # This is a TextArea
+                # Populate Right Pane's "Conversation Details" collapsible
+                title_input_right = self.query_one("#conv-char-title-input", Input)
+                keywords_input_right = self.query_one("#conv-char-keywords-input", TextArea)
+                title_input_right.value = conv_details.get('title', '')
 
-                title_input.value = conv_details.get('title', '')
-
-                # Fetch and populate keywords
-                if self.notes_service:
-                    db_for_keywords = self.notes_service._get_db(self.notes_user_id)
-                    keywords_list = db_for_keywords.get_keywords_for_conversation(loaded_conversation_id)
-                    keywords_input.text = ", ".join([kw['keyword'] for kw in keywords_list]) if keywords_list else ""
-                    logging.info(f"Populated keywords for conversation {loaded_conversation_id} into #conv-char-keywords-input.")
+                if self.notes_service and db:
+                    keywords_list = db.get_keywords_for_conversation(loaded_conversation_id)
+                    keywords_input_right.text = ", ".join([kw['keyword'] for kw in keywords_list]) if keywords_list else ""
                 else:
-                    keywords_input.text = "" # Clear if no service
-                    logging.warning("Notes service not available, cannot load keywords for right pane.")
+                    keywords_input_right.text = ""
 
+                # Populate Center Pane (Messages in #ccp-conversation-messages-view)
+                center_pane_messages_container = self.query_one("#ccp-conversation-messages-view")
+                await center_pane_messages_container.remove_children()
 
-                # Populate Center Pane (Messages)
-                center_pane = self.query_one("#conv-char-center-pane", VerticalScroll)
-                await center_pane.remove_children() # Clear previous messages
-
-                if not self.notes_service:
-                    logging.error("Notes service not available, cannot load messages for center pane.")
-                    await center_pane.mount(Static("Error: Notes service unavailable. Cannot load messages."))
+                if not self.notes_service or not db:
+                    await center_pane_messages_container.mount(Static("Error: Notes/DB service unavailable."))
                     return
 
-                db = self.notes_service._get_db(self.notes_user_id)
+                # Use _load_branched_conversation_history or similar logic to populate messages
+                # For simplicity, direct message loading here:
                 messages = db.get_messages_for_conversation(loaded_conversation_id, order_by_timestamp="ASC", limit=1000)
 
                 if not messages:
-                    await center_pane.mount(Static("No messages in this conversation."))
+                    await center_pane_messages_container.mount(Static("No messages in this conversation."))
                 else:
                     for msg_data in messages:
-                        # Ensure image_data is handled correctly (it might be None or bytes)
-                        image_data_for_widget = msg_data.get('image_data')
+                        # ... (create ChatMessage widget as before) ...
                         chat_message_widget = ChatMessage(
-                            message=msg_data['content'],
-                            role=msg_data['sender'],
-                            timestamp=msg_data.get('timestamp'),
-                            image_data=image_data_for_widget,
-                            image_mime_type=msg_data.get('image_mime_type'),
-                            message_id=msg_data['id']
+                            message=msg_data['content'], role=msg_data['sender'],
+                            timestamp=msg_data.get('timestamp'), image_data=msg_data.get('image_data'),
+                            image_mime_type=msg_data.get('image_mime_type'), message_id=msg_data['id']
                         )
-                        await center_pane.mount(chat_message_widget)
+                        await center_pane_messages_container.mount(chat_message_widget)
 
-                center_pane.scroll_end(animate=False)
-                logging.info(f"Loaded {len(messages)} messages into #conv-char-center-pane for conversation {loaded_conversation_id}.")
+                # If ccp-conversation-messages-view is not scrollable, scroll its parent
+                parent_center_scroller = self.query_one("#conv-char-center-pane", VerticalScroll)
+                parent_center_scroller.scroll_end(animate=False)
+                self.notify(f"Conversation '{conv_details.get('title', 'Untitled')}' loaded.", severity="info")
 
             except QueryError as e:
-                logging.error(f"UI component not found during conv-char load: {e}", exc_info=True)
-                # Optionally, notify the user if a specific component was expected but not found
-                try:
-                    center_pane_err_fallback = self.query_one("#conv-char-center-pane", VerticalScroll)
-                    await center_pane_err_fallback.remove_children()
-                    await center_pane_err_fallback.mount(Static("Error: UI component missing for loading."))
-                except QueryError: pass # Center pane itself might be the issue
+                loguru_logger.error(f"UI component not found during conv-char load: {e}", exc_info=True)
+                self.notify("UI error loading conversation.", severity="error")
             except CharactersRAGDBError as e:
-                logging.error(f"Database error during conv-char load: {e}", exc_info=True)
-                # self.notify("Error loading conversation data from database.", severity="error")
-                try:
-                    center_pane_db_err = self.query_one("#conv-char-center-pane", VerticalScroll)
-                    await center_pane_db_err.remove_children()
-                    await center_pane_db_err.mount(Static("Error: Database issue loading messages."))
-                except QueryError: pass
+                loguru_logger.error(f"Database error during conv-char load: {e}", exc_info=True)
+                self.notify("DB error loading conversation.", severity="error")
             except Exception as e:
-                logging.error(f"Unexpected error during conv-char load: {e}", exc_info=True)
-                # self.notify("An unexpected error occurred while loading the conversation.", severity="error")
-                try:
-                    center_pane_unexp_err = self.query_one("#conv-char-center-pane", VerticalScroll)
-                    await center_pane_unexp_err.remove_children()
-                    await center_pane_unexp_err.mount(Static("Error: Unexpected issue loading conversation."))
-                except QueryError: pass
+                loguru_logger.error(f"Unexpected error during conv-char load: {e}", exc_info=True)
+                self.notify("Unexpected error loading conversation.", severity="error")
+
+            return
+
+        # --- CCP Tab: "Create New Prompt" Button (from left pane) ---
+        elif button_id == "ccp-prompt-create-new-button":
+            loguru_logger.info("Create New Prompt button pressed.")
+            self.ccp_active_view = "prompt_editor_view"  # Switch view
+
+            self.current_prompt_id = None
+            self.current_prompt_uuid = None
+            self.current_prompt_version = None
+            self._clear_prompt_fields()  # Clears the center editor fields
+
+            self.current_prompt_name = "New Prompt"  # Default value for new
+            self.current_prompt_author = get_cli_setting("user_defaults", "author_name", "User")
+            # ... (reset other reactive prompt vars to defaults/empty) ...
+            self.current_prompt_details = ""
+            self.current_prompt_system = ""
+            self.current_prompt_user = ""
+            self.current_prompt_keywords_str = ""
+
+            try:  # Populate the center editor fields
+                self.query_one("#ccp-editor-prompt-name-input", Input).value = self.current_prompt_name
+                self.query_one("#ccp-editor-prompt-author-input", Input).value = self.current_prompt_author
+                # self.query_one("#ccp-prompt-details-collapsible", Collapsible).collapsed = False # This was for old right-pane collapsible
+                self.query_one("#ccp-editor-prompt-name-input", Input).focus()
+                self.notify("Ready to create a new prompt.", severity="info")
+            except QueryError as e:
+                loguru_logger.error(f"UI error preparing for new prompt in center editor: {e}")
+            return
+
+        # --- CCP Tab: "Load Selected Prompt" Button (from left pane) ---
+        elif button_id == "ccp-prompt-load-selected-button":
+            loguru_logger.info("Load Selected Prompt button pressed.")
+            # View will be switched by _load_prompt_for_editing if successful
+            try:
+                list_view = self.query_one("#ccp-prompts-listview", ListView)
+                selected_item = list_view.highlighted_child
+                if selected_item and hasattr(selected_item, 'prompt_id'):
+                    prompt_id_to_load = selected_item.prompt_id
+                    if prompt_id_to_load:
+                        await self._load_prompt_for_editing(prompt_id=prompt_id_to_load)  # This will also switch view
+                else:
+                    self.notify("No prompt selected in the list.", severity="warning")
+            except QueryError:
+                self.notify("Prompt list not found.", severity="error")
+            return
+
+            # --- CCP Tab: Prompt Editor Buttons (Save, Clone, Delete from CENTER PANE) ---
+        elif button_id == "ccp-editor-prompt-save-button":
+            loguru_logger.info("Save Prompt button (from center editor) pressed.")
+            if not self.prompts_service_initialized:
+                self.notify("Prompts service not available.", severity="error")
+                return
+            try:
+                name = self.query_one("#ccp-editor-prompt-name-input", Input).value.strip()
+                author = self.query_one("#ccp-editor-prompt-author-input", Input).value.strip()
+                details = self.query_one("#ccp-editor-prompt-description-textarea", TextArea).text.strip()
+                system_prompt = self.query_one("#ccp-editor-prompt-system-textarea", TextArea).text.strip()
+                user_prompt = self.query_one("#ccp-editor-prompt-user-textarea", TextArea).text.strip()
+                keywords_str = self.query_one("#ccp-editor-prompt-keywords-textarea", TextArea).text.strip()
+                keywords_list = [kw.strip() for kw in keywords_str.split(',') if kw.strip()]
+
+                if not name:
+                    self.notify("Prompt Name is required.", severity="error")
+                    return
+
+                saved_id, saved_uuid, message = None, None, ""
+                if self.current_prompt_id is None:  # Creating new
+                    try:
+                        saved_id, saved_uuid, message = prompts_interop.add_prompt(
+                            name=name, author=author, details=details, system_prompt=system_prompt,
+                            user_prompt=user_prompt, keywords=keywords_list, overwrite=False
+                        )
+                    except prompts_interop.ConflictError as e_conflict:
+                        self.notify(f"Error: Prompt name '{name}' already exists.", severity="error", timeout=7)
+                        return
+                else:  # Updating existing
+                    update_payload = {
+                        'name': name, 'author': author, 'details': details, 'system_prompt': system_prompt,
+                        'user_prompt': user_prompt, 'keywords': keywords_list
+                    }
+                    saved_uuid, message = prompts_interop.get_db_instance().update_prompt_by_id(
+                        prompt_id=self.current_prompt_id, update_data=update_payload
+                    )
+                    saved_id = self.current_prompt_id
+
+                if saved_id or saved_uuid:
+                    self.notify(message, severity="information")
+                    await self._populate_prompts_list_view()
+                    await self._load_prompt_for_editing(prompt_id=saved_id, prompt_uuid=saved_uuid)  # Reload to confirm
+                else:
+                    self.notify(f"Failed to save prompt: {message or 'Unknown error'}", severity="error")
+            # ... (existing error handling for prompt save) ...
+            except prompts_interop.InputError as e_in:
+                self.notify(f"Input Error: {e_in}", severity="error", timeout=6)
+            except prompts_interop.ConflictError as e_cf:
+                self.notify(f"Save Conflict: {e_cf}", severity="error", timeout=6)
+            except prompts_interop.DatabaseError as e_db:
+                self.notify(f"Database Error: {e_db}", severity="error", timeout=6)
+            except Exception as e_save:
+                loguru_logger.error(f"Error saving prompt: {e_save}", exc_info=True)
+                self.notify(f"Error saving prompt: {type(e_save).__name__}", severity="error")
+            return
+
+        elif button_id == "ccp-editor-prompt-clone-button":
+            loguru_logger.info("Clone Prompt button (from center editor) pressed.")
+            if not self.prompts_service_initialized or self.current_prompt_id is None:
+                self.notify("No prompt loaded to clone or service unavailable.", severity="warning")
+                return
+            try:
+                original_name = self.query_one("#ccp-editor-prompt-name-input", Input).value.strip() or "Prompt"
+                timestamp = datetime.now().strftime('%y%m%d%H%M%S')
+                cloned_name = f"clone-{timestamp}-{original_name[:30]}"
+
+                cloned_id, cloned_uuid, msg = prompts_interop.add_prompt(
+                    name=cloned_name,
+                    author=self.query_one("#ccp-editor-prompt-author-input", Input).value.strip(),
+                    details=self.query_one("#ccp-editor-prompt-description-textarea", TextArea).text.strip(),
+                    system_prompt=self.query_one("#ccp-editor-prompt-system-textarea", TextArea).text.strip(),
+                    user_prompt=self.query_one("#ccp-editor-prompt-user-textarea", TextArea).text.strip(),
+                    keywords=[kw.strip() for kw in
+                              self.query_one("#ccp-editor-prompt-keywords-textarea", TextArea).text.split(',') if
+                              kw.strip()],
+                    overwrite=False
+                )
+                if cloned_id:
+                    self.notify(f"Prompt cloned as '{cloned_name}'. {msg}", severity="information")
+                    await self._populate_prompts_list_view()
+                    await self._load_prompt_for_editing(prompt_id=cloned_id, prompt_uuid=cloned_uuid)
+                else:
+                    self.notify(f"Failed to clone prompt: {msg}", severity="error")
+            # ... (existing error handling for prompt clone) ...
+            except Exception as e_clone:
+                loguru_logger.error(f"Error cloning prompt: {e_clone}", exc_info=True)
+                self.notify(f"Error cloning prompt: {type(e_clone).__name__}", severity="error")
+
+            return
+
+        elif button_id == "ccp-editor-prompt-delete-button":
+            loguru_logger.info("Delete Prompt button (from center editor) pressed.")
+            if not self.prompts_service_initialized or self.current_prompt_id is None:
+                self.notify("No prompt loaded to delete or service unavailable.", severity="warning")
+                return
+            try:
+                # TODO: Confirmation dialog
+                current_prompt_name_for_delete = self.query_one("#ccp-editor-prompt-name-input", Input).value.strip()
+                success = prompts_interop.soft_delete_prompt(self.current_prompt_id)
+                if success:
+                    self.notify(f"Prompt '{current_prompt_name_for_delete}' deleted.", severity="information")
+                    self.current_prompt_id = None
+                    self._clear_prompt_fields()
+                    await self._populate_prompts_list_view()
+                    # Switch back to conversation view or clear editor view
+                    self.ccp_active_view = "conversation_details_view"  # Or a "prompt_list_view" if you add one
+                else:
+                    self.notify(f"Failed to delete prompt '{current_prompt_name_for_delete}'.", severity="error",
+                                timeout=7)
+            # ... (existing error handling for prompt delete) ...
+            except Exception as e_del:
+                loguru_logger.error(f"Error deleting prompt: {e_del}", exc_info=True)
+                self.notify(f"Error deleting prompt: {type(e_del).__name__}", severity="error")
+            return
+
+        # --- CCP Tab: Save Conversation Details (from right pane) ---
+        elif button_id == "conv-char-save-details-button":
+            # This button is in the right pane's "Conversation Details" collapsible.
+            # It should save title/keywords for `self.current_conv_char_tab_conversation_id`.
+            # The existing logic for this button seems mostly fine, ensure it reads from correct inputs.
+            # ... (keep existing "conv-char-save-details-button" logic, it refers to the correct inputs) ...
+            loguru_logger.info("conv-char-save-details-button pressed.")
+            if not self.current_conv_char_tab_conversation_id:
+                self.notify("No conversation loaded in CCP tab to save details for.", severity="warning")
+                return
+            if not self.notes_service or not db:
+                self.notify("Database service not available.", severity="error")
+                return
+            try:
+                title_input = self.query_one("#conv-char-title-input", Input)  # Correct ID from right pane
+                keywords_widget = self.query_one("#conv-char-keywords-input", TextArea)  # Correct ID
+
+                new_title = title_input.value.strip()
+                new_keywords_str = keywords_widget.text.strip()
+                target_conversation_id = self.current_conv_char_tab_conversation_id
+
+                # ... (rest of the save logic from your existing code for this button) ...
+                # This includes fetching current details, version, updating title, updating keywords.
+                # Ensure it calls `await self._perform_conv_char_search()` if title changed to refresh left list.
+
+                current_conv_details = db.get_conversation_by_id(target_conversation_id)
+                if not current_conv_details:  # ... (handle error) ...
+                    self.notify(f"Conversation {target_conversation_id} not found.", severity="error")
+                    return
+                current_db_version = current_conv_details.get('version')
+                if current_db_version is None:  # ... (handle error) ...
+                    self.notify(f"Conversation {target_conversation_id} version missing.", severity="error")
+                    return
+
+                title_updated = False
+                if new_title != current_conv_details.get('title'):
+                    db.update_conversation(conversation_id=target_conversation_id, update_data={'title': new_title},
+                                           expected_version=current_db_version)
+                    title_updated = True
+                    current_db_version += 1
+                    await self._perform_conv_char_search()  # Refresh list
+
+                # ... (Keyword update logic as in your existing code) ...
+                existing_db_keywords = db.get_keywords_for_conversation(target_conversation_id)
+                existing_keyword_texts_set = {kw['keyword'].lower() for kw in existing_db_keywords}
+                ui_keyword_texts_set = {kw.strip().lower() for kw in new_keywords_str.split(',') if kw.strip()}
+                keywords_to_add = ui_keyword_texts_set - existing_keyword_texts_set
+                keywords_to_remove_details = [kw for kw in existing_db_keywords if
+                                              kw['keyword'].lower() not in ui_keyword_texts_set]
+                keywords_changed = False
+                for kw_text_to_add in keywords_to_add:
+                    kw_id = db.add_keyword(self.notes_user_id, kw_text_to_add)  # User ID needed for add_keyword
+                    if kw_id:
+                        db.link_conversation_to_keyword(target_conversation_id, kw_id)
+                        keywords_changed = True
+                for kw_detail_to_remove in keywords_to_remove_details:
+                    db.unlink_conversation_from_keyword(target_conversation_id, kw_detail_to_remove['id'])
+                    keywords_changed = True
+
+                if title_updated or keywords_changed:
+                    self.notify("Details saved!", severity="information")
+                    final_keywords_list = db.get_keywords_for_conversation(target_conversation_id)
+                    keywords_widget.text = ", ".join(
+                        [kw['keyword'] for kw in final_keywords_list]) if final_keywords_list else ""
+                else:
+                    self.notify("No changes to save.", severity="info")
+
+            except ConflictError as e:  # ... (handle error) ...
+                self.notify(f"Save conflict: {e}. Please reload.", severity="error")
+            except QueryError as e:  # ... (handle error) ...
+                self.notify("UI error saving details.", severity="error")
+            except CharactersRAGDBError as e:  # ... (handle error) ...
+                self.notify("DB error saving details.", severity="error")
+            except Exception as e:  # ... (handle error) ...
+                self.notify("Unexpected error saving details.", severity="error")
+            return
+
+        # --- CCP Tab: Export Buttons (from right pane) ---
+        elif button_id == "conv-char-export-text-button":
+            if self.ccp_active_view != "conversation_details_view" or not self.current_conv_char_tab_conversation_id:
+                self.notify("No conversation loaded to export.", severity="warning")
+                return
+            try:
+                messages_container = self.query_one("#ccp-conversation-messages-view")  # Messages are in center
+                message_widgets = messages_container.query(ChatMessage)
+
+                if not message_widgets:
+                    self.notify("Conversation has no messages to export.", severity="info")
+                    return
+
+                export_lines = []
+                conv_title_val = self.query_one("#conv-char-title-input", Input).value  # From right pane
+                conv_keywords_val = self.query_one("#conv-char-keywords-input", TextArea).text  # From right pane
+                export_lines.append(f"Conversation Title: {conv_title_val}")
+                export_lines.append(f"Keywords: {conv_keywords_val}")
+                export_lines.append("-" * 20)
+
+                for msg_widget in message_widgets:
+                    ts_str = msg_widget.timestamp.strftime(
+                        '%Y-%m-%d %H:%M:%S') if msg_widget.timestamp else "No Timestamp"
+                    export_lines.append(f"{ts_str} ({msg_widget.role}): {msg_widget.message_text}")
+                    if msg_widget.image_data: export_lines.append(
+                        f"   [Image: {msg_widget.image_mime_type or 'image'}]")
+
+                full_text_export = "\n".join(export_lines)
+                self.copy_to_clipboard(full_text_export)
+                self.notify("Conversation exported as text to clipboard.", severity="information")
+            # ... (error handling for text export) ...
+            except QueryError as e:
+                self.notify("UI error for text export.", severity="error")
+            except Exception as e_export:
+                self.notify(f"Text export error: {type(e_export).__name__}", severity="error")
+            return
+
+        elif button_id == "conv-char-export-json-button":
+            if self.ccp_active_view != "conversation_details_view" or not self.current_conv_char_tab_conversation_id:
+                self.notify("No conversation loaded to export.", severity="warning")
+                return
+            try:
+                messages_container = self.query_one("#ccp-conversation-messages-view")  # Messages are in center
+                message_widgets = messages_container.query(ChatMessage)
+
+                conv_title_val = self.query_one("#conv-char-title-input", Input).value  # From right pane
+                conv_keywords_str_val = self.query_one("#conv-char-keywords-input", TextArea).text  # From right pane
+                conv_keywords_list_val = [kw.strip() for kw in conv_keywords_str_val.split(',') if kw.strip()]
+
+                export_data = {
+                    "conversation_id": self.current_conv_char_tab_conversation_id,
+                    "title": conv_title_val, "keywords": conv_keywords_list_val, "messages": []
+                }
+                for msg_widget in message_widgets:
+                    export_data["messages"].append({
+                        "role": msg_widget.role, "text": msg_widget.message_text,
+                        "timestamp": msg_widget.timestamp.isoformat() if msg_widget.timestamp else None,
+                        "message_db_id": msg_widget.message_id_internal,
+                        "image_mime_type": msg_widget.image_mime_type if msg_widget.image_data else None
+                    })
+                full_json_export = json.dumps(export_data, indent=2)
+                self.copy_to_clipboard(full_json_export)
+                self.notify("Conversation exported as JSON to clipboard.", severity="information")
+            # ... (error handling for json export) ...
+            except QueryError as e:
+                self.notify("UI error for JSON export.", severity="error")
+            except Exception as e_export:
+                self.notify(f"JSON export error: {type(e_export).__name__}", severity="error")
             return
 
         elif button_id == "conv-char-save-details-button":

@@ -496,4 +496,53 @@ MetricsScreen Label.-info-message {
 }
 /* --- End of Prompts Sidebar Vertical --- */
 
+/* Right Pane Styling */
+.cc-right-pane {
+    width: 25%; /* Keep 25% or 30% - adjust as needed */
+    min-width: 20; /* ADD a minimum width */
+    height: 100%;
+    background: $boost;
+    padding: 1;
+    border-left: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
 
+/* ADD THIS: Collapsed state for the CCP tab's right pane */
+.cc-right-pane.collapsed {
+    width: 0 !important;
+    min-width: 0 !important;
+    border-left: none !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    display: none !important; /* Ensures it doesn't take space or grab focus */
+}
+
+/* Styles for the dynamic view areas within the CCP center pane */
+.ccp-view-area {
+    width: 100%;
+    height: 100%;
+    /* overflow: auto; /* If content within might overflow */
+}
+
+/* Add this class to hide elements */
+.ccp-view-area.hidden,
+.ccp-right-pane-section.hidden { /* For sections in the right pane */
+    display: none !important;
+}
+
+/* By default, let conversation messages be visible, and editor hidden */
+#ccp-conversation-messages-view {
+    /* display: block; /* or whatever its natural display is, usually block for Container */
+}
+#ccp-prompt-editor-view {
+    display: none; /* Initially hidden by CSS */
+}
+
+/* Ensure the right pane sections also respect hidden class */
+#ccp-right-pane-llm-settings-container {
+    /* display: block; default */
+}
+#ccp-right-pane-llm-settings-container.hidden {
+    display: none !important;
+}
