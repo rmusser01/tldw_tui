@@ -141,7 +141,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     margin-top: 0;
 }
 
-/* --- Conversations & Characters Window specific layouts (previously Character Chat) --- */
+/* --- Conversations, Characters & Prompts Window specific layouts (previously Character Chat) --- */
 /* Main container for the three-pane layout */
 #conversations_characters-window {
     layout: horizontal; /* Crucial for side-by-side panes */

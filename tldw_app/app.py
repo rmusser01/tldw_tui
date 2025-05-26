@@ -172,7 +172,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     current_chat_is_ephemeral: reactive[bool] = reactive(True)  # Start new chats as ephemeral
     # Reactive variable for current chat conversation ID
     current_chat_conversation_id: reactive[Optional[str]] = reactive(None)
-    # Reactive variable for current conversation loaded in the Conversations & Characters tab
+    # Reactive variable for current conversation loaded in the Conversations, Characters & Prompts tab
     current_conv_char_tab_conversation_id: reactive[Optional[str]] = reactive(None)
 
     # De-Bouncers
@@ -422,7 +422,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     def compose_tabs(self) -> ComposeResult:
         with Horizontal(id="tabs"):
             for tab_id in ALL_TABS:
-                label = "Conversations & Characters" if tab_id == TAB_CONV_CHAR else tab_id.replace('_',
+                label = "Conversations, Characters & Prompts" if tab_id == TAB_CONV_CHAR else tab_id.replace('_',
                                                                                                     ' ').capitalize()
                 yield Button(
                     label,
@@ -459,7 +459,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 # Pass a string prefix, for example, "chat" or "character_chat"
                 yield from create_character_sidebar("chat", initial_ephemeral_state=self.current_chat_is_ephemeral)
 
-            # --- Conversations & Characters Window (Redesigned) ---
+            # --- Conversations, Characters & Prompts Window ---
             with Container(id=f"{TAB_CONV_CHAR}-window", classes="window"):
                 # Left Pane
                 with VerticalScroll(id="conv-char-left-pane", classes="cc-left-pane"):
@@ -686,7 +686,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         except Exception as e:
             logging.error(f"on_mount: Unexpected error populating character filter: {e}", exc_info=True)
 
-        # Populate the character select dropdown in the Conversations & Characters tab
+        # Populate the character select dropdown in the Conversations, Characters & Prompts tab
         self.call_later(self._populate_conv_char_character_select)
 
     async def on_shutdown_request(self, event) -> None:
@@ -843,7 +843,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             logging.error("Notes right sidebar widget (#notes-sidebar-right) not found.")
 
     def watch_conv_char_sidebar_collapsed(self, collapsed: bool) -> None:
-        """Hide or show the Conversations & Characters left sidebar pane."""
+        """Hide or show the Conversations, Characters & Prompts left sidebar pane."""
         try:
             sidebar_pane = self.query_one("#conv-char-left-pane") # The ID of the VerticalScroll
             sidebar_pane.display = not collapsed # True means visible, False means hidden
@@ -855,11 +855,11 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
             # Also, ensure the toggle button itself is not part of the pane being hidden.
             # Based on Step 1, the button "toggle-conv-char-sidebar" is outside "conv-char-left-pane".
-            logging.debug(f"Conversations & Characters left pane display set to {not collapsed}")
+            logging.debug(f"Conversations, Characters & Prompts left pane display set to {not collapsed}")
         except QueryError:
-            logging.error("Conversations & Characters left sidebar pane (#conv-char-left-pane) not found.")
+            logging.error("Conversations, Characters & Prompts left sidebar pane (#conv-char-left-pane) not found.")
         except Exception as e:
-            logging.error(f"Error toggling Conversations & Characters left sidebar pane: {e}", exc_info=True)
+            logging.error(f"Error toggling Conversations, Characters & Prompts left sidebar pane: {e}", exc_info=True)
 
     async def save_current_note(self) -> bool:
         """Saves the currently selected note's title and content to the database."""
@@ -943,7 +943,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         logging.debug(f"Button pressed: {button_id}, Classes: {button.classes}")
         db = self.notes_service._get_db(self.notes_user_id)
 
-        # --- Search button in Conversations & Characters Tab ---
+        # --- Search button in Conversations, Characters & Prompts Tab ---
         if button_id == "conv-char-conversation-search-button":
             logging.debug("conv-char-conversation-search-button pressed. Performing search.")
             await self._perform_conv_char_search()
@@ -1180,7 +1180,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         if button_id == "toggle-conv-char-sidebar":
             self.conv_char_sidebar_collapsed = not self.conv_char_sidebar_collapsed
-            logging.debug("Conversations & Characters sidebar now %s", "collapsed" if self.conv_char_sidebar_collapsed else "expanded")
+            logging.debug("Conversations, Characters & Prompts sidebar now %s", "collapsed" if self.conv_char_sidebar_collapsed else "expanded")
             return
 
         if button_id == "notes-new-button":
@@ -3196,8 +3196,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     pass
 
     async def _perform_conv_char_search(self) -> None:
-        """Performs conversation search for the Conversations & Characters tab, filtering by selected character and search term."""
-        logging.debug("Performing Conversations & Characters search...")
+        """Performs conversation search for the Conversations, Characters & Prompts tab, filtering by selected character and search term."""
+        logging.debug("Performing Conversations, Characters & Prompts search...")
         try:
             search_input = self.query_one("#conv-char-search-input", Input)
             search_term = search_input.value.strip()
