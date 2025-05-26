@@ -30,6 +30,21 @@ def create_character_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tru
 
         # Section for current chat session details (title, keywords, etc.)
         with Collapsible(title="Current Chat Details", collapsed=False, id=f"{id_prefix}-chat-details-collapsible"):
+            # NEW "New Chat" Button
+            yield Button(
+                "New Chat",
+                id=f"{id_prefix}-new-conversation-button", # Matches app.py query
+                classes="sidebar-button"
+                # No variant, or choose one like "default"
+            )
+            yield Label("Conversation ID:", classes="sidebar-label", id=f"{id_prefix}-uuid-label-displayonly")
+            yield Input(
+                id=f"{id_prefix}-conversation-uuid-display", # Matches app.py query
+                value="Ephemeral Chat" if initial_ephemeral_state else "N/A",
+                disabled=True, # Always disabled display
+                classes="sidebar-input"
+            )
+
             yield Label("Chat Title:", classes="sidebar-label", id=f"{id_prefix}-title-label-displayonly") # Keep consistent ID for query if needed elsewhere
             yield Input(
                 id=f"{id_prefix}-conversation-title-input", # Matches app.py query
@@ -44,20 +59,6 @@ def create_character_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tru
                 classes="sidebar-textarea chat-keywords-textarea", # Added specific class
                 disabled=initial_ephemeral_state
             )
-            yield Label("Conversation ID:", classes="sidebar-label", id=f"{id_prefix}-uuid-label-displayonly")
-            yield Input(
-                id=f"{id_prefix}-conversation-uuid-display", # Matches app.py query
-                value="Ephemeral Chat" if initial_ephemeral_state else "N/A",
-                disabled=True, # Always disabled display
-                classes="sidebar-input"
-            )
-            yield Button(
-                "Save Details",
-                id=f"{id_prefix}-save-conversation-details-button", # Matches app.py query
-                classes="sidebar-button",
-                variant="primary",
-                disabled=initial_ephemeral_state
-            )
             # NEW "Save Chat" Button - specific to saving an ephemeral chat
             yield Button(
                 "Save Current Chat",
@@ -66,36 +67,60 @@ def create_character_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tru
                 variant="success",
                 disabled=not initial_ephemeral_state # Enabled if ephemeral, disabled if already saved
             )
-            # NEW "New Chat" Button
             yield Button(
-                "New Chat",
-                id=f"{id_prefix}-new-conversation-button", # Matches app.py query
-                classes="sidebar-button"
-                # No variant, or choose one like "default"
+                "Save Details",
+                id=f"{id_prefix}-save-conversation-details-button", # Matches app.py query
+                classes="sidebar-button",
+                variant="primary",
+                disabled=initial_ephemeral_state
             )
 
+        # ===================================================================
+        # Prompts (only for chat tab)
+        # ===================================================================
+        if id_prefix == "chat":
+            with Collapsible(title="Prompts", collapsed=True):
+                yield Static("Prompt management UI placeholder")
 
-        # Collapsible for "Load & Search"
-        with Collapsible(title="Load & Search Chats", collapsed=True, id=f"{id_prefix}-load-search-collapsible"):
-            yield Static("Search Saved Chats", classes="sidebar-label")
+        # ===================================================================
+        # Saved Conversations (only for chat tab)
+        # ===================================================================
+        with Collapsible(title="Search & Load Conversations", collapsed=True):
             yield Input(
-                placeholder="Type to search chats…",
-                id=f"{id_prefix}-conversation-search-bar", # Matches app.py query
-                classes="sidebar-input",
+                id=f"{id_prefix}-conversation-search-bar",
+                placeholder="Search all chats...",
+                classes="sidebar-input"
             )
-            # Filters for search
-            yield Checkbox("All Characters", id=f"{id_prefix}-conversation-search-all-characters-checkbox", value=True)
+            yield Checkbox(
+                "Include Character Chats",
+                id=f"{id_prefix}-conversation-search-include-character-checkbox"
+                # value=False by default for Checkbox
+            )
             yield Select(
-                options=[("No characters loaded", Select.BLANK)], # Populated by app on_mount
+                [],  # Empty options initially
+                id=f"{id_prefix}-conversation-search-character-filter-select",
+                allow_blank=True,  # User can select nothing to clear filter
                 prompt="Filter by Character...",
-                allow_blank=True,
-                id=f"{id_prefix}-conversation-search-character-filter-select", # Matches app.py query
-                disabled=True # Starts disabled if "All Characters" is true
+                classes="sidebar-select"  # Assuming a general class for selects or use default
             )
-            yield Checkbox("Include Character Chats", id=f"{id_prefix}-conversation-search-include-character-checkbox", value=True) # If false, only show "regular"
+            yield Checkbox(
+                "All Characters",
+                id=f"{id_prefix}-conversation-search-all-characters-checkbox",
+                value=True  # Default to True
+            )
+            yield ListView(
+                id=f"{id_prefix}-conversation-search-results-list",
+                classes="sidebar-listview"  # Add specific styling if needed
+            )
+            # Set initial height for ListView via styles property if not handled by class
+            # Example: self.query_one(f"#{id_prefix}-conversation-search-results-list", ListView).styles.height = 10
+            yield Button(
+                "Load Selected Chat",
+                id=f"{id_prefix}-conversation-load-selected-button",
+                variant="default",  # Or "primary"
+                classes="sidebar-button"  # Use existing class or new one
+            )
 
-            yield ListView(id=f"{id_prefix}-conversation-search-results-list", classes="search-results-listview") # Matches app.py query
-            yield Button("Load Selected Chat", id=f"{id_prefix}-conversation-load-selected-button", classes="sidebar-button") # Matches app.py query
 
         # Placeholder for actual character details (if a specific character is active beyond default)
         # This part would be more relevant if the chat tab directly supported switching active characters
