@@ -14,13 +14,14 @@
 # --- Constants ---
 TAB_CHAT = "chat"
 TAB_CONV_CHAR = "conversations_characters"
-TAB_NOTES = "notes"
 TAB_MEDIA = "media"
+TAB_METRICS = "metrics"
+TAB_NOTES = "notes"
 TAB_SEARCH = "search"
 TAB_INGEST = "ingest"
-TAB_STATS = "stats"
 TAB_LOGS = "logs"
-ALL_TABS = [TAB_CHAT, TAB_CONV_CHAR, TAB_NOTES, TAB_MEDIA, TAB_SEARCH, TAB_INGEST, TAB_LOGS, TAB_STATS]
+TAB_STATS = "stats"
+ALL_TABS = [TAB_CHAT, TAB_CONV_CHAR, TAB_INGEST, TAB_LOGS, TAB_MEDIA, TAB_METRICS, TAB_NOTES, TAB_SEARCH, TAB_STATS]
 
 
 
