@@ -36,7 +36,7 @@ from textual.css.query import QueryError  # For specific error handling
 #
 # --- Local API library Imports ---
 from tldw_app.Chat.Chat_Functions import chat
-from tldw_app.Constants import ALL_TABS, TAB_CONV_CHAR, TAB_CHAT, TAB_LOGS, TAB_NOTES, css_content
+from tldw_app.Constants import ALL_TABS, TAB_CONV_CHAR, TAB_CHAT, TAB_LOGS, TAB_NOTES, css_content, TAB_STATS
 from tldw_app.Logging_Config import RichLogHandler
 from tldw_app.Utils.Emoji_Handling import get_char, EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN, EMOJI_TITLE_NOTE, \
     FALLBACK_TITLE_NOTE, EMOJI_TITLE_SEARCH, FALLBACK_TITLE_SEARCH, EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE, \
@@ -53,6 +53,7 @@ from .config import (
     API_MODELS_BY_PROVIDER,
     LOCAL_PROVIDERS
 )
+from .Screens.Stats_screen import StatsScreen
 from .Character_Chat import Character_Chat_Lib as ccl
 from .Notes.Notes_Library import NotesInteropService
 from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
@@ -521,18 +522,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     # which included the create_settings_sidebar(TAB_CONV_CHAR, self.app_config) call.
                     yield from create_settings_sidebar(TAB_CONV_CHAR, self.app_config)
 
-            # --- Logs Window ---
-            with Container(id=f"{TAB_LOGS}-window", classes="window"):
-                yield RichLog(id="app-log-display", wrap=True, highlight=True, markup=True, auto_scroll=True)
-                yield Button("Copy All Logs to Clipboard", id="copy-logs-button", classes="logs-action-button")
-
-            # --- Other Placeholder Windows ---
-            for tab_id in ALL_TABS:
-                if tab_id not in [TAB_CHAT, TAB_CONV_CHAR, TAB_LOGS, TAB_NOTES]:  # Updated to TAB_CONV_CHAR
-                    with Container(id=f"{tab_id}-window", classes="window placeholder-window"):
-                        yield Static(f"{tab_id.replace('_', ' ').capitalize()} Window Placeholder")
-                        yield Button("Coming Soon", id=f"{tab_id}-placeholder-button", disabled=True)
-
             # --- Notes Tab Window ---
             with Container(id=f"{TAB_NOTES}-window", classes="window"):
                 # Instantiate the left sidebar (ensure it has a unique ID for the watcher)
@@ -551,6 +540,30 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
                 # Instantiate the right sidebar (ensure it has a unique ID for the watcher)
                 yield NotesSidebarRight(id="notes-sidebar-right", classes="sidebar")
+
+            # --- Logs Window (Placeholder) ---
+            # Media Tab Goes Here
+
+            # ---- Search Window (Placeholder) ---
+
+            # ---- Ingest Window (Placeholder) ---
+
+            # --- Logs Window ---
+            with Container(id=f"{TAB_LOGS}-window", classes="window"):
+                yield RichLog(id="app-log-display", wrap=True, highlight=True, markup=True, auto_scroll=True)
+                yield Button("Copy All Logs to Clipboard", id="copy-logs-button", classes="logs-action-button")
+
+            # --- Stats Window (Placeholder) ---
+            with Container(id=f"{TAB_STATS}-window", classes="window"):
+                yield StatsScreen(
+                    id="stats_screen_content")  # You can give the StatsScreen instance an ID if needed, or omit it
+
+            # --- Other Placeholder Windows ---
+            for tab_id in ALL_TABS:
+                if tab_id not in [TAB_CHAT, TAB_CONV_CHAR, TAB_NOTES, TAB_LOGS, TAB_STATS]:  # Updated to TAB_CONV_CHAR
+                    with Container(id=f"{tab_id}-window", classes="window placeholder-window"):
+                        yield Static(f"{tab_id.replace('_', ' ').capitalize()} Window Placeholder")
+                        yield Button("Coming Soon", id=f"{tab_id}-placeholder-button", disabled=True)
 
     def watch_current_chat_is_ephemeral(self, is_ephemeral: bool) -> None:
         loguru_logger.debug(f"Chat ephemeral state changed to: {is_ephemeral}")
