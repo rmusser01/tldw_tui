@@ -507,10 +507,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     yield Static("Keywords:", classes="sidebar-label")
                     yield TextArea("", id="conv-char-keywords-input",
                                    classes="conv-char-keywords-textarea")  # Placeholder text removed for specific class
-
-                    yield Button("Save Details", id="conv-char-save-details-button", classes="sidebar-button",
-                                 variant="primary")
-
                     yield Static("Export Options", classes="sidebar-label export-label")
                     yield Button("Export as Text", id="conv-char-export-text-button", classes="sidebar-button")
                     yield Button("Export as JSON", id="conv-char-export-json-button", classes="sidebar-button")

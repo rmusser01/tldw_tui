@@ -61,20 +61,12 @@ def create_character_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tru
             )
             # NEW "Save Chat" Button - specific to saving an ephemeral chat
             yield Button(
-                "Save Current Chat",
+                "Save Current Chat\n",
                 id=f"{id_prefix}-save-current-chat-button", # Matches app.py's expected ID
                 classes="sidebar-button save-chat-button",
                 variant="success",
                 disabled=not initial_ephemeral_state # Enabled if ephemeral, disabled if already saved
             )
-            yield Button(
-                "Save Details",
-                id=f"{id_prefix}-save-conversation-details-button", # Matches app.py query
-                classes="sidebar-button",
-                variant="primary",
-                disabled=initial_ephemeral_state
-            )
-
         # ===================================================================
         # Prompts (only for chat tab)
         # ===================================================================

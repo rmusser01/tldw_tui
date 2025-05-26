@@ -8,14 +8,15 @@ class NotesSidebarLeft(VerticalScroll):
     def compose(self) -> ComposeResult:
         """Create child widgets for the notes sidebar."""
         yield Static("My Notes", classes="sidebar-title", id="notes-sidebar-title")
+        yield Button("Create New Note", id="notes-create-new-button", variant="success")
         yield Input(placeholder="Search notes...", id="notes-search-input")
+        yield Button("Search Notes", id="notes-search-button", variant="default")
         yield ListView(id="notes-list-view") # Ensure ListView is created
         yield Button("Load Selected Note", id="notes-load-selected-button", variant="default")
         yield Button("Edit Selected Note", id="notes-edit-selected-button", variant="primary")
         yield Button("Save Current Note", id="notes-save-current-button", variant="success")
-        yield Button("Search Notes", id="notes-search-button", variant="default")
-        yield Button("Create New Note", id="notes-create-new-button", variant="success")
-        yield Button("Delete Selected Note", id="notes-delete-button", variant="error") # Existing Button
+        with Collapsible(title="Delete Notes", collapsed=True):
+            yield Button("Delete Selected Note", id="notes-delete-button", variant="error") # Existing Button
 
     async def populate_notes_list(self, notes_data: list[dict]) -> None:
         """Clears and populates the notes list."""
