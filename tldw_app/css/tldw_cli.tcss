@@ -412,3 +412,53 @@ MetricsScreen Label.-info-message {
     /* border: round $primary-lighten-1; /* Optional: border for info messages */
     text-style: italic;
 }
+
+
+/* Collapsible Sidebar Toggle Button For Character/Conversation Editing Page */
+.cc-sidebar-toggle-button { /* Applied to the "☰" button */
+    width: 5; /* Adjust width as needed */
+    height: 100%; /* Match parent Horizontal height, or set fixed e.g., 1 or 3 */
+    min-width: 0; /* Override other button styles if necessary */
+    border: none; /* Style as you like, e.g., remove border */
+    background: $surface-darken-1; /* Example background */
+    color: $text;
+}
+.cc-sidebar-toggle-button:hover {
+    background: $surface;
+}
+/* End of Collapsible Sidebar Toggle Button for character/conversation editing */
+
+
+/* Save Chat Button in Character Sidebar in Chat Tab */
+.save-chat-button { /* Class used in character_sidebar.py */
+    margin-top: 2;   /* Add 1 cell/unit of space above the button */
+    /*width: 100%;      Optional: make it full width like other sidebar buttons */
+}
+
+
+
+/* Character Sidebar Specific Styles */
+#character-sidebar #chat-conversation-title-input { /* Title input */
+    /* width: 100%; (from .sidebar-input) */
+    /* margin-bottom: 1; (from .sidebar-input) */
+}
+
+#character-sidebar .chat-keywords-textarea { /* Keywords TextArea specific class */
+    height: 4;  /* Or 3 to 5, adjust as preferred */
+    /* width: 100%; (from .sidebar-textarea) */
+    /* border: round $surface; (from .sidebar-textarea) */
+    /* margin-bottom: 1; (from .sidebar-textarea) */
+}
+
+/* Styling for the new "Save Details" button */
+#character-sidebar .save-details-button {
+    margin-top: 1; /* Space above this button */
+    /* width: 100%;    Make it full width */
+}
+
+/* Ensure the Save Current Chat button also has clear styling if needed */
+#character-sidebar .save-chat-button {
+    margin-top: 1; /* Ensure it has some space if it's after keywords */
+    /* width: 100%; */
+}
+/* End of Character Sidebar Specific Styles */

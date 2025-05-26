@@ -56,16 +56,24 @@ def create_character_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tru
             yield TextArea(
                 "",
                 id=f"{id_prefix}-conversation-keywords-input", # Matches app.py query
-                classes="sidebar-textarea chat-keywords-textarea", # Added specific class
+                classes="sidebar-textarea chat-keywords-textarea",
                 disabled=initial_ephemeral_state
             )
-            # NEW "Save Chat" Button - specific to saving an ephemeral chat
+            # Button to make an EPHEMERAL chat PERSISTENT (Save Chat to DB)
             yield Button(
-                "Save Current Chat\n",
+                "Save Invis Chat",
                 id=f"{id_prefix}-save-current-chat-button", # Matches app.py's expected ID
                 classes="sidebar-button save-chat-button",
                 variant="success",
                 disabled=not initial_ephemeral_state # Enabled if ephemeral, disabled if already saved
+            )
+            # Button to save METADATA (title/keywords) of a PERSISTENT/ALREADY EXISTING chat
+            yield Button(
+                "Save Details",
+                id=f"{id_prefix}-save-conversation-details-button", # ID for app.py handler
+                classes="sidebar-button save-details-button", # Specific class
+                variant="primary", # Or "default"
+                disabled=initial_ephemeral_state # Disabled if ephemeral, enabled if persistent
             )
         # ===================================================================
         # Prompts (only for chat tab)

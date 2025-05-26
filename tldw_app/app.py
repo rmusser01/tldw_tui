@@ -461,9 +461,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
             # --- Conversations & Characters Window (Redesigned) ---
             with Container(id=f"{TAB_CONV_CHAR}-window", classes="window"):
-                # Toggle button for the left pane
-                yield Button("☰", id="toggle-conv-char-sidebar")
-
                 # Left Pane
                 with VerticalScroll(id="conv-char-left-pane", classes="cc-left-pane"):
                     yield Static("My Characters & Conversations",
@@ -487,6 +484,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                             id="conv-char-search-results-list")  # Moved
                         yield Button("Load Selected", id="conv-char-load-button",
                                      classes="sidebar-button")  # Moved
+
+                yield Button("☰", id="toggle-conv-char-sidebar", classes="cc-sidebar-toggle-button")
 
                 # Center Pane
                 with VerticalScroll(id="conv-char-center-pane", classes="cc-center-pane"):
@@ -568,31 +567,40 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     def watch_current_chat_is_ephemeral(self, is_ephemeral: bool) -> None:
         loguru_logger.debug(f"Chat ephemeral state changed to: {is_ephemeral}")
         try:
-            save_chat_button = self.query_one("#chat-save-current-chat-button", Button)
-            # Visible if ephemeral AND chat log has messages. For now, just based on ephemeral.
-            # Actual enabling/disabling might be better in on_message or when chat-log content changes.
-            # For now: button is always present, its 'disabled' state changes.
-            # It should be disabled if !is_ephemeral OR if chat-log is empty.
-            # Simple logic: disable if not ephemeral. More complex enabling later.
-            save_chat_button.disabled = not is_ephemeral
+            # --- Controls for EPHEMERAL chat actions ---
+            save_current_chat_button = self.query_one("#chat-save-current-chat-button", Button)
+            save_current_chat_button.disabled = not is_ephemeral  # Enable if ephemeral
 
+            # --- Controls for PERSISTENT chat metadata ---
             title_input = self.query_one("#chat-conversation-title-input", Input)
             keywords_input = self.query_one("#chat-conversation-keywords-input", TextArea)
             save_details_button = self.query_one("#chat-save-conversation-details-button", Button)
 
-            # Metadata editing enabled only for saved chats
-            title_input.disabled = is_ephemeral
-            keywords_input.disabled = is_ephemeral
-            save_details_button.disabled = is_ephemeral
+            title_input.disabled = is_ephemeral  # Disable if ephemeral
+            keywords_input.disabled = is_ephemeral  # Disable if ephemeral
+            save_details_button.disabled = is_ephemeral  # Disable if ephemeral (cannot save details for non-existent chat)
 
             if is_ephemeral:
-                # Clear details if switching to ephemeral
+                # Clear details and set UUID display when switching TO ephemeral
                 title_input.value = ""
                 keywords_input.text = ""
-                self.query_one("#chat-conversation-uuid-display", Input).value = "Ephemeral Chat"
+                # Ensure UUID display is also handled
+                try:
+                    uuid_display = self.query_one("#chat-conversation-uuid-display", Input)
+                    uuid_display.value = "Ephemeral Chat"
+                except QueryError:
+                    loguru_logger.warning(
+                        "Could not find #chat-conversation-uuid-display to update for ephemeral state.")
+            # ELSE: If switching TO persistent (is_ephemeral is False),
+            # the calling function (e.g., load chat, save ephemeral chat button handler)
+            # is responsible for POPULATING the title/keywords fields.
+            # This watcher correctly enables them here.
 
         except QueryError as e:
-            loguru_logger.warning(f"UI component not found while watching ephemeral state: {e}")
+            loguru_logger.warning(
+                f"UI component not found while watching ephemeral state: {e}. This might be okay if a tab isn't active.")
+        except Exception as e_watch:
+            loguru_logger.error(f"Unexpected error in watch_current_chat_is_ephemeral: {e_watch}", exc_info=True)
 
     # --- Add explicit methods to update reactives from Select changes ---
     def update_chat_provider_reactive(self, new_value: Optional[str]) -> None:
