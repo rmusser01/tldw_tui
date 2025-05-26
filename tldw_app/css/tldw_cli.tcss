@@ -20,7 +20,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 /* Sidebar Styling */
 /* Generic .sidebar (used by #chat-sidebar and potentially others) */
 .sidebar {
-    /* width: 70;  <-- REMOVE fixed width */
+    dock: left;
     width: 25%; /* <-- CHANGE to percentage (adjust 20% to 35% as needed) */
     min-width: 20; /* <-- ADD a minimum width to prevent it becoming unusable */
     max-width: 80; /* <-- ADD a maximum width (optional) */
