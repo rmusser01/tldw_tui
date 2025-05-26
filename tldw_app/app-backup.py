@@ -80,7 +80,6 @@ API_IMPORTS_SUCCESSFUL = True
 #######################################################################################################################
 #
 # Statics
-
 if API_IMPORTS_SUCCESSFUL:
     API_FUNCTION_MAP = {
         "OpenAI": chat_with_openai,

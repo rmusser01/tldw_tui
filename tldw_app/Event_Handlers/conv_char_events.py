@@ -469,7 +469,7 @@ async def handle_ccp_save_conversation_details_button_pressed(app: 'TldwCli') ->
             keywords_widget_ccp_save.text = ", ".join(
                 [kw['keyword'] for kw in final_keywords_list_ccp]) if final_keywords_list_ccp else ""
         else:
-            app.notify("No changes to save.", severity="info")
+            app.notify("No changes to save.", severity="information")
 
     except ConflictError as e_conflict:
         logger.error(
@@ -500,7 +500,7 @@ async def handle_ccp_prompt_create_new_button_pressed(app: 'TldwCli') -> None:
         app.query_one("#ccp-prompt-details-collapsible", Collapsible).collapsed = False
         app.query_one("#ccp-conversation-details-collapsible", Collapsible).collapsed = True
         app.query_one("#ccp-prompt-name-input", Input).focus()
-        app.notify("Ready to create a new prompt.", severity="info")
+        app.notify("Ready to create a new prompt.", severity="information")
     except QueryError as e_query:
         logger.error(f"CCP: UI error preparing for new prompt: {e_query}", exc_info=True)
         app.notify("UI error creating new prompt.", severity="error")
@@ -557,8 +557,7 @@ async def handle_ccp_prompt_save_button_pressed(app: 'TldwCli') -> None:
             saved_id, saved_uuid, message_from_save = prompts_interop.add_prompt(
                 name=name, author=author, details=details,
                 system_prompt=system_prompt, user_prompt=user_prompt,
-                keywords=keywords_list, client_id=app.prompts_client_id,
-                overwrite=False
+                keywords=keywords_list, overwrite=False
             )
         else:
             logger.info(f"CCP: Updating prompt ID: {app.current_prompt_id}, Name: {name}")
@@ -570,7 +569,6 @@ async def handle_ccp_prompt_save_button_pressed(app: 'TldwCli') -> None:
             updated_uuid, message_from_save = prompts_interop.get_db_instance().update_prompt_by_id(
                 prompt_id=app.current_prompt_id,
                 update_data=update_payload,
-                client_id=app.prompts_client_id
             )
             saved_id = app.current_prompt_id
             saved_uuid = updated_uuid
@@ -615,7 +613,6 @@ async def handle_ccp_prompt_clone_button_pressed(app: 'TldwCli') -> None:
             system_prompt=app.current_prompt_system or "",
             user_prompt=app.current_prompt_user or "",
             keywords=[kw.strip() for kw in (app.current_prompt_keywords_str or "").split(',') if kw.strip()],
-            client_id=app.prompts_client_id,
             overwrite=False
         )
         if cloned_id:
@@ -638,31 +635,50 @@ async def handle_ccp_prompt_delete_button_pressed(app: 'TldwCli') -> None:
         return
 
     try:
-        # Ensure current_prompt_id is not None before calling delete
         prompt_id_to_delete = app.current_prompt_id
-        if prompt_id_to_delete is None:  # Should be caught by above check, but defensive
+        if prompt_id_to_delete is None: # Should be caught by above check, but defensive
             app.notify("Error: No prompt ID available for deletion.", severity="error")
             return
 
-        success = prompts_interop.soft_delete_prompt(prompt_id_to_delete, client_id=app.prompts_client_id)
+        # soft_delete_prompt in your DB class returns True on success, False if not found/already deleted
+        # It raises ConflictError or DatabaseError on other issues.
+        success = prompts_interop.soft_delete_prompt(prompt_id_to_delete) # client_id is handled internally
+
         if success:
             app.notify(f"Prompt '{app.current_prompt_name or 'selected'}' deleted.",
-                       severity="information")  # Use current_prompt_name
-            clear_ccp_prompt_fields(app)
+                       severity="information")
+            clear_ccp_prompt_fields(app) # This will reset app.current_prompt_id and other reactives
             await populate_ccp_prompts_list_view(app)
-            app.query_one("#ccp-prompt-details-collapsible", Collapsible).collapsed = True
+            # Ensure the details pane is collapsed after deletion
+            try:
+                app.query_one("#ccp-prompt-details-collapsible", Collapsible).collapsed = True
+            except QueryError:
+                logger.warning("Could not find #ccp-prompt-details-collapsible to collapse after delete.")
         else:
+            # This 'else' branch now correctly handles the "not found or already deleted" case
             app.notify(
-                f"Failed to delete prompt '{app.current_prompt_name or 'selected'}'. It might have been already deleted.",
+                f"Failed to delete prompt '{app.current_prompt_name or 'selected'}'. It might have been already deleted or not found.",
                 severity="error", timeout=7)
-    except prompts_interop.NotFoundError:
-        app.notify(f"Prompt '{app.current_prompt_name or 'selected'}' not found for deletion.", severity="error")
-    except prompts_interop.DatabaseError as e_db_del:
+            # Refresh the list anyway to ensure UI consistency
+            await populate_ccp_prompts_list_view(app)
+            # If the prompt was not found, it makes sense to also clear the fields
+            # as the currently displayed details might be for a non-existent prompt.
+            # However, clear_ccp_prompt_fields also sets current_prompt_id to None,
+            # which might be okay or you might want to just clear UI and keep ID if deletion failed for other reasons.
+            # Given soft_delete_prompt returns False for "not found", clearing is appropriate.
+            if app.current_prompt_id == prompt_id_to_delete: # Only clear if it was the one we tried to delete
+                clear_ccp_prompt_fields(app)
+
+    except prompts_interop.ConflictError as e_cf_del: # Specific exception from your DB class
+        logger.error(f"CCP: Conflict error deleting prompt: {e_cf_del}", exc_info=True)
+        app.notify(f"Conflict error deleting prompt: {e_cf_del}", severity="error")
+        await populate_ccp_prompts_list_view(app) # Refresh list
+    except prompts_interop.DatabaseError as e_db_del: # Specific exception from your DB class
         logger.error(f"CCP: Database error deleting prompt: {e_db_del}", exc_info=True)
         app.notify(f"Database error deleting prompt: {type(e_db_del).__name__}", severity="error")
-    except Exception as e_del:
-        logger.error(f"CCP: Error deleting prompt: {e_del}", exc_info=True)
-        app.notify(f"Error deleting prompt: {type(e_del).__name__}", severity="error")
+    except Exception as e_del: # Catch any other unexpected exceptions
+        logger.error(f"CCP: Unexpected error deleting prompt: {e_del}", exc_info=True)
+        app.notify(f"Unexpected error deleting prompt: {type(e_del).__name__}", severity="error")
 
 
 async def handle_ccp_conversation_search_input_changed(app: 'TldwCli', event_value: str) -> None:
