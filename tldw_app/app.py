@@ -36,6 +36,12 @@ from textual.css.query import QueryError  # For specific error handling
 #
 # --- Local API library Imports ---
 from tldw_app.Chat.Chat_Functions import chat
+from tldw_app.Logging_Config import RichLogHandler
+from tldw_app.Utils.Emoji_Handling import get_char, EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN, EMOJI_TITLE_NOTE, \
+    FALLBACK_TITLE_NOTE, EMOJI_TITLE_SEARCH, FALLBACK_TITLE_SEARCH, EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE, \
+    EMOJI_SEND, FALLBACK_SEND, EMOJI_CHARACTER_ICON, FALLBACK_CHARACTER_ICON, EMOJI_THINKING, FALLBACK_THINKING, \
+    EMOJI_EDIT, FALLBACK_EDIT, EMOJI_SAVE_EDIT, FALLBACK_SAVE_EDIT, EMOJI_COPIED, FALLBACK_COPIED, EMOJI_COPY, \
+    FALLBACK_COPY, supports_emoji
 from .config import (
     CONFIG_TOML_CONTENT,
     DEFAULT_CONFIG_PATH,
@@ -137,208 +143,11 @@ ASCII_PORTRAIT = r"""
 # Cache the result so we don't re-calculate every time
 _emoji_support_cached = None
 
-def supports_emoji() -> bool:
-    """
-    Detects if the current terminal likely supports emojis.
-    This is heuristic-based and not 100% foolproof.
-    Caches the result for efficiency.
-    """
-    global _emoji_support_cached
-    if _emoji_support_cached is not None:
-        return _emoji_support_cached
-
-    # 1. Must be a TTY
-    if not sys.stdout.isatty():
-        _emoji_support_cached = False
-        return False
-
-    # 2. Encoding should ideally be UTF-8
-    # (getattr is used for safety, e.g., if sys.stdout is mocked)
-    encoding = getattr(sys.stdout, 'encoding', '').lower()
-    if 'utf-8' not in encoding and 'utf8' not in encoding:
-        # Some terminals might still render emojis with other encodings,
-        # but UTF-8 is the most reliable indicator.
-        # For cmd.exe, even with chcp 65001 (UTF-8), font support is the main issue.
-        # Don't immediately fail, let OS checks decide more
-        #_emoji_support_cached = False
-        #return False
-        pass
-
-    #####################################
-    # 3. OS-specific checks
-    #####################################
-    os_name = platform.system()
-
-    if os_name == 'Windows':
-        # Windows Terminal has good emoji support.
-        if 'WT_SESSION' in os.environ or 'TERMINUS_SUBLIME' in os.environ: # WT_SESSION for Windows Terminal, TERMINUS_SUBLIME for Terminus
-            _emoji_support_cached = True
-            return True
-        # For older cmd.exe or PowerShell without Windows Terminal,
-        # emoji support is unreliable or poor even with UTF-8 codepage.
-        # Check if running in ConEmu, which has better support
-        if 'CONEMUBUILD' in os.environ or 'CMDER_ROOT' in os.environ :
-             _emoji_support_cached = True
-             return True
-        # Check if it's Fluent Terminal
-        if os.environ.get('FLUENT_TERMINAL_PROFILE_NAME'):
-            _emoji_support_cached = True
-            return True
-
-        # For standard cmd.exe or older PowerShell, be pessimistic.
-        _emoji_support_cached = False
-        return False
-
-    # For macOS and Linux:
-    # If it's a UTF-8 TTY, support is generally good on modern systems.
-    # We can check for TERM=dumb as a negative indicator.
-    if os.environ.get('TERM') == 'dumb':
-        _emoji_support_cached = False
-        return False
-
-    # If encoding wasn't explicitly UTF-8 earlier, but it's Linux/macOS not TERM=dumb,
-    # it's still likely okay on modern systems.
-    # However, to be safer, if not UTF-8, tend towards no.
-    if 'utf-8' not in encoding and 'utf8' not in encoding:
-        _emoji_support_cached = False
-        return False
-
-    # Default to True for non-Windows UTF-8 (or generally capable) TTYs not being 'dumb'
-    _emoji_support_cached = True
-    return True
-
-# Define your emoji and fallback pairs
-# You can centralize these or define them where needed.
-# Example:
-# --- Emoji and Fallback Definitions ---
-EMOJI_TITLE_BRAIN = "🧠"
-FALLBACK_TITLE_BRAIN = "[B]"
-EMOJI_TITLE_NOTE = "📝"
-FALLBACK_TITLE_NOTE = "[N]"
-EMOJI_TITLE_SEARCH = "🔍"
-FALLBACK_TITLE_SEARCH = "[S]"
-
-EMOJI_SEND = "▶" # Or "➡️"
-FALLBACK_SEND = "Send"
-
-EMOJI_SIDEBAR_TOGGLE = "☰"
-FALLBACK_SIDEBAR_TOGGLE = "Menu"
-
-EMOJI_CHARACTER_ICON = "👤"
-FALLBACK_CHARACTER_ICON = "Char"
-
-EMOJI_THINKING = "🤔" # Or "⏳" "💭"
-FALLBACK_THINKING = "..."
-
-EMOJI_COPY = "📋"
-FALLBACK_COPY = "Copy"
-EMOJI_COPIED = "✅" # For feedback
-FALLBACK_COPIED = "[OK]"
-
-EMOJI_EDIT = "✏️"
-FALLBACK_EDIT = "Edit"
-EMOJI_SAVE_EDIT = "💾" # Or use check/OK
-FALLBACK_SAVE_EDIT = "Save"
-
-ROCKET_EMOJI = "🚀"
-ROCKET_FALLBACK = "[Go!]"
-
-CHECK_EMOJI = "✅"
-CHECK_FALLBACK = "[OK]"
-
-CROSS_EMOJI = "❌"
-CROSS_FALLBACK = "[FAIL]"
-
-SPARKLES_EMOJI = "✨"
-SPARKLES_FALLBACK = "*"
-
-def get_char(emoji_char: str, fallback_char: str) -> str:
-    """Returns the emoji if supported, otherwise the fallback."""
-    return emoji_char if supports_emoji() else fallback_char
 
 
-# --- Custom Logging Handler ---
-class RichLogHandler(logging.Handler):
-    def __init__(self, rich_log_widget: RichLog):
-        super().__init__()
-        self.rich_log_widget = rich_log_widget
-        self.log_queue = asyncio.Queue()
-        self.formatter = logging.Formatter(
-            "{asctime} [{levelname:<8}] {name}:{lineno:<4} : {message}",
-            style="{", datefmt="%Y-%m-%d %H:%M:%S"
-        )
-        self.setFormatter(self.formatter)
-        self._queue_processor_task = None
 
-    def start_processor(self, app: App):  # Keep 'app' param for context if needed elsewhere, but don't use for run_task
-        """Starts the log queue processing task using the widget's run_task."""
-        if not self._queue_processor_task or self._queue_processor_task.done():
-            try:
-                # Get the currently running event loop
-                loop = asyncio.get_running_loop()
-                # Create the task using the standard asyncio function
-                self._queue_processor_task = loop.create_task(
-                    self._process_log_queue(),
-                    name="RichLogProcessor"
-                )
-                logging.debug("RichLog queue processor task started via asyncio.create_task.")
-            except RuntimeError as e:
-                # Handle cases where the loop might not be running (shouldn't happen if called from on_mount)
-                logging.error(f"Failed to get running loop to start log processor: {e}")
-            except Exception as e:
-                logging.error(f"Failed to start log processor task: {e}", exc_info=True)
 
-    async def stop_processor(self):
-        """Signals the queue processor task to stop and waits for it."""
-        # This cancellation logic works for tasks created with asyncio.create_task
-        if self._queue_processor_task and not self._queue_processor_task.done():
-            logging.debug("Attempting to stop RichLog queue processor task...")
-            self._queue_processor_task.cancel()
-            try:
-                # Wait for the task to acknowledge cancellation
-                await self._queue_processor_task
-            except asyncio.CancelledError:
-                logging.debug("RichLog queue processor task cancelled successfully.")
-            except Exception as e:
-                # Log errors during cancellation itself
-                logging.error(f"Error occurred while awaiting cancelled log processor task: {e}", exc_info=True)
-            finally:
-                self._queue_processor_task = None  # Ensure it's cleared
 
-    async def _process_log_queue(self):
-        """Coroutine to process logs from the queue and write to the widget."""
-        while True:
-            try:
-                message = await self.log_queue.get()
-                if self.rich_log_widget.is_mounted and self.rich_log_widget.app:
-                    self.rich_log_widget.write(message)
-                self.log_queue.task_done()
-            except asyncio.CancelledError:
-                logging.debug("RichLog queue processor task received cancellation.")
-                # Process any remaining items? Might be risky if app is shutting down.
-                # while not self.log_queue.empty():
-                #    try: message = self.log_queue.get_nowait(); # process...
-                #    except asyncio.QueueEmpty: break
-                break  # Exit the loop on cancellation
-            except Exception as e:
-                loguru_logger.critical(f"!!! CRITICAL ERROR in RichLog processor: {e}")  # Use print as fallback
-                traceback.print_exc()
-                # Avoid continuous loop on error, maybe sleep?
-                await asyncio.sleep(1)
-
-    def emit(self, record: logging.LogRecord):
-        """Format the record and put it onto the async queue."""
-        try:
-            message = self.format(record)
-            # Use call_soon_threadsafe if emit might be called from non-asyncio threads (workers)
-            # For workers started with thread=True, this is necessary.
-            if hasattr(self.rich_log_widget, 'app') and self.rich_log_widget.app:
-                self.rich_log_widget.app._loop.call_soon_threadsafe(self.log_queue.put_nowait, message)
-            else:  # Fallback during startup/shutdown
-                if record.levelno >= logging.WARNING: logging.warning(f"LOG_FALLBACK: {message}")
-        except Exception:
-            loguru_logger.warning(f"!!!!!!!! ERROR within RichLogHandler.emit !!!!!!!!!!")  # Use print as fallback
-            traceback.print_exc()
 
 
 # --- Global variable for config ---
