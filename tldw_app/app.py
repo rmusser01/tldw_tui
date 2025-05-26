@@ -161,7 +161,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     character_sidebar_collapsed: reactive[bool] = reactive(False, layout=True)  # For character sidebar
     notes_sidebar_left_collapsed: reactive[bool] = reactive(False, layout=True)
     notes_sidebar_right_collapsed: reactive[bool] = reactive(False, layout=True)
-    conv_char_sidebar_collapsed: reactive[bool] = reactive(False, layout=True)
+    conv_char_sidebar_left_collapsed: reactive[bool] = reactive(False, layout=True)
+    conv_char_sidebar_right_collapsed: reactive[bool] = reactive(False, layout=True)
 
     # Reactive variables for selected note details
     current_selected_note_id: reactive[Optional[str]] = reactive(None)
@@ -537,12 +538,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                         yield Button("Load Selected Prompt", id="ccp-prompt-load-selected-button",
                                      classes="sidebar-button")
 
-                yield Button("☰", id="toggle-conv-char-sidebar", classes="cc-sidebar-toggle-button")
+                yield Button("☰", id="toggle-conv-char-left-sidebar", classes="cc-sidebar-toggle-button")
 
                 # Center Pane
                 with VerticalScroll(id="conv-char-center-pane", classes="cc-center-pane"):
                     yield Static("Conversation History", classes="pane-title")
                     # Message widgets will be mounted here dynamically
+
+                yield Button("☰", id="toggle-conv-char-right-sidebar", classes="cc-sidebar-toggle-button")
 
                 # --- Right Pane (Details & Settings) ---
                 with VerticalScroll(id="conv-char-right-pane", classes="cc-right-pane"):
@@ -911,24 +914,27 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         except QueryError:
             logging.error("Notes right sidebar widget (#notes-sidebar-right) not found.")
 
-    def watch_conv_char_sidebar_collapsed(self, collapsed: bool) -> None:
+    def watch_conv_char_sidebar_left_collapsed(self, collapsed: bool) -> None:
         """Hide or show the Conversations, Characters & Prompts left sidebar pane."""
         try:
             sidebar_pane = self.query_one("#conv-char-left-pane") # The ID of the VerticalScroll
             sidebar_pane.display = not collapsed # True means visible, False means hidden
-            # Optional: you might want to set a class to control width/border as well,
-            # similar to how other sidebars might be handled, e.g., adding/removing "collapsed" class.
-            # For now, direct display toggle is simplest.
-            # If using a class:
-            # sidebar_pane.set_class(collapsed, "collapsed") # Adds "collapsed" class if true, removes if false
-
-            # Also, ensure the toggle button itself is not part of the pane being hidden.
-            # Based on Step 1, the button "toggle-conv-char-sidebar" is outside "conv-char-left-pane".
             logging.debug(f"Conversations, Characters & Prompts left pane display set to {not collapsed}")
         except QueryError:
             logging.error("Conversations, Characters & Prompts left sidebar pane (#conv-char-left-pane) not found.")
         except Exception as e:
             logging.error(f"Error toggling Conversations, Characters & Prompts left sidebar pane: {e}", exc_info=True)
+
+    def watch_conv_char_sidebar_right_collapsed(self, collapsed: bool) -> None:
+        """Hide or show the Conversations, Characters & Prompts left sidebar pane."""
+        try:
+            sidebar_pane = self.query_one("#conv-char-right-pane") # The ID of the VerticalScroll
+            sidebar_pane.display = not collapsed # True means visible, False means hidden
+            logging.debug(f"Conversations, Characters & Prompts right pane display set to {not collapsed}")
+        except QueryError:
+            logging.error("Conversations, Characters & Prompts right sidebar pane (#conv-char-right-pane) not found.")
+        except Exception as e:
+            logging.error(f"Error toggling Conversations, Characters & Prompts right sidebar pane: {e}", exc_info=True)
 
     async def save_current_note(self) -> bool:
         """Saves the currently selected note's title and content to the database."""
@@ -1247,9 +1253,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                           "collapsed" if self.notes_sidebar_right_collapsed else "expanded")
             return
 
-        if button_id == "toggle-conv-char-sidebar":
-            self.conv_char_sidebar_collapsed = not self.conv_char_sidebar_collapsed
-            logging.debug("Conversations, Characters & Prompts sidebar now %s", "collapsed" if self.conv_char_sidebar_collapsed else "expanded")
+        if button_id == "toggle-conv-char-left-sidebar":
+            self.conv_char_sidebar_left_collapsed = not self.conv_char_sidebar_left_collapsed
+            logging.debug("Conversations, Characters & Prompts left sidebar now %s", "collapsed" if self.conv_char_sidebar_left_collapsed else "expanded")
+            return
+
+        if button_id == "toggle-conv-char-right-sidebar":
+            self.conv_char_sidebar_right_collapsed = not self.conv_char_sidebar_right_collapsed
+            logging.debug("Conversations, Characters & Prompts right sidebar now %s", "collapsed" if self.conv_char_sidebar_right_collapsed else "expanded")
             return
 
         if button_id == "notes-new-button":
