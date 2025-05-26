@@ -114,7 +114,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 
 /* --- Conversations, Characters & Prompts Window specific layouts (previously Character Chat) --- */
 /* Main container for the three-pane layout */
-#conversations_characters-window {
+#conversations_characters_prompts-window {
     layout: horizontal; /* Crucial for side-by-side panes */
     /* Ensure it takes full height if not already by .window */
     height: 100%;
@@ -189,7 +189,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 
 
 /* Old styles for #conv-char-main-content, #conv-char-top-area etc. are removed */
-/* as the structure within #conversations_characters-window is now different. */
+/* as the structure within #conversations_characters_prompts-window is now different. */
 /* Portrait styling - if still needed, would be part of a specific pane's content now */
 /* #conv-char-portrait {
     width: 25;
@@ -462,3 +462,38 @@ MetricsScreen Label.-info-message {
     /* width: 100%; */
 }
 /* End of Character Sidebar Specific Styles */
+
+
+/* --- Prompts Sidebar Vertical --- */
+.ccp-prompt-textarea { /* Specific class for prompt textareas if needed */
+    height: 5; /* Example height */
+    /* width: 100%; (from .sidebar-textarea) */
+    /* margin-bottom: 1; (from .sidebar-textarea) */
+}
+
+#ccp-prompts-listview { /* ID for the prompt list */
+    height: 10; /* Or 1fr if it's the main element in its collapsible */
+    border: round $surface;
+    margin-bottom: 1;
+}
+
+.ccp-prompt-action-buttons Button {
+    width: 1fr; /* Make buttons share space */
+    margin: 0 1 0 0; /* Small right margin, no top/bottom if already in Horizontal */
+}
+.ccp-prompt-action-buttons Button:last-of-type { /* Corrected pseudo-class */
+    margin-right: 0;
+}
+
+/* Ensure Collapsible titles are clear */
+#conv-char-right-pane Collapsible > .collapsible--header {
+    background: $primary-background-darken-1; /* Example to differentiate */
+    color: $text;
+}
+
+#conv-char-right-pane Collapsible.-active > .collapsible--header { /* Optional: when expanded */
+    background: $primary-background;
+}
+/* --- End of Prompts Sidebar Vertical --- */
+
+

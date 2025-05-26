@@ -53,9 +53,9 @@ Date: July 23, 2024 Prepared by: Jules (AI Software Engineering Agent)
 3. Specific Improvement Proposals
 
 **3.1. Tab Structure and Purpose**
-    *   **Issue**: Significant functional overlap exists between `TAB_CHAT` and `TAB_CONV_CHAR`, particularly in managing and searching for conversations. This can lead to your confusion regarding where to perform these actions. Additionally, placeholder tabs (`TAB_MEDIA`, `TAB_SEARCH`, `TAB_INGEST`, `TAB_STATS`) add clutter to the interface without providing current functionality.
+    *   **Issue**: Significant functional overlap exists between `TAB_CHAT` and `TAB_CPP`, particularly in managing and searching for conversations. This can lead to your confusion regarding where to perform these actions. Additionally, placeholder tabs (`TAB_MEDIA`, `TAB_SEARCH`, `TAB_INGEST`, `TAB_STATS`) add clutter to the interface without providing current functionality.
     *   **Proposals**:
-        *   **Primary Recommendation: Merge `TAB_CHAT` and `TAB_CONV_CHAR` into a single "Conversations" Tab.**
+        *   **Primary Recommendation: Merge `TAB_CHAT` and `TAB_CPP` into a single "Conversations" Tab.**
             *   This unified tab would adopt a three-pane layout:
                 *   Left Pane: List of all conversations (searchable/filterable), button to start a "New Chat".
                 *   Center Pane: Message history of the selected/active conversation, including the chat input area.

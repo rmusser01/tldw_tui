@@ -36,8 +36,9 @@ from textual.css.query import QueryError  # For specific error handling
 #
 # --- Local API library Imports ---
 from tldw_app.Chat.Chat_Functions import chat
-from tldw_app.Constants import ALL_TABS, TAB_CONV_CHAR, TAB_CHAT, TAB_LOGS, TAB_NOTES, css_content, TAB_STATS
+from tldw_app.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, css_content, TAB_STATS
 from tldw_app.Logging_Config import RichLogHandler
+from tldw_app.Prompt_Management import Prompts_Interop as prompts_interop
 from tldw_app.Utils.Emoji_Handling import get_char, EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN, EMOJI_TITLE_NOTE, \
     FALLBACK_TITLE_NOTE, EMOJI_TITLE_SEARCH, FALLBACK_TITLE_SEARCH, EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE, \
     EMOJI_SEND, FALLBACK_SEND, EMOJI_CHARACTER_ICON, FALLBACK_CHARACTER_ICON, EMOJI_THINKING, FALLBACK_THINKING, \
@@ -175,6 +176,20 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # Reactive variable for current conversation loaded in the Conversations, Characters & Prompts tab
     current_conv_char_tab_conversation_id: reactive[Optional[str]] = reactive(None)
 
+    # Prompts
+    current_prompt_id: reactive[Optional[int]] = reactive(None)
+    current_prompt_uuid: reactive[Optional[str]] = reactive(None)
+    current_prompt_name: reactive[Optional[str]] = reactive(None)
+    current_prompt_author: reactive[Optional[str]] = reactive(None)
+    current_prompt_details: reactive[Optional[str]] = reactive(None)
+    current_prompt_system: reactive[Optional[str]] = reactive(None)
+    current_prompt_user: reactive[Optional[str]] = reactive(None)
+    current_prompt_keywords_str: reactive[Optional[str]] = reactive("") # Store as comma-sep string for UI
+    current_prompt_version: reactive[Optional[int]] = reactive(None) # If DB provides it and you need it
+    # is_new_prompt can be inferred from current_prompt_id being None
+
+    _prompt_search_timer: Optional[Timer] = None # For prompt search input
+
     # De-Bouncers
     _conv_char_search_timer: Optional[Timer] = None # For conv-char-search-input
     _conversation_search_timer: Optional[Timer] = None # For chat-conversation-search-bar
@@ -223,6 +238,31 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         self._rich_log_handler: Optional[RichLogHandler] = None  # Initialize handler attribute
         self._conv_char_search_timer = None
         self._conversation_search_timer = None
+
+        # --- Initialize PromptsInteropService ---
+        self.prompts_service_initialized = False
+        try:
+            # Determine a path for your prompts database.
+            # This could come from your app_config or be a fixed path.
+            prompts_db_path_str = get_cli_setting(
+                "database",
+                "prompts_db_path",  # This is the key from your config.toml
+                # THIS IS THE DEFAULT VALUE if 'prompts_db_path' is NOT in config:
+                str(Path.home() / ".local/share/tldw_cli/tldw_cli_prompts_v2.db")
+            )
+            prompts_db_path = Path(prompts_db_path_str)  # Path('~/.local/...')
+
+            prompts_db_path = prompts_db_path.expanduser().resolve()
+            prompts_db_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
+            prompts_interop.initialize_interop(db_path=prompts_db_path, client_id="tldw_tui_client_v1")
+            self.prompts_service_initialized = True
+            logging.info(f"Prompts Interop Service initialized with DB: {prompts_db_path}")
+        except Exception as e:
+            self.prompts_service_initialized = False
+            logging.error(f"Failed to initialize Prompts Interop Service: {e}", exc_info=True)
+            # Consider if app should notify user or degrade gracefully
+
+        self._prompt_search_timer = None  # Initialize here
 
     def _setup_logging(self):
         """Sets up all logging handlers, including Loguru integration."""
@@ -422,7 +462,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     def compose_tabs(self) -> ComposeResult:
         with Horizontal(id="tabs"):
             for tab_id in ALL_TABS:
-                label = "Conversations, Characters & Prompts" if tab_id == TAB_CONV_CHAR else tab_id.replace('_',
+                label = "Conversations, Characters & Prompts" if tab_id == TAB_CCP else tab_id.replace('_',
                                                                                                     ' ').capitalize()
                 yield Button(
                     label,
@@ -460,11 +500,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 yield from create_character_sidebar("chat", initial_ephemeral_state=self.current_chat_is_ephemeral)
 
             # --- Conversations, Characters & Prompts Window ---
-            with Container(id=f"{TAB_CONV_CHAR}-window", classes="window"):
+            with Container(id=f"{TAB_CCP}-window", classes="window"):
                 # Left Pane
                 with VerticalScroll(id="conv-char-left-pane", classes="cc-left-pane"):
-                    yield Static("My Characters & Conversations",
-                                 classes="sidebar-title")  # Reusing sidebar-title class
+                    yield Static("CCP Menu", classes="sidebar-title cc-section-title-text")
 
                     with Collapsible(title="Characters", id="conv-char-characters-collapsible"):
                         yield Select(
@@ -485,6 +524,19 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                         yield Button("Load Selected", id="conv-char-load-button",
                                      classes="sidebar-button")  # Moved
 
+                    # --- NEW: Prompts Section in Left Pane ---
+                    with Collapsible(title="Prompts", id="ccp-prompts-collapsible"):
+                        yield Button("Create New Prompt", id="ccp-prompt-create-new-button",
+                                     classes="sidebar-button")
+                        yield Input(id="ccp-prompt-search-input", placeholder="Search prompts...",
+                                    classes="sidebar-input")
+                        # Search button is optional if using on_input_changed with timer
+                        # yield Button("Search Prompts", id="ccp-prompt-search-button", classes="sidebar-button")
+                        yield ListView(id="ccp-prompts-listview",
+                                       classes="sidebar-listview")  # New ListView for prompts
+                        yield Button("Load Selected Prompt", id="ccp-prompt-load-selected-button",
+                                     classes="sidebar-button")
+
                 yield Button("☰", id="toggle-conv-char-sidebar", classes="cc-sidebar-toggle-button")
 
                 # Center Pane
@@ -492,35 +544,51 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     yield Static("Conversation History", classes="pane-title")
                     # Message widgets will be mounted here dynamically
 
-                # Right Pane (also includes settings previously in a separate sidebar for this tab)
+                # --- Right Pane (Details & Settings) ---
                 with VerticalScroll(id="conv-char-right-pane", classes="cc-right-pane"):
-                    yield Static("Character/Conversation Details", classes="sidebar-title")  # Reusing sidebar-title
+                    #yield Static("Character/Conversation Details", classes="sidebar-title")  # Reusing sidebar-title
+                    yield from create_settings_sidebar(TAB_CCP, self.app_config)
 
-                    # General Settings (from create_settings_sidebar for TAB_CONV_CHAR)
-                    # This assumes create_settings_sidebar for TAB_CONV_CHAR would now be integrated here
-                    # or this section is for new character/conv details separate from global settings.
-                    # For now, adding new specific fields as per instruction:
-                    yield Static("Title:", classes="sidebar-label")
-                    yield Input(id="conv-char-title-input", placeholder="Conversation title...",
-                                classes="sidebar-input")
+                    # --- Conversation Details Section (Collapsible) ---
+                    with Collapsible(title="Conversation Details", id="ccp-conversation-details-collapsible",
+                                     collapsed=True):
+                        yield Static("Title:", classes="sidebar-label")
+                        yield Input(id="conv-char-title-input", placeholder="Conversation title...",
+                                    classes="sidebar-input")
+                        yield Static("Keywords:", classes="sidebar-label")
+                        yield TextArea("", id="conv-char-keywords-input", classes="conv-char-keywords-textarea")
+                        yield Button("Save Conversation Details", id="conv-char-save-details-button",
+                                     classes="sidebar-button")  # Added in previous step
+                        yield Static("Export Options", classes="sidebar-label export-label")
+                        yield Button("Export as Text", id="conv-char-export-text-button", classes="sidebar-button")
+                        yield Button("Export as JSON", id="conv-char-export-json-button", classes="sidebar-button")
 
-                    yield Static("Keywords:", classes="sidebar-label")
-                    yield TextArea("", id="conv-char-keywords-input",
-                                   classes="conv-char-keywords-textarea")  # Placeholder text removed for specific class
-                    yield Static("Export Options", classes="sidebar-label export-label")
-                    yield Button("Export as Text", id="conv-char-export-text-button", classes="sidebar-button")
-                    yield Button("Export as JSON", id="conv-char-export-json-button", classes="sidebar-button")
+                    # --- NEW: Prompt Details Section (Collapsible) ---
+                    with Collapsible(title="Prompt Details", id="ccp-prompt-details-collapsible", collapsed=True):
+                        yield Label("Prompt Name:", classes="sidebar-label")
+                        yield Input(id="ccp-prompt-name-input", placeholder="Unique prompt name...",
+                                    classes="sidebar-input")
+                        yield Label("Author:", classes="sidebar-label")
+                        yield Input(id="ccp-prompt-author-input", placeholder="Author name...", classes="sidebar-input")
+                        yield Label("Details/Description:", classes="sidebar-label")
+                        yield TextArea("", id="ccp-prompt-description-textarea",
+                                       classes="sidebar-textarea ccp-prompt-textarea")
+                        yield Label("System Prompt:", classes="sidebar-label")
+                        yield TextArea("", id="ccp-prompt-system-textarea",
+                                       classes="sidebar-textarea ccp-prompt-textarea")
+                        yield Label("User Prompt (Template):", classes="sidebar-label")
+                        yield TextArea("", id="ccp-prompt-user-textarea",
+                                       classes="sidebar-textarea ccp-prompt-textarea")
+                        yield Label("Keywords (comma-separated):", classes="sidebar-label")
+                        yield TextArea("", id="ccp-prompt-keywords-textarea",
+                                       classes="sidebar-textarea ccp-prompt-textarea")
 
-                    # Placeholder for where old settings from create_settings_sidebar(TAB_CONV_CHAR,...) would go
-                    # For this step, we are just adding the new UI elements.
-                    # The existing call to create_settings_sidebar for TAB_CONV_CHAR is removed as per the instruction
-                    # to "Remove all existing child widgets currently composed within this container".
-                    # If global settings (like API provider, model) are still needed for this tab,
-                    # they would need to be re-integrated here or the design re-evaluated.
-                    # The instruction was to remove existing children of the TAB_CONV_CHAR-window,
-                    # which included the create_settings_sidebar(TAB_CONV_CHAR, self.app_config) call.
-                    yield from create_settings_sidebar(TAB_CONV_CHAR, self.app_config)
-
+                        with Horizontal(classes="ccp-prompt-action-buttons"):  # Container for buttons
+                            yield Button("Save Prompt", id="ccp-prompt-save-button", variant="success",
+                                         classes="sidebar-button")
+                            yield Button("Clone Prompt", id="ccp-prompt-clone-button", classes="sidebar-button")
+                            yield Button("Delete Prompt", id="ccp-prompt-delete-button", variant="error",
+                                         classes="sidebar-button")
             # --- Notes Tab Window ---
             with Container(id=f"{TAB_NOTES}-window", classes="window"):
                 # Instantiate the left sidebar (ensure it has a unique ID for the watcher)
@@ -559,7 +627,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
             # --- Other Placeholder Windows ---
             for tab_id in ALL_TABS:
-                if tab_id not in [TAB_CHAT, TAB_CONV_CHAR, TAB_NOTES, TAB_LOGS, TAB_STATS]:  # Updated to TAB_CONV_CHAR
+                if tab_id not in [TAB_CHAT, TAB_CCP, TAB_NOTES, TAB_LOGS, TAB_STATS]:  # Updated to TAB_CCP
                     with Container(id=f"{tab_id}-window", classes="window placeholder-window"):
                         yield Static(f"{tab_id.replace('_', ' ').capitalize()} Window Placeholder")
                         yield Button("Coming Soon", id=f"{tab_id}-placeholder-button", disabled=True)
@@ -639,13 +707,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             print(f">>> DEBUG: ERROR - Exception during chat provider select binding: {e}")
 
         try:
-            char_select = self.query_one(f"#{TAB_CONV_CHAR}-api-provider", Select)
+            char_select = self.query_one(f"#{TAB_CCP}-api-provider", Select)
             self.watch(char_select, "value", self.update_character_provider_reactive, init=False)
             logging.debug(
                 f"Bound character provider Select ({char_select.id}) value to update_character_provider_reactive")
             loguru_logger.debug(f">>> DEBUG: Bound character provider Select to reactive update method.")
         except QueryError:
-            logging.error(f"on_mount: Failed to find character provider select: #{TAB_CONV_CHAR}-api-provider")
+            logging.error(f"on_mount: Failed to find character provider select: #{TAB_CCP}-api-provider")
             loguru_logger.debug(f">>> DEBUG: ERROR - Failed to bind character provider select.")
         except Exception as e:
             logging.error(f"on_mount: Error binding character provider select: {e}", exc_info=True)
@@ -687,6 +755,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             logging.error(f"on_mount: Unexpected error populating character filter: {e}", exc_info=True)
 
         # Populate the character select dropdown in the Conversations, Characters & Prompts tab
+        self.call_later(self._populate_prompts_list_view)  # For CCP tab's prompt list
         self.call_later(self._populate_conv_char_character_select)
 
     async def on_shutdown_request(self, event) -> None:
@@ -1481,6 +1550,181 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 self.notify("Unexpected error saving details.", severity="error", timeout=3)
             return
 
+            # --- PROMPT ACTIONS ---
+        elif button_id == "ccp-prompt-create-new-button":
+            logging.info("Create New Prompt button pressed.")
+            self.current_prompt_id = None  # Signal new prompt
+            self.current_prompt_uuid = None
+            self.current_prompt_version = None
+            self._clear_prompt_fields()  # Clear UI
+
+            # Clear reactive states for a new prompt
+            self.current_prompt_name = "New Prompt"  # Default or let user fill
+            self.current_prompt_author = get_cli_setting("user_defaults", "author_name", "User")  # Example
+            self.current_prompt_details = ""
+            self.current_prompt_system = ""
+            self.current_prompt_user = ""
+            self.current_prompt_keywords_str = ""
+
+            try:
+                self.query_one("#ccp-prompt-name-input", Input).value = self.current_prompt_name
+                self.query_one("#ccp-prompt-author-input", Input).value = self.current_prompt_author
+
+                # Manage right pane collapsibles
+                self.query_one("#ccp-prompt-details-collapsible", Collapsible).collapsed = False
+                self.query_one("#ccp-conversation-details-collapsible", Collapsible).collapsed = True
+                self.query_one("#ccp-prompt-name-input", Input).focus()
+                self.notify("Ready to create a new prompt.", severity="info")
+            except QueryError as e:
+                logging.error(f"UI error preparing for new prompt: {e}")
+            return
+
+        elif button_id == "ccp-prompt-load-selected-button":
+            logging.info("Load Selected Prompt button pressed.")
+            try:
+                list_view = self.query_one("#ccp-prompts-listview", ListView)
+                selected_item = list_view.highlighted_child
+                if selected_item and hasattr(selected_item, 'prompt_id'):
+                    prompt_id_to_load = selected_item.prompt_id
+                    if prompt_id_to_load:
+                        await self._load_prompt_for_editing(prompt_id=prompt_id_to_load)
+                else:
+                    self.notify("No prompt selected in the list.", severity="warning")
+            except QueryError:
+                self.notify("Prompt list not found.", severity="error")
+            return
+
+        elif button_id == "ccp-prompt-save-button":
+            if not self.prompts_service_initialized:
+                self.notify("Prompts service not available.", severity="error")
+                return
+
+            try:
+                # Gather data from UI
+                name = self.query_one("#ccp-prompt-name-input", Input).value.strip()
+                author = self.query_one("#ccp-prompt-author-input", Input).value.strip()
+                details = self.query_one("#ccp-prompt-description-textarea", TextArea).text.strip()
+                system_prompt = self.query_one("#ccp-prompt-system-textarea", TextArea).text.strip()
+                user_prompt = self.query_one("#ccp-prompt-user-textarea", TextArea).text.strip()
+                keywords_str = self.query_one("#ccp-prompt-keywords-textarea", TextArea).text.strip()
+                keywords_list = [kw.strip() for kw in keywords_str.split(',') if kw.strip()]
+
+                if not name:
+                    self.notify("Prompt Name is required.", severity="error")
+                    return
+
+                saved_id = None
+                saved_uuid = None
+                message = ""
+
+                if self.current_prompt_id is None:  # Creating a new prompt
+                    logging.info(f"Saving new prompt: {name}")
+                    # Use add_prompt which handles overwrite=False implicitly for new names
+                    # or add_or_update_prompt_interop if you want it to update if name exists
+                    # For "Create New" then "Save", we expect it to be new.
+                    # If name conflicts, add_prompt will raise ConflictError.
+                    try:
+                        saved_id, saved_uuid, message = prompts_interop.add_prompt(
+                            name=name, author=author, details=details,
+                            system_prompt=system_prompt, user_prompt=user_prompt,
+                            keywords=keywords_list, overwrite=False  # Explicitly False for a "new" save
+                        )
+                    except prompts_interop.ConflictError as e_conflict:
+                        self.notify(
+                            f"Error: Prompt name '{name}' already exists. Choose a different name or load and update.",
+                            severity="error", timeout=7)
+                        logging.error(f"Conflict saving new prompt: {e_conflict}")
+                        return  # Stop processing
+                else:  # Updating an existing prompt
+                    logging.info(f"Updating prompt ID: {self.current_prompt_id}, Name: {name}")
+                    update_payload = {
+                        'name': name, 'author': author, 'details': details,
+                        'system_prompt': system_prompt, 'user_prompt': user_prompt,
+                        'keywords': keywords_list  # Pass keywords to update_prompt_by_id
+                    }
+                    # update_prompt_by_id in your PromptsDatabase needs to handle versioning correctly.
+                    # Prompts_DB_v2's update_prompt_by_id increments version internally.
+                    saved_uuid, message = prompts_interop.get_db_instance().update_prompt_by_id(
+                        prompt_id=self.current_prompt_id,
+                        update_data=update_payload
+                        # Expected version is not taken by update_prompt_by_id; it uses internal version.
+                    )
+                    saved_id = self.current_prompt_id  # ID doesn't change on update
+
+                if saved_id or saved_uuid:  # Check if save was successful
+                    self.notify(message, severity="information")
+                    await self._populate_prompts_list_view()  # Refresh list
+                    # Reload the saved/updated prompt to get latest state (e.g., new version, confirmed keywords)
+                    await self._load_prompt_for_editing(prompt_id=saved_id, prompt_uuid=saved_uuid)
+                else:
+                    # This case might be hit if add_prompt or update_prompt_by_id returns None for ID/UUID on failure without raising an exception.
+                    self.notify(f"Failed to save prompt: {message or 'Unknown error'}", severity="error")
+
+            except prompts_interop.InputError as e_in:
+                self.notify(f"Input Error: {e_in}", severity="error", timeout=6)
+            except prompts_interop.ConflictError as e_cf:  # Should be caught earlier for new prompt name
+                self.notify(f"Save Conflict: {e_cf}", severity="error", timeout=6)
+            except prompts_interop.DatabaseError as e_db:
+                self.notify(f"Database Error: {e_db}", severity="error", timeout=6)
+            except Exception as e_save:
+                logging.error(f"Error saving prompt: {e_save}", exc_info=True)
+                self.notify(f"Error saving prompt: {type(e_save).__name__}", severity="error")
+            return
+
+        elif button_id == "ccp-prompt-clone-button":
+            if not self.prompts_service_initialized or self.current_prompt_id is None:
+                self.notify("No prompt loaded to clone or service unavailable.", severity="warning")
+                return
+            try:
+                original_name = self.current_prompt_name or "Prompt"
+                timestamp = datetime.now().strftime('%y%m%d%H%M%S')
+                cloned_name = f"clone-{timestamp}-{original_name[:30]}"  # Keep it reasonably short
+
+                # Use reactive values as the source for cloning
+                cloned_id, cloned_uuid, msg = prompts_interop.add_prompt(
+                    name=cloned_name,
+                    author=self.current_prompt_author,
+                    details=self.current_prompt_details,
+                    system_prompt=self.current_prompt_system,
+                    user_prompt=self.current_prompt_user,
+                    keywords=[kw.strip() for kw in self.current_prompt_keywords_str.split(',') if kw.strip()],
+                    overwrite=False  # A clone should be a new entry
+                )
+                if cloned_id:
+                    self.notify(f"Prompt cloned as '{cloned_name}'. {msg}", severity="information")
+                    await self._populate_prompts_list_view()
+                    await self._load_prompt_for_editing(prompt_id=cloned_id,
+                                                        prompt_uuid=cloned_uuid)  # Load the new clone
+                else:
+                    self.notify(f"Failed to clone prompt: {msg}", severity="error")
+            except Exception as e_clone:
+                logging.error(f"Error cloning prompt: {e_clone}", exc_info=True)
+                self.notify(f"Error cloning prompt: {type(e_clone).__name__}", severity="error")
+            return
+
+        elif button_id == "ccp-prompt-delete-button":
+            if not self.prompts_service_initialized or self.current_prompt_id is None:
+                self.notify("No prompt loaded to delete or service unavailable.", severity="warning")
+                return
+            try:
+                # TODO: Add a confirmation dialog here for safety
+                # For now, direct delete:
+                success = prompts_interop.soft_delete_prompt(self.current_prompt_id)
+                if success:
+                    self.notify(f"Prompt '{self.current_prompt_name}' deleted.", severity="information")
+                    self.current_prompt_id = None  # Reset current selection
+                    self._clear_prompt_fields()
+                    await self._populate_prompts_list_view()
+                    # Collapse the prompt details section
+                    self.query_one("#ccp-prompt-details-collapsible", Collapsible).collapsed = True
+                else:
+                    self.notify(
+                        f"Failed to delete prompt '{self.current_prompt_name}'. It might have been already deleted or not found.",
+                        severity="error", timeout=7)
+            except Exception as e_del:
+                logging.error(f"Error deleting prompt: {e_del}", exc_info=True)
+                self.notify(f"Error deleting prompt: {type(e_del).__name__}", severity="error")
+            return
 
         elif button_id == "chat-conversation-load-selected-button":
             logging.info("Load selected chat button pressed.")
@@ -1857,7 +2101,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 text_area = self.query_one(f"#{prefix}-input", TextArea)
                 chat_container = self.query_one(f"#{prefix}-log", VerticalScroll)
                 provider_widget = self.query_one(f"#{prefix}-api-provider",
-                                                 Select)  # e.g., #chat-api-provider or #conversations_characters-api-provider
+                                                 Select)  # e.g., #chat-api-provider or #conversations_characters_prompts-api-provider
                 model_widget = self.query_one(f"#{prefix}-api-model", Select)
                 system_prompt_widget = self.query_one(f"#{prefix}-system-prompt", TextArea)
                 temp_widget = self.query_one(f"#{prefix}-temperature", Input)
@@ -2699,6 +2943,119 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             # Return a formatted error string that on_worker_state_changed can display
             return f"[bold red]Error during chat processing:[/]\n{escape(str(e))}"
 
+    # --- Prompt-related Functions ---
+    async def _populate_prompts_list_view(self, search_term: Optional[str] = None) -> None:
+        if not self.prompts_service_initialized:
+            try:
+                list_view = self.query_one("#ccp-prompts-listview", ListView)
+                await list_view.clear()
+                await list_view.append(ListItem(Label("Prompts service not available.")))
+            except QueryError:
+                logging.error("Failed to find #ccp-prompts-listview to show service error.")
+            return
+
+        try:
+            list_view = self.query_one("#ccp-prompts-listview", ListView)
+            await list_view.clear()
+
+            if search_term:
+                # Assuming search_prompts returns (results_list, total_matches)
+                results, _ = prompts_interop.search_prompts(
+                    search_query=search_term,
+                    search_fields=["name", "details", "keywords"],  # Adjust as needed
+                    page=1,
+                    results_per_page=100  # Show a good number of results
+                )
+            else:
+                # Assuming list_prompts returns (results_data, total_pages, page, total_items)
+                results, _, _, _ = prompts_interop.list_prompts(page=1, per_page=100)
+
+            if not results:
+                await list_view.append(ListItem(Label("No prompts found.")))
+            else:
+                for prompt_data in results:
+                    item = ListItem(Label(f"{prompt_data.get('name', 'Unnamed Prompt')}"))
+                    item.prompt_id = prompt_data.get('id')  # Store for loading
+                    item.prompt_uuid = prompt_data.get('uuid')  # Store for loading
+                    await list_view.append(item)
+            logging.info(f"Populated prompts list. Search: '{search_term}', Found: {len(results)}")
+        except QueryError as e:
+            logging.error(f"UI component error populating prompts list: {e}", exc_info=True)
+        except Exception as e:  # Catch prompts_interop.DatabaseError or RuntimeError if not initialized
+            logging.error(f"Error populating prompts list: {e}", exc_info=True)
+            try:  # Try to inform user in UI
+                list_view = self.query_one("#ccp-prompts-listview", ListView)
+                await list_view.clear()
+                await list_view.append(ListItem(Label(f"Error loading prompts: {type(e).__name__}")))
+            except QueryError:
+                pass
+
+    def _clear_prompt_fields(self) -> None:
+        """Clears prompt input fields in the right pane."""
+        try:
+            self.query_one("#ccp-prompt-name-input", Input).value = ""
+            self.query_one("#ccp-prompt-author-input", Input).value = ""
+            self.query_one("#ccp-prompt-description-textarea", TextArea).text = ""
+            self.query_one("#ccp-prompt-system-textarea", TextArea).text = ""
+            self.query_one("#ccp-prompt-user-textarea", TextArea).text = ""
+            self.query_one("#ccp-prompt-keywords-textarea", TextArea).text = ""
+        except QueryError as e:
+            logging.error(f"Error clearing prompt fields: {e}")
+
+    async def _load_prompt_for_editing(self, prompt_id: Optional[int], prompt_uuid: Optional[str] = None) -> None:
+        if not self.prompts_service_initialized:
+            self.notify("Prompts service not available.", severity="error")
+            return
+
+        if prompt_id is None and prompt_uuid is None:  # Should not happen if called correctly
+            self._clear_prompt_fields()
+            self.current_prompt_id = None
+            # ... reset other current_prompt_ reactives ...
+            logging.warning("_load_prompt_for_editing called with no ID/UUID.")
+            return
+
+        try:
+            identifier_to_fetch = prompt_id if prompt_id is not None else prompt_uuid
+            if identifier_to_fetch is None: return  # Should be caught above
+
+            prompt_details = prompts_interop.fetch_prompt_details(identifier_to_fetch)
+
+            if prompt_details:
+                self.current_prompt_id = prompt_details.get('id')
+                self.current_prompt_uuid = prompt_details.get('uuid')
+                self.current_prompt_name = prompt_details.get('name', '')
+                self.current_prompt_author = prompt_details.get('author', '')
+                self.current_prompt_details = prompt_details.get('details', '')
+                self.current_prompt_system = prompt_details.get('system_prompt', '')
+                self.current_prompt_user = prompt_details.get('user_prompt', '')
+                self.current_prompt_keywords_str = ", ".join(prompt_details.get('keywords', []))
+                self.current_prompt_version = prompt_details.get('version')  # Assuming version is in details
+
+                # Populate UI
+                self.query_one("#ccp-prompt-name-input", Input).value = self.current_prompt_name
+                self.query_one("#ccp-prompt-author-input", Input).value = self.current_prompt_author
+                self.query_one("#ccp-prompt-description-textarea", TextArea).text = self.current_prompt_details
+                self.query_one("#ccp-prompt-system-textarea", TextArea).text = self.current_prompt_system
+                self.query_one("#ccp-prompt-user-textarea", TextArea).text = self.current_prompt_user
+                self.query_one("#ccp-prompt-keywords-textarea", TextArea).text = self.current_prompt_keywords_str
+
+                # Manage right pane collapsibles
+                self.query_one("#ccp-prompt-details-collapsible", Collapsible).collapsed = False
+                self.query_one("#ccp-conversation-details-collapsible", Collapsible).collapsed = True
+
+                self.query_one("#ccp-prompt-name-input", Input).focus()
+                self.notify(f"Prompt '{self.current_prompt_name}' loaded.", severity="info")
+            else:
+                self.notify(f"Failed to load prompt (ID/UUID: {identifier_to_fetch}).", severity="error")
+                self._clear_prompt_fields()
+                self.current_prompt_id = None  # Reset
+        except Exception as e:
+            logging.error(f"Error loading prompt for editing: {e}", exc_info=True)
+            self.notify(f"Error loading prompt: {type(e).__name__}", severity="error")
+            self._clear_prompt_fields()
+            self.current_prompt_id = None  # Reset
+    # --- End of prompt-related functions ---
+
     # --- Handle worker completion ---
     async def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         """Handle completion / failure of a background API worker."""
@@ -3016,6 +3373,15 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     logging.error(f"UI component not found while loading note: {e}", exc_info=True)
                 except Exception as e:
                     logging.error(f"Unexpected error loading note {note_id}: {e}", exc_info=True)
+
+        elif event.list_view.id == "ccp-prompts-listview":
+            selected_item = event.item
+            if selected_item and hasattr(selected_item, 'prompt_id'):
+                prompt_id_to_load = selected_item.prompt_id
+                if prompt_id_to_load:
+                    logging.info(f"Prompt selected from list: ID={prompt_id_to_load}")
+                    await self._load_prompt_for_editing(prompt_id=prompt_id_to_load)
+            return
         # Pass the event to the superclass if you have a base class that handles it
         # Or handle other ListViews if any
         # super().on_list_view_selected(event) # If applicable
@@ -3080,6 +3446,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self._conv_char_search_timer = self.set_timer(
                 0.5,
                 self._perform_conv_char_search  # Pass the coroutine directly
+            )
+            return
+        elif event.input.id == "ccp-prompt-search-input":
+            if self._prompt_search_timer:
+                self._prompt_search_timer.stop()
+            self._prompt_search_timer = self.set_timer(
+                0.5, lambda: self._populate_prompts_list_view(event.value.strip())
             )
             return
 
@@ -3376,7 +3749,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         print(f"Watcher: Available Provider Keys: {list(self.providers_models.keys())}")
         models = self.providers_models.get(new_value, [])
         print(f"Watcher: Models retrieved: {models}")
-        self._update_model_select(TAB_CONV_CHAR, models)
+        self._update_model_select(TAB_CCP, models)
         print(f"--- WATCHER END (character-api-provider) ---\n")
 
     # --- ADD HELPER METHOD to update model select ---

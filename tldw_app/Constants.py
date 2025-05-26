@@ -13,14 +13,14 @@
 
 # --- Constants ---
 TAB_CHAT = "chat"
-TAB_CONV_CHAR = "conversations_characters"
+TAB_CCP = "conversations_characters_prompts"
 TAB_NOTES = "notes"
 TAB_MEDIA = "media"
 TAB_SEARCH = "search"
 TAB_INGEST = "ingest"
 TAB_STATS = "stats"
 TAB_LOGS = "logs"
-ALL_TABS = [TAB_CHAT, TAB_CONV_CHAR, TAB_NOTES, TAB_MEDIA, TAB_SEARCH, TAB_INGEST, TAB_LOGS, TAB_STATS]
+ALL_TABS = [TAB_CHAT, TAB_CCP, TAB_NOTES, TAB_MEDIA, TAB_SEARCH, TAB_INGEST, TAB_LOGS, TAB_STATS]
 
 
 
@@ -143,7 +143,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 
 /* --- Conversations, Characters & Prompts Window specific layouts (previously Character Chat) --- */
 /* Main container for the three-pane layout */
-#conversations_characters-window {
+#conversations_characters_prompts-window {
     layout: horizontal; /* Crucial for side-by-side panes */
     /* Ensure it takes full height if not already by .window */
     height: 100%;
@@ -218,7 +218,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 
 
 /* Old styles for #conv-char-main-content, #conv-char-top-area etc. are removed */
-/* as the structure within #conversations_characters-window is now different. */
+/* as the structure within #conversations_characters_prompts-window is now different. */
 /* Portrait styling - if still needed, would be part of a specific pane's content now */
 /* #conv-char-portrait {
     width: 25;
@@ -366,6 +366,157 @@ Collapsible > .collapsible--header {
     border: round $surface;
     margin-bottom: 1;
 }
+
+/* --- Notes Tab Window --- */
+/* (Assuming #notes-window has layout: horizontal; by default from .window or is set in Python) */
+
+#notes-main-content { /* Parent of the editor and controls */
+    layout: vertical; /* This is what I inferred based on your Python structure */
+    width: 1fr;       /* Takes space between sidebars */
+    height: 100%;
+}
+
+.notes-editor { /* Targets your #notes-editor-area by class */
+    width: 100%;
+    height: 1fr; /* This makes it take available vertical space */
+}
+
+#notes-controls-area { /* The container for buttons below the editor */
+    height: auto;
+    width: 100%;
+    padding: 1;
+    border-top: round $surface;
+    align: center middle; /* Aligns buttons horizontally if Horizontal container */
+                           /* If this itself is a Vertical container, this might not do much */
+}
+
+/* --- Metrics Screen Styling --- */
+MetricsScreen {
+    padding: 1 2; /* Add some padding around the screen content */
+    /* layout: vertical; /* MetricsScreen is a Static, VerticalScroll handles layout */
+    /* align: center top; /* If needed, but VerticalScroll might handle this */
+}
+
+#metrics-container {
+    padding: 1;
+    /* border: round $primary-lighten-2; /* Optional: a subtle border */
+    /* background: $surface; /* Optional: a slightly different background */
+}
+
+/* Styling for individual metric labels within MetricsScreen */
+MetricsScreen Label {
+    width: 100%;
+    margin-bottom: 1; /* Space between metric items */
+    padding: 1;       /* Padding inside each label's box */
+    background: $panel-lighten-1; /* A slightly lighter background for each item */
+    border: round $primary-darken-1; /* Border for each item */
+    /* Textual CSS doesn't allow direct styling of parts of a Label's text (like key vs value) */
+    /* The Python code uses [b] for keys, which Rich Text handles. */
+}
+
+/* Style for the title label: "Application Metrics" */
+/* This targets the first Label directly inside the VerticalScroll with ID metrics-container */
+#metrics-container > Label:first-of-type {
+    text-style: bold underline;
+    align: center middle;
+    padding: 1 0 2 0; /* More padding below the title */
+    background: transparent; /* No specific background for the title itself */
+    border: none; /* No border for the title itself */
+    margin-bottom: 2; /* Extra space after the title */
+}
+
+/* Style for error messages within MetricsScreen */
+/* These require the Python code to add the respective class to the Label widget */
+MetricsScreen Label.-error-message {
+    color: $error; /* Text color for errors */
+    background: $error 20%; /* Background for error messages, e.g., light red. USES $error WITH 20% ALPHA */
+    /* border: round $error; /* Optional: border for error messages */
+    text-style: bold;
+}
+
+/* Style for info messages (e.g. "file empty") within MetricsScreen */
+MetricsScreen Label.-info-message {
+    color: $text-muted; /* Or another color that indicates information */
+    background: $panel; /* A more subdued background, or $transparent */
+    /* border: round $primary-lighten-1; /* Optional: border for info messages */
+    text-style: italic;
+}
+
+
+/* Collapsible Sidebar Toggle Button For Character/Conversation Editing Page */
+.cc-sidebar-toggle-button { /* Applied to the "☰" button */
+    width: 5; /* Adjust width as needed */
+    height: 100%; /* Match parent Horizontal height, or set fixed e.g., 1 or 3 */
+    min-width: 0; /* Override other button styles if necessary */
+    border: none; /* Style as you like, e.g., remove border */
+    background: $surface-darken-1; /* Example background */
+    color: $text;
+}
+.cc-sidebar-toggle-button:hover {
+    background: $surface;
+}
+/* End of Collapsible Sidebar Toggle Button for character/conversation editing */
+
+
+/* Save Chat Button in Character Sidebar in Chat Tab */
+.save-chat-button { /* Class used in character_sidebar.py */
+    margin-top: 2;   /* Add 1 cell/unit of space above the button */
+    /*width: 100%;      Optional: make it full width like other sidebar buttons */
+}
+
+
+
+/* Character Sidebar Specific Styles */
+#character-sidebar #chat-conversation-title-input { /* Title input */
+    /* width: 100%; (from .sidebar-input) */
+    /* margin-bottom: 1; (from .sidebar-input) */
+}
+
+#character-sidebar .chat-keywords-textarea { /* Keywords TextArea specific class */
+    height: 4;  /* Or 3 to 5, adjust as preferred */
+    /* width: 100%; (from .sidebar-textarea) */
+    /* border: round $surface; (from .sidebar-textarea) */
+    /* margin-bottom: 1; (from .sidebar-textarea) */
+}
+
+/* Styling for the new "Save Details" button */
+#character-sidebar .save-details-button {
+    margin-top: 1; /* Space above this button */
+    /* width: 100%;    Make it full width */
+}
+
+/* Ensure the Save Current Chat button also has clear styling if needed */
+#character-sidebar .save-chat-button {
+    margin-top: 1; /* Ensure it has some space if it's after keywords */
+    /* width: 100%; */
+}
+/* End of Character Sidebar Specific Styles */
+
+
+/* --- Prompts Sidebar Vertical --- */
+.ccp-prompt-textarea { /* Specific class for prompt textareas if needed */
+    height: 5; /* Example height */
+    /* width: 100%; (from .sidebar-textarea) */
+    /* margin-bottom: 1; (from .sidebar-textarea) */
+}
+
+#ccp-prompts-listview { /* ID for the prompt list */
+    height: 10; /* Or 1fr if it's the main element in its collapsible */
+    border: round $surface;
+    margin-bottom: 1;
+}
+
+.ccp-prompt-action-buttons Button {
+    width: 1fr; /* Make buttons share space */
+    margin: 0 1 0 0; /* Small right margin, no top/bottom if already in Horizontal */
+}
+.ccp-prompt-action-buttons Button:last-child {
+    margin-right: 0;
+}
+/* --- End of Prompts Sidebar Vertical --- */
+
+
+
     """
 
 
