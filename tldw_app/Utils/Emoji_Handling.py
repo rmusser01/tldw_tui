@@ -13,6 +13,11 @@ import sys
 #
 # Functions:
 
+#####################################
+# --- Emoji Checker/Support ---
+#####################################
+# Cache the result so we don't re-calculate every time
+_emoji_support_cached = None
 
 def supports_emoji() -> bool:
     """

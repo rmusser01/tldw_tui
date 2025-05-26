@@ -126,30 +126,6 @@ ALL_TABS = [TAB_CHAT, TAB_CONV_CHAR, TAB_NOTES, TAB_MEDIA, TAB_SEARCH, TAB_INGES
 ALL_API_MODELS = {**API_MODELS_BY_PROVIDER, **LOCAL_PROVIDERS}
 AVAILABLE_PROVIDERS = list(ALL_API_MODELS.keys())
 
-# --- ASCII Portrait ---
-ASCII_PORTRAIT = r"""
-  .--./)
- /.''.')
- | \ '/
- W `-'
- \\    '.
-  '.    /
-    `~~`
-"""
-
-#####################################
-# --- Emoji Checker/Support ---
-#####################################
-# Cache the result so we don't re-calculate every time
-_emoji_support_cached = None
-
-
-
-
-
-
-
-
 # --- Global variable for config ---
 APP_CONFIG = load_settings()
 
