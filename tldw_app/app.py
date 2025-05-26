@@ -46,6 +46,7 @@ from .config import (
     API_MODELS_BY_PROVIDER,
     LOCAL_PROVIDERS
 )
+from .Character_Chat import Character_Chat_Lib as ccl
 from .Notes.Notes_Library import NotesInteropService
 from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
 from .Widgets.chat_message import ChatMessage
@@ -392,6 +393,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     current_selected_note_title: reactive[Optional[str]] = reactive(None)
     current_selected_note_content: reactive[Optional[str]] = reactive("")
 
+    # Chats
+    current_chat_is_ephemeral: reactive[bool] = reactive(True)  # Start new chats as ephemeral
     # Reactive variable for current chat conversation ID
     current_chat_conversation_id: reactive[Optional[str]] = reactive(None)
     # Reactive variable for current conversation loaded in the Conversations & Characters tab
@@ -400,6 +403,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # De-Bouncers
     _conv_char_search_timer: Optional[Timer] = None # For conv-char-search-input
     _conversation_search_timer: Optional[Timer] = None # For chat-conversation-search-bar
+
 
     def __init__(self):
         super().__init__()
@@ -584,8 +588,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 root_logger.handlers)
 
             if not has_file_handler:
-                max_bytes_default = 10485760;
-                backup_count_default = 5;
+                max_bytes_default = 10485760
+                backup_count_default = 5
                 file_log_level_default_str = "INFO"
                 max_bytes = int(get_cli_setting("logging", "log_max_bytes", max_bytes_default))
                 backup_count = int(get_cli_setting("logging", "log_backup_count", backup_count_default))
@@ -659,6 +663,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             # --- Chat Window ---
             # Assign specific reactive variables to the Select widgets
             with Container(id=f"{TAB_CHAT}-window", classes="window"):
+                # Pass self.current_chat_is_ephemeral to create_character_sidebar if it needs to adjust UI
                 yield from create_settings_sidebar(TAB_CHAT, self.app_config) # This is fine
 
                 with Container(id="chat-main-content"):
@@ -670,6 +675,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                         yield TextArea(id="chat-input", classes="chat-input") # Ensure prompt is used if needed
                         #yield Button("Send ▶", id="send-chat", classes="send-button")
                         yield Button(get_char(EMOJI_SEND, FALLBACK_SEND), id="send-chat", classes="send-button")
+                        yield Button("Save Chat", id="chat-save-current-chat-button", classes="save-chat-button",
+                                     disabled=True)  # Initially disabled
                         #yield Button("👤", id="toggle-character-sidebar", classes="sidebar-toggle")
                         yield Button(get_char(EMOJI_CHARACTER_ICON, FALLBACK_CHARACTER_ICON), id="toggle-character-sidebar",
                                      classes="sidebar-toggle")
@@ -677,7 +684,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 # Right sidebar (new character specific settings) for chat window
                 # The create_character_sidebar function will define a widget with id="character-sidebar"
                 # Pass a string prefix, for example, "chat" or "character_chat"
-                yield from create_character_sidebar("chat")
+                yield from create_character_sidebar("chat", initial_ephemeral_state=self.current_chat_is_ephemeral)
 
             # --- Conversations & Characters Window (Redesigned) ---
             with Container(id=f"{TAB_CONV_CHAR}-window", classes="window"):
@@ -776,6 +783,35 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
                 # Instantiate the right sidebar (ensure it has a unique ID for the watcher)
                 yield NotesSidebarRight(id="notes-sidebar-right", classes="sidebar")
+
+    def watch_current_chat_is_ephemeral(self, is_ephemeral: bool) -> None:
+        loguru_logger.debug(f"Chat ephemeral state changed to: {is_ephemeral}")
+        try:
+            save_chat_button = self.query_one("#chat-save-current-chat-button", Button)
+            # Visible if ephemeral AND chat log has messages. For now, just based on ephemeral.
+            # Actual enabling/disabling might be better in on_message or when chat-log content changes.
+            # For now: button is always present, its 'disabled' state changes.
+            # It should be disabled if !is_ephemeral OR if chat-log is empty.
+            # Simple logic: disable if not ephemeral. More complex enabling later.
+            save_chat_button.disabled = not is_ephemeral
+
+            title_input = self.query_one("#chat-conversation-title-input", Input)
+            keywords_input = self.query_one("#chat-conversation-keywords-input", TextArea)
+            save_details_button = self.query_one("#chat-save-conversation-details-button", Button)
+
+            # Metadata editing enabled only for saved chats
+            title_input.disabled = is_ephemeral
+            keywords_input.disabled = is_ephemeral
+            save_details_button.disabled = is_ephemeral
+
+            if is_ephemeral:
+                # Clear details if switching to ephemeral
+                title_input.value = ""
+                keywords_input.text = ""
+                self.query_one("#chat-conversation-uuid-display", Input).value = "Ephemeral Chat"
+
+        except QueryError as e:
+            loguru_logger.warning(f"UI component not found while watching ephemeral state: {e}")
 
     # --- Add explicit methods to update reactives from Select changes ---
     def update_chat_provider_reactive(self, new_value: Optional[str]) -> None:
@@ -1116,6 +1152,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         button_id = button.id
         print(f"\n>>> DEBUG: on_button_pressed called! Button ID: {event.button.id}\n")
         logging.debug(f"Button pressed: {button_id}, Classes: {button.classes}")
+        db = self.notes_service._get_db(self.notes_user_id)
 
         # --- Search button in Conversations & Characters Tab ---
         if button_id == "conv-char-conversation-search-button":
@@ -1655,112 +1692,80 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 self.notify("Unexpected error saving details.", severity="error", timeout=3)
             return
 
-        if button_id == "chat-conversation-load-selected-button":
+
+        elif button_id == "chat-conversation-load-selected-button":
             logging.info("Load selected chat button pressed.")
             try:
                 results_list_view = self.query_one("#chat-conversation-search-results-list", ListView)
                 highlighted_item = results_list_view.highlighted_child
-
                 if highlighted_item and hasattr(highlighted_item, 'conversation_id'):
                     loaded_conversation_id = highlighted_item.conversation_id
                     logging.info(f"Loading conversation ID: {loaded_conversation_id}")
-
-                    self.current_chat_conversation_id = loaded_conversation_id  # Update reactive variable
-
-                    # Fetch full conversation details (title, keywords might already be on item)
-                    db = self.notes_service._get_db(self.notes_user_id)
-                    conv_details = db.get_conversation_by_id(loaded_conversation_id)
-
-                    if not conv_details:
-                        logging.error(f"Failed to fetch details for conversation ID: {loaded_conversation_id}")
-                        # self.notify(f"Error: Could not load details for chat {loaded_conversation_id}.", severity="error")
+                    # Use the Character_Chat_Lib function to get all details
+                    conv_data_from_lib = ccl.get_conversation_details_and_messages(db, loaded_conversation_id)
+                    if not conv_data_from_lib or not conv_data_from_lib.get('metadata'):
+                        self.notify(f"Error: Could not load full details for chat {loaded_conversation_id}.",
+                                    severity="error")
+                        loguru_logger.error(
+                            f"Failed to fetch full details for conversation ID: {loaded_conversation_id} using ccl.get_conversation_details_and_messages.")
                         return
-
-                    # Populate title and keywords fields
-                    try:
-                        title_input = self.query_one("#chat-conversation-title-input", Input)
-                        title_input.value = conv_details.get('title', '')
-                        logging.debug(f"Set #chat-conversation-title-input to: {conv_details.get('title', '')}")
-                    except QueryError:
-                        logging.error("Failed to find #chat-conversation-title-input to update.")
-
-                    try:
-                        uuid_display = self.query_one("#chat-conversation-uuid-display", Input)
-                        uuid_display.value = loaded_conversation_id
-                        logging.debug(f"Set #chat-conversation-uuid-display to: {loaded_conversation_id}")
-                    except QueryError:
-                        logging.error("Failed to find #chat-conversation-uuid-display to update.")
-
-                    try:
-                        keywords_input = self.query_one("#chat-conversation-keywords-input", TextArea)
-                        all_keywords_list = db.get_keywords_for_conversation(loaded_conversation_id)
-                        visible_keywords = [kw['keyword'] for kw in all_keywords_list if not kw['keyword'].startswith("__")]
-                        keywords_input.text = ", ".join(visible_keywords)
-                        logging.debug(f"Set #chat-conversation-keywords-input to: {', '.join(visible_keywords)}")
-                    except CharactersRAGDBError as e_kw_db:
-                        logging.error(f"Database error fetching keywords for conversation {loaded_conversation_id}: {e_kw_db}", exc_info=True)
-                        if 'keywords_input' in locals(): keywords_input.text = "Error loading keywords."
-                    except QueryError:
-                        logging.error("Failed to find #chat-conversation-keywords-input to update.")
-                    except Exception as e_kw_gen:
-                        logging.error(f"Unexpected error processing keywords for conversation {loaded_conversation_id}: {e_kw_gen}", exc_info=True)
-                        if 'keywords_input' in locals(): keywords_input.text = "Unexpected error loading keywords."
-
-
+                    self.current_chat_conversation_id = loaded_conversation_id
+                    self.current_chat_is_ephemeral = False  # Loaded chat is not ephemeral
+                    metadata = conv_data_from_lib['metadata']
+                    messages_from_db = conv_data_from_lib['messages']  # These are raw DB messages
+                    # Populate title, keywords, UUID from metadata
+                    title_input = self.query_one("#chat-conversation-title-input", Input)
+                    title_input.value = metadata.get('title', '')
+                    uuid_display = self.query_one("#chat-conversation-uuid-display", Input)
+                    uuid_display.value = loaded_conversation_id
+                    keywords_input = self.query_one("#chat-conversation-keywords-input", TextArea)
+                    # metadata should ideally contain the pre-formatted keyword string if get_conversation_details_and_messages prepares it
+                    keywords_input.text = metadata.get('keywords_display', '')
+                    # ^ Assumes get_conversation_details_and_messages adds this field.
+                    # If not, you'd fetch keywords separately:
+                    # all_keywords_list = db.get_keywords_for_conversation(loaded_conversation_id)
+                    # visible_keywords = [kw['keyword'] for kw in all_keywords_list if not kw['keyword'].startswith("__")]
+                    # keywords_input.text = ", ".join(visible_keywords)
                     # Update the main TitleBar
-                    try:
-                        title_bar = self.query_one(TitleBar)
-                        title_bar.update_title(f"Chat - {conv_details.get('title', 'Untitled Conversation')}")
-                        logging.debug(f"Updated TitleBar title for conversation {loaded_conversation_id}")
-                    except QueryError:
-                        logging.error("Failed to find TitleBar to update.")
-                    except Exception as e_title_bar:
-                        logging.error(f"Unexpected error updating TitleBar: {e_title_bar}", exc_info=True)
+                    title_bar = self.query_one(TitleBar)
+                    title_bar.update_title(f"Chat - {metadata.get('title', 'Untitled Conversation')}")
                     # Clear existing messages from chat log
                     chat_log = self.query_one("#chat-log", VerticalScroll)
                     await chat_log.remove_children()
                     logging.debug(f"Cleared #chat-log for new conversation {loaded_conversation_id}.")
-
                     # Fetch and display messages for this conversation
-                    messages = db.get_messages_for_conversation(loaded_conversation_id, order_by_timestamp="ASC",
-                                                                limit=1000)  # Adjust limit as needed
-                    logging.debug(f"Fetched {len(messages)} messages for conversation {loaded_conversation_id}.")
-
-                    for msg_data in messages:
-                        # Ensure image_data is handled correctly (it might be None or bytes)
-                        image_data_for_widget = msg_data.get('image_data')
-                        # logging.debug(f"Message {msg_data['id']} has image_data type: {type(image_data_for_widget)}")
-
-                        chat_message_widget = ChatMessage(
-                            message=msg_data['content'],
-                            role=msg_data['sender'],
-                            timestamp=msg_data.get('timestamp'),  # Ensure timestamp is passed if available
-                            image_data=image_data_for_widget,  # Pass image_data
-                            image_mime_type=msg_data.get('image_mime_type'),  # Pass mime_type
-                            message_id=msg_data['id']  # Pass message_id
-                        )
-                        await chat_log.mount(chat_message_widget)
-
-                    chat_log.scroll_end(animate=False)  # Scroll to the latest message
-
+                    if messages_from_db:
+                        for msg_data in messages_from_db:
+                            chat_message_widget = ChatMessage(
+                                message=msg_data['content'],
+                                role=msg_data['sender'],  # Sender is already character name or "User" from DB
+                                timestamp=msg_data.get('timestamp'),
+                                image_data=msg_data.get('image_data'),
+                                image_mime_type=msg_data.get('image_mime_type'),
+                                message_id=msg_data['id']
+                            )
+                            await chat_log.mount(chat_message_widget)
+                        chat_log.scroll_end(animate=False)
+                    else:
+                        logging.info(f"No messages found in DB for conversation {loaded_conversation_id}")
+                        # Optionally display "No messages in this chat."
                     # Focus the main chat input area
                     self.query_one("#chat-input", TextArea).focus()
-                    logging.info(f"Successfully loaded conversation {loaded_conversation_id} into chat view.")
-                    # self.notify(f"Chat '{conv_details.get('title', 'Untitled')}' loaded.", severity="information")
-
+                    self.notify(f"Chat '{metadata.get('title', 'Untitled Conversation')}' loaded.",
+                                severity="information")
                 else:
                     logging.info("No conversation selected in the list to load.")
-                    # self.notify("No chat selected to load.", severity="warning")
+                    self.notify("No chat selected to load.", severity="warning")
             except QueryError as e:
                 logging.error(f"UI component not found for loading chat: {e}", exc_info=True)
-                # self.notify("Error accessing UI for loading chat.", severity="error")
-            except CharactersRAGDBError as e:
+                self.notify("Error accessing UI for loading chat.", severity="error")
+            except CharactersRAGDBError as e:  # This is the DB base error from ChaChaNotes_DB
                 logging.error(f"Database error loading chat: {e}", exc_info=True)
-                # self.notify("Database error loading chat.", severity="error")
+                self.notify("Database error loading chat.", severity="error")
             except Exception as e:
                 logging.error(f"Unexpected error loading chat: {e}", exc_info=True)
-                # self.notify("Unexpected error loading chat.", severity="error")
-            return
+                self.notify("Unexpected error loading chat.", severity="error")
+            return  # Handled
 
         # --- Copy Logs Button ---
         if button_id == "copy-logs-button":
@@ -1954,124 +1959,83 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         # --- New Chat Button ---
         elif event.button.id == "chat-new-conversation-button":
-            logging.info("New Chat button pressed.")
+            loguru_logger.info("New Chat button pressed.")
+            # Clear chat log
             try:
-                new_chat_title = f"Untitled_Chat-{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}"
-                logging.debug(f"Generated new chat title: {new_chat_title}")
+                chat_log_widget = self.query_one("#chat-log", VerticalScroll)
+                await chat_log_widget.remove_children()
+            except QueryError:
+                loguru_logger.error("Failed to find #chat-log to clear.")
 
-                if not self.notes_service:
-                    logging.error("Notes service is not available. Cannot create new chat.")
-                    # self.notify("Database service not available.", severity="error") # If notifier is set up
-                    return
+            # Reset state to new ephemeral chat
+            self.current_chat_conversation_id = None
+            self.current_chat_is_ephemeral = True # This will trigger the watcher
 
-                db = self.notes_service._get_db(self.notes_user_id)
-                new_conversation_id = None
-                try:
-                    new_conversation_id = db.add_conversation({'title': new_chat_title, 'character_id': None})
-                    if not new_conversation_id:
-                        logging.error("db.add_conversation returned None for new chat.")
-                        # self.notify("Failed to create new conversation in database.", severity="error")
-                        return
-                    logging.info(f"New conversation created with ID: {new_conversation_id} and title: {new_chat_title}")
-                except ConflictError as e:
-                    logging.error(f"Conflict error creating new conversation: {e}", exc_info=True)
-                    # self.notify("Failed to create conversation: Conflict.", severity="error")
-                    return
-                except CharactersRAGDBError as e:
-                    logging.error(f"Database error creating new conversation: {e}", exc_info=True)
-                    # self.notify("Database error creating conversation.", severity="error")
-                    return
-                except Exception as e:
-                    logging.error(f"Unexpected error creating new conversation: {e}", exc_info=True)
-                    # self.notify("Unexpected error creating conversation.", severity="error")
-                    return
-
-                self.current_chat_conversation_id = new_conversation_id
-                logging.debug(f"Set current_chat_conversation_id to: {new_conversation_id}")
-
-                system_keywords = ["__regular_chat", "user_chat"]
-                for keyword_text in system_keywords:
-                    keyword_id = None
-                    try:
-                        keyword_details = db.get_keyword_by_text(keyword_text)
-                        if keyword_details and 'id' in keyword_details:
-                            keyword_id = keyword_details['id']
-                            logging.debug(f"Found existing keyword '{keyword_text}' with ID: {keyword_id}")
-                        else:
-                            # add_keyword in ChaChaNotes_DB handles undeletion or creation.
-                            # It's expected to return an int ID.
-                            keyword_id_result = db.add_keyword(keyword_text) # Pass only keyword_text
-                            if isinstance(keyword_id_result, int):
-                                keyword_id = keyword_id_result
-                                logging.info(f"Added/Undeleted keyword '{keyword_text}' with ID: {keyword_id}")
-                            else: # Should not happen if add_keyword works as expected
-                                logging.error(f"Failed to add/get keyword '{keyword_text}'. Result: {keyword_id_result}")
-                                continue # Skip linking this keyword
-                    except CharactersRAGDBError as e:
-                        logging.error(f"Database error getting/adding keyword '{keyword_text}': {e}", exc_info=True)
-                        continue # Skip linking this keyword
-                    except Exception as e:
-                        logging.error(f"Unexpected error processing keyword '{keyword_text}': {e}", exc_info=True)
-                        continue # Skip linking this keyword
-
-                    if keyword_id:
-                        try:
-                            db.link_conversation_to_keyword(new_conversation_id, keyword_id)
-                            logging.debug(f"Linked keyword '{keyword_text}' (ID: {keyword_id}) to conversation {new_conversation_id}")
-                        except CharactersRAGDBError as e:
-                            logging.error(f"Database error linking keyword '{keyword_text}' to conversation {new_conversation_id}: {e}", exc_info=True)
-                        except Exception as e:
-                            logging.error(f"Unexpected error linking keyword '{keyword_text}': {e}", exc_info=True)
-
-                # Update UI elements
-                try:
-                    title_input_widget = self.query_one("#chat-conversation-title-input", Input)
-                    title_input_widget.value = new_chat_title
-                    logging.debug(f"Set #chat-conversation-title-input to: {new_chat_title}")
-                except QueryError:
-                    logging.error("Failed to find #chat-conversation-title-input to update.")
-
-                try:
-                    keywords_input_widget = self.query_one("#chat-conversation-keywords-input", TextArea)
-                    keywords_input_widget.text = "" # System keywords are hidden
-                    logging.debug("Cleared #chat-conversation-keywords-input.")
-                except QueryError:
-                    logging.error("Failed to find #chat-conversation-keywords-input to clear.")
-
-                try:
-                    uuid_display_widget = self.query_one("#chat-conversation-uuid-display", Input)
-                    uuid_display_widget.value = new_conversation_id
-                    logging.debug(f"Set #chat-conversation-uuid-display to: {new_conversation_id}")
-                except QueryError:
-                    logging.error("Failed to find #chat-conversation-uuid-display to update.")
-
-                try:
-                    chat_log_widget = self.query_one("#chat-log", VerticalScroll)
-                    await chat_log_widget.remove_children()
-                    logging.debug("Cleared #chat-log.")
-                except QueryError:
-                    logging.error("Failed to find #chat-log to clear messages.")
-
-                try:
-                    title_bar_widget = self.query_one(TitleBar)
-                    title_bar_widget.update_title(f"Chat - {new_chat_title}")
-                    logging.debug(f"Updated TitleBar title to: Chat - {new_chat_title}")
-                except QueryError:
-                    logging.error("Failed to find TitleBar to update title.")
-
-                try:
-                    chat_input_widget = self.query_one("#chat-input", TextArea)
-                    chat_input_widget.focus()
-                    logging.debug("Focused #chat-input.")
-                except QueryError:
-                    logging.error("Failed to find #chat-input to focus.")
-
-                logging.info(f"Successfully initialized new chat session: {new_conversation_id}")
-
-            except Exception as e: # Catch-all for unexpected issues during the "New Chat" process
-                logging.error(f"An unexpected error occurred during 'New Chat' button processing: {e}", exc_info=True)
-                # self.notify("An unexpected error occurred while starting a new chat.", severity="error")
+            # Clear UI for metadata (watcher should also do this, but explicit is safer)
+            try:
+                self.query_one("#chat-conversation-title-input", Input).value = ""
+                self.query_one("#chat-conversation-keywords-input", TextArea).text = ""
+                self.query_one("#chat-conversation-uuid-display", Input).value = "Ephemeral Chat"
+                self.query_one(TitleBar).reset_title() # Reset to generic app title
+                self.query_one("#chat-input", TextArea).focus()
+            except QueryError as e:
+                loguru_logger.error(f"UI component not found during new chat setup: {e}")
             return
+
+        elif event.button.id == "chat-save-current-chat-button":
+            loguru_logger.info("Save Chat button pressed.")
+            if self.current_chat_is_ephemeral and self.current_chat_conversation_id is None:
+                chat_log_widget = self.query_one("#chat-log", VerticalScroll)
+                messages_in_log = chat_log_widget.query(ChatMessage)
+
+                if not list(messages_in_log):  # Use list() to consume the Query an check emptiness
+                    self.notify("Nothing to save in an empty chat.", severity="warning")
+                    return
+
+                ui_messages_to_save: List[Dict[str, Any]] = []
+                for msg_widget in messages_in_log:
+                    if msg_widget.generation_complete:  # Only save complete messages
+                        ui_messages_to_save.append({
+                            'sender': msg_widget.role,  # Will be "User" or "AI"
+                            'content': msg_widget.message_text,
+                            'image_data': msg_widget.image_data,  # Assuming ChatMessage stores these
+                            'image_mime_type': msg_widget.image_mime_type
+                            # Timestamp can be omitted, DB/Lib will default
+                        })
+
+                # Determine a title (e.g. from first user message or timestamp)
+                default_title = "Saved Chat - " + datetime.now().strftime('%Y-%m-%d %H:%M')
+                if ui_messages_to_save and ui_messages_to_save[0]['sender'] == "User":
+                    content_preview = ui_messages_to_save[0]['content'][:30]
+                    if content_preview: default_title = f"Chat: {content_preview}..."
+
+                # Call Lib to create conversation and save messages
+                new_conv_id = ccl.create_conversation(
+                    db,
+                    title=default_title,
+                    character_id=ccl.DEFAULT_CHARACTER_ID,  # For regular chats
+                    initial_messages=ui_messages_to_save,
+                    system_keywords=["__regular_chat", "__saved_ephemeral"]  # Example system tags
+                )
+
+                if new_conv_id:
+                    self.current_chat_conversation_id = new_conv_id
+                    self.current_chat_is_ephemeral = False  # Now it's saved
+                    self.notify("Chat saved successfully!", severity="information")
+
+                    # Update UI to reflect saved state
+                    try:
+                        self.query_one("#chat-conversation-title-input", Input).value = default_title
+                        self.query_one("#chat-conversation-uuid-display", Input).value = new_conv_id
+                        self.query_one(TitleBar).update_title(f"Chat - {default_title}")
+                    except QueryError as e:
+                        loguru_logger.error(f"Error updating UI after saving chat: {e}")
+                else:
+                    self.notify("Failed to save chat.", severity="error")
+            else:
+                loguru_logger.warning(
+                    "Save Chat button pressed but chat is not eligible for saving (not ephemeral or already has ID).")
+            return  # Handled
 
         # --- Send Message ---
         if button_id and button_id.startswith("send-"):
@@ -2237,10 +2201,78 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     ChatMessage("Internal Error: Could not retrieve chat history.", role="AI", classes="-error"))
                 return
 
+            # --- Conversation ID Management ---
+            loguru_logger.debug(
+                f"Inside send-chat: Does self.current_chat_conversation_id exist? {hasattr(self, 'current_chat_conversation_id')}")
+            if hasattr(self, 'current_chat_conversation_id'):
+                loguru_logger.debug(f"Value of self.current_chat_conversation_id: {self.current_chat_conversation_id!r}")
+            else:
+                loguru_logger.error("CRITICAL: self.current_chat_conversation_id DOES NOT EXIST when trying to send message.")
+                # You could even print all attributes of self here to see what's available:
+                # logger.debug(f"Attributes of self: {dir(self)}")
+            active_conversation_id = self.current_chat_conversation_id
+            is_newly_saved_chat = False
+
+            if not self.current_chat_is_ephemeral:  # It's a saved chat or should become one
+                if active_conversation_id is None:  # First message in a chat that needs to be saved now
+                    loguru_logger.info("First message in a new 'to-be-saved' chat. Creating conversation record...")
+                    # For "regular" chats, associate with default character ID
+                    # Determine character_id for the new conversation
+                    # For simplicity, assume default character for chats started in this tab without specific context
+                    # More complex logic would involve checking if a character is "active" in the chat tab context
+                    char_id_for_new_conv = ccl.DEFAULT_CHARACTER_ID
+
+                    # Generate a title for the new conversation
+                    # (could be based on first message, or a timestamp for now)
+                    new_chat_title = f"Chat started {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                    if message:  # If user typed something
+                        new_chat_title = message[:50]  # Use first 50 chars of user message as title
+
+                    created_id = ccl.create_conversation(
+                        db,
+                        title=new_chat_title,
+                        character_id=char_id_for_new_conv,
+                        system_keywords=["__regular_chat"]
+                    )
+                    if created_id:
+                        active_conversation_id = created_id
+                        self.current_chat_conversation_id = active_conversation_id
+                        self.current_chat_is_ephemeral = False  # It's now officially saved
+                        is_newly_saved_chat = True
+                        loguru_logger.info(
+                            f"New conversation created with ID: {active_conversation_id}, Title: {new_chat_title}")
+                        # Update UI with new title and ID
+                        try:
+                            self.query_one("#chat-conversation-title-input", Input).value = new_chat_title
+                            self.query_one("#chat-conversation-uuid-display", Input).value = active_conversation_id
+                            self.query_one(TitleBar).update_title(f"Chat - {new_chat_title}")
+                        except QueryError:
+                            loguru_logger.error("Failed to update title/UUID inputs for new saved chat.")
+                    else:
+                        loguru_logger.error("Failed to create new conversation record for saving chat.")
+                        await chat_container.mount(
+                            ChatMessage("Error: Could not save new chat session.", role="System", classes="-error"))
+                        return  # Don't proceed if saving failed
+
             # --- Mount User Message ---
             if not reuse_last_user_bubble:
                 user_msg_widget = ChatMessage(message, role="User")
                 await chat_container.mount(user_msg_widget)
+
+            # --- Save User Message to DB (if applicable) ---
+            if active_conversation_id and not self.current_chat_is_ephemeral:  # Check again, could have changed if first message
+                if not reuse_last_user_bubble:  # Only save if it's a new bubble
+                    user_msg_db_id = ccl.add_message_to_conversation(
+                        db,
+                        conversation_id=active_conversation_id,
+                        sender="User",  # Standard sender name for user
+                        content=message  # The user's input
+                    )
+                    if user_msg_db_id:
+                        user_msg_widget.message_id_internal = user_msg_db_id  # Store DB ID on widget
+                        loguru_logger.debug(f"User message saved to DB with ID: {user_msg_db_id}")
+                    else:
+                        loguru_logger.error(f"Failed to save user message to DB for conv {active_conversation_id}")
 
             # --- Conversation ID Management (Conceptual for new chat) ---
             if prefix == "chat" and not self.current_chat_conversation_id:
@@ -3850,23 +3882,69 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     overflow: hidden;
 }
 
-/* REMOVED .hidden class */
-
 .placeholder-window { align: center middle; background: $panel; }
 
 /* Sidebar Styling */
-.sidebar { width: 35; background: $boost; padding: 1 2; border-right: thick $background-darken-1; height: 100%; overflow-y: auto; overflow-x: hidden; }
+/* Generic .sidebar (used by #chat-sidebar and potentially others) */
+.sidebar {
+    /* width: 70;  <-- REMOVE fixed width */
+    width: 25%; /* <-- CHANGE to percentage (adjust 20% to 35% as needed) */
+    min-width: 20; /* <-- ADD a minimum width to prevent it becoming unusable */
+    max-width: 80; /* <-- ADD a maximum width (optional) */
+    background: $boost;
+    padding: 1 2;
+    border-right: thick $background-darken-1;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+/* Collapsed state for the existing left sidebar */
+.sidebar.collapsed {
+    width: 0 !important;
+    min-width: 0 !important; /* Ensure min-width is also 0 */
+    border-right: none !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    display: none; /* ensures it doesn’t grab focus */
+}
+
+/* Right sidebar (character-sidebar) */
+#character-sidebar {
+    dock: right;
+    /* width: 70;   <-- REMOVE fixed width */
+    width: 25%;  /* <-- CHANGE to percentage (match .sidebar or use a different one) */
+    min-width: 20; /* <-- ADD a minimum width */
+    max-width: 80; /* <-- ADD a maximum width (optional) */
+    background: $boost;
+    padding: 1 2;
+    border-left: thick $background-darken-1; /* Border on the left */
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Collapsed state for the new right sidebar */
+#character-sidebar.collapsed {
+    width: 0 !important;
+    min-width: 0 !important; /* Ensure min-width is also 0 */
+    border-left: none !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    display: none; /* Ensures it doesn't take space or grab focus */
+}
+
+/* Common sidebar elements */
 .sidebar-title { text-style: bold underline; margin-bottom: 1; width: 100%; text-align: center; }
 .sidebar-label { margin-top: 1; text-style: bold; }
 .sidebar-input { width: 100%; margin-bottom: 1; }
-.sidebar-textarea { width: 100%; height: 5; border: round $surface; margin-bottom: 1; }
+.sidebar-textarea { width: 100%; border: round $surface; margin-bottom: 1; }
 .sidebar Select { width: 100%; margin-bottom: 1; }
 
 /* --- Chat Window specific layouts --- */
 #chat-main-content {
     layout: vertical;
     height: 100%;
-    width: 1fr;
+    width: 1fr; /* This is KEY - it takes up the remaining horizontal space */
 }
 /* VerticalScroll for chat messages */
 #chat-log {
@@ -3877,7 +3955,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 }
 
 /* Input area styling (shared by chat and character) */
-#chat-input-area, #character-input-area {
+#chat-input-area, #conv-char-input-area { /* Updated from #character-input-area */
     height: auto;    /* Allow height to adjust */
     max-height: 12;  /* Limit growth */
     width: 100%;
@@ -3895,35 +3973,92 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 }
 /* Send button styling (shared) */
 .send-button { /* Targets Button */
-    width: 10;
+    width: 5;
     height: 3; /* Fixed height for consistency */
     /* align-self: stretch; REMOVED */
     margin-top: 0;
 }
 
-/* --- Character Chat Window specific layouts --- */
-#character-main-content {
-    layout: vertical;
+/* --- Conversations & Characters Window specific layouts (previously Character Chat) --- */
+/* Main container for the three-pane layout */
+#conversations_characters-window {
+    layout: horizontal; /* Crucial for side-by-side panes */
+    /* Ensure it takes full height if not already by .window */
     height: 100%;
-    width: 1fr;
 }
-#character-top-area {
-    height: 1fr; /* Top area takes remaining vertical space */
+
+/* Left Pane Styling */
+.cc-left-pane {
+    width: 25%; /* Keep 25% or 30% - adjust as needed */
+    min-width: 20; /* ADD a minimum width */
+    height: 100%;
+    background: $boost;
+    padding: 1;
+    border-right: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Center Pane Styling */
+.cc-center-pane {
+    width: 1fr; /* Takes remaining space */
+    height: 100%;
+    padding: 1;
+    overflow-y: auto; /* For conversation history */
+}
+
+/* Right Pane Styling */
+.cc-right-pane {
+    width: 25%; /* Keep 25% or 30% - adjust as needed */
+    min-width: 20; /* ADD a minimum width */
+    height: 100%;
+    background: $boost;
+    padding: 1;
+    border-left: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* General styles for elements within these panes (can reuse/adapt from .sidebar styles) */
+.cc-left-pane Input, .cc-right-pane Input {
+    width: 100%; margin-bottom: 1;
+}
+.cc-left-pane ListView {
+    height: 1fr; /* Make ListView take available space */
+    margin-bottom: 1;
+    border: round $surface;
+}
+.cc-left-pane Button, .cc-right_pane Button { /* Typo Fixed */
     width: 100%;
-    layout: horizontal;
     margin-bottom: 1;
 }
-/* Log when next to portrait (Still RichLog here) */
-#character-top-area > #character-log { /* Target by ID is safer */
-    margin: 0 1 0 0;
-    height: 100%;
-    margin-bottom: 0; /* Override base margin */
-    border: round $surface; /* Added border back for RichLog */
-    padding: 0 1; /* Added padding back for RichLog */
-    width: 1fr; /* Ensure it takes space */
+
+/* Specific title style for panes */
+.pane-title {
+    text-style: bold;
+    margin-bottom: 1;
+    text-align: center;
+    width: 100%; /* Ensure it spans width for centering */
 }
-/* Portrait styling */
-#character-portrait {
+
+/* Specific style for keywords TextArea in the right pane */
+.conv-char-keywords-textarea {
+    height: 5; /* Example height */
+    width: 100%;
+    margin-bottom: 1;
+    border: round $surface; /* Re-apply border if not inherited */
+}
+
+/* Specific style for the "Export Options" label */
+.export-label {
+    margin-top: 2; /* Add some space above export options */
+}
+
+
+/* Old styles for #conv-char-main-content, #conv-char-top-area etc. are removed */
+/* as the structure within #conversations_characters-window is now different. */
+/* Portrait styling - if still needed, would be part of a specific pane's content now */
+/* #conv-char-portrait {
     width: 25;
     height: 100%;
     border: round $surface;
@@ -3933,9 +4068,32 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     align: center top;
 }
 
-/* Logs Window */
-#logs-window { padding: 0; border: none; height: 100%; width: 100%; }
+/* Logs Window adjustments */
+#logs-window {
+    layout: vertical; /* Override .window's default horizontal layout for this specific window */
+    /* The rest of your #logs-window styles (padding, border, height, width) are fine */
+    /* E.g., if you had: padding: 0; border: none; height: 100%; width: 100%; those are okay. */
+}
+#app-log-display {
+    border: none;
+    height: 1fr;    /* RichLog takes most of the vertical space */
+    width: 100%;    /* RichLog takes full width in the vertical layout */
+    margin: 0;
+    padding: 1;     /* Your existing padding is good */
+}
+
+/* Style for the new "Copy All Logs" button */
+.logs-action-button {
+    width: 100%;     /* Button takes full width */
+    height: 3;       /* A standard button height */
+    margin-top: 1;   /* Add some space between RichLog and the button */
+    /* dock: bottom; /* Optional: If you want it always pinned to the very bottom.
+                       If omitted, it will just flow after the RichLog in the vertical layout.
+                       For simplicity, let's omit it for now. */
+}
+/* old #logs-window { padding: 0; border: none; height: 100%; width: 100%; }
 #app-log-display { border: none; height: 1fr; width: 1fr; margin: 0; padding: 1; }
+*/
 
 /* --- ChatMessage Styling --- */
 ChatMessage {
@@ -3993,7 +4151,7 @@ ChatMessage.-ai .message-actions.-generating {
 }
 /* microphone button – same box as Send but subdued colour */
 .mic-button {
-    width: 3;
+    width: 1;
     height: 3;
     margin-right: 1;           /* gap before Send */
     border: none;
@@ -4005,25 +4163,24 @@ ChatMessage.-ai .message-actions.-generating {
     color: $text;
 }
 .sidebar-toggle {
-    width: 3;
+    width: 2;                /* tiny square */
     height: 3;
-    margin-right: 1;
+    /* margin-right: 1; Removed default margin, apply specific below */
     border: none;
     background: $surface-darken-1;
     color: $text;
 }
-.sidebar-toggle:hover {
-    background: $surface;
+.sidebar-toggle:hover { background: $surface; }
+
+/* Specific margins for sidebar toggles based on position */
+#toggle-chat-sidebar {
+    margin-right: 1; /* Original toggle on the left of input area */
 }
 
-/* collapsed side-bar; width zero and no border */
-.sidebar.collapsed {
-    width: 0 !important;
-    border-right: none !important;
-    padding: 0 !important;
-    overflow: hidden !important;
-    display: none;          /* ensures it doesn’t grab focus */
+#toggle-character-sidebar {
+    margin-left: 1; /* New toggle on the right of input area */
 }
+
 #app-titlebar {
     dock: top;
     height: 1;                 /* single line */
@@ -4032,6 +4189,20 @@ ChatMessage.-ai .message-actions.-generating {
     text-align: center;
     text-style: bold;
     padding: 0 1;
+}
+
+/* Reduce height of Collapsible headers */
+Collapsible > .collapsible--header {
+    height: 2;
+}
+
+.chat-system-prompt-styling {
+    width: 100%;
+    height: auto;
+    min-height: 3;
+    max-height: 10; /* Limit height */
+    border: round $surface;
+    margin-bottom: 1;
 }
     """
 

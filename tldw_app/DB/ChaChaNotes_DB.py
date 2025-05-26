@@ -1068,8 +1068,8 @@ UPDATE db_schema_version
         conn = self.get_connection()
         try:
             cursor = conn.cursor()
-            if logger.isEnabledFor(logging.DEBUG):  # Avoid formatting query/params if not debugging
-                logger.debug(f"Executing SQL (script={script}): {query[:300]}... Params: {str(params)[:200]}...")
+            #if logger.isEnabledFor(logging.DEBUG):  # Avoid formatting query/params if not debugging
+            logger.debug(f"Executing SQL (script={script}): {query[:300]}... Params: {str(params)[:200]}...")
 
             if script:
                 cursor.executescript(query)
