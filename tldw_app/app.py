@@ -449,8 +449,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                         yield TextArea(id="chat-input", classes="chat-input") # Ensure prompt is used if needed
                         #yield Button("Send ▶", id="send-chat", classes="send-button")
                         yield Button(get_char(EMOJI_SEND, FALLBACK_SEND), id="send-chat", classes="send-button")
-                        yield Button("Save Chat", id="chat-save-current-chat-button", classes="save-chat-button",
-                                     disabled=True)  # Initially disabled
                         #yield Button("👤", id="toggle-character-sidebar", classes="sidebar-toggle")
                         yield Button(get_char(EMOJI_CHARACTER_ICON, FALLBACK_CHARACTER_ICON), id="toggle-character-sidebar",
                                      classes="sidebar-toggle")
