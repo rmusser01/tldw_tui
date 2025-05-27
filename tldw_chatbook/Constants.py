@@ -23,7 +23,6 @@ TAB_LOGS = "logs"
 ALL_TABS = [TAB_CHAT, TAB_CCP, TAB_NOTES, TAB_MEDIA, TAB_SEARCH, TAB_INGEST, TAB_LOGS, TAB_STATS]
 
 
-
 # --- CSS definition ---
 # (Keep your CSS content here, make sure IDs match widgets)
 css_content = """
@@ -49,7 +48,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 /* Sidebar Styling */
 /* Generic .sidebar (used by #chat-sidebar and potentially others) */
 .sidebar {
-    /* width: 70;  <-- REMOVE fixed width */
+    dock: left;
     width: 25%; /* <-- CHANGE to percentage (adjust 20% to 35% as needed) */
     min-width: 20; /* <-- ADD a minimum width to prevent it becoming unusable */
     max-width: 80; /* <-- ADD a maximum width (optional) */
@@ -510,17 +509,72 @@ MetricsScreen Label.-info-message {
     width: 1fr; /* Make buttons share space */
     margin: 0 1 0 0; /* Small right margin, no top/bottom if already in Horizontal */
 }
-.ccp-prompt-action-buttons Button:last-child {
+.ccp-prompt-action-buttons Button:last-of-type { /* Corrected pseudo-class */
     margin-right: 0;
+}
+
+/* Ensure Collapsible titles are clear */
+#conv-char-right-pane Collapsible > .collapsible--header {
+    background: $primary-background-darken-1; /* Example to differentiate */
+    color: $text;
+}
+
+#conv-char-right-pane Collapsible.-active > .collapsible--header { /* Optional: when expanded */
+    background: $primary-background;
 }
 /* --- End of Prompts Sidebar Vertical --- */
 
+/* Right Pane Styling */
+.cc-right-pane {
+    width: 25%; /* Keep 25% or 30% - adjust as needed */
+    min-width: 20; /* ADD a minimum width */
+    height: 100%;
+    background: $boost;
+    padding: 1;
+    border-left: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
 
+/* ADD THIS: Collapsed state for the CCP tab's right pane */
+.cc-right-pane.collapsed {
+    width: 0 !important;
+    min-width: 0 !important;
+    border-left: none !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    display: none !important; /* Ensures it doesn't take space or grab focus */
+}
 
+/* Styles for the dynamic view areas within the CCP center pane */
+.ccp-view-area {
+    width: 100%;
+    height: 100%;
+    /* overflow: auto; /* If content within might overflow */
+}
+
+/* Add this class to hide elements */
+.ccp-view-area.hidden,
+.ccp-right-pane-section.hidden { /* For sections in the right pane */
+    display: none !important;
+}
+
+/* By default, let conversation messages be visible, and editor hidden */
+#ccp-conversation-messages-view {
+    /* display: block; /* or whatever its natural display is, usually block for Container */
+}
+#ccp-prompt-editor-view {
+    display: none; /* Initially hidden by CSS */
+}
+
+/* Ensure the right pane sections also respect hidden class */
+#ccp-right-pane-llm-settings-container {
+    /* display: block; default */
+}
+#ccp-right-pane-llm-settings-container.hidden {
+    display: none !important;
+}
     """
-
-
-
 
 
 #
