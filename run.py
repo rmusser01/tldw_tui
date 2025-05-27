@@ -15,10 +15,10 @@ sys.path.insert(0, str(project_dir))
 print(f"Project directory added to sys.path: {project_dir}")
 try:
     # Use 'tldw_app' consistently
-    from tldw_app.app import TldwCli
-    from tldw_app.config import load_config, get_config_path, DEFAULT_CONFIG
+    from tldw_chatbook.app import TldwCli
+    from tldw_chatbook.config import load_config, get_config_path, DEFAULT_CONFIG
     # Ensure this import path is correct based on your structure inside tldw_app
-    from tldw_app.css.default_css import DEFAULT_CSS_CONTENT
+    from tldw_chatbook.css.default_css import DEFAULT_CSS_CONTENT
 except ModuleNotFoundError as e:
     # Update the error message to reflect 'tldw_app'
     print(f"ERROR: run.py: Failed to import from tldw_app package.")
@@ -27,7 +27,7 @@ except ModuleNotFoundError as e:
     print(f"       Original error: {e}")
     sys.exit(1)
 try:
-    from tldw_app import config
+    from tldw_chatbook import config
     config._APP_CONFIG = None
     print("--- run.py: Cleared config cache (_APP_CONFIG = None) ---")
 except Exception as e:

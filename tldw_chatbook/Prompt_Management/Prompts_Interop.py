@@ -29,7 +29,7 @@ from pathlib import Path
 from loguru import logger
 #
 # Local Imports
-from tldw_app.DB.Prompts_DB import (
+from tldw_chatbook.DB.Prompts_DB import (
     PromptsDatabase,
     DatabaseError,
     SchemaError,

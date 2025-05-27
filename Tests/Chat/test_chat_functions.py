@@ -16,7 +16,7 @@ import requests  # For mocking requests.exceptions
 #
 # Local Imports
 # Ensure these paths are correct for your project structure
-from tldw_app.Chat.Chat_Functions import (
+from tldw_chatbook.Chat.Chat_Functions import (
     chat_api_call,
     chat,
     save_chat_history_to_db_wrapper,
@@ -32,11 +32,11 @@ from tldw_app.Chat.Chat_Functions import (
     # For unit testing chat_api_call, we mock these handlers.
     # For unit testing chat, we mock chat_api_call.
 )
-from tldw_app.Chat.Chat_Deps import (
+from tldw_chatbook.Chat.Chat_Deps import (
     ChatAuthenticationError, ChatRateLimitError, ChatBadRequestError,
     ChatConfigurationError, ChatProviderError, ChatAPIError
 )
-from tldw_app.DB.ChaChaNotes_DB import CharactersRAGDB # For mocking
+from tldw_chatbook.DB.ChaChaNotes_DB import CharactersRAGDB # For mocking
 
 # Placeholder for load_settings if it's not directly in Chat_Functions or needs specific mocking path
 # from tldw_app.Chat.Chat_Functions import load_settings # Already imported effectively

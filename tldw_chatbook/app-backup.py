@@ -35,11 +35,11 @@ from textual.timer import Timer
 from textual.css.query import QueryError  # For specific error handling
 #
 # --- Local API library Imports ---
-from tldw_app.Chat.Chat_Functions import chat
-from tldw_app.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, css_content, TAB_STATS
-from tldw_app.Logging_Config import RichLogHandler
-from tldw_app.Prompt_Management import Prompts_Interop as prompts_interop
-from tldw_app.Utils.Emoji_Handling import get_char, EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN, EMOJI_TITLE_NOTE, \
+from tldw_chatbook.Chat.Chat_Functions import chat
+from tldw_chatbook.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, css_content, TAB_STATS
+from tldw_chatbook.Logging_Config import RichLogHandler
+from tldw_chatbook.Prompt_Management import Prompts_Interop as prompts_interop
+from tldw_chatbook.Utils.Emoji_Handling import get_char, EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN, EMOJI_TITLE_NOTE, \
     FALLBACK_TITLE_NOTE, EMOJI_TITLE_SEARCH, FALLBACK_TITLE_SEARCH, EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE, \
     EMOJI_SEND, FALLBACK_SEND, EMOJI_CHARACTER_ICON, FALLBACK_CHARACTER_ICON, EMOJI_THINKING, FALLBACK_THINKING, \
     EMOJI_EDIT, FALLBACK_EDIT, EMOJI_SAVE_EDIT, FALLBACK_SAVE_EDIT, EMOJI_COPIED, FALLBACK_COPIED, EMOJI_COPY, \

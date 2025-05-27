@@ -2,19 +2,33 @@
 
 A Textual TUI for interacting with various LLM APIs, managing conversation history, characters, notes, and more.
 
-Current status: Working. Weak DB support, lots of bugs there. Chat (does not currently) work great. Rewiring to support new chat libraries.
+Current status: Working/In-Progress
 
 ## Features
+- **Current Features:**
+  - Connect to multiple LLM providers (Local: Llama.cpp, Ollama, Kobold.cpp, vLLM, Aphrodite, Custom-OpenAI API endpoint ; Commercial: OpenAI, Anthropic, Cohere, Deepseek, Google, Groq, Mistral, OpenRouter)
+  - Character Card functionality (WIP)
+  - Conversation history management
+  - Notes and keyword management
+  - Textual TUI interface
+  - Configuration via `config.toml`
+    - Default `config.toml` stored at `~/.config/tldw_cli/config.toml`
+    - Default user DB stored at `~/.share/tldw_cli/`
+  - Environment variable support for API keys
+  - Inspiration from Elia Chat Widgets
+  - Launch with `python3 -m tldw_chatbook.app` (working on pip packaging)
+- **Planned Features:**
+  - Conversation Forking + History Management thereof
+  - Improved notes and keyword management (Support for syncing notes from a local folder/file)
+  - Additional LLM provider support
+  - More robust configuration options
+  - Enhanced character chat functionality (ASCII art for pictures?)
+  - Improved conversation history management (exporting)
+  - Support for 'ranking' conversation replies (create your own conversational datasets)
 
-*   Connect to multiple LLM providers
-  * Commercial: OpenAI, Anthropic, Cohere, Deepseek, Google, Groq, Mistral, .
-  * Local: Llama.cpp, Ollama, Koboldcpp, Ooba, vLLM, Tabby, Aphrodite
-*   Character chat functionality.
-*   Conversation history management.
-*   Notes and keyword management.
 
 
-Launch: `python3 -m app`
+Launch: `python3 -m tldw_chatbook.app`
 
 
 Default `config.toml` stored at `~/.config/tldw_cli/config.toml`

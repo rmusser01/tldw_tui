@@ -9,8 +9,8 @@ from typing import Dict, Any, List, Generator
 import requests
 
 # Ensure this path is correct based on your project structure
-from tldw_app.Chat.Chat_Functions import chat_api_call, chat, PROVIDER_PARAM_MAP, API_CALL_HANDLERS
-from tldw_app.Chat.Chat_Deps import (
+from tldw_chatbook.Chat.Chat_Functions import chat_api_call, chat, PROVIDER_PARAM_MAP, API_CALL_HANDLERS
+from tldw_chatbook.Chat.Chat_Deps import (
     ChatAuthenticationError, ChatRateLimitError, ChatBadRequestError,
     ChatProviderError, ChatAPIError, ChatConfigurationError
 )

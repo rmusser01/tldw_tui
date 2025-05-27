@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch, mock_open
 
-from tldw_app.Chat.prompt_template_manager import (
+from tldw_chatbook.Chat.prompt_template_manager import (
     PromptTemplate,
     load_template,
     apply_template_to_string,

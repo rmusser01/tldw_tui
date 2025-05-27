@@ -26,8 +26,8 @@ from requests.adapters import HTTPAdapter
 from urllib3 import Retry
 #
 # Import Local Libraries
-from tldw_app.Utils.Utils import extract_text_from_segments, logging
-from tldw_app.config import load_settings
+from tldw_chatbook.Utils.Utils import extract_text_from_segments, logging
+from tldw_chatbook.config import load_settings
 
 #
 #######################################################################################################################

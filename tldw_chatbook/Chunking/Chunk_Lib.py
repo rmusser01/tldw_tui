@@ -23,8 +23,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 #
 # Import Local
-from tldw_app.config import load_settings
-from tldw_app.config import global_default_chunk_language
+from tldw_chatbook.config import load_settings
+from tldw_chatbook.config import global_default_chunk_language
 #
 #######################################################################################################################
 # Custom Exceptions
