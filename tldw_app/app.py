@@ -483,7 +483,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             # Assign specific reactive variables to the Select widgets
             chat_window = Container(id=f"{TAB_CHAT}-window", classes="window")
             if self._initial_tab_value != TAB_CHAT:
-                chat_window.styles.display = False  # Hide if not the initial tab
+                chat_window.styles.display = "none"
             with Container(id=f"{TAB_CHAT}-window", classes="window"):
                 # Pass self.current_chat_is_ephemeral to create_character_sidebar if it needs to adjust UI
                 yield from create_settings_sidebar(TAB_CHAT, self.app_config) # This is fine
@@ -622,27 +622,33 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 #         yield Button("Export as Text", id="conv-char-export-text-button", classes="sidebar-button")
                 #         yield Button("Export as JSON", id="conv-char-export-json-button", classes="sidebar-button")
 
+            #chat_window = Container(id=f"{TAB_CHAT}-window", classes="window")
+            # if self._initial_tab_value != TAB_CHAT:
+            #     chat_window.styles.display = False  # Hide if not the initial tab
+
             # --- Notes Tab Window ---
-            chat_window = Container(id=f"{TAB_CHAT}-window", classes="window")
-            if self._initial_tab_value != TAB_CHAT:
-                chat_window.styles.display = False  # Hide if not the initial tab
-            with Container(id=f"{TAB_NOTES}-window", classes="window"):
-                # Instantiate the left sidebar (ensure it has a unique ID for the watcher)
-                yield NotesSidebarLeft(id="notes-sidebar-left", classes="sidebar")
+            # Ensure the initial display state is correct based on _initial_tab_value
+            notes_window = Container(id=f"{TAB_NOTES}-window", classes="window")
+            if self._initial_tab_value != TAB_NOTES:  # Use the stored initial value
+                notes_window.styles.display = "none"
+
+            with notes_window:  # This is the Container for the entire Notes Tab
+                # Instantiate the left sidebar
+                yield NotesSidebarLeft(id="notes-sidebar-left")
 
                 # Main content area for notes (editor and toggles)
-                with Container(id="notes-main-content"):  # Similar to chat-main-content
-                    yield TextArea(id="notes-editor-area", classes="notes-editor")  # Make it take up 1fr height
-                    # Container for toggle buttons, similar to chat-input-area
+                with Container(id="notes-main-content"):
+                    yield TextArea(id="notes-editor-area", classes="notes-editor")
+                    # Container for toggle buttons and save button, similar to chat-input-area
                     with Horizontal(id="notes-controls-area"):
                         yield Button("☰ L", id="toggle-notes-sidebar-left", classes="sidebar-toggle")
                         yield Static()  # Spacer
-                        yield Button("Save Note", id="notes-save-button", variant="primary")
+                        yield Button("Save Note", id="notes-save-button", variant="primary")  # Main save button
                         yield Static()  # Spacer
                         yield Button("R ☰", id="toggle-notes-sidebar-right", classes="sidebar-toggle")
 
                 # Instantiate the right sidebar (ensure it has a unique ID for the watcher)
-                yield NotesSidebarRight(id="notes-sidebar-right", classes="sidebar")
+                yield NotesSidebarRight(id="notes-sidebar-right")
 
             # --- Logs Tab ---
 
