@@ -28,15 +28,6 @@ from tldw_app.DB.ChaChaNotes_DB import CharactersRAGDB, CharactersRAGDBError, Co
 DEFAULT_CHARACTER_ID = 1
 #
 
-
-
-
-
-
-
-
-
-
 # --- New Functions
 def create_conversation(
         db: CharactersRAGDB,

@@ -411,6 +411,30 @@ def format_file_path(file_path, fallback_path=None):
         logging.debug(f"File does not exist: {file_path}. No fallback path available.")
         return None
 
+
+def safe_float(value: str, default: float, name: str) -> float:
+    """Safely converts a string to a float, returning a default on failure."""
+    if not value: # Handles empty string case
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        logging.warning(f"Invalid float value for {name}: '{value}'. Using default: {default}.")
+        return default
+
+def safe_int(value: str, default: Optional[int], name: str) -> Optional[int]:
+    """
+    Safely converts a string to an int, returning a default on failure.
+    Allows default to be None, in which case None is returned on failure if default is None.
+    """
+    if not value: # Handles empty string case
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        logging.warning(f"Invalid integer value for {name}: '{value}'. Using default: {default}.")
+        return default
+
 #
 # End of Sanitization/Verification Functions
 #######################################################################################################################

@@ -17,6 +17,8 @@ from textual.widgets import (
 )
 from textual.containers import VerticalScroll
 from textual.css.query import QueryError
+
+from ..Utils.Utils import safe_float, safe_int
 #
 # Local Imports
 from ..Widgets.chat_message import ChatMessage
@@ -39,8 +41,9 @@ if TYPE_CHECKING:
 
 async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
     """Handles the send button press for the main chat tab."""
-    logging.info(f"Send button pressed for '{prefix}' (main chat)")
+    loguru_logger.info(f"Send button pressed for '{prefix}' (main chat)") # Use loguru_logger consistently
 
+    # --- 1. Query UI Widgets ---
     try:
         text_area = app.query_one(f"#{prefix}-input", TextArea)
         chat_container = app.query_one(f"#{prefix}-log", VerticalScroll)
@@ -67,211 +70,260 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
         llm_tool_choice_widget = app.query_one(f"#{prefix}-llm-tool-choice", Input)
 
     except QueryError as e:
-        logging.error(f"Send Button: Could not find UI widgets for '{prefix}': {e}")
+        loguru_logger.error(f"Send Button: Could not find UI widgets for '{prefix}': {e}")
         try:
-            container_for_error = chat_container if 'chat_container' in locals() and chat_container else app.query_one(
-                f"#{prefix}-log", VerticalScroll)
+            container_for_error = chat_container if 'chat_container' in locals() and chat_container.is_mounted else app.query_one(
+                f"#{prefix}-log", VerticalScroll) # Re-query if initial one failed
             await container_for_error.mount(
-                ChatMessage(f"Internal Error: Missing UI elements for {prefix}.", role="System", classes="-error"))
+                ChatMessage(Text.from_markup(f"[bold red]Internal Error:[/]\nMissing UI elements for {prefix}."), role="System", classes="-error"))
         except QueryError:
-            logging.error(f"Send Button: Critical - could not even find chat container #{prefix}-log to display error.")
+            loguru_logger.error(f"Send Button: Critical - could not even find chat container #{prefix}-log to display error.")
         return
 
-    message = text_area.text.strip()
+    # --- 2. Get Message and Parameters from UI ---
+    message_text_from_input = text_area.text.strip()
     reuse_last_user_bubble = False
-    if not message:
+
+    if not message_text_from_input: # Try to reuse last user message if input is empty
         try:
             last_msg_widget: Optional[ChatMessage] = None
-            for widget in reversed(list(chat_container.query(ChatMessage))):  # Ensure iterable is consumed
-                if widget.role in ("User", "AI"):
+            # Iterate over a materialized list to avoid issues if querying during modification (though less likely here)
+            for widget in reversed(list(chat_container.query(ChatMessage))):
+                if widget.role == "User": # Only reuse User messages
                     last_msg_widget = widget
                     break
-            if last_msg_widget and last_msg_widget.role == "User":
-                message = last_msg_widget.message_text
+            if last_msg_widget:
+                message_text_from_input = last_msg_widget.message_text
                 reuse_last_user_bubble = True
+                loguru_logger.debug("Reusing last user message as input is empty.")
         except Exception as exc:
-            logging.error("Failed to inspect last message: %s", exc, exc_info=True)
+            loguru_logger.error("Failed to inspect last message for reuse: %s", exc, exc_info=True)
 
-    if not message:
-        logging.debug("Empty message and no reusable user bubble in '%s'.", prefix)
+    if not message_text_from_input:
+        loguru_logger.debug("Send Button: Empty message and no reusable user bubble in '%s'. Focusing input.", prefix)
         text_area.focus()
         return
 
     selected_provider = str(provider_widget.value) if provider_widget.value != Select.BLANK else None
-    selected_model = str(
-        model_widget.value) if model_widget.value != Select.BLANK else None  # DEFINITION OF selected_model
+    selected_model = str(model_widget.value) if model_widget.value != Select.BLANK else None
     system_prompt = system_prompt_widget.text
-    temperature = app._safe_float(temp_widget.value, 0.7, "temperature")
-    top_p = app._safe_float(top_p_widget.value, 0.95, "top_p")
-    min_p = app._safe_float(min_p_widget.value, 0.05, "min_p")
-    top_k = app._safe_int(top_k_widget.value, 50, "top_k")
-    custom_prompt = ""
-    should_stream = False  # Default, as per original app.py logic for chat_wrapper direct call
+    temperature = safe_float(temp_widget.value, 0.7, "temperature") # Use imported safe_float
+    top_p = safe_float(top_p_widget.value, 0.95, "top_p")
+    min_p = safe_float(min_p_widget.value, 0.05, "min_p")
+    top_k = safe_int(top_k_widget.value, 50, "top_k") # Use imported safe_int
+    custom_prompt = ""  # Assuming this isn't used directly in chat send, but passed
+    should_stream = False # Defaulting to False as per original logic
 
-    llm_max_tokens_value = app._safe_int(llm_max_tokens_widget.value, 1024, "llm_max_tokens")
-    llm_seed_value = app._safe_int(llm_seed_widget.value, None, "llm_seed")
-    llm_stop_value = [s.strip() for s in llm_stop_widget.value.split(',')] if llm_stop_widget.value.strip() else None
-    llm_response_format_value = {
-        "type": str(llm_response_format_widget.value)} if llm_response_format_widget.value != Select.BLANK else {
-        "type": "text"}
-    llm_n_value = app._safe_int(llm_n_widget.value, 1, "llm_n")
+    llm_max_tokens_value = safe_int(llm_max_tokens_widget.value, 1024, "llm_max_tokens")
+    llm_seed_value = safe_int(llm_seed_widget.value, None, "llm_seed") # None is a valid default
+    llm_stop_value = [s.strip() for s in llm_stop_widget.value.split(',') if s.strip()] if llm_stop_widget.value.strip() else None
+    llm_response_format_value = {"type": str(llm_response_format_widget.value)} if llm_response_format_widget.value != Select.BLANK else {"type": "text"}
+    llm_n_value = safe_int(llm_n_widget.value, 1, "llm_n")
     llm_user_identifier_value = llm_user_identifier_widget.value.strip() or None
     llm_logprobs_value = llm_logprobs_widget.value
-    llm_top_logprobs_value = app._safe_int(llm_top_logprobs_widget.value, 0,
-                                           "llm_top_logprobs") if llm_logprobs_value else 0
-    llm_presence_penalty_value = app._safe_float(llm_presence_penalty_widget.value, 0.0, "llm_presence_penalty")
-    llm_frequency_penalty_value = app._safe_float(llm_frequency_penalty_widget.value, 0.0, "llm_frequency_penalty")
+    llm_top_logprobs_value = safe_int(llm_top_logprobs_widget.value, 0, "llm_top_logprobs") if llm_logprobs_value else 0
+    llm_presence_penalty_value = safe_float(llm_presence_penalty_widget.value, 0.0, "llm_presence_penalty")
+    llm_frequency_penalty_value = safe_float(llm_frequency_penalty_widget.value, 0.0, "llm_frequency_penalty")
     llm_tool_choice_value = llm_tool_choice_widget.value.strip() or None
+
     try:
         llm_logit_bias_text = llm_logit_bias_widget.text.strip()
-        llm_logit_bias_value = json.loads(
-            llm_logit_bias_text) if llm_logit_bias_text and llm_logit_bias_text != "{}" else None
+        llm_logit_bias_value = json.loads(llm_logit_bias_text) if llm_logit_bias_text and llm_logit_bias_text != "{}" else None
     except json.JSONDecodeError:
-        logging.warning(f"Invalid JSON in llm_logit_bias: '{llm_logit_bias_widget.text}'")
-        await chat_container.mount(
-            ChatMessage("Error: Invalid JSON in LLM Logit Bias. Parameter not used.", role="System", classes="-error"))
+        loguru_logger.warning(f"Invalid JSON in llm_logit_bias: '{llm_logit_bias_widget.text}'")
+        await chat_container.mount(ChatMessage(Text.from_markup("Error: Invalid JSON in LLM Logit Bias. Parameter not used."), role="System", classes="-error"))
         llm_logit_bias_value = None
     try:
         llm_tools_text = llm_tools_widget.text.strip()
         llm_tools_value = json.loads(llm_tools_text) if llm_tools_text and llm_tools_text != "[]" else None
     except json.JSONDecodeError:
-        logging.warning(f"Invalid JSON in llm_tools: '{llm_tools_widget.text}'")
-        await chat_container.mount(
-            ChatMessage("Error: Invalid JSON in LLM Tools. Parameter not used.", role="System", classes="-error"))
+        loguru_logger.warning(f"Invalid JSON in llm_tools: '{llm_tools_widget.text}'")
+        await chat_container.mount(ChatMessage(Text.from_markup("Error: Invalid JSON in LLM Tools. Parameter not used."), role="System", classes="-error"))
         llm_tools_value = None
 
-    if not selected_provider: await chat_container.mount(
-        ChatMessage("Please select an API Provider.", role="System", classes="-error")); return
-    if not selected_model: await chat_container.mount(
-        ChatMessage("Please select a Model.", role="System", classes="-error")); return
-    if not API_IMPORTS_SUCCESSFUL:
-        await chat_container.mount(
-            ChatMessage("Error: Core API functions failed to load.", role="System", classes="-error"))
-        logging.error("Attempted to send message, but API imports failed.")
+    # --- 3. Basic Validation ---
+    if not selected_provider:
+        await chat_container.mount(ChatMessage(Text.from_markup("Please select an API Provider."), role="System", classes="-error")); return
+    if not selected_model:
+        await chat_container.mount(ChatMessage(Text.from_markup("Please select a Model."), role="System", classes="-error")); return
+    if not app.API_IMPORTS_SUCCESSFUL: # Access as app attribute
+        await chat_container.mount(ChatMessage(Text.from_markup("Error: Core API functions failed to load."), role="System", classes="-error"))
+        loguru_logger.error("Attempted to send message, but API imports failed.")
         return
 
-    chat_history = []
+    # --- 4. Build Chat History for API ---
+    # History should contain messages *before* the current user's input.
+    # The current user's input (`message_text_from_input`) will be passed as the `message` param to `app.chat_wrapper`.
+    chat_history_for_api: List[Dict[str, str]] = []
     try:
-        for msg_widget in chat_container.query(ChatMessage):
+        # Iterate through all messages currently in the UI
+        all_ui_messages = list(chat_container.query(ChatMessage))
+
+        # Determine how many messages to actually include in history sent to API
+        # (e.g., based on token limits or a fixed number)
+        # For now, let's take all completed User/AI messages *before* any reused bubble
+
+        messages_to_process_for_history = all_ui_messages
+        if reuse_last_user_bubble and all_ui_messages:
+            # If we are reusing the last bubble, it means it's already in the UI.
+            # The history should include everything *before* that reused bubble.
+            # Find the index of the last_msg_widget (which is the one being reused)
+            try:
+                # 'last_msg_widget' would have been set if reuse_last_user_bubble is True
+                # This assumes last_msg_widget is still a valid reference from the reuse logic block
+                idx_of_reused_msg = -1
+                # Search for the widget instance if `last_msg_widget` is not directly available
+                # or if we need to be more robust:
+                temp_last_user_msg_widget = None
+                for widget in reversed(all_ui_messages):
+                    if widget.role == "User":
+                        temp_last_user_msg_widget = widget
+                        break
+                if temp_last_user_msg_widget:
+                    idx_of_reused_msg = all_ui_messages.index(temp_last_user_msg_widget)
+
+                if idx_of_reused_msg != -1:
+                    messages_to_process_for_history = all_ui_messages[:idx_of_reused_msg]
+            except (ValueError, NameError): # NameError if last_msg_widget wasn't set, ValueError if not found
+                 loguru_logger.warning("Could not definitively exclude reused message from history; sending full history.")
+                 # Fallback: send all current UI messages as history; API might get duplicate of last user msg.
+                 # `app.chat_wrapper` or `chat()` would need to handle this.
+                 pass
+
+
+        for msg_widget in messages_to_process_for_history:
             if msg_widget.role in ("User", "AI") and msg_widget.generation_complete:
                 role_for_api = "assistant" if msg_widget.role == "AI" else "user"
-                chat_history.append({"role": role_for_api, "content": msg_widget.message_text})
-        logging.debug(f"Built chat history with {len(chat_history)} messages.")
+                chat_history_for_api.append({"role": role_for_api, "content": msg_widget.message_text})
+
+        loguru_logger.debug(f"Built chat history for API with {len(chat_history_for_api)} messages.")
+
     except Exception as e:
-        logging.error(f"Failed to build chat history: {e}", exc_info=True)
-        await chat_container.mount(
-            ChatMessage("Internal Error: Could not retrieve chat history.", role="System", classes="-error"))
+        loguru_logger.error(f"Failed to build chat history for API: {e}", exc_info=True)
+        await chat_container.mount(ChatMessage(Text.from_markup("Internal Error: Could not retrieve chat history."), role="System", classes="-error"))
         return
 
+    # --- 5. DB and Conversation ID Setup ---
     active_conversation_id = app.current_chat_conversation_id
     db = app.notes_service._get_db(app.notes_user_id) if app.notes_service else None
+    user_msg_widget_instance: Optional[ChatMessage] = None # To hold the instance of the user message widget
 
-    if not app.current_chat_is_ephemeral and active_conversation_id is None and db:
-        loguru_logger.info("First message in a new 'to-be-saved' chat. Creating conversation record...")
-        char_id_for_new_conv = ccl.DEFAULT_CHARACTER_ID
-        new_chat_title = message[:50] if message else f"Chat started {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-        try:
-            created_id = ccl.create_conversation(
-                db, title=new_chat_title, character_id=char_id_for_new_conv, system_keywords=["__regular_chat"]
-            )
-            if created_id:
-                active_conversation_id = created_id
-                app.current_chat_conversation_id = active_conversation_id
-                # current_chat_is_ephemeral is already False or will be set by save button
-                loguru_logger.info(
-                    f"New persistent conversation created with ID: {active_conversation_id}, Title: {new_chat_title}")
-                try:
-                    app.query_one("#chat-conversation-title-input", Input).value = new_chat_title
-                    app.query_one("#chat-conversation-uuid-display", Input).value = active_conversation_id
-                    app.query_one(TitleBar).update_title(f"Chat - {new_chat_title}")
-                except QueryError:
-                    loguru_logger.error("Failed to update title/UUID inputs for new saved chat.")
-            else:
-                loguru_logger.error("Failed to create new conversation record for saving chat.")
-                await chat_container.mount(
-                    ChatMessage("Error: Could not save new chat session.", role="System", classes="-error"))
-                return
-        except Exception as e_create_conv:
-            loguru_logger.error(f"Error creating new conversation: {e_create_conv}", exc_info=True)
-            await chat_container.mount(
-                ChatMessage(f"Error creating conversation: {e_create_conv}", role="System", classes="-error"))
-            return
-
+    # --- 6. Mount User Message to UI ---
     if not reuse_last_user_bubble:
-        user_msg_widget = ChatMessage(message, role="User")
-        await chat_container.mount(user_msg_widget)
-        if active_conversation_id and not app.current_chat_is_ephemeral and db:
+        user_msg_widget_instance = ChatMessage(message_text_from_input, role="User")
+        await chat_container.mount(user_msg_widget_instance)
+        loguru_logger.debug(f"Mounted new user message to UI: '{message_text_from_input[:50]}...'")
+
+    # --- 7. Save User Message to DB (IF CHAT IS ALREADY PERSISTENT) ---
+    if not app.current_chat_is_ephemeral and active_conversation_id and db:
+        if not reuse_last_user_bubble and user_msg_widget_instance: # Only save if it's a newly added UI message
             try:
-                user_msg_db_id = ccl.add_message_to_conversation(
-                    db, conversation_id=active_conversation_id, sender="User", content=message,
-                    image_data=None, image_mime_type=None  # Assuming no image for user messages here
+                loguru_logger.debug(f"Chat is persistent (ID: {active_conversation_id}). Saving user message to DB.")
+                # Assuming no image for user messages sent via text input for now
+                user_message_db_id = ccl.add_message_to_conversation(
+                    db, conversation_id=active_conversation_id, sender="User", content=message_text_from_input,
+                    image_data=None, image_mime_type=None # Placeholder for potential future image uploads
                 )
-                if user_msg_db_id:
-                    user_msg_widget.message_id_internal = user_msg_db_id
-                    loguru_logger.debug(f"User message saved to DB with ID: {user_msg_db_id}")
+                if user_message_db_id:
+                    user_msg_widget_instance.message_id_internal = user_message_db_id
+                    loguru_logger.debug(f"User message saved to DB with ID: {user_message_db_id}")
                 else:
-                    loguru_logger.error(f"Failed to save user message to DB for conv {active_conversation_id}")
+                    loguru_logger.error(f"Failed to save user message to DB for conversation {active_conversation_id}.")
             except Exception as e_add_msg:
                 loguru_logger.error(f"Error saving user message to DB: {e_add_msg}", exc_info=True)
+    elif app.current_chat_is_ephemeral:
+        loguru_logger.debug("Chat is ephemeral. User message not saved to DB at this stage.")
 
-    chat_container.scroll_end(animate=True)
+
+    # --- 8. UI Updates (Clear input, scroll, focus) ---
+    chat_container.scroll_end(animate=True) # Scroll after mounting user message
     text_area.clear()
     text_area.focus()
 
+    # --- 9. API Key Fetching ---
     api_key_for_call = None
-    provider_settings_key = selected_provider.lower()
-    provider_config_settings = app.app_config.get("api_settings", {}).get(provider_settings_key, {})
-    direct_config_key_checked = False
-    direct_config_key_empty = False
+    if selected_provider: # Should always be true due to earlier check
+        provider_settings_key = selected_provider.lower()
+        provider_config_settings = app.app_config.get("api_settings", {}).get(provider_settings_key, {})
 
-    if provider_config_settings:
         if "api_key" in provider_config_settings:
             direct_config_key_checked = True
             config_api_key = provider_config_settings.get("api_key", "").strip()
             if config_api_key:
                 api_key_for_call = config_api_key
-            else:
-                direct_config_key_empty = True
-        if not api_key_for_call:
+                loguru_logger.debug(f"Using API key for '{selected_provider}' from config file field.")
+
+        if not api_key_for_call: # If not found in direct 'api_key' field or it was empty
             env_var_name = provider_config_settings.get("api_key_env_var", "").strip()
             if env_var_name:
-                api_key_for_call = os.environ.get(env_var_name, "").strip() or None
+                env_api_key = os.environ.get(env_var_name, "").strip()
+                if env_api_key:
+                    api_key_for_call = env_api_key
+                    loguru_logger.debug(f"Using API key for '{selected_provider}' from ENV var '{env_var_name}'.")
+                else:
+                    loguru_logger.debug(f"ENV var '{env_var_name}' for '{selected_provider}' not found or empty.")
+            else:
+                loguru_logger.debug(f"No 'api_key_env_var' specified for '{selected_provider}' in config.")
 
-    providers_requiring_key = ["OpenAI", "Anthropic", "Google", "MistralAI", "Groq", "Cohere", "OpenRouter",
-                               "HuggingFace", "DeepSeek"]
+    providers_requiring_key = ["OpenAI", "Anthropic", "Google", "MistralAI", "Groq", "Cohere", "OpenRouter", "HuggingFace", "DeepSeek"]
     if selected_provider in providers_requiring_key and not api_key_for_call:
-        error_message_parts = [f"API Key for {selected_provider} is missing."]
-        # ... (detailed error message construction from app.py) ...
+        loguru_logger.error(f"API Key for '{selected_provider}' is missing and required.")
         error_message_markup = (
             f"API Key for {selected_provider} is missing.\n\n"
             "Please add it to your config file under:\n"
-            f"\\[api_settings.{provider_settings_key}\\]\n"
+            f"\\[api_settings.{selected_provider.lower()}\\]\n" # Ensure key matches config
             "api_key = \"YOUR_KEY\"\n\n"
-            "Or set the environment variable specified by 'api_key_env_var'."
-        )  # Simplified for brevity
+            "Or set the environment variable specified by 'api_key_env_var' in the config for this provider."
+        )
         await chat_container.mount(ChatMessage(Text.from_markup(error_message_markup), role="System", classes="-error"))
+        # Clean up placeholder if one was accidentally about to be made or if logic changes
+        if app.current_ai_message_widget and app.current_ai_message_widget.is_mounted:
+            await app.current_ai_message_widget.remove()
+            app.current_ai_message_widget = None
         return
 
+    # --- 10. Mount Placeholder AI Message ---
     ai_placeholder_widget = ChatMessage(
         message=f"AI {get_char(EMOJI_THINKING, FALLBACK_THINKING)}",
         role="AI", generation_complete=False
     )
     await chat_container.mount(ai_placeholder_widget)
-    chat_container.scroll_end(animate=False)
+    chat_container.scroll_end(animate=False) # Scroll after mounting placeholder
     app.current_ai_message_widget = ai_placeholder_widget
 
+    # --- 11. Prepare and Dispatch API Call via Worker ---
+    loguru_logger.debug(f"Dispatching API call to worker. Current message: '{message_text_from_input[:50]}...', History items: {len(chat_history_for_api)}")
     worker_target = lambda: app.chat_wrapper(
-        message=message, history=chat_history, api_endpoint=selected_provider, api_key=api_key_for_call,
-        custom_prompt=custom_prompt, temperature=temperature, system_message=system_prompt, streaming=should_stream,
-        minp=min_p, model=selected_model, topp=top_p, topk=top_k,
-        llm_max_tokens=llm_max_tokens_value, llm_seed=llm_seed_value, llm_stop=llm_stop_value,
-        llm_response_format=llm_response_format_value, llm_n=llm_n_value,
-        llm_user_identifier=llm_user_identifier_value, llm_logprobs=llm_logprobs_value,
-        llm_top_logprobs=llm_top_logprobs_value, llm_logit_bias=llm_logit_bias_value,
-        llm_presence_penalty=llm_presence_penalty_value, llm_frequency_penalty=llm_frequency_penalty_value,
-        llm_tools=llm_tools_value, llm_tool_choice=llm_tool_choice_value,
-        media_content={}, selected_parts=[], chatdict_entries=None,
-        max_tokens=500, strategy="sorted_evenly"  # Existing chatdict params
+        message=message_text_from_input, # Current user utterance
+        history=chat_history_for_api,    # History *before* current utterance
+        api_endpoint=selected_provider,
+        api_key=api_key_for_call,
+        custom_prompt=custom_prompt,
+        temperature=temperature,
+        system_message=system_prompt,
+        streaming=should_stream,
+        minp=min_p,
+        model=selected_model,
+        topp=top_p,
+        topk=top_k,
+        llm_max_tokens=llm_max_tokens_value,
+        llm_seed=llm_seed_value,
+        llm_stop=llm_stop_value,
+        llm_response_format=llm_response_format_value,
+        llm_n=llm_n_value,
+        llm_user_identifier=llm_user_identifier_value,
+        llm_logprobs=llm_logprobs_value,
+        llm_top_logprobs=llm_top_logprobs_value,
+        llm_logit_bias=llm_logit_bias_value,
+        llm_presence_penalty=llm_presence_penalty_value,
+        llm_frequency_penalty=llm_frequency_penalty_value,
+        llm_tools=llm_tools_value,
+        llm_tool_choice=llm_tool_choice_value,
+        media_content={}, # Placeholder for now
+        selected_parts=[], # Placeholder for now
+        chatdict_entries=None, # Placeholder for now
+        max_tokens=500, # This is the existing chatdict max_tokens, distinct from llm_max_tokens
+        strategy="sorted_evenly" # Default or get from config/UI
     )
     app.run_worker(worker_target, name=f"API_Call_{prefix}", group="api_calls", thread=True,
                    description=f"Calling {selected_provider}")
@@ -471,9 +523,9 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
             provider_widget_regen.value) if provider_widget_regen.value != Select.BLANK else None
         selected_model_regen = str(model_widget_regen.value) if model_widget_regen.value != Select.BLANK else None
         system_prompt_regen = system_prompt_widget_regen.text
-        temperature_regen = app._safe_float(temp_widget_regen.value, 0.7, "temperature")
-        top_p_regen = app._safe_float(top_p_widget_regen.value, 0.95, "top_p")
-        min_p_regen = app._safe_float(min_p_widget_regen.value, 0.05, "min_p")
+        temperature_regen = safe_float(temp_widget_regen.value, 0.7, "temperature")
+        top_p_regen = safe_float(top_p_widget_regen.value, 0.95, "top_p")
+        min_p_regen = safe_float(min_p_widget_regen.value, 0.05, "min_p")
         top_k_regen = app._safe_int(top_k_widget_regen.value, 50, "top_k")
 
         llm_max_tokens_value_regen = app._safe_int(llm_max_tokens_widget_regen.value, 1024, "llm_max_tokens")
@@ -488,9 +540,9 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
         llm_logprobs_value_regen = llm_logprobs_widget_regen.value
         llm_top_logprobs_value_regen = app._safe_int(llm_top_logprobs_widget_regen.value, 0,
                                                      "llm_top_logprobs") if llm_logprobs_value_regen else 0
-        llm_presence_penalty_value_regen = app._safe_float(llm_presence_penalty_widget_regen.value, 0.0,
+        llm_presence_penalty_value_regen = safe_float(llm_presence_penalty_widget_regen.value, 0.0,
                                                            "llm_presence_penalty")
-        llm_frequency_penalty_value_regen = app._safe_float(llm_frequency_penalty_widget_regen.value, 0.0,
+        llm_frequency_penalty_value_regen = safe_float(llm_frequency_penalty_widget_regen.value, 0.0,
                                                             "llm_frequency_penalty")
         llm_tool_choice_value_regen = llm_tool_choice_widget_regen.value.strip() or None
         try:
@@ -775,7 +827,7 @@ async def handle_chat_load_selected_button_pressed(app: 'TldwCli') -> None:
         loguru_logger.info(f"Attempting to load and display conversation ID: {loaded_conversation_id}")
 
         # _display_conversation_in_chat_tab handles UI updates and history loading
-        await app._display_conversation_in_chat_tab(loaded_conversation_id)
+        await display_conversation_in_chat_tab_ui(app, loaded_conversation_id)
         app.current_chat_is_ephemeral = False  # A loaded chat is persistent
 
         # Notification is usually handled by _display_conversation_in_chat_tab or its callees
@@ -924,6 +976,145 @@ async def handle_chat_search_checkbox_changed(app: 'TldwCli', checkbox_id: str, 
 
     # Trigger a new search based on any checkbox change that affects the filter
     await perform_chat_conversation_search(app)
+
+
+async def display_conversation_in_chat_tab_ui(app: 'TldwCli', conversation_id: str):
+    if not app.notes_service:
+        logging.error("Notes service unavailable, cannot display conversation in chat tab.")
+        # Potentially update UI to show an error
+        return
+
+    db = app.notes_service._get_db(app.notes_user_id)
+    conv_details_disp = db.get_conversation_by_id(conversation_id)
+
+    if not conv_details_disp:
+        logging.error(f"Cannot display conversation: Details for ID {conversation_id} not found.")
+        app.notify(f"Error: Could not load chat {conversation_id}.", severity="error")
+        # Update UI to reflect error state
+        try:
+            app.query_one("#chat-conversation-title-input", Input).value = "Error: Not Found"
+            app.query_one("#chat-conversation-keywords-input", TextArea).text = ""
+            app.query_one("#chat-conversation-uuid-display", Input).value = conversation_id
+            app.query_one(TitleBar).update_title(f"Chat - Error Loading")
+            chat_log_err = app.query_one("#chat-log", VerticalScroll)
+            await chat_log_err.remove_children()
+            await chat_log_err.mount(ChatMessage(Text.from_markup("[bold red]Failed to load conversation details.[/]"), role="System", classes="-error"))
+        except QueryError as qe_err_disp: logging.error(f"UI component missing during error display for conv {conversation_id}: {qe_err_disp}")
+        return
+
+    app.current_chat_conversation_id = conversation_id # Ensure reactive is set for context
+    app.current_chat_is_ephemeral = False # Loaded chats are not ephemeral
+
+    try:
+        app.query_one("#chat-conversation-title-input", Input).value = conv_details_disp.get('title', '')
+        app.query_one("#chat-conversation-uuid-display", Input).value = conversation_id
+
+        keywords_input_disp = app.query_one("#chat-conversation-keywords-input", TextArea)
+        all_keywords_list_disp = db.get_keywords_for_conversation(conversation_id)
+        visible_keywords_disp = [kw['keyword'] for kw in all_keywords_list_disp if not kw['keyword'].startswith("__")]
+        keywords_input_disp.text = ", ".join(visible_keywords_disp)
+
+        app.query_one(TitleBar).update_title(f"Chat - {conv_details_disp.get('title', 'Untitled Conversation')}")
+
+        chat_log_widget_disp = app.query_one("#chat-log", VerticalScroll)
+        await app._load_branched_conversation_history(conversation_id, chat_log_widget_disp)
+
+        app.query_one("#chat-input", TextArea).focus()
+        app.notify(f"Chat '{conv_details_disp.get('title', 'Untitled')}' loaded.", severity="information", timeout=3)
+    except QueryError as qe_disp_main:
+        logging.error(f"UI component missing during display_conversation for {conversation_id}: {qe_disp_main}")
+        app.notify("Error updating UI for loaded chat.", severity="error")
+    logging.info(f"Displayed conversation '{conv_details_disp.get('title', 'Untitled')}' (ID: {conversation_id}) in chat tab.")
+
+    logging.info(
+        f"Displayed conversation '{conv_details_disp.get('title', 'Untitled')}' (ID: {conversation_id}) in chat tab.")
+
+
+async def load_branched_conversation_history_ui(app: 'TldwCli', target_conversation_id: str, chat_log_widget: VerticalScroll):
+    """
+    Loads the complete message history for a given conversation_id,
+    tracing back through parent branches to the root if necessary.
+    """
+    if not app.notes_service:
+        logging.error("Notes service not available for loading branched history.")
+        await chat_log_widget.mount(
+            ChatMessage("Error: Notes service unavailable.", role="System", classes="-error"))
+        return
+
+    db = app.notes_service._get_db(app.notes_user_id)
+    await chat_log_widget.remove_children()
+    logging.debug(f"Loading branched history for target_conversation_id: {target_conversation_id}")
+
+    # 1. Trace path from target_conversation_id up to its root,
+    #    collecting (conversation_id, fork_message_id_in_parent_that_started_this_segment)
+    #    The 'fork_message_id_in_parent' is what we need to stop at when loading the parent's messages.
+    path_segments_info = []  # Stores (conv_id, fork_msg_id_in_parent)
+
+    current_conv_id_for_path = target_conversation_id
+    while current_conv_id_for_path:
+        conv_details = db.get_conversation_by_id(current_conv_id_for_path)
+        if not conv_details:
+            logging.error(f"Path tracing failed: Conversation {current_conv_id_for_path} not found.")
+            await chat_log_widget.mount(
+                ChatMessage(f"Error: Conversation segment {current_conv_id_for_path} not found.", role="System",
+                            classes="-error"))
+            return  # Stop if a segment is missing
+
+        path_segments_info.append({
+            "id": conv_details['id'],
+            "forked_from_message_id": conv_details.get('forked_from_message_id'),
+            # ID of message in PARENT where THIS conv started
+            "parent_conversation_id": conv_details.get('parent_conversation_id')
+        })
+        current_conv_id_for_path = conv_details.get('parent_conversation_id')
+
+    path_segments_info.reverse()  # Now path_segments_info is from root-most to target_conversation_id
+
+    all_messages_to_display = []
+    for i, segment_info in enumerate(path_segments_info):
+        segment_conv_id = segment_info['id']
+
+        # Get all messages belonging to this specific segment_conv_id
+        messages_this_segment = db.get_messages_for_conversation(
+            segment_conv_id,
+            order_by_timestamp="ASC",
+            limit=10000  # Effectively all messages for this segment
+        )
+
+        # If this segment is NOT the last one in the path, it means it was forked FROM.
+        # We need to know where the NEXT segment (its child) forked from THIS segment.
+        # The 'forked_from_message_id' of the *next* segment is the message_id in *this* segment.
+        stop_at_message_id_for_this_segment = None
+        if (i + 1) < len(path_segments_info):  # If there is a next segment
+            next_segment_info = path_segments_info[i + 1]
+            # next_segment_info['forked_from_message_id'] is the message in current segment_conv_id
+            # from which the next_segment_info['id'] was forked.
+            stop_at_message_id_for_this_segment = next_segment_info['forked_from_message_id']
+
+        for msg_data in messages_this_segment:
+            all_messages_to_display.append(msg_data)
+            if stop_at_message_id_for_this_segment and msg_data['id'] == stop_at_message_id_for_this_segment:
+                logging.debug(f"Stopping message load for segment {segment_conv_id} at fork point {msg_data['id']}")
+                break  # Stop adding messages from this segment, as the next segment takes over
+
+    # Now mount all collected messages
+    logging.debug(f"Total messages collected for display: {len(all_messages_to_display)}")
+    for msg_data in all_messages_to_display:
+        image_data_for_widget = msg_data.get('image_data')
+        chat_message_widget = ChatMessage(
+            message=msg_data['content'],
+            role=msg_data['sender'],
+            timestamp=msg_data.get('timestamp'),
+            image_data=image_data_for_widget,
+            image_mime_type=msg_data.get('image_mime_type'),
+            message_id=msg_data['id']
+        )
+        await chat_log_widget.mount(chat_message_widget)
+
+    if chat_log_widget.is_mounted:
+        chat_log_widget.scroll_end(animate=False)
+    logging.info(
+        f"Loaded {len(all_messages_to_display)} messages for conversation {target_conversation_id} (including history).")
 
 #
 # End of chat_events.py

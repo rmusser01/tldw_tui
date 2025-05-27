@@ -5,19 +5,18 @@
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
-
 #
 # 3rd-Party Imports
 from loguru import logger
 from textual.widgets import Input, ListView, TextArea, Label, Button, ListItem
 from textual.css.query import QueryError  # For try-except
+
+from ..Widgets.notes_sidebar_right import NotesSidebarRight
 #
 # Local Imports
+from ..app import TldwCli
 from ..DB.ChaChaNotes_DB import ConflictError, CharactersRAGDBError
-#
-if TYPE_CHECKING:
-    from ..app import TldwCli
-    from ..Widgets.notes_sidebar_left import NotesSidebarLeft
+from ..Widgets.notes_sidebar_left import NotesSidebarLeft
 #
 ########################################################################################################################
 #
@@ -43,7 +42,17 @@ async def save_current_note_handler(app: 'TldwCli') -> bool:
 
     try:
         editor = app.query_one("#notes-editor-area", TextArea)
-        title_input = app.query_one("#notes-title-input", Input)
+
+        try:
+            # Query for the NotesSidebarRight widget instance first
+            notes_sidebar_right_instance = app.query_one(NotesSidebarRight)  # You'll need to import NotesSidebarRight
+            # Then query for the input within that sidebar instance
+            title_input = notes_sidebar_right_instance.query_one("#notes-title-input", Input)
+        except QueryError as e_query:
+            logger.error(f"UI component (NotesSidebarRight or #notes-title-input) not found: {e_query}", exc_info=True)
+            app.notify("UI error: Title input not found.", severity="error")
+            return False
+
         current_content_from_ui = editor.text
         current_title_from_ui = title_input.value.strip()
 
@@ -408,40 +417,62 @@ async def handle_notes_save_keywords_button_pressed(app: 'TldwCli') -> None:
 
 # --- Input/List View Changed Handlers for Notes Tab ---
 
-async def handle_notes_search_input_changed(app: 'TldwCli', event_value: str) -> None:
-    """Handles input changes in the notes search bar."""
-    logger = getattr(app, 'loguru_logger', logging)
-    search_term = event_value.strip()
-    logger.debug(f"Notes search term entered: '{search_term}'")
 
-    # Implement debouncing directly in the app if preferred, or keep it simple here.
-    # if app._notes_search_timer: app._notes_search_timer.stop()
-    # app._notes_search_timer = app.set_timer(0.5, lambda: actual_notes_search(app, search_term))
-    # async def actual_notes_search(...): ...
+async def _actual_notes_search(app: 'TldwCli', search_term: str) -> None:
+    """Performs the actual notes search and updates the UI."""
+    logger = getattr(app, 'loguru_logger', logging)
+    logger.debug(f"Debounced notes search executing for term: '{search_term}'")
 
     if not app.notes_service:
-        logger.error("Notes service not available for search.")
+        logger.error("Notes service not available for actual search.")
+        # Optionally notify or update UI to show error, though less critical for debounced search
         return
     try:
-        sidebar_left_search: 'NotesSidebarLeft' = app.query_one("#notes-sidebar-left", NotesSidebarLeft)
-        if not search_term:
-            await load_and_display_notes_handler(app)  # Load all if search is cleared
+        sidebar_left_search: NotesSidebarLeft = app.query_one("#notes-sidebar-left", NotesSidebarLeft)
+        if not search_term: # Should typically be caught by the caller, but good to re-check
+            await load_and_display_notes_handler(app)
         else:
-            # Optional: Add minimum char count for search
-            # if len(search_term) < 2:
-            # await sidebar_left_search.populate_notes_list([]) # Clear if term too short
-            # return
             notes_list_results = app.notes_service.search_notes(
                 user_id=app.notes_user_id, search_term=search_term, limit=200
             )
             await sidebar_left_search.populate_notes_list(notes_list_results)
-            logger.info(f"Found {len(notes_list_results)} notes for search term '{search_term}'.")
+            logger.info(f"Debounced search found {len(notes_list_results)} notes for term '{search_term}'.")
     except CharactersRAGDBError as e_db:
-        logger.error(f"Database error searching notes for '{search_term}': {e_db}", exc_info=True)
+        logger.error(f"Database error during debounced notes search for '{search_term}': {e_db}", exc_info=True)
     except QueryError as e_query:
-        logger.error(f"UI component not found during note search: {e_query}", exc_info=True)
+        logger.error(f"UI component not found during debounced note search: {e_query}", exc_info=True)
     except Exception as e_unexp:
-        logger.error(f"Unexpected error during note search: {e_unexp}", exc_info=True)
+        logger.error(f"Unexpected error during debounced note search: {e_unexp}", exc_info=True)
+
+
+async def handle_notes_search_input_changed(app: 'TldwCli', event_value: str) -> None:
+    """Handles input changes in the notes search bar with debouncing."""
+    logger = getattr(app, 'loguru_logger', logging)
+    search_term = event_value.strip()
+    # Log that input changed, but not that search is *immediately* executing
+    logger.debug(f"Notes search input changed to: '{search_term}'. Debouncing search...")
+
+    if app._notes_search_timer is not None:
+        app._notes_search_timer.stop()
+        logger.debug("Previous notes search timer stopped.")
+
+    # If the search term is empty, we want to load all notes immediately,
+    # not after a delay.
+    if not search_term:
+        logger.debug("Search term is empty, loading all notes immediately.")
+        app._notes_search_timer = None # Clear any pending timer
+        await load_and_display_notes_handler(app)
+        return
+
+    # Define a new callable for set_timer that captures the current app and search_term
+    async def debounced_search_action():
+        await _actual_notes_search(app, search_term)
+
+    app._notes_search_timer = app.set_timer(
+        0.5,  # 500ms delay
+        debounced_search_action # Pass the async callable
+    )
+    logger.debug(f"Notes search timer started for term '{search_term}'.")
 
 
 async def handle_notes_list_view_selected(app: 'TldwCli', list_view_id: str, item: Any) -> None:
