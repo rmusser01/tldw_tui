@@ -2238,6 +2238,9 @@ UPDATE db_schema_version
         Raises:
             CharactersRAGDBError: For database search errors.
         """
+        if not title_query.strip():
+            logger.warning("Empty title_query provided for conversation search. Returning empty list.")
+            return []
         base_query = """
                      SELECT c.*
                      FROM conversations_fts fts

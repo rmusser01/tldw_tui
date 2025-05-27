@@ -1121,7 +1121,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         """Handle button presses for tabs, sending messages, and message actions."""
         button = event.button
         button_id = button.id
-        self.loguru_logger.debug(f"Button pressed: {button_id} on tab {self.current_tab}")
+        self.loguru_logger.debug(f"Button pressed: ID: {button_id}, Classes: {button.classes}, Label: '{button.label}' on tab {self.current_tab}") # More info
 
         # Tab Switching
         if button_id and button_id.startswith("tab-"):
@@ -1137,35 +1137,71 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         current_active_tab = self.current_tab # Use the reactive value
 
         if current_active_tab == TAB_CHAT:
-            if button_id == "send-chat": await chat_handlers.handle_chat_send_button_pressed(self, TAB_CHAT)
-            elif button_id == "chat-new-conversation-button": await chat_handlers.handle_chat_new_conversation_button_pressed(self)
-            elif button_id == "chat-save-current-chat-button": await chat_handlers.handle_chat_save_current_chat_button_pressed(self)
-            elif button_id == "chat-save-conversation-details-button": await chat_handlers.handle_chat_save_details_button_pressed(self)
-            elif button_id == "chat-conversation-load-selected-button": await chat_handlers.handle_chat_load_selected_button_pressed(self)
-            elif button.parent and isinstance(button.parent.parent, ChatMessage):
-                action_widget = self._get_chat_message_widget_from_button(button)
-                if action_widget: await chat_handlers.handle_chat_action_button_pressed(self, button, action_widget)
-            else: logging.warning(f"Unhandled button on CHAT tab: {button_id}")
+            # ---- First, try to identify if it's an action button within a ChatMessage ----
+            action_widget = self._get_chat_message_widget_from_button(button)
+            if action_widget:
+                self.loguru_logger.debug(
+                    f"Button (ID: {button_id}, Label: '{button.label}') identified as part of ChatMessage. Delegating to chat_actions.")
+                await chat_handlers.handle_chat_action_button_pressed(self, button, action_widget)
+                return
+
+            # ---- If not part of a ChatMessage, check for other specific Chat tab buttons by ID ----
+            self.loguru_logger.debug(
+                f"Button (ID: {button_id}, Label: '{button.label}') not part of ChatMessage. Checking specific Chat tab button IDs.")
+            if button_id == "send-chat":
+                await chat_handlers.handle_chat_send_button_pressed(self, TAB_CHAT)
+            elif button_id == "chat-new-conversation-button":
+                await chat_handlers.handle_chat_new_conversation_button_pressed(self)
+            elif button_id == "chat-save-current-chat-button":
+                await chat_handlers.handle_chat_save_current_chat_button_pressed(self)
+            elif button_id == "chat-save-conversation-details-button":
+                await chat_handlers.handle_chat_save_details_button_pressed(self)
+            elif button_id == "chat-conversation-load-selected-button":
+                await chat_handlers.handle_chat_load_selected_button_pressed(self)
+            else:
+                # This log now has more context if a button is truly unhandled
+                self.loguru_logger.warning(
+                    f"Unhandled button on CHAT tab -> ID: {button_id}, "
+                    f"Label: '{button.label}', Classes: {button.classes}"
+                )
 
         elif current_active_tab == TAB_CCP:
-            if button_id == "conv-char-conversation-search-button": await ccp_handlers.handle_ccp_conversation_search_button_pressed(self)
-            elif button_id == "conv-char-load-button": await ccp_handlers.handle_ccp_load_conversation_button_pressed(self)
-            elif button_id == "conv-char-save-details-button": await ccp_handlers.handle_ccp_save_conversation_details_button_pressed(self)
-            elif button_id == "ccp-prompt-create-new-button": await ccp_handlers.handle_ccp_prompt_create_new_button_pressed(self)
-            elif button_id == "ccp-prompt-load-selected-button": await ccp_handlers.handle_ccp_prompt_load_selected_button_pressed(self)
-            elif button_id == "ccp-prompt-save-button": await ccp_handlers.handle_ccp_prompt_save_button_pressed(self)
-            elif button_id == "ccp-prompt-clone-button": await ccp_handlers.handle_ccp_prompt_clone_button_pressed(self)
-            elif button_id == "ccp-prompt-delete-button": await ccp_handlers.handle_ccp_prompt_delete_button_pressed(self)
-            # Note: CCP tab might also have a chat interface. If its send button is different, handle it here.
-            # Example: if button_id == "send-ccp-chat": await ccp_handlers.handle_ccp_chat_send_button_pressed(self, TAB_CCP)
-            # And its ChatMessage actions could be distinct or shared.
-            elif button.parent and isinstance(button.parent.parent, ChatMessage): # If CCP has ChatMessages
-                 action_widget_ccp = self._get_chat_message_widget_from_button(button)
-                 # if action_widget_ccp: await ccp_handlers.handle_ccp_chat_action_button_pressed(self, button, action_widget_ccp)
-                 # For now, assume ChatMessage actions are handled by chat_handlers if they are generic enough
-                 if action_widget_ccp: await chat_handlers.handle_chat_action_button_pressed(self, button, action_widget_ccp)
+            # ---- First, try to identify if it's an action button within a ChatMessage (if CCP tab uses them) ----
+            action_widget_ccp = self._get_chat_message_widget_from_button(button)
+            if action_widget_ccp:
+                self.loguru_logger.debug(
+                    f"Button (ID: {button_id}, Label: '{button.label}') identified as part of ChatMessage on CCP tab. Delegating.")
+                # Assuming generic chat actions apply, or use a specific ccp_chat_action_handler
+                await chat_handlers.handle_chat_action_button_pressed(self, button, action_widget_ccp)
+                return  # Handled
 
-            else: logging.warning(f"Unhandled button on CCP tab: {button_id}")
+            # ---- If not part of a ChatMessage, check for specific CCP tab buttons by ID ----
+            self.loguru_logger.debug(
+                f"Button (ID: {button_id}, Label: '{button.label}') not part of ChatMessage on CCP tab. Checking specific CCP button IDs.")
+            if button_id == "conv-char-conversation-search-button":
+                await ccp_handlers.handle_ccp_conversation_search_button_pressed(self)
+            elif button_id == "conv-char-load-button":
+                await ccp_handlers.handle_ccp_load_conversation_button_pressed(self)
+            elif button_id == "conv-char-save-details-button":
+                await ccp_handlers.handle_ccp_save_conversation_details_button_pressed(self)
+            elif button_id == "ccp-prompt-create-new-button":
+                await ccp_handlers.handle_ccp_prompt_create_new_button_pressed(self)
+            elif button_id == "ccp-prompt-load-selected-button":
+                await ccp_handlers.handle_ccp_prompt_load_selected_button_pressed(self)
+            elif button_id == "ccp-prompt-save-button":  # This ID should be unique to CCP prompt editor
+                await ccp_handlers.handle_ccp_prompt_save_button_pressed(self)
+            elif button_id == "ccp-prompt-clone-button":  # This ID should be unique to CCP prompt editor
+                await ccp_handlers.handle_ccp_prompt_clone_button_pressed(self)
+            elif button_id == "ccp-prompt-delete-button":  # This ID should be unique to CCP prompt editor
+                await ccp_handlers.handle_ccp_prompt_delete_button_pressed(self)
+            # Add other specific CCP buttons here if any (e.g., if CCP tab has its own "send" button like "send-ccp-chat")
+            # elif button_id == "send-ccp-chat": # Example
+            # await ccp_handlers.handle_ccp_chat_send_button_pressed(self, TAB_CCP)
+            else:
+                self.loguru_logger.warning(
+                    f"Unhandled button on CCP tab -> ID: {button_id}, "
+                    f"Label: '{button.label}', Classes: {button.classes}"
+                )
 
         elif current_active_tab == TAB_NOTES:
             if button_id == "notes-create-new-button": await notes_handlers.handle_notes_create_new_button_pressed(self)
@@ -1180,19 +1216,28 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         elif current_active_tab == TAB_LOGS:
             if button_id == "copy-logs-button": await app_lifecycle_handlers.handle_copy_logs_button_pressed(self)
-            else: logging.warning(f"Unhandled button on LOGS tab: {button_id}")
-
-        else: # Fallback for unhandled tabs or buttons not caught by above
-            logging.warning(f"Button '{button_id}' pressed on unhandled/inactive tab '{current_active_tab}' or unhandled button ID.")
+            else:
+                logging.warning(f"Unhandled button on LOGS tab: {button_id}")
+        else:
+            self.loguru_logger.warning(f"Button '{button_id}' pressed on unhandled tab '{current_active_tab}' or unhandled button ID.")
 
     def _get_chat_message_widget_from_button(self, button: Button) -> Optional[ChatMessage]:
         """Helper to find the parent ChatMessage widget from an action button within it."""
-        node: Optional[DOMNode] = button.parent # Start search from button's direct parent
-        while node is not None:
+        self.loguru_logger.debug(f"_get_chat_message_widget_from_button searching for parent of button ID: {button.id}, Classes: {button.classes}")
+        node: Optional[DOMNode] = button.parent
+        depth = 0
+        max_depth = 5 # Safety break
+        while node is not None and depth < max_depth:
+            self.loguru_logger.debug(f"  Traversal depth {depth}: current node is {type(node)}, id: {getattr(node, 'id', 'N/A')}, classes: {getattr(node, 'classes', '')}")
             if isinstance(node, ChatMessage):
+                self.loguru_logger.debug(f"  Found ChatMessage parent!")
                 return node
             node = node.parent
-        logging.warning(f"Could not find parent ChatMessage for button: {button.id}")
+            depth += 1
+        if depth >= max_depth:
+            self.loguru_logger.warning(f"  _get_chat_message_widget_from_button reached max depth for button: {button.id}")
+        else:
+            self.loguru_logger.warning(f"  _get_chat_message_widget_from_button could not find parent ChatMessage for button: {button.id}")
         return None
 
     async def on_input_changed(self, event: Input.Changed) -> None:

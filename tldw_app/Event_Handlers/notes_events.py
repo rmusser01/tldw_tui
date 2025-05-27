@@ -129,7 +129,7 @@ async def load_and_display_notes_handler(app: 'TldwCli') -> None:
         return
 
     try:
-        notes_list_data = app.notes_service.list_notes(user_id=app.notes_user_id, limit=200, include_deleted=False)
+        notes_list_data = app.notes_service.list_notes(user_id=app.notes_user_id, limit=200)
         # Call the method on the sidebar instance, which handles its internal ListView
         await sidebar_left_instance.populate_notes_list(notes_list_data)
         logger.info(f"Loaded {len(notes_list_data)} notes into the sidebar.")

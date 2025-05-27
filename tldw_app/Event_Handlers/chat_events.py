@@ -357,11 +357,18 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
                 await editor.remove()
 
                 action_widget.message_text = new_text  # Update internal raw text
+                # --- DO NOT REMOVE ---
+                # When updating the Static widget, explicitly pass the new_text
+                # as a plain rich.text.Text object. This tells Textual
+                # to render it as is, without trying to parse for markup.
+                static_text_widget.update(Text(new_text))
+                # --- DO NOT REMOVE ---
                 static_text_widget.update(escape_markup(new_text))  # Update display with escaped text
+
                 static_text_widget.display = True
                 action_widget._editing = False
                 button.label = get_char(EMOJI_EDIT, FALLBACK_EDIT)  # Reset to Edit icon
-                logging.debug("Editing finished. New length: %d", len(new_text))
+                loguru_logger.debug("Editing finished. New length: %d", len(new_text))
 
                 # Persist edit to DB if message has an ID
                 if db and hasattr(action_widget, 'message_id_internal') and action_widget.message_id_internal:
@@ -376,19 +383,18 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
                         app.notify("Failed to save edit to DB.", severity="error")
 
             except QueryError:
-                logging.error("Edit TextArea not found when stopping edit. Restoring original.")
-                static_text_widget.update(escape_markup(message_text))  # Restore original escaped text
+                loguru_logger.error("Edit TextArea not found when stopping edit. Restoring original.")
+                static_text_widget.update(Text(message_text))  # Restore original escaped text
                 static_text_widget.display = True
                 action_widget._editing = False
                 button.label = get_char(EMOJI_EDIT, FALLBACK_EDIT)
             except Exception as e_edit_stop:
-                logging.error(f"Error stopping edit: {e_edit_stop}", exc_info=True)
-                # Attempt to restore original state
-                if 'static_text_widget' in locals():  # Check if queried
-                    static_text_widget.update(escape_markup(message_text))
+                loguru_logger.error(f"Error stopping edit: {e_edit_stop}", exc_info=True)
+                if 'static_text_widget' in locals() and static_text_widget.is_mounted:
+                    static_text_widget.update(Text(message_text))  # Restore with Text()
                     static_text_widget.display = True
                 if hasattr(action_widget, '_editing'): action_widget._editing = False
-                if 'button' in locals(): button.label = get_char(EMOJI_EDIT, FALLBACK_EDIT)
+                if 'button' in locals() and button.is_mounted: button.label = get_char(EMOJI_EDIT, FALLBACK_EDIT)
 
 
     elif "copy-button" in button_classes:
