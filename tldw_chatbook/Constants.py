@@ -18,10 +18,10 @@ TAB_NOTES = "notes"
 TAB_MEDIA = "media"
 TAB_SEARCH = "search"
 TAB_INGEST = "ingest"
-TAB_TOOLS = "tools"
+TAB_TOOLS_SETTINGS = "tools_settings"
 TAB_STATS = "stats"
 TAB_LOGS = "logs"
-ALL_TABS = [TAB_CHAT, TAB_CCP, TAB_NOTES, TAB_MEDIA, TAB_SEARCH, TAB_INGEST, TAB_TOOLS, TAB_LOGS, TAB_STATS]
+ALL_TABS = [TAB_CHAT, TAB_CCP, TAB_NOTES, TAB_MEDIA, TAB_SEARCH, TAB_INGEST, TAB_TOOLS_SETTINGS, TAB_LOGS, TAB_STATS]
 
 
 # --- CSS definition ---
@@ -574,6 +574,53 @@ MetricsScreen Label.-info-message {
 }
 #ccp-right-pane-llm-settings-container.hidden {
     display: none !important;
+}
+
+/* --- Tools & Settings Tab --- */
+#tools_settings-window { /* Matches TAB_TOOLS_SETTINGS */
+    layout: horizontal; /* Main layout for this tab */
+}
+
+.tools-nav-pane {
+    dock: left;
+    width: 25%; /* Adjust as needed */
+    min-width: 25; /* Example min-width */
+    max-width: 60; /* Example max-width */
+    height: 100%;
+    background: $boost; /* Or $surface-lighten-1 */
+    padding: 1;
+    border-right: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.tools-nav-pane .ts-nav-button { /* Style for navigation buttons */
+    width: 100%;
+    margin-bottom: 1;
+    border-type: none; /* Cleaner look for nav buttons */
+    height: 3;
+}
+.tools-nav-pane .ts-nav-button:hover {
+    background: $accent 50%;
+}
+/* Consider an active state style for the selected nav button */
+/* .tools-nav-pane .ts-nav-button.-active-view {
+    background: $accent;
+    color: $text;
+} */
+
+.tools-content-pane {
+    width: 1fr; /* Takes remaining horizontal space */
+    height: 100%;
+    padding: 1 2; /* Padding for the content area */
+    overflow-y: auto; /* If content within sub-views might scroll */
+}
+
+.ts-view-area { /* Class for individual content areas */
+    width: 100%;
+    height: 100%; /* Or auto if content dictates height */
+    /* border: round $surface; /* Optional: border around content views */
+    /* padding: 1; /* Optional: padding within content views */
 }
     """
 

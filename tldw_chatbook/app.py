@@ -19,7 +19,7 @@ from textual.logging import TextualHandler
 from textual.widgets import (
     Static, Button, Input, Header, Footer, RichLog, TextArea, Select, ListView, Checkbox, Label, Collapsible
 )
-from textual.containers import Horizontal, Container, VerticalScroll
+from textual.containers import Horizontal, Container, VerticalScroll, HorizontalScroll
 from textual.reactive import reactive
 from textual.worker import Worker
 from textual.binding import Binding
@@ -28,7 +28,7 @@ from textual.timer import Timer
 from textual.css.query import QueryError  # For specific error handling
 #
 # --- Local API library Imports ---
-from tldw_chatbook.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, TAB_STATS
+from tldw_chatbook.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, TAB_STATS, TAB_TOOLS_SETTINGS
 from tldw_chatbook.Logging_Config import RichLogHandler
 from tldw_chatbook.Prompt_Management import Prompts_Interop as prompts_interop
 from tldw_chatbook.Utils.Emoji_Handling import get_char, EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN, EMOJI_TITLE_NOTE, \
@@ -192,6 +192,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     current_prompt_keywords_str: reactive[Optional[str]] = reactive("") # Store as comma-sep string for UI
     current_prompt_version: reactive[Optional[int]] = reactive(None) # If DB provides it and you need it
     # is_new_prompt can be inferred from current_prompt_id being None
+
+    # Tools Tab
+    tools_settings_active_view: reactive[Optional[str]] = reactive(None, layout=True)  # Or a default view ID
+    _initial_tools_settings_view: Optional[str] = "view_general_settings"
 
     _prompt_search_timer: Optional[Timer] = None
 
@@ -466,15 +470,19 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         logging.debug("App compose finished.")
 
     def compose_tabs(self) -> ComposeResult:
-        with Horizontal(id="tabs"):
-            for tab_id_loop in ALL_TABS:
-                # Use "CCP" as label for TAB_CCP for brevity
-                label_text = "CCP" if tab_id_loop == TAB_CCP else tab_id_loop.replace('_', ' ').capitalize()
-                yield Button(
-                    label_text,
-                    id=f"tab-{tab_id_loop}",
-                    classes="-active" if tab_id_loop == self._initial_tab_value else ""
-                )
+        # The outer container still docks and defines the overall tab bar height
+        with Horizontal(id="tabs-outer-container"):  # This container takes the 'dock: top' and 'height: 3'
+            # The HorizontalScroll allows the buttons inside to scroll if they overflow
+            with HorizontalScroll(id="tabs"):  # This is where the buttons will go
+                for tab_id_loop in ALL_TABS:
+                    label_text = "CCP" if tab_id_loop == TAB_CCP else tab_id_loop.replace('_', ' ').capitalize()
+                    if tab_id_loop == TAB_TOOLS_SETTINGS:  # Specific label for the new tab
+                        label_text = "Tools & Settings"
+                    yield Button(
+                        label_text,
+                        id=f"tab-{tab_id_loop}",
+                        classes="-active" if tab_id_loop == self._initial_tab_value else ""
+                    )
 
     ############################################################
     #
@@ -664,6 +672,47 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
             # ---- Ingest Tab ---
 
+            # --- Tools & Settings Window ---
+            tools_settings_window = Container(id=f"{TAB_TOOLS_SETTINGS}-window", classes="window")
+            if self._initial_tab_value != TAB_TOOLS_SETTINGS:
+                tools_settings_window.styles.display = "none"
+
+            with tools_settings_window:  # Main container for this tab, layout horizontal
+                # Left Navigation Pane for Tools & Settings
+                with VerticalScroll(id="tools-settings-nav-pane", classes="tools-nav-pane"):
+                    yield Static("Navigation", classes="sidebar-title")  # Optional title for nav
+                    # Example buttons - replace with your actual tool/setting sections
+                    yield Button("General Settings", id="ts-nav-general-settings", classes="ts-nav-button")
+                    yield Button("API Keys", id="ts-nav-api-keys", classes="ts-nav-button")
+                    yield Button("Database Tools", id="ts-nav-db-tools", classes="ts-nav-button")
+                    yield Button("Appearance", id="ts-nav-appearance", classes="ts-nav-button")
+                    # Add more navigation buttons as needed
+
+                # Right Content Pane for Tools & Settings
+                with Container(id="tools-settings-content-pane", classes="tools-content-pane"):
+                    # Define placeholder containers for each view, initially hidden by default
+                    # Their display will be controlled by the 'tools_settings_active_view' watcher.
+                    yield Container(
+                        Static("General Settings Area - Content Coming Soon!"),
+                        id="ts-view-general-settings",  # Match button ID suffix
+                        classes="ts-view-area",
+                    )
+                    yield Container(
+                        Static("API Keys Management Area - Content Coming Soon!"),
+                        id="ts-view-api-keys",
+                        classes="ts-view-area",
+                    )
+                    yield Container(
+                        Static("Database Tools Area - Content Coming Soon!"),
+                        id="ts-view-db-tools",
+                        classes="ts-view-area",
+                    )
+                    yield Container(
+                        Static("Appearance Settings Area - Content Coming Soon!"),
+                        id="ts-view-appearance",
+                        classes="ts-view-area",
+                    )
+
             # --- Logs Window ---
             with Container(id=f"{TAB_LOGS}-window", classes="window"):
                 yield RichLog(id="app-log-display", wrap=True, highlight=True, markup=True, auto_scroll=True)
@@ -676,7 +725,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
             # --- Other Placeholder Windows ---
             for tab_id_placeholder in ALL_TABS:
-                if tab_id_placeholder not in [TAB_CHAT, TAB_CCP, TAB_NOTES, TAB_LOGS, TAB_STATS]:  # Updated to TAB_CCP
+                if tab_id_placeholder not in [TAB_CHAT, TAB_CCP, TAB_NOTES, TAB_TOOLS_SETTINGS, TAB_LOGS, TAB_STATS]:  # Updated to TAB_CCP
                     with Container(id=f"{tab_id_placeholder}-window", classes="window placeholder-window"):
                         yield Static(f"{tab_id_placeholder.replace('_', ' ').capitalize()} Window Placeholder")
                         yield Button("Coming Soon", id=f"{tab_id_placeholder}-placeholder-button", disabled=True)
@@ -828,6 +877,45 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.notify(f"Error loading prompt: {type(e).__name__}", severity="error")
             self._clear_prompt_fields()
             self.current_prompt_id = None  # Reset reactives
+
+    def watch_tools_settings_active_view(self, old_view: Optional[str], new_view: Optional[str]) -> None:
+        self.loguru_logger.debug(f"Tools & Settings active view changing from '{old_view}' to: '{new_view}'")
+        if not new_view:  # If new_view is None, hide all
+            try:
+                for view_area in self.query(".ts-view-area"):  # Query all potential view areas
+                    view_area.styles.display = "none"
+            except QueryError:
+                self.loguru_logger.warning(
+                    "No .ts-view-area found to hide on tools_settings_active_view change to None.")
+            return
+
+        try:
+            content_pane = self.query_one("#tools-settings-content-pane")
+            # Hide all views first
+            for child in content_pane.children:
+                if child.id and child.id.startswith("ts-view-"):  # Check if it's one of our view containers
+                    child.styles.display = "none"
+
+            # Show the selected view
+            if new_view:  # new_view here is the ID of the view container, e.g., "ts-view-general-settings"
+                target_view_id_selector = f"#{new_view}"  # Construct selector from the new_view string
+                view_to_show = content_pane.query_one(target_view_id_selector, Container)
+                view_to_show.styles.display = "block"
+                self.loguru_logger.info(f"Switched Tools & Settings view to: {new_view}")
+
+                # Optional: Focus an element within the newly shown view
+                # try:
+                # view_to_show.query(Input, Button)[0].focus() # Example: focus first Input or Button
+                # except IndexError:
+                #     pass # No focusable element
+            else:  # Should be caught by the `if not new_view:` at the start
+                self.loguru_logger.debug("Tools & Settings active view is None, all views hidden.")
+
+
+        except QueryError as e:
+            self.loguru_logger.error(f"UI component not found during Tools & Settings view switch: {e}", exc_info=True)
+        except Exception as e_watch:
+            self.loguru_logger.error(f"Unexpected error in watch_tools_settings_active_view: {e_watch}", exc_info=True)
 
     def watch_current_chat_is_ephemeral(self, is_ephemeral: bool) -> None:
         self.loguru_logger.debug(f"Chat ephemeral state changed to: {is_ephemeral}")
@@ -1216,6 +1304,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     f"Label: '{button.label}', Classes: {button.classes}"
                 )
 
+        # --- Notes Tab ---
         elif current_active_tab == TAB_NOTES:
             if button_id == "notes-create-new-button": await notes_handlers.handle_notes_create_new_button_pressed(self)
             elif button_id == "notes-edit-selected-button": await notes_handlers.handle_notes_edit_selected_button_pressed(self)
@@ -1226,6 +1315,19 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             elif button_id == "notes-delete-button": await notes_handlers.handle_notes_delete_button_pressed(self)
             elif button_id == "notes-save-keywords-button": await notes_handlers.handle_notes_save_keywords_button_pressed(self)
             else: logging.warning(f"Unhandled button on NOTES tab: {button_id}")
+
+        # --- Tools & Settings Tab ---
+        elif current_active_tab == TAB_TOOLS_SETTINGS:
+            if button_id and button_id.startswith("ts-nav-"):
+                # Extract the view name from the button ID
+                # e.g., "ts-nav-general-settings" -> "ts-view-general-settings"
+                view_to_activate = button_id.replace("ts-nav-", "ts-view-")
+                self.loguru_logger.debug(
+                    f"Tools & Settings nav button '{button_id}' pressed. Activating view '{view_to_activate}'.")
+                self.tools_settings_active_view = view_to_activate  # This will trigger the watcher
+            else:
+                self.loguru_logger.warning(
+                    f"Unhandled button on TOOLS & SETTINGS tab: ID:{button_id}, Label:'{button.label}'")
 
         elif current_active_tab == TAB_LOGS:
             if button_id == "copy-logs-button": await app_lifecycle_handlers.handle_copy_logs_button_pressed(self)
