@@ -156,6 +156,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # Renamed character_api_provider_value to ccp_api_provider_value for clarity with TAB_CCP
     ccp_api_provider_value: reactive[Optional[str]] = reactive(_default_ccp_provider)
 
+    # DB Size checker
+    _db_size_status_widget: Optional[Static] = None
+    _db_size_update_timer: Optional[Timer] = None
+
     # Reactives for sidebar
     chat_sidebar_collapsed: reactive[bool] = reactive(False, layout=True)
     character_sidebar_collapsed: reactive[bool] = reactive(False, layout=True)  # For character sidebar
@@ -456,6 +460,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         yield TitleBar()
         yield from self.compose_tabs()
         yield from self.compose_content_area()
+        with Footer():
+            yield Static(id="db-size-indicator", markup=False) # markup=False to display text literally
         yield Footer()
         logging.debug("App compose finished.")
 
@@ -915,6 +921,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         # Initial search/list for CCP might also be triggered if it's the default tab
         if self.current_tab == TAB_CCP:
             self.call_later(ccp_handlers.perform_ccp_conversation_search, self)
+
 
     async def on_shutdown_request(self) -> None:  # Use the imported ShutdownRequest
         logging.info("--- App Shutdown Requested ---")

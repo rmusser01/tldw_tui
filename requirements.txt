@@ -5,6 +5,8 @@ rich
 textual
 psutil
 requests
+PIL
+loguru
 # Chunk Library
 tqdm
 langdetect

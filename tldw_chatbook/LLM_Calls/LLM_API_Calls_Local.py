@@ -310,7 +310,6 @@ def chat_with_local_llm(
     )
 
 
-
 def chat_with_llama(
         input_data: List[Dict[str, Any]],
         api_key: Optional[str] = None, # from map
@@ -339,44 +338,48 @@ def chat_with_llama(
     if model and (model.lower() == "none" or model.strip() == ""): model = None
 
     # --- Settings Load ---
-    cfg = settings.get('llama_cpp', {})
-    api_base_url = cfg.get('api_ip')  # api_url passed via chat_api_call or from config
-    if not api_base_url:
-        raise ChatConfigurationError(
-            provider="llama_api",
-            message="Llama.cpp API URL (api_url) is required and could not be determined from arguments or configuration."
-        )
-    current_api_key = api_key or cfg.get('api_key')
-    current_model = model or cfg.get('model')
-    if not current_model:
-        raise ChatConfigurationError(
-            provider="llama_api",
-            message="Llama.cpp API model name is required and could not be determined from arguments or configuration."
-        )
+    llama_cpp_config_key_in_api_settings = 'llama_cpp'
+    provider_display_name = "Llama.cpp"
 
-    current_temp = temp if temp is not None else float(cfg.get('temperature', 0.7)) # llama.cpp native name is temperature
-    current_streaming = streaming if streaming is not None else cfg.get('streaming', False)
-    current_top_k = top_k if top_k is not None else cfg.get('top_k')
-    current_top_p = top_p if top_p is not None else cfg.get('top_p')
-    current_min_p = min_p if min_p is not None else cfg.get('min_p')
-    current_max_tokens = n_predict if n_predict is not None else int(cfg.get('max_tokens', cfg.get('n_predict', 4096))) # use n_predict if passed
-    current_seed = seed if seed is not None else cfg.get('seed')
-    current_stop = stop if stop is not None else cfg.get('stop')
-    current_response_format = response_format if response_format is not None else cfg.get('response_format')
-    current_logit_bias = logit_bias if logit_bias is not None else cfg.get('logit_bias')
-    current_presence_penalty = presence_penalty if presence_penalty is not None else cfg.get('presence_penalty')
-    current_frequency_penalty = frequency_penalty if frequency_penalty is not None else cfg.get('frequency_penalty')
+    api_settings_table = settings.get('api_settings', {})  # Safely get the api_settings table
+    llama_config = api_settings_table.get(llama_cpp_config_key_in_api_settings, {})  # Safely get the llama_cpp config
+    api_base_url = llama_config.get('api_url')
+    if not api_base_url:
+        # Using the original provider string "llama_api" from your snippet for the error.
+        # If you want it to be dynamic or match "llama_cpp", you can change "llama_api".
+        raise ChatConfigurationError(
+            provider="llama_api",
+            message=f"{provider_display_name} API URL (api_url) is required and could not be determined from configuration."
+        )
+    current_api_key = api_key or llama_config.get('api_key')
+    current_model = model or llama_config.get('model')
+    if not current_model:  # Check after attempting to load from argument and then config
+        # Using the original provider string "llama_api" from your snippet for the error.
+        logging.info("Llama.cpp: Model name not passed and could not be determined from arguments or configuration. Using default model if available.")
+
+    current_temp = temp if temp is not None else float(llama_config.get('temperature', 0.7)) # llama.cpp native name is temperature
+    current_streaming = streaming if streaming is not None else llama_config.get('streaming', False)
+    current_top_k = top_k if top_k is not None else llama_config.get('top_k')
+    current_top_p = top_p if top_p is not None else llama_config.get('top_p')
+    current_min_p = min_p if min_p is not None else llama_config.get('min_p')
+    current_max_tokens = n_predict if n_predict is not None else int(llama_config.get('max_tokens', llama_config.get('n_predict', 4096))) # use n_predict if passed
+    current_seed = seed if seed is not None else llama_config.get('seed')
+    current_stop = stop if stop is not None else llama_config.get('stop')
+    current_response_format = response_format if response_format is not None else llama_config.get('response_format')
+    current_logit_bias = logit_bias if logit_bias is not None else llama_config.get('logit_bias')
+    current_presence_penalty = presence_penalty if presence_penalty is not None else llama_config.get('presence_penalty')
+    current_frequency_penalty = frequency_penalty if frequency_penalty is not None else llama_config.get('frequency_penalty')
 
     # Handle n_probs: If it's meant to be OpenAI's 'n' (number of choices)
     # For llama.cpp, if it's mimicking OpenAI, 'n' is the param.
     # If n_probs is for logprobs count, it's usually top_logprobs.
     # Assuming n_probs maps to generic 'n' from your map for now.
-    current_n = n_probs if n_probs is not None else cfg.get('n', cfg.get('n_probs'))
+    current_n = n_probs if n_probs is not None else llama_config.get('n', llama_config.get('n_probs'))
 
 
-    timeout = int(cfg.get('api_timeout', 120))
-    api_retries = int(cfg.get('api_retries', 1))
-    api_retry_delay = int(cfg.get('api_retry_delay', 1))
+    timeout = int(llama_config.get('api_timeout', 120))
+    api_retries = int(llama_config.get('api_retries', 1))
+    api_retry_delay = int(llama_config.get('api_retry_delay', 1))
 
     if isinstance(current_streaming, str): current_streaming = current_streaming.lower() == "true"
     if custom_prompt:
@@ -586,7 +589,10 @@ def chat_with_oobabooga(
     if model and (model.lower() == "none" or model.strip() == ""): model = None
 
     # --- Settings Load ---
-    cfg = settings.get('ooba_api', {})
+    cli_api_settings = settings.get('api_settings', {}) # Get the [api_settings] table
+    # Use 'koboldcpp' (lowercase) as this is the key in CONFIG_TOML_CONTENT's [api_settings]
+    cfg = cli_api_settings.get('ooba_api', {})
+
     api_url = cfg.get('api_ip')  # api_url passed via chat_api_call or from config
     if not api_url:
         raise ChatConfigurationError(
@@ -676,7 +682,10 @@ def chat_with_tabbyapi(
     if model and (model.lower() == "none" or model.strip() == ""): model = None
 
     # --- Settings Load ---
-    cfg = settings.get('tabbyapi', {})
+    cli_api_settings = settings.get('api_settings', {}) # Get the [api_settings] table
+    # Use 'koboldcpp' (lowercase) as this is the key in CONFIG_TOML_CONTENT's [api_settings]
+    cfg = cli_api_settings.get('tabby_api', {})
+
     api_base_url = cfg.get('api_url')  # api_url passed via chat_api_call or from config
     if not api_base_url:
         raise ChatConfigurationError(
@@ -760,7 +769,10 @@ def chat_with_vllm(
     if model and (model.lower() == "none" or model.strip() == ""): model = None
 
     # --- Settings Load ---
-    cfg = settings.get('vllm', {})
+    cli_api_settings = settings.get('api_settings', {}) # Get the [api_settings] table
+    # Use 'koboldcpp' (lowercase) as this is the key in CONFIG_TOML_CONTENT's [api_settings]
+    cfg = cli_api_settings.get('vllm_api', {})
+
     vllm_api_url = cfg.get('api_url')  # api_url passed via chat_api_call or from config
     if not vllm_api_url:
         raise ChatConfigurationError(
@@ -793,7 +805,6 @@ def chat_with_vllm(
     # If vLLM supports top_logprobs, it should be added to the map and this func's signature.
     # Assuming for now it's not explicitly mapped for vLLM.
     current_user_identifier = user_identifier if user_identifier is not None else cfg.get('user_identifier')
-
 
     timeout = int(cfg.get('api_timeout', 120))
     api_retries = int(cfg.get('api_retries', 1))
@@ -862,7 +873,9 @@ def chat_with_aphrodite(
     if model and (model.lower() == "none" or model.strip() == ""): model = None
 
     # --- Settings Load ---
-    cfg = settings.get('aphrodite', {})
+    cli_api_settings = settings.get('api_settings', {})  # Get the [api_settings] table
+    cfg = cli_api_settings.get('aphrodite_api', {})
+
     api_base_url = cfg.get('api_url')  # api_url passed via chat_api_call or from config
     if not api_base_url:
         raise ChatConfigurationError(

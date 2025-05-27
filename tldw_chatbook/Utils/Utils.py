@@ -557,6 +557,25 @@ class FileProcessor:
 
         return name
 
+def get_formatted_file_size(file_path: Path) -> Optional[str]:
+    """Returns the file size in a human-readable format (KB, MB, GB) or None if file doesn't exist."""
+    try:
+        if not file_path.exists() or not file_path.is_file():
+            return None
+        size_bytes = os.path.getsize(file_path)
+        if size_bytes < 1024:
+            return f"{size_bytes} B"
+        size_kb = size_bytes / 1024
+        if size_kb < 1024:
+            return f"{size_kb:.1f} KB"
+        size_mb = size_kb / 1024
+        if size_mb < 1024:
+            return f"{size_mb:.1f} MB"
+        size_gb = size_mb / 1024
+        return f"{size_gb:.1f} GB"
+    except OSError: # Catch potential errors like permission denied
+        return None
+
 #
 # End of File Handling Functions
 #######################################################################################################################
