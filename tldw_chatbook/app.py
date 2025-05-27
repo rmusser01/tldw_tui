@@ -28,7 +28,8 @@ from textual.timer import Timer
 from textual.css.query import QueryError  # For specific error handling
 #
 # --- Local API library Imports ---
-from tldw_chatbook.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, TAB_STATS, TAB_TOOLS_SETTINGS
+from tldw_chatbook.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, TAB_STATS, TAB_TOOLS_SETTINGS, \
+    TAB_INGEST
 from tldw_chatbook.Logging_Config import RichLogHandler
 from tldw_chatbook.Prompt_Management import Prompts_Interop as prompts_interop
 from tldw_chatbook.Utils.Emoji_Handling import get_char, EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN, EMOJI_TITLE_NOTE, \
@@ -192,6 +193,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     current_prompt_keywords_str: reactive[Optional[str]] = reactive("") # Store as comma-sep string for UI
     current_prompt_version: reactive[Optional[int]] = reactive(None) # If DB provides it and you need it
     # is_new_prompt can be inferred from current_prompt_id being None
+
+    # Ingest Tab
+    ingest_active_view: reactive[Optional[str]] = reactive(None, layout=True)
+    _initial_ingest_view: Optional[str] = "ingest-view-prompts"
 
     # Tools Tab
     tools_settings_active_view: reactive[Optional[str]] = reactive(None, layout=True)  # Or a default view ID
@@ -475,9 +480,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             # The HorizontalScroll allows the buttons inside to scroll if they overflow
             with HorizontalScroll(id="tabs"):  # This is where the buttons will go
                 for tab_id_loop in ALL_TABS:
-                    label_text = "CCP" if tab_id_loop == TAB_CCP else tab_id_loop.replace('_', ' ').capitalize()
-                    if tab_id_loop == TAB_TOOLS_SETTINGS:  # Specific label for the new tab
-                        label_text = "Tools & Settings"
+                    label_text = "CCP" if tab_id_loop == TAB_CCP else \
+                        "Tools & Settings" if tab_id_loop == TAB_TOOLS_SETTINGS else \
+                            "Ingest Content" if tab_id_loop == TAB_INGEST else \
+                                tab_id_loop.replace('_', ' ').capitalize()
                     yield Button(
                         label_text,
                         id=f"tab-{tab_id_loop}",
@@ -670,7 +676,46 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
             # ---- Search Tab ---
 
-            # ---- Ingest Tab ---
+            # --- Ingest Content Window ---
+            ingest_window = Container(id=f"{TAB_INGEST}-window", classes="window")
+            if self._initial_tab_value != TAB_INGEST:
+                ingest_window.styles.display = "none"
+
+            with ingest_window:  # Main container for Ingest tab, layout horizontal
+                # Left Navigation Pane for Ingest
+                with VerticalScroll(id="ingest-nav-pane",
+                                    classes="ingest-nav-pane"):  # New class for distinct styling if needed
+                    yield Static("Ingestion Methods", classes="sidebar-title")
+                    yield Button("Ingest Prompts", id="ingest-nav-prompts", classes="ingest-nav-button")
+                    yield Button("Ingest Characters", id="ingest-nav-characters", classes="ingest-nav-button")
+                    yield Button("Ingest Media", id="ingest-nav-media", classes="ingest-nav-button")
+                    yield Button("Ingest Notes", id="ingest-nav-notes", classes="ingest-nav-button")
+                    yield Button("Ingest Media via tldw", id="ingest-nav-tldw", classes="ingest-nav-button")
+                    # Add more navigation buttons as needed
+
+                # Right Content Pane for Ingest
+                with Container(id="ingest-content-pane", classes="ingest-content-pane"):  # New class
+                    # Define placeholder containers for each view
+                    yield Container(
+                        Static("Prompt Ingestion Area - Content Coming Soon!"),
+                        id="ingest-view-prompts",  # Match button ID suffix
+                        classes="ingest-view-area",  # Common class for view areas
+                    )
+                    yield Container(
+                        Static("Character Ingestion Area - Content Coming Soon!"),
+                        id="ingest-view-characters",
+                        classes="ingest-view-area",
+                    )
+                    yield Container(
+                        Static("Media Ingestion Area - Content Coming Soon!"),
+                        id="ingest-view-media",
+                        classes="ingest-view-area",
+                    )
+                    yield Container(
+                        Static("Note Ingestion Area - Content Coming Soon!"),
+                        id="ingest-view-notes",
+                        classes="ingest-view-area",
+                    )
 
             # --- Tools & Settings Window ---
             tools_settings_window = Container(id=f"{TAB_TOOLS_SETTINGS}-window", classes="window")
@@ -725,7 +770,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
             # --- Other Placeholder Windows ---
             for tab_id_placeholder in ALL_TABS:
-                if tab_id_placeholder not in [TAB_CHAT, TAB_CCP, TAB_NOTES, TAB_TOOLS_SETTINGS, TAB_LOGS, TAB_STATS]:  # Updated to TAB_CCP
+                if tab_id_placeholder not in [TAB_CHAT, TAB_CCP, TAB_NOTES, TAB_INGEST, TAB_TOOLS_SETTINGS, TAB_LOGS, TAB_STATS]:  # Updated to TAB_CCP
                     with Container(id=f"{tab_id_placeholder}-window", classes="window placeholder-window"):
                         yield Static(f"{tab_id_placeholder.replace('_', ' ').capitalize()} Window Placeholder")
                         yield Button("Coming Soon", id=f"{tab_id_placeholder}-placeholder-button", disabled=True)
@@ -877,6 +922,38 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.notify(f"Error loading prompt: {type(e).__name__}", severity="error")
             self._clear_prompt_fields()
             self.current_prompt_id = None  # Reset reactives
+
+    def watch_ingest_active_view(self, old_view: Optional[str], new_view: Optional[str]) -> None:
+        self.loguru_logger.debug(f"Ingest active view changing from '{old_view}' to: '{new_view}'")
+
+        # Get the content pane for the Ingest tab
+        try:
+            content_pane = self.query_one("#ingest-content-pane")
+        except QueryError:
+            self.loguru_logger.error("#ingest-content-pane not found. Cannot switch Ingest views.")
+            return
+
+        # Hide all ingest view areas first
+        for child in content_pane.query(".ingest-view-area"):  # Query by common class
+            child.styles.display = "none"
+
+        # Show the selected view
+        if new_view:  # new_view here is the ID of the view container, e.g., "ingest-view-prompts"
+            try:
+                target_view_id_selector = f"#{new_view}"
+                view_to_show = content_pane.query_one(target_view_id_selector, Container)
+                view_to_show.styles.display = "block"  # or "flex" or whatever your default visible display is
+                self.loguru_logger.info(f"Switched Ingest view to: {new_view}")
+                # Optional: Focus an element within the newly shown view
+                # try:
+                #     view_to_show.query(Input, Button)[0].focus()
+                # except IndexError:
+                #     pass # No focusable element
+            except QueryError as e:
+                self.loguru_logger.error(f"UI component '{new_view}' not found in #ingest-content-pane: {e}",
+                                         exc_info=True)
+        else:
+            self.loguru_logger.debug("Ingest active view is None, all ingest views hidden.")
 
     def watch_tools_settings_active_view(self, old_view: Optional[str], new_view: Optional[str]) -> None:
         self.loguru_logger.debug(f"Tools & Settings active view changing from '{old_view}' to: '{new_view}'")
@@ -1086,17 +1163,28 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         loguru_logger.debug(">>> DEBUG: watch_current_tab finished.")
 
         # Tab-specific actions on switch
-        if new_tab == TAB_NOTES:
-            self.call_later(notes_handlers.load_and_display_notes_handler, self)
+        if new_tab == TAB_CHAT:
+            # If chat tab becomes active, maybe re-focus chat input
+            try: self.query_one("#chat-input", TextArea).focus()
+            except QueryError: pass
         elif new_tab == TAB_CCP:
             # Initial population for CCP tab when switched to
             self.call_later(ccp_handlers.populate_ccp_character_select, self)
             self.call_later(ccp_handlers.populate_ccp_prompts_list_view, self)
             self.call_later(ccp_handlers.perform_ccp_conversation_search, self) # Initial search/list for conversations
-        elif new_tab == TAB_CHAT:
-            # If chat tab becomes active, maybe re-focus chat input
-            try: self.query_one("#chat-input", TextArea).focus()
-            except QueryError: pass
+        elif new_tab == TAB_NOTES:
+            self.call_later(notes_handlers.load_and_display_notes_handler, self)
+        elif new_tab == TAB_TOOLS_SETTINGS:
+            if not self.tools_settings_active_view:
+                self.loguru_logger.debug(
+                    f"Switched to Tools & Settings tab, activating initial view: {self._initial_tools_settings_view}")
+                self.call_later(setattr, self, 'tools_settings_active_view', self._initial_tools_settings_view)
+        elif new_tab == TAB_INGEST:  # New elif block for Ingest tab
+            if not self.ingest_active_view:  # If no view is active yet for this tab
+                self.loguru_logger.debug(
+                    f"Switched to Ingest tab, activating initial view: {self._initial_ingest_view}")
+                # Use call_later to ensure the UI has settled after tab switch before changing sub-view
+                self.call_later(setattr, self, 'ingest_active_view', self._initial_ingest_view)
 
 
     # Watchers for sidebar collapsed states (keep as is)
@@ -1315,6 +1403,17 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             elif button_id == "notes-delete-button": await notes_handlers.handle_notes_delete_button_pressed(self)
             elif button_id == "notes-save-keywords-button": await notes_handlers.handle_notes_save_keywords_button_pressed(self)
             else: logging.warning(f"Unhandled button on NOTES tab: {button_id}")
+
+        # --- Ingestion Tab ---
+        elif current_active_tab == TAB_INGEST:
+            if button_id and button_id.startswith("ingest-nav-"):
+                # e.g., "ingest-nav-prompts" -> "ingest-view-prompts"
+                view_to_activate = button_id.replace("ingest-nav-", "ingest-view-")
+                self.loguru_logger.debug(
+                    f"Ingest nav button '{button_id}' pressed. Activating view '{view_to_activate}'.")
+                self.ingest_active_view = view_to_activate  # This will trigger the watcher
+            else:
+                self.loguru_logger.warning(f"Unhandled button on INGEST tab: ID:{button_id}, Label:'{button.label}'")
 
         # --- Tools & Settings Tab ---
         elif current_active_tab == TAB_TOOLS_SETTINGS:

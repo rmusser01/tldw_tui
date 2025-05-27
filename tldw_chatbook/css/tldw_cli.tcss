@@ -637,3 +637,52 @@ MetricsScreen Label.-info-message {
     text-style: bold;             /* Your existing style */
     /* border: none; /* Already set */
 }
+
+/* --- Ingest Content Tab --- */
+#ingest-window { /* Matches TAB_INGEST */
+    layout: horizontal;
+}
+
+.ingest-nav-pane { /* Style for the left navigation pane */
+    dock: left;
+    width: 25%;
+    min-width: 25;
+    max-width: 60;
+    height: 100%;
+    background: $boost; /* Or a slightly different shade */
+    padding: 1;
+    border-right: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.ingest-nav-pane .ingest-nav-button { /* Style for navigation buttons */
+    width: 100%;
+    margin-bottom: 1;
+    border: none;
+    height: 3;
+}
+.ingest-nav-pane .ingest-nav-button:hover {
+    background: $accent 60%; /* Slightly different hover potentially */
+}
+/* Active state for selected ingest nav button (optional) */
+/* .ingest-nav-pane .ingest-nav-button.-active-view {
+    background: $accent-darken-1;
+    color: $text;
+} */
+
+.ingest-content-pane { /* Style for the right content display area */
+    width: 1fr;
+    height: 100%;
+    padding: 1 2;
+    overflow-y: auto;
+}
+
+.ingest-view-area { /* Common class for individual content areas */
+    width: 100%;
+    height: 100%; /* Or auto */
+    /* Example content styling */
+    /* align: center middle; */
+    /* border: round $primary; */
+    /* padding: 2; */
+}

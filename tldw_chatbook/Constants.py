@@ -597,7 +597,7 @@ MetricsScreen Label.-info-message {
 .tools-nav-pane .ts-nav-button { /* Style for navigation buttons */
     width: 100%;
     margin-bottom: 1;
-    border-type: none; /* Cleaner look for nav buttons */
+    border: none; /* Cleaner look for nav buttons */
     height: 3;
 }
 .tools-nav-pane .ts-nav-button:hover {
@@ -621,6 +621,99 @@ MetricsScreen Label.-info-message {
     height: 100%; /* Or auto if content dictates height */
     /* border: round $surface; /* Optional: border around content views */
     /* padding: 1; /* Optional: padding within content views */
+}
+
+/* Container for the HorizontalScroll, this takes the original #tabs styling for docking */
+#tabs-outer-container {
+    dock: top;
+    height: 3; /* Or your desired tab bar height */
+    background: $background; /* Or your tab bar background */
+    padding: 0 1; /* Padding for the overall bar */
+    width: 100%;
+}
+
+/* The HorizontalScroll itself, which will contain the buttons */
+#tabs {
+    width: 100%;
+    height: 100%; /* Fill the outer container's height */
+    overflow-x: auto !important; /* Ensure horizontal scrolling is enabled */
+    /* overflow-y: hidden; /* Usually not needed for a single row of tabs */
+}
+
+#tabs Button {
+    width: auto;         /* Let button width be determined by content + padding */
+    min-width: 10;       /* Minimum width to prevent squishing too much */
+    height: 100%;        /* Fill the height of the scrollable area */
+    border: none; /* Your existing style */
+    background: $panel;  /* Your existing style */
+    color: $text-muted;  /* Your existing style */
+    padding: 0 2;        /* Add horizontal padding to buttons */
+    margin: 0 1 0 0;     /* Small right margin between buttons */
+}
+
+#tabs Button:last-of-type { /* No margin for the last button */
+    margin-right: 0;
+}
+
+#tabs Button:hover {
+    background: $panel-lighten-1; /* Your existing style */
+    color: $text;                 /* Your existing style */
+}
+
+#tabs Button.-active {
+    background: $accent;          /* Your existing style */
+    color: $text;                 /* Your existing style */
+    text-style: bold;             /* Your existing style */
+    /* border: none; /* Already set */
+}
+
+/* --- Ingest Content Tab --- */
+#ingest-window { /* Matches TAB_INGEST */
+    layout: horizontal;
+}
+
+.ingest-nav-pane { /* Style for the left navigation pane */
+    dock: left;
+    width: 25%;
+    min-width: 25;
+    max-width: 60;
+    height: 100%;
+    background: $boost; /* Or a slightly different shade */
+    padding: 1;
+    border-right: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.ingest-nav-pane .ingest-nav-button { /* Style for navigation buttons */
+    width: 100%;
+    margin-bottom: 1;
+    border: none;
+    height: 3;
+}
+.ingest-nav-pane .ingest-nav-button:hover {
+    background: $accent 60%; /* Slightly different hover potentially */
+}
+/* Active state for selected ingest nav button (optional) */
+/* .ingest-nav-pane .ingest-nav-button.-active-view {
+    background: $accent-darken-1;
+    color: $text;
+} */
+
+.ingest-content-pane { /* Style for the right content display area */
+    width: 1fr;
+    height: 100%;
+    padding: 1 2;
+    overflow-y: auto;
+}
+
+.ingest-view-area { /* Common class for individual content areas */
+    width: 100%;
+    height: 100%; /* Or auto */
+    /* Example content styling */
+    /* align: center middle; */
+    /* border: round $primary; */
+    /* padding: 2; */
 }
     """
 
