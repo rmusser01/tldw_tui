@@ -65,7 +65,6 @@ class NotesSidebarLeft(VerticalScroll):
             # If it's meant to be a quick save from here, ensure its action is clear.
 
         with Collapsible(title="Advanced Actions", collapsed=True):
-            yield Button("Save Note (from Editor)", id="notes-save-current-button", variant="success") # Or "Save Active Note"
             yield Button("Delete Selected Note", id="notes-delete-button", variant="error")
 
     async def populate_notes_list(self, notes_data: list[dict]) -> None:

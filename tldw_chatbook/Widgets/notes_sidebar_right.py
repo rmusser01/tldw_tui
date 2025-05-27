@@ -55,6 +55,8 @@ class NotesSidebarRight(VerticalScroll):
 
         yield Static("Keywords:", classes="sidebar-label")
         yield TextArea("", id="notes-keywords-area", classes="notes-keywords-textarea")
+        yield Button("Save Note (from Editor)", id="notes-save-current-button",
+                     variant="success")  # Or "Save Active Note"
         yield Button("Save Keywords", id="notes-save-keywords-button", variant="primary")
 
         # Group export options
