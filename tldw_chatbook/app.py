@@ -29,7 +29,7 @@ from textual.css.query import QueryError  # For specific error handling
 #
 # --- Local API library Imports ---
 from tldw_chatbook.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, TAB_STATS, TAB_TOOLS_SETTINGS, \
-    TAB_INGEST
+    TAB_INGEST, TAB_LLM
 from tldw_chatbook.Logging_Config import RichLogHandler
 from tldw_chatbook.Prompt_Management import Prompts_Interop as prompts_interop
 from tldw_chatbook.Utils.Emoji_Handling import get_char, EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN, EMOJI_TITLE_NOTE, \
@@ -203,6 +203,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     _initial_tools_settings_view: Optional[str] = "view_general_settings"
 
     _prompt_search_timer: Optional[Timer] = None
+
+    # LLM Inference Tab
+    llm_active_view: reactive[Optional[str]] = reactive(None, layout=True)
+    _initial_llm_view: Optional[str] = "llm-view-llama-cpp"
 
     # De-Bouncers
     _conv_char_search_timer: Optional[Timer] = None
@@ -482,8 +486,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 for tab_id_loop in ALL_TABS:
                     label_text = "CCP" if tab_id_loop == TAB_CCP else \
                         "Tools & Settings" if tab_id_loop == TAB_TOOLS_SETTINGS else \
-                            "Ingest Content" if tab_id_loop == TAB_INGEST else \
-                                tab_id_loop.replace('_', ' ').capitalize()
+                        "Ingest Content" if tab_id_loop == TAB_INGEST else \
+                        "LLM Management" if tab_id_loop == TAB_LLM else \
+                        tab_id_loop.replace('_', ' ').capitalize()
                     yield Button(
                         label_text,
                         id=f"tab-{tab_id_loop}",
@@ -758,6 +763,55 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                         classes="ts-view-area",
                     )
 
+            # --- LLM Management Window ---
+            llm_window = Container(id=f"{TAB_LLM}-window", classes="window")
+            if self._initial_tab_value != TAB_LLM:
+                llm_window.styles.display = "none"
+
+            with llm_window:  # Main container for LLM tab, layout horizontal
+                # Left Navigation Pane for LLM
+                with VerticalScroll(id="llm-nav-pane", classes="llm-nav-pane"):  # New class
+                    yield Static("LLM Options", classes="sidebar-title")
+                    yield Button("Llama.cpp", id="llm-nav-llama-cpp", classes="llm-nav-button")
+                    yield Button("Llamafile", id="llm-nav-llamafile", classes="llm-nav-button")
+                    yield Button("vLLM", id="llm-nav-vllm", classes="llm-nav-button")
+                    yield Button("Transformers", id="llm-nav-transformers", classes="llm-nav-button")
+                    yield Button("Local Models", id="llm-nav-local-models", classes="llm-nav-button")
+                    yield Button("Download Models", id="llm-nav-download-models", classes="llm-nav-button")
+
+                # Right Content Pane for LLM
+                with Container(id="llm-content-pane", classes="llm-content-pane"):  # New class
+                    yield Container(
+                        Static("Llama.cpp Management Area - Content Coming Soon!"),
+                        id="llm-view-llama-cpp",  # Match button ID suffix
+                        classes="llm-view-area",  # Common class
+                    )
+                    yield Container(
+                        Static("Llamafile Management Area - Content Coming Soon!"),
+                        id="llm-view-llamafile",
+                        classes="llm-view-area",
+                    )
+                    yield Container(
+                        Static("vLLM Management Area - Content Coming Soon!"),
+                        id="llm-view-vllm",
+                        classes="llm-view-area",
+                    )
+                    yield Container(
+                        Static("Transformers Library Management Area - Content Coming Soon!"),
+                        id="llm-view-transformers",
+                        classes="llm-view-area",
+                    )
+                    yield Container(
+                        Static("Local Model Management Area - Content Coming Soon!"),
+                        id="llm-view-local-models",
+                        classes="llm-view-area",
+                    )
+                    yield Container(
+                        Static("Model Download Area - Content Coming Soon!"),
+                        id="llm-view-download-models",
+                        classes="llm-view-area",
+                    )
+
             # --- Logs Window ---
             with Container(id=f"{TAB_LOGS}-window", classes="window"):
                 yield RichLog(id="app-log-display", wrap=True, highlight=True, markup=True, auto_scroll=True)
@@ -770,7 +824,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
             # --- Other Placeholder Windows ---
             for tab_id_placeholder in ALL_TABS:
-                if tab_id_placeholder not in [TAB_CHAT, TAB_CCP, TAB_NOTES, TAB_INGEST, TAB_TOOLS_SETTINGS, TAB_LOGS, TAB_STATS]:  # Updated to TAB_CCP
+                if tab_id_placeholder not in [TAB_CHAT, TAB_CCP, TAB_NOTES, TAB_INGEST, TAB_TOOLS_SETTINGS, TAB_LLM, TAB_LOGS, TAB_STATS]:  # Updated to TAB_CCP
                     with Container(id=f"{tab_id_placeholder}-window", classes="window placeholder-window"):
                         yield Static(f"{tab_id_placeholder.replace('_', ' ').capitalize()} Window Placeholder")
                         yield Button("Coming Soon", id=f"{tab_id_placeholder}-placeholder-button", disabled=True)
@@ -994,6 +1048,35 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         except Exception as e_watch:
             self.loguru_logger.error(f"Unexpected error in watch_tools_settings_active_view: {e_watch}", exc_info=True)
 
+    # --- LLM Tab Watcher ---
+    def watch_llm_active_view(self, old_view: Optional[str], new_view: Optional[str]) -> None:
+        self.loguru_logger.debug(f"LLM Management active view changing from '{old_view}' to: '{new_view}'")
+
+        try:
+            content_pane = self.query_one("#llm-content-pane")
+        except QueryError:
+            self.loguru_logger.error("#llm-content-pane not found. Cannot switch LLM views.")
+            return
+
+        for child in content_pane.query(".llm-view-area"):  # Query by common class
+            child.styles.display = "none"
+
+        if new_view:
+            try:
+                target_view_id_selector = f"#{new_view}"
+                view_to_show = content_pane.query_one(target_view_id_selector, Container)
+                view_to_show.styles.display = "block"
+                self.loguru_logger.info(f"Switched LLM Management view to: {new_view}")
+                # Optional: Focus
+                # try:
+                #     view_to_show.query(Input, Button)[0].focus()
+                # except IndexError: pass
+            except QueryError as e:
+                self.loguru_logger.error(f"UI component '{new_view}' not found in #llm-content-pane: {e}",
+                                         exc_info=True)
+        else:
+            self.loguru_logger.debug("LLM Management active view is None, all LLM views hidden.")
+
     def watch_current_chat_is_ephemeral(self, is_ephemeral: bool) -> None:
         self.loguru_logger.debug(f"Chat ephemeral state changed to: {is_ephemeral}")
         try:
@@ -1174,17 +1257,27 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.call_later(ccp_handlers.perform_ccp_conversation_search, self) # Initial search/list for conversations
         elif new_tab == TAB_NOTES:
             self.call_later(notes_handlers.load_and_display_notes_handler, self)
-        elif new_tab == TAB_TOOLS_SETTINGS:
-            if not self.tools_settings_active_view:
+        elif new_tab == TAB_INGEST:
+            if not self.ingest_active_view:
                 self.loguru_logger.debug(
-                    f"Switched to Tools & Settings tab, activating initial view: {self._initial_tools_settings_view}")
-                self.call_later(setattr, self, 'tools_settings_active_view', self._initial_tools_settings_view)
+                    f"Switched to Ingest tab, activating initial view: {self._initial_ingest_view}")
+                self.call_later(setattr, self, 'ingest_active_view', self._initial_ingest_view)
         elif new_tab == TAB_INGEST:  # New elif block for Ingest tab
             if not self.ingest_active_view:  # If no view is active yet for this tab
                 self.loguru_logger.debug(
                     f"Switched to Ingest tab, activating initial view: {self._initial_ingest_view}")
                 # Use call_later to ensure the UI has settled after tab switch before changing sub-view
                 self.call_later(setattr, self, 'ingest_active_view', self._initial_ingest_view)
+        elif new_tab == TAB_TOOLS_SETTINGS:
+            if not self.tools_settings_active_view:
+                self.loguru_logger.debug(
+                    f"Switched to Tools & Settings tab, activating initial view: {self._initial_tools_settings_view}")
+                self.call_later(setattr, self, 'tools_settings_active_view', self._initial_tools_settings_view)
+        elif new_tab == TAB_LLM:  # New elif block for LLM tab
+            if not self.llm_active_view:  # If no view is active yet
+                self.loguru_logger.debug(
+                    f"Switched to LLM Management tab, activating initial view: {self._initial_llm_view}")
+                self.call_later(setattr, self, 'llm_active_view', self._initial_llm_view)
 
 
     # Watchers for sidebar collapsed states (keep as is)
@@ -1428,6 +1521,18 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 self.loguru_logger.warning(
                     f"Unhandled button on TOOLS & SETTINGS tab: ID:{button_id}, Label:'{button.label}'")
 
+        # --- LLM Inference Tab ---
+        elif current_active_tab == TAB_LLM:
+            if button_id and button_id.startswith("llm-nav-"):
+                # e.g., "llm-nav-llama-cpp" -> "llm-view-llama-cpp"
+                view_to_activate = button_id.replace("llm-nav-", "llm-view-")
+                self.loguru_logger.debug(f"LLM nav button '{button_id}' pressed. Activating view '{view_to_activate}'.")
+                self.llm_active_view = view_to_activate  # Triggers watcher
+            else:
+                self.loguru_logger.warning(
+                    f"Unhandled button on LLM MANAGEMENT tab: ID:{button_id}, Label:'{button.label}'")
+
+        # --- Logging Tab ---
         elif current_active_tab == TAB_LOGS:
             if button_id == "copy-logs-button": await app_lifecycle_handlers.handle_copy_logs_button_pressed(self)
             else:

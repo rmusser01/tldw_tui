@@ -686,3 +686,48 @@ MetricsScreen Label.-info-message {
     /* border: round $primary; */
     /* padding: 2; */
 }
+
+/* --- LLM Management Tab --- */
+#llm_management-window { /* Matches TAB_LLM ("llm_management") */
+    layout: horizontal;
+}
+
+.llm-nav-pane { /* Style for the left navigation pane */
+    dock: left;
+    width: 25%; /* Or your preferred width */
+    min-width: 25;
+    max-width: 60; /* Example */
+    height: 100%;
+    background: $boost; /* Or $surface-darken-1 or $surface-lighten-1 */
+    padding: 1;
+    border-right: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.llm-nav-pane .llm-nav-button { /* Style for navigation buttons */
+    width: 100%;
+    margin-bottom: 1;
+    border: none;
+    height: 3;
+}
+.llm-nav-pane .llm-nav-button:hover {
+    background: $accent 70%; /* Example hover */
+}
+/* Active state for selected llm nav button (optional) */
+/* .llm-nav-pane .llm-nav-button.-active-view {
+    background: $accent;
+    color: $text;
+} */
+
+.llm-content-pane { /* Style for the right content display area */
+    width: 1fr;
+    height: 100%;
+    padding: 1 2;
+    overflow-y: auto;
+}
+
+.llm-view-area { /* Common class for individual content areas */
+    width: 100%;
+    height: 100%; /* Or auto */
+}
