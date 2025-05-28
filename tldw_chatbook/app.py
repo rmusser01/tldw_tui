@@ -223,7 +223,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         self.loguru_logger = loguru_logger # Make loguru_logger an instance variable for handlers
         self.prompts_client_id = "tldw_tui_client_v1" # Store client ID for prompts service
 
+
         # --- Initialize NotesInteropService ---
+        # FIXME - USE SAME DB AS CHARACTERS/CONVERSATIONS
         # FIXME - add option to config to set username for app/DBs
         self.notes_user_id = "default_tui_user"  # Or any default user ID string
         notes_db_base_dir = Path.home() / ".config/tldw_cli/user_notes"
