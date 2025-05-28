@@ -126,7 +126,7 @@ def create_character_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tru
         # This part would be more relevant if the chat tab directly supported switching active characters
         # for the ongoing conversation, rather than just for filtering searches.
         # For now, keeping it minimal.
-        with Collapsible(title="Active Character Info (Placeholder)", collapsed=True):
+        with Collapsible(title="Active Character Info", collapsed=True):
             yield Placeholder("Display Active Character Name")
             # Could add a select here to change the character for the *current* chat,
             # which would then influence the AI's persona for subsequent messages.
