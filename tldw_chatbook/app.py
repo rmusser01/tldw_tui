@@ -28,6 +28,7 @@ from textual.timer import Timer
 from textual.css.query import QueryError  # For specific error handling
 #
 # --- Local API library Imports ---
+from .Third_Party.textual_fspicker import FileOpen, Filters
 from tldw_chatbook.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, TAB_STATS, TAB_TOOLS_SETTINGS, \
     TAB_INGEST, TAB_LLM
 from tldw_chatbook.Logging_Config import RichLogHandler
@@ -537,6 +538,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 with VerticalScroll(id="conv-char-left-pane", classes="cc-left-pane"):
                     yield Static("CCP Menu", classes="sidebar-title cc-section-title-text")
                     with Collapsible(title="Characters", id="conv-char-characters-collapsible"):
+                        yield Button("Import Character Card", id="ccp-import-character-button",
+                                     classes="sidebar-button")
                         yield Select([], prompt="Select Character...", allow_blank=True,id="conv-char-character-select")
                     with Collapsible(title="Conversations", id="conv-char-conversations-collapsible"):
                         yield Input(id="conv-char-search-input", placeholder="Search conversations...", classes="sidebar-input")
@@ -1462,6 +1465,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 f"Button (ID: {button_id}, Label: '{button.label}') not part of ChatMessage on CCP tab. Checking specific CCP button IDs.")
             if button_id == "conv-char-conversation-search-button":
                 await ccp_handlers.handle_ccp_conversation_search_button_pressed(self)
+            elif button_id == "ccp-import-character-button":  # Route new button
+                await ccp_handlers.handle_ccp_import_character_button_pressed(self)
             elif button_id == "conv-char-load-button":
                 await ccp_handlers.handle_ccp_load_conversation_button_pressed(self)
             elif button_id == "conv-char-save-details-button":

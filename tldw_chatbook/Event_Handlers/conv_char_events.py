@@ -5,6 +5,7 @@
 import json  # For export
 import logging
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Any, List, Dict, Union
 #
 # 3rd-Party Imports
@@ -17,6 +18,7 @@ from textual.css.query import QueryError
 from rich.text import Text # For displaying messages if needed
 #
 # Local Imports
+from tldw_chatbook.Third_Party.textual_fspicker import FileOpen, Filters # For File Picker
 from ..Widgets.chat_message import ChatMessage # If CCP tab displays ChatMessage widgets
 from ..Character_Chat import Character_Chat_Lib as ccl
 from ..Prompt_Management import Prompts_Interop as prompts_interop
@@ -230,6 +232,60 @@ async def load_ccp_prompt_for_editing(app: 'TldwCli', prompt_id: Optional[int] =
         app.notify(f"Error loading prompt: {type(e).__name__}", severity="error")
         clear_ccp_prompt_fields(app)
 
+########################################################################################################################
+#
+# Event Handlers for Character Card Import
+#
+########################################################################################################################
+async def _character_import_callback(app: 'TldwCli', selected_path: Optional[Path]) -> None:
+    logger = getattr(app, 'loguru_logger', logging)
+    if selected_path:
+        logger.info(f"Character card import selected: {selected_path}")
+        if not app.notes_service:
+            app.notify("Database service not available.", severity="error")
+            logger.error("Notes service not available for character import.")
+            return
+
+        db = app.notes_service._get_db(app.notes_user_id)
+        try:
+            # import_and_save_character_from_file can take Path object directly
+            char_id = ccl.import_and_save_character_from_file(db, str(selected_path))
+            if char_id is not None:
+                app.notify(f"Character card imported successfully (ID: {char_id}).", severity="information")
+                await populate_ccp_character_select(app) # Refresh character dropdown
+            else:
+                # import_and_save_character_from_file logs errors, but we can notify too
+                app.notify("Failed to import character card. Check logs.", severity="error")
+        except ConflictError as ce:
+            app.notify(f"Import conflict: {ce}", severity="warning", timeout=6)
+            logger.warning(f"Conflict importing character card '{selected_path}': {ce}")
+            await populate_ccp_character_select(app) # Refresh in case it was a duplicate name
+        except ImportError as ie: # E.g., PyYAML missing for Markdown with frontmatter
+            app.notify(f"Import error: {ie}. A required library might be missing.", severity="error", timeout=8)
+            logger.error(f"Import error for character card '{selected_path}': {ie}", exc_info=True)
+        except Exception as e:
+            app.notify(f"Error importing character card: {type(e).__name__}", severity="error", timeout=6)
+            logger.error(f"Error importing character card '{selected_path}': {e}", exc_info=True)
+    else:
+        logger.info("Character card import cancelled.")
+        app.notify("Character import cancelled.", severity="information", timeout=2)
+
+async def handle_ccp_import_character_button_pressed(app: 'TldwCli') -> None:
+    logger = getattr(app, 'loguru_logger', logging)
+    logger.info("CCP Import Character Card button pressed.")
+
+    defined_filters = Filters(
+        ("Character Card (JSON, PNG, WebP, MD)", lambda p: p.suffix.lower() in (".json", ".png", ".webp", ".md", ".yaml", ".yml")),
+        ("JSON files (*.json)", lambda p: p.suffix.lower() == ".json"),
+        ("PNG images (*.png)", lambda p: p.suffix.lower() == ".png"),
+        ("WebP images (*.webp)", lambda p: p.suffix.lower() == ".webp"),
+        ("Markdown files (*.md)", lambda p: p.suffix.lower() == ".md"),
+        ("YAML files (*.yaml, *.yml)", lambda p: p.suffix.lower() in (".yaml", ".yml")),
+        ("All files (*.*)", lambda p: True)
+    )
+    await app.push_screen(FileOpen(location=str(Path.home()), title="Select Character Card", filters=defined_filters),
+                          # Use a lambda to capture `app` for the callback
+                          callback=lambda path: _character_import_callback(app, path))
 
 async def perform_ccp_conversation_search(app: 'TldwCli') -> None:
     """Performs conversation search for the CCP tab."""
