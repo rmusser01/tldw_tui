@@ -604,6 +604,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 # --- Right Pane (Details & Settings) ---
                 with VerticalScroll(id="conv-char-right-pane", classes="cc-right-pane"): # Corrected: Only one
                     #yield from create_settings_sidebar(TAB_CCP, self.app_config) # CCP settings sidebar
+                    yield Static("Characters / Chats / Prompts", classes="sidebar-title")
                     with Collapsible(title="Conversation Details", id="ccp-conversation-details-collapsible", collapsed=True):
                         yield Static("Title:", classes="sidebar-label")
                         yield Input(id="conv-char-title-input", placeholder="Conversation title...", classes="sidebar-input")
