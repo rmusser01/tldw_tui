@@ -17,10 +17,9 @@ from textual.widgets import (
 )
 from textual.containers import VerticalScroll
 from textual.css.query import QueryError
-
-from ..Utils.Utils import safe_float, safe_int
 #
 # Local Imports
+from ..Utils.Utils import safe_float, safe_int
 from ..Widgets.chat_message import ChatMessage
 from ..Widgets.titlebar import TitleBar
 from ..Utils.Emoji_Handling import (
@@ -29,6 +28,7 @@ from ..Utils.Emoji_Handling import (
 )
 from ..Character_Chat import Character_Chat_Lib as ccl
 from ..DB.ChaChaNotes_DB import ConflictError, CharactersRAGDBError # Import specific DB errors
+from ..Prompt_Management import Prompts_Interop as prompts_interop
 #
 if TYPE_CHECKING:
     from ..app import TldwCli, API_IMPORTS_SUCCESSFUL
@@ -1121,6 +1121,152 @@ async def load_branched_conversation_history_ui(app: 'TldwCli', target_conversat
         chat_log_widget.scroll_end(animate=False)
     logging.info(
         f"Loaded {len(all_messages_to_display)} messages for conversation {target_conversation_id} (including history).")
+
+
+# --- Chat Sidebar Prompt Handlers ---
+
+async def populate_chat_sidebar_prompts_list_view(app: 'TldwCli', search_term: Optional[str] = None,
+                                                  keyword_filter_str: Optional[str] = None) -> None:
+    """Populates the prompts list view in the Chat tab's right sidebar."""
+    logger = getattr(app, 'loguru_logger', logging)
+    if not app.prompts_service_initialized:
+        try:
+            list_view_prompt_err = app.query_one("#chat-sidebar-prompts-listview", ListView)
+            await list_view_prompt_err.clear()
+            await list_view_prompt_err.append(ListItem(Label("Prompts service not available.")))
+        except QueryError:
+            logger.error("Failed to find #chat-sidebar-prompts-listview to show service error.")
+        return
+
+    try:
+        list_view_prompt = app.query_one("#chat-sidebar-prompts-listview", ListView)
+        await list_view_prompt.clear()
+
+        # Prepare search query for prompts_interop
+        # If search_prompts handles keywords directly in its query, combine them.
+        # Otherwise, filter after fetching.
+        # Assuming search_prompts can take a combined query string.
+        query_parts = []
+        if search_term:
+            query_parts.append(search_term)
+
+        final_search_query = " ".join(query_parts)
+
+        keywords_to_filter_by = []
+        if keyword_filter_str:
+            keywords_to_filter_by = [kw.strip().lower() for kw in keyword_filter_str.split(',') if kw.strip()]
+
+        logger.debug(
+            f"Chat Sidebar: Searching prompts. Query: '{final_search_query}', Keyword Filters: {keywords_to_filter_by}")
+
+        # Fetch prompts based on text search first
+        results_tuple = prompts_interop.search_prompts(
+            search_query=final_search_query if final_search_query else "",  # Pass empty if no text query
+            search_fields=["name", "details", "keywords"],  # Search in keywords field too
+            page=1, results_per_page=200,  # Fetch more to allow client-side keyword filtering if needed
+            include_deleted=False
+        )
+        results = results_tuple[0] if results_tuple else []
+
+        # Client-side filtering for keywords if provided
+        if keywords_to_filter_by:
+            filtered_results = []
+            for prompt_data in results:
+                prompt_keywords_lower = [kw.lower() for kw in prompt_data.get('keywords', [])]
+                if all(filter_kw in prompt_keywords_lower for filter_kw in keywords_to_filter_by):
+                    filtered_results.append(prompt_data)
+            results = filtered_results
+            logger.debug(f"Chat Sidebar: After keyword filtering, {len(results)} prompts remaining.")
+
+        if not results:
+            await list_view_prompt.append(ListItem(Label("No prompts found.")))
+        else:
+            for prompt_data in results:
+                display_name = prompt_data.get('name', 'Unnamed Prompt')
+                item = ListItem(Label(display_name))
+                item.prompt_id = prompt_data.get('id')  # Store ID for fetching details
+                item.prompt_uuid = prompt_data.get('uuid')
+                await list_view_prompt.append(item)
+        logger.info(
+            f"Populated chat sidebar prompts list. Search: '{final_search_query}', Keywords: '{keyword_filter_str}', Found: {len(results)}")
+
+    except QueryError as e_query:
+        logger.error(f"UI component error populating chat sidebar prompts list: {e_query}", exc_info=True)
+    except (prompts_interop.DatabaseError, RuntimeError) as e_prompt_service:
+        logger.error(f"Error populating chat sidebar prompts list: {e_prompt_service}", exc_info=True)
+    except Exception as e_unexp:
+        logger.error(f"Unexpected error populating chat sidebar prompts list: {e_unexp}", exc_info=True)
+
+
+async def handle_chat_sidebar_prompt_search_input_changed(app: 'TldwCli', event_value: str) -> None:
+    if app._chat_sidebar_prompt_search_timer:
+        app._chat_sidebar_prompt_search_timer.stop()
+
+    async def do_search():
+        keyword_filter_input = app.query_one("#chat-sidebar-prompt-keyword-filter-input", Input)
+        await populate_chat_sidebar_prompts_list_view(app, search_term=event_value.strip(),
+                                                      keyword_filter_str=keyword_filter_input.value)
+
+    app._chat_sidebar_prompt_search_timer = app.set_timer(0.5, do_search)
+
+
+async def handle_chat_sidebar_prompt_keyword_filter_input_changed(app: 'TldwCli', event_value: str) -> None:
+    if app._chat_sidebar_prompt_keyword_filter_timer:
+        app._chat_sidebar_prompt_keyword_filter_timer.stop()
+
+    async def do_filter_search():
+        search_input = app.query_one("#chat-sidebar-prompt-search-input", Input)
+        await populate_chat_sidebar_prompts_list_view(app, search_term=search_input.value,
+                                                      keyword_filter_str=event_value.strip())
+
+    app._chat_sidebar_prompt_keyword_filter_timer = app.set_timer(0.5, do_filter_search)
+
+
+async def handle_chat_sidebar_prompts_list_view_selected(app: 'TldwCli', item: Any) -> None:
+    logger = getattr(app, 'loguru_logger', logging)
+    if item and (hasattr(item, 'prompt_id') or hasattr(item, 'prompt_uuid')):
+        prompt_id_to_load = getattr(item, 'prompt_id', None)
+        prompt_uuid_to_load = getattr(item, 'prompt_uuid', None)
+        identifier_to_fetch = prompt_id_to_load if prompt_id_to_load is not None else prompt_uuid_to_load
+
+        if identifier_to_fetch is None:
+            logger.warning("Chat sidebar prompt selection: item has no ID or UUID.")
+        return
+        logger.info(f"Chat sidebar prompt selected: ID/UUID={identifier_to_fetch}")
+        if app.prompts_service_initialized:
+            details = prompts_interop.fetch_prompt_details(identifier_to_fetch)
+            logger.debug(f"Fetched prompt details for chat sidebar: {details}")
+            if details:
+                app.chat_sidebar_selected_prompt_id = details.get('id')
+                app.chat_sidebar_selected_prompt_system = details.get('system_prompt', '')
+                app.chat_sidebar_selected_prompt_user = details.get('user_prompt', '')
+                logger.debug(f"Set app reactives: system='{app.chat_sidebar_selected_prompt_system[:50]}...', user='{app.chat_sidebar_selected_prompt_user[:50]}...'")
+            else:
+                logger.warning(f"Prompt details not found for {identifier_to_fetch} for chat sidebar.")
+                app.chat_sidebar_selected_prompt_id = None
+                app.chat_sidebar_selected_prompt_system = "Error: Prompt not found."
+                app.chat_sidebar_selected_prompt_user = ""
+        else:
+            logger.warning("Prompts service not initialized, cannot display prompt details in chat sidebar.")
+            app.chat_sidebar_selected_prompt_id = None
+            app.chat_sidebar_selected_prompt_system = "Prompts service unavailable."
+            app.chat_sidebar_selected_prompt_user = ""
+
+
+async def handle_chat_sidebar_copy_system_prompt_button_pressed(app: 'TldwCli') -> None:
+    if app.chat_sidebar_selected_prompt_system is not None:
+        app.copy_to_clipboard(app.chat_sidebar_selected_prompt_system)
+        app.notify("System prompt copied to clipboard!", severity="information", timeout=2)
+    else:
+        app.notify("No system prompt selected or available to copy.", severity="warning")
+
+
+async def handle_chat_sidebar_copy_user_prompt_button_pressed(app: 'TldwCli') -> None:
+    if app.chat_sidebar_selected_prompt_user is not None:
+        app.copy_to_clipboard(app.chat_sidebar_selected_prompt_user)
+        app.notify("User prompt copied to clipboard!", severity="information", timeout=2)
+    else:
+        app.notify("No user prompt selected or available to copy.", severity="warning")
 
 #
 # End of chat_events.py

@@ -176,6 +176,11 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     current_selected_note_title: reactive[Optional[str]] = reactive(None)
     current_selected_note_content: reactive[Optional[str]] = reactive("")
 
+    # --- Reactives for chat sidebar prompt display ---
+    chat_sidebar_selected_prompt_id: reactive[Optional[int]] = reactive(None)
+    chat_sidebar_selected_prompt_system: reactive[Optional[str]] = reactive(None)
+    chat_sidebar_selected_prompt_user: reactive[Optional[str]] = reactive(None)
+
     # Chats
     current_chat_is_ephemeral: reactive[bool] = reactive(True)  # Start new chats as ephemeral
     # Reactive variable for current chat conversation ID
@@ -213,6 +218,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     _conv_char_search_timer: Optional[Timer] = None
     _conversation_search_timer: Optional[Timer] = None
     _notes_search_timer: Optional[Timer] = None
+    _chat_sidebar_prompt_search_timer: Optional[Timer] = None
+    _chat_sidebar_prompt_keyword_filter_timer: Optional[Timer] = None
 
     # Make API_IMPORTS_SUCCESSFUL accessible if needed by old methods or directly
     API_IMPORTS_SUCCESSFUL = API_IMPORTS_SUCCESSFUL
@@ -498,14 +505,16 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
     ############################################################
     #
-    # Code that builds the content area of the app aka the main UI.
+    # Code that builds the content area of the app aka the main UI. - ORDERING OF BUTTONS
     #
     ###########################################################
     def compose_content_area(self) -> ComposeResult:
         logging.debug(f"Compose: Composing content area...")
 
         with Container(id="content"):
+            #######################################
             # --- Chat Window ---
+            ######################################
             # Assign specific reactive variables to the Select widgets
             chat_window = Container(id=f"{TAB_CHAT}-window", classes="window")
             if self._initial_tab_value != TAB_CHAT:
@@ -531,8 +540,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 # The create_character_sidebar function will define a widget with id="character-sidebar"
                 # Pass a string prefix, for example, "chat" or "character_chat"
                 yield from create_character_sidebar("chat", initial_ephemeral_state=self.current_chat_is_ephemeral)
-
+            ######################################
             # --- Conversations, Characters & Prompts Window ---
+            ######################################
             with Container(id=f"{TAB_CCP}-window", classes="window"):
                 # Left Pane (remains the same)
                 with VerticalScroll(id="conv-char-left-pane", classes="cc-left-pane"):
@@ -602,8 +612,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 yield Button(get_char(EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE),
                              id="toggle-conv-char-right-sidebar", classes="cc-sidebar-toggle-button")
                 # --- Right Pane (Details & Settings) ---
-                with VerticalScroll(id="conv-char-right-pane", classes="cc-right-pane"): # Corrected: Only one
-                    #yield from create_settings_sidebar(TAB_CCP, self.app_config) # CCP settings sidebar
+                with VerticalScroll(id="conv-char-right-pane", classes="cc-right-pane"):
+                    yield from create_settings_sidebar(TAB_CCP, self.app_config)
                     with Collapsible(title="Conversation Details", id="ccp-conversation-details-collapsible", collapsed=True):
                         yield Static("Title:", classes="sidebar-label")
                         yield Input(id="conv-char-title-input", placeholder="Conversation title...", classes="sidebar-input")
@@ -656,8 +666,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             #chat_window = Container(id=f"{TAB_CHAT}-window", classes="window")
             # if self._initial_tab_value != TAB_CHAT:
             #     chat_window.styles.display = False  # Hide if not the initial tab
-
+            ######################################
             # --- Notes Tab Window ---
+            ######################################
             # Ensure the initial display state is correct based on _initial_tab_value
             notes_window = Container(id=f"{TAB_NOTES}-window", classes="window")
             if self._initial_tab_value != TAB_NOTES:  # Use the stored initial value
@@ -681,13 +692,17 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 # Instantiate the right sidebar (ensure it has a unique ID for the watcher)
                 yield NotesSidebarRight(id="notes-sidebar-right")
 
-            # --- Logs Tab ---
-
+            ######################################
             # --- Media Tab Goes Here
+            ######################################
 
+            ######################################
             # ---- Search Tab ---
+            ######################################
 
+            ######################################
             # --- Ingest Content Window ---
+            ######################################
             ingest_window = Container(id=f"{TAB_INGEST}-window", classes="window")
             if self._initial_tab_value != TAB_INGEST:
                 ingest_window.styles.display = "none"
@@ -728,7 +743,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                         classes="ingest-view-area",
                     )
 
+            ######################################
             # --- Tools & Settings Window ---
+            ######################################
             tools_settings_window = Container(id=f"{TAB_TOOLS_SETTINGS}-window", classes="window")
             if self._initial_tab_value != TAB_TOOLS_SETTINGS:
                 tools_settings_window.styles.display = "none"
@@ -769,7 +786,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                         classes="ts-view-area",
                     )
 
+            ######################################
             # --- LLM Management Window ---
+            ######################################
             llm_window = Container(id=f"{TAB_LLM}-window", classes="window")
             if self._initial_tab_value != TAB_LLM:
                 llm_window.styles.display = "none"
@@ -818,17 +837,23 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                         classes="llm-view-area",
                     )
 
+            ######################################
             # --- Logs Window ---
+            ######################################
             with Container(id=f"{TAB_LOGS}-window", classes="window"):
                 yield RichLog(id="app-log-display", wrap=True, highlight=True, markup=True, auto_scroll=True)
                 yield Button("Copy All Logs to Clipboard", id="copy-logs-button", classes="logs-action-button")
 
+            ######################################
             # --- Stats Window (Placeholder) ---
+            ######################################
             with Container(id=f"{TAB_STATS}-window", classes="window"):
                 yield StatsScreen(
                     id="stats_screen_content")  # You can give the StatsScreen instance an ID if needed, or omit it
 
+            ######################################
             # --- Other Placeholder Windows ---
+            ######################################
             for tab_id_placeholder in ALL_TABS:
                 if tab_id_placeholder not in [TAB_CHAT, TAB_CCP, TAB_NOTES, TAB_INGEST, TAB_TOOLS_SETTINGS, TAB_LLM, TAB_LOGS, TAB_STATS]:  # Updated to TAB_CCP
                     with Container(id=f"{tab_id_placeholder}-window", classes="window placeholder-window"):
@@ -843,8 +868,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             prompt_editor_view = self.query_one("#ccp-prompt-editor-view")
 
             # Right pane elements
-            llm_settings_container_right = self.query_one("#ccp-right-pane-llm-settings-container")
             conv_details_collapsible_right = self.query_one("#ccp-conversation-details-collapsible", Collapsible)
+            prompt_details_collapsible_right = self.query_one("#ccp-prompt-details-collapsible", Collapsible)
 
             if new_view == "prompt_editor_view":
                 # Center Pane: Show Prompt Editor, Hide Conversation Messages
@@ -852,9 +877,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 prompt_editor_view.display = True
 
                 # Right Pane: Hide LLM Settings, Keep Conversation Details (can be collapsed)
-                llm_settings_container_right.display = False
                 conv_details_collapsible_right.display = True  # Ensure it's displayed
-                # conv_details_collapsible_right.collapsed = True # Optionally collapse it
+
+                conv_details_collapsible_right.collapsed = True  # Collapse conversation details
+                prompt_details_collapsible_right.collapsed = False  # Expand prompt details
 
                 # Focus an element in prompt editor
                 try:
@@ -868,9 +894,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 prompt_editor_view.display = False
 
                 # Right Pane: Show LLM Settings, Show and Expand Conversation Details
-                llm_settings_container_right.display = True
                 conv_details_collapsible_right.display = True
                 conv_details_collapsible_right.collapsed = False  # Expand when viewing conversation
+                prompt_details_collapsible_right.collapsed = True  # Collapse prompt details
 
                 # Potentially focus conversation search or title in the left/right pane
                 try:
@@ -884,9 +910,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             else:  # Default or unknown view (treat as conversation_details_view)
                 conversation_messages_view.display = True
                 prompt_editor_view.display = False
-                llm_settings_container_right.display = True
                 conv_details_collapsible_right.display = True
                 conv_details_collapsible_right.collapsed = False
+                prompt_details_collapsible_right.collapsed = True
                 loguru_logger.warning(
                     f"Unknown ccp_active_view: {new_view}, defaulting to conversation_details_view.")
 
@@ -1171,6 +1197,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         self.call_later(self._populate_chat_conversation_character_filter_select) # For Chat tab
         # Delegate CCP tab population to its handler module
         self.call_later(ccp_handlers.populate_ccp_character_select, self)
+        # When switching to CCP tab, and if its prompt editor is active, load prompt details.
+        # This is more complex as it depends on ccp_active_view.
+        # For now, let's assume prompt loading in CCP is handled by selecting from its list or "Create New".
+        # If you want to auto-load a prompt into CCP editor on tab switch, that needs more logic.
         self.call_later(ccp_handlers.populate_ccp_prompts_list_view, self)
         # Initial search/list for CCP might also be triggered if it's the default tab
         if self.current_tab == TAB_CCP:
@@ -1254,6 +1284,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         # Tab-specific actions on switch
         if new_tab == TAB_CHAT:
             # If chat tab becomes active, maybe re-focus chat input
+            # Also, populate its prompt list
+            self.call_later(chat_handlers.populate_chat_sidebar_prompts_list_view, self)
+            # Clear any previously selected prompt details in the chat sidebar
+            self.call_later(self._clear_chat_sidebar_prompt_display)
             try: self.query_one("#chat-input", TextArea).focus()
             except QueryError: pass
         elif new_tab == TAB_CCP:
@@ -1448,6 +1482,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 await chat_handlers.handle_chat_load_selected_button_pressed(self)
             else:
                 # This log now has more context if a button is truly unhandled
+                # New buttons for chat sidebar prompt copy
+                if button_id == "chat-sidebar-copy-system-prompt-button":
+                    await chat_handlers.handle_chat_sidebar_copy_system_prompt_button_pressed(self)
+                    return
+                elif button_id == "chat-sidebar-copy-user-prompt-button":
+                    await chat_handlers.handle_chat_sidebar_copy_user_prompt_button_pressed(self)
+                    return
                 self.loguru_logger.warning(
                     f"Unhandled button on CHAT tab -> ID: {button_id}, "
                     f"Label: '{button.label}', Classes: {button.classes}"
@@ -1581,6 +1622,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             await chat_handlers.handle_chat_conversation_search_bar_changed(self, event.value)
         elif input_id == "conv-char-search-input" and current_active_tab == TAB_CCP:
             await ccp_handlers.handle_ccp_conversation_search_input_changed(self, event.value)
+        elif input_id == "chat-sidebar-prompt-search-input" and current_active_tab == TAB_CHAT:
+            await chat_handlers.handle_chat_sidebar_prompt_search_input_changed(self, event.value)
+        elif input_id == "chat-sidebar-prompt-keyword-filter-input" and current_active_tab == TAB_CHAT:
+            await chat_handlers.handle_chat_sidebar_prompt_keyword_filter_input_changed(self, event.value)
         elif input_id == "ccp-prompt-search-input" and current_active_tab == TAB_CCP:
             await ccp_handlers.handle_ccp_prompt_search_input_changed(self, event.value)
         # Add more specific input handlers if needed, e.g., for title inputs if they need live validation/reaction
@@ -1588,13 +1633,25 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
         list_view_id = event.list_view.id
         current_active_tab = self.current_tab
+        item_details = f"Item prompt_id: {getattr(event.item, 'prompt_id', 'N/A')}, Item prompt_uuid: {getattr(event.item, 'prompt_uuid', 'N/A')}"
+        self.loguru_logger.info(
+            f"ListView.Selected: list_view_id='{list_view_id}', current_tab='{current_active_tab}', {item_details}"
+        )
 
         if list_view_id == "notes-list-view" and current_active_tab == TAB_NOTES:
+            self.loguru_logger.debug("Dispatching to notes_handlers.handle_notes_list_view_selected")
             await notes_handlers.handle_notes_list_view_selected(self, list_view_id, event.item)
         elif list_view_id == "ccp-prompts-listview" and current_active_tab == TAB_CCP:
+            self.loguru_logger.debug("Dispatching to ccp_handlers.handle_ccp_prompts_list_view_selected")
+            await ccp_handlers.handle_ccp_prompts_list_view_selected(self, list_view_id, event.item)
+        elif list_view_id == "chat-sidebar-prompts-listview" and current_active_tab == TAB_CHAT:
+            self.loguru_logger.debug("Dispatching to chat_handlers.handle_chat_sidebar_prompts_list_view_selected")
             await ccp_handlers.handle_ccp_prompts_list_view_selected(self, list_view_id, event.item)
         # Note: chat-conversation-search-results-list and conv-char-search-results-list selections
         # are typically handled by their respective "Load Selected" buttons rather than direct on_list_view_selected.
+        else:
+            self.loguru_logger.warning(
+            f"No specific handler for ListView.Selected from list_view_id='{list_view_id}' on tab='{current_active_tab}'")
 
     async def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         checkbox_id = event.checkbox.id
@@ -1634,6 +1691,31 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             if url: return url
             else: logging.warning(f"URL key '{endpoint_key}' for provider '{provider}' missing in config [api_endpoints].")
         return None
+
+    # --- Watchers for chat sidebar prompt display ---
+    def watch_chat_sidebar_selected_prompt_system(self, new_system_prompt: Optional[str]) -> None:
+        try:
+            self.query_one("#chat-sidebar-prompt-system-display", TextArea).load_text(new_system_prompt or "")
+        except QueryError:
+            self.loguru_logger.error("Chat sidebar system prompt display area not found.")
+
+    def watch_chat_sidebar_selected_prompt_user(self, new_user_prompt: Optional[str]) -> None:
+        try:
+            self.query_one("#chat-sidebar-prompt-user-display", TextArea).load_text(new_user_prompt or "")
+        except QueryError:
+            self.loguru_logger.error("Chat sidebar user prompt display area not found.")
+
+    def _clear_chat_sidebar_prompt_display(self) -> None:
+        """Clears the prompt display TextAreas in the chat sidebar."""
+        self.loguru_logger.debug("Clearing chat sidebar prompt display areas.")
+        self.chat_sidebar_selected_prompt_id = None
+        self.chat_sidebar_selected_prompt_system = None # Triggers watcher to clear TextArea
+        self.chat_sidebar_selected_prompt_user = None   # Triggers watcher to clear TextArea
+        # Also clear the list and search inputs if desired when clearing display
+        try:
+            self.query_one("#chat-sidebar-prompts-listview", ListView).clear()
+        except QueryError:
+            pass # If not found, it's fine
 
 
     def watch_chat_api_provider_value(self, new_value: Optional[str]) -> None:

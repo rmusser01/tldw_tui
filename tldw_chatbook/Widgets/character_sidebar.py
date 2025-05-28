@@ -78,9 +78,33 @@ def create_character_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tru
         # ===================================================================
         # Prompts (only for chat tab)
         # ===================================================================
-        if id_prefix == "chat":
-            with Collapsible(title="Prompts", collapsed=True):
-                yield Static("Prompt management UI placeholder")
+        if id_prefix == "chat": # This is the outer condition for adding the Prompts section
+            with Collapsible(title="Prompts", collapsed=True, id=f"{id_prefix}-sidebar-prompts-collapsible"): # START OF COLLAPSIBLE
+                # ALL THE FOLLOWING YIELDS MUST BE INDENTED UNDER THIS 'with'
+                yield Label("Search Prompts:", classes="sidebar-label")
+                yield Input(
+                    id=f"{id_prefix}-sidebar-prompt-search-input", # e.g., chat-sidebar-prompt-search-input
+                    placeholder="Search name/details...",
+                    classes="sidebar-input"
+                )
+                yield Label("Filter by Keywords (comma-sep):", classes="sidebar-label")
+                yield Input(
+                    id=f"{id_prefix}-sidebar-prompt-keyword-filter-input", # e.g., chat-sidebar-prompt-keyword-filter-input
+                    placeholder="e.g., writing, technical",
+                    classes="sidebar-input"
+                )
+                yield ListView(id=f"{id_prefix}-sidebar-prompts-listview") # e.g., chat-sidebar-prompts-listview
+
+                yield Label("Selected Prompt - System:", classes="sidebar-label")
+                yield TextArea(
+                    id=f"{id_prefix}-sidebar-prompt-system-display", # e.g., chat-sidebar-prompt-system-display
+                    read_only=True, classes="sidebar-textarea ccp-prompt-textarea",
+                )
+                yield Button("Copy System", id=f"{id_prefix}-sidebar-copy-system-prompt-button", classes="sidebar-button") # e.g., chat-sidebar-copy-system-prompt-button
+
+                yield Label("Selected Prompt - User:", classes="sidebar-label")
+                yield TextArea(id=f"{id_prefix}-sidebar-prompt-user-display", read_only=True, classes="sidebar-textarea ccp-prompt-textarea") # e.g., chat-sidebar-prompt-user-display
+                yield Button("Copy User", id=f"{id_prefix}-sidebar-copy-user-prompt-button", classes="sidebar-button") # e.g., chat-sidebar-copy-user-prompt-button
 
         # ===================================================================
         # Saved Conversations (only for chat tab)
