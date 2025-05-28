@@ -461,8 +461,55 @@ MetricsScreen Label.-info-message {
     margin-top: 1; /* Ensure it has some space if it's after keywords */
     /* width: 100%; */
 }
+
+/* Chat Sidebar - Prompts Section */
+#chat-prompts-collapsible Input,
+#chat-prompts-collapsible ListView,
+#chat-prompts-collapsible Button {
+    margin-bottom: 1; /* Consistent spacing */
+}
+#chat-prompt-list-view { /* ID for the prompt list in chat sidebar */
+    height: 8; /* Adjust as needed */
+    border: round $surface;
+    margin-bottom: 1;
+}
+.loaded-prompt-area { /* Container for loaded prompt details in chat sidebar */
+    margin-top: 1;
+    padding: 0 1;        /* Padding for content inside */
+    background: $surface; /* Slightly different background to group elements */
+    /* To get rounded corners for the area itself, apply a border style */
+    border: round $primary-background-lighten-1; /* Example: round border with a light color */
+                                               /* Or use 'round $surface' if you want it less distinct */
+                                               /* Or 'none' if you only want background and no explicit border */
+}
 /* End of Character Sidebar Specific Styles */
 
+.sidebar-static-display { /* For title and keywords static display in sidebars */
+    width: 100%;
+    padding: 1; /* Add internal padding */
+    margin-bottom: 1;
+    height: auto; /* Allow multiple lines for keywords */
+    border: round $surface-darken-1;
+    background: $panel; /* Background distinct from loaded-prompt-area */
+    color: $text;
+}
+.loaded-prompt-textarea { /* For system/user prompt display TextAreas in chat sidebar */
+    height: 7; /* Adjust as needed, or use auto with max-height */
+    width: 100%;
+    margin-bottom: 1;
+    /* border: round $surface; Re-apply if needed, but sidebar-textarea should cover */
+}
+
+.copy-prompt-button { /* For copy buttons in chat sidebar prompt display */
+    width: 100%;
+    /* margin-top: 0; Default margin-bottom is 1 from sidebar-button */
+}
+
+#chat-loaded-prompt-display-area.hidden { /* Class to hide the loaded prompt display area */
+    display: none !important;
+}
+
+/* --- Prompts Sidebar Vertical --- */
 
 /* --- Prompts Sidebar Vertical --- */
 .ccp-prompt-textarea { /* Specific class for prompt textareas if needed */

@@ -6,7 +6,7 @@ import logging
 import json
 import os
 from datetime import datetime
-from typing import TYPE_CHECKING, List, Dict, Any, Optional
+from typing import TYPE_CHECKING, List, Dict, Any, Optional, Union
 #
 # 3rd-Party Imports
 from loguru import logger as loguru_logger
@@ -17,6 +17,13 @@ from textual.widgets import (
 )
 from textual.containers import VerticalScroll
 from textual.css.query import QueryError
+<<<<<<< Updated upstream
+=======
+
+from ..DB.Prompts_DB import DatabaseError
+from ..Prompt_Management.Prompts_Interop import fetch_prompt_details, search_prompts
+from ..Utils.Utils import safe_float, safe_int
+>>>>>>> Stashed changes
 #
 # Local Imports
 from ..Utils.Utils import safe_float, safe_int
@@ -1123,6 +1130,7 @@ async def load_branched_conversation_history_ui(app: 'TldwCli', target_conversat
         f"Loaded {len(all_messages_to_display)} messages for conversation {target_conversation_id} (including history).")
 
 
+<<<<<<< Updated upstream
 # --- Chat Sidebar Prompt Handlers ---
 
 async def populate_chat_sidebar_prompts_list_view(app: 'TldwCli', search_term: Optional[str] = None,
@@ -1180,10 +1188,41 @@ async def populate_chat_sidebar_prompts_list_view(app: 'TldwCli', search_term: O
 
         if not results:
             await list_view_prompt.append(ListItem(Label("No prompts found.")))
+=======
+async def populate_chat_sidebar_prompts_list(app: 'TldwCli', search_term: Optional[str] = None) -> None:
+    """Populates the prompts list view in the Chat tab's right sidebar."""
+    loguru_logger.info(f"Populating chat sidebar prompts list. Search: '{search_term}'")
+    if not app.prompts_service_initialized:
+        try:
+            list_view = app.query_one("#chat-prompt-list-view", ListView)
+            await list_view.clear()
+            await list_view.append(ListItem(Label("Prompts service unavailable.")))
+        except QueryError:
+            loguru_logger.error("Failed to find #chat-prompt-list-view to show service error.")
+        return
+
+    try:
+        list_view = app.query_one("#chat-prompt-list-view", ListView)
+        await list_view.clear()
+
+        # search_prompts can handle empty search_query by returning all (or use list_prompts for empty)
+        # Assuming search_prompts returns (results, total_count)
+        results_tuple = search_prompts(
+            search_query=search_term.strip() if search_term else None,
+            search_fields=["name", "details", "keywords"],  # Adjust fields as needed
+            page=1, results_per_page=50,  # Reasonable limit for a sidebar list
+            include_deleted=False
+        )
+        results: List[Dict[str, Any]] = results_tuple[0] if results_tuple else []
+
+        if not results:
+            await list_view.append(ListItem(Label("No prompts found.")))
+>>>>>>> Stashed changes
         else:
             for prompt_data in results:
                 display_name = prompt_data.get('name', 'Unnamed Prompt')
                 item = ListItem(Label(display_name))
+<<<<<<< Updated upstream
                 item.prompt_id = prompt_data.get('id')  # Store ID for fetching details
                 item.prompt_uuid = prompt_data.get('uuid')
                 await list_view_prompt.append(item)
@@ -1267,6 +1306,119 @@ async def handle_chat_sidebar_copy_user_prompt_button_pressed(app: 'TldwCli') ->
         app.notify("User prompt copied to clipboard!", severity="information", timeout=2)
     else:
         app.notify("No user prompt selected or available to copy.", severity="warning")
+=======
+                # Store both ID and UUID if available, prioritize ID for fetching
+                item.prompt_id = prompt_data.get('id')
+                item.prompt_uuid = prompt_data.get('uuid')
+                await list_view.append(item)
+        loguru_logger.debug(f"Chat sidebar prompts list populated with {len(results)} items.")
+    except QueryError as e_query:
+        loguru_logger.error(f"UI component error populating chat sidebar prompts list: {e_query}", exc_info=True)
+    except (DatabaseError, RuntimeError) as e_prompt_service:
+        loguru_logger.error(f"Error populating chat sidebar prompts list: {e_prompt_service}", exc_info=True)
+        try:
+            list_view_err = app.query_one("#chat-prompt-list-view", ListView)
+            await list_view_err.clear()
+            await list_view_err.append(ListItem(Label(f"Error: {type(e_prompt_service).__name__}")))
+        except QueryError:
+            pass  # Already logged
+    except Exception as e_unexp:
+        loguru_logger.error(f"Unexpected error populating chat sidebar prompts list: {e_unexp}", exc_info=True)
+
+
+async def handle_chat_sidebar_prompt_search_input_changed(app: 'TldwCli', search_value: str) -> None:
+    """Handles input changes in the chat sidebar prompt search bar with debouncing."""
+    loguru_logger.debug(f"Chat sidebar prompt search input changed: '{search_value}'")
+    if app._chat_sidebar_prompt_search_timer:
+        app._chat_sidebar_prompt_search_timer.stop()
+    app._chat_sidebar_prompt_search_timer = app.set_timer(
+        0.5,  # Debounce time
+        lambda: populate_chat_sidebar_prompts_list(app, search_value.strip())
+    )
+
+
+async def handle_chat_load_selected_sidebar_prompt_button_pressed(app: 'TldwCli') -> None:
+    """Handles loading a selected prompt in the Chat tab's sidebar."""
+    loguru_logger.info("Load selected prompt button (chat sidebar) pressed.")
+    if not app.prompts_service_initialized:
+        app.notify("Prompts service not available.", severity="error")
+        return
+
+    try:
+        list_view = app.query_one("#chat-prompt-list-view", ListView)
+        selected_item = list_view.highlighted_child
+
+        if not selected_item or not (hasattr(selected_item, 'prompt_id') or hasattr(selected_item, 'prompt_uuid')):
+            app.notify("No prompt selected to load.", severity="warning")
+            return
+
+        prompt_id_to_load = getattr(selected_item, 'prompt_id', None)
+        prompt_uuid_to_load = getattr(selected_item, 'prompt_uuid', None)
+
+        identifier_to_fetch: Union[
+            int, str, None] = prompt_id_to_load if prompt_id_to_load is not None else prompt_uuid_to_load
+
+        if identifier_to_fetch is None:
+            app.notify("Selected prompt has no valid ID or UUID.", severity="error")
+            loguru_logger.error("Cannot load prompt from chat sidebar: identifier_to_fetch is None.")
+            # Reset display if needed
+            app.chat_sidebar_prompt_display_visible = False
+            app.chat_sidebar_loaded_prompt_id = None
+            app.chat_sidebar_loaded_prompt_title_text = ""
+            app.chat_sidebar_loaded_prompt_system_text = ""
+            app.chat_sidebar_loaded_prompt_user_text = ""
+            app.chat_sidebar_loaded_prompt_keywords_text = ""
+            return
+
+        loguru_logger.info(f"Attempting to load prompt (ID/UUID: {identifier_to_fetch}) into chat sidebar display.")
+        prompt_details = fetch_prompt_details(identifier_to_fetch)
+
+        if prompt_details:
+            app.chat_sidebar_loaded_prompt_id = identifier_to_fetch
+            app.chat_sidebar_loaded_prompt_title_text = prompt_details.get('name', 'N/A')
+            app.chat_sidebar_loaded_prompt_system_text = prompt_details.get('system_prompt', '')
+            app.chat_sidebar_loaded_prompt_user_text = prompt_details.get('user_prompt', '')
+            keywords_list = prompt_details.get('keywords', [])
+            app.chat_sidebar_loaded_prompt_keywords_text = ", ".join(keywords_list) if keywords_list else "None"
+
+            app.chat_sidebar_prompt_display_visible = True  # This will trigger watchers to update UI
+            app.notify(f"Prompt '{app.chat_sidebar_loaded_prompt_title_text}' loaded into sidebar.", severity="info")
+        else:
+            app.notify(f"Failed to load details for prompt (ID/UUID: {identifier_to_fetch}).", severity="error")
+            app.chat_sidebar_prompt_display_visible = False  # Hide display if load fails
+
+    except QueryError as e_query:
+        loguru_logger.error(f"UI component error loading prompt to chat sidebar: {e_query}", exc_info=True)
+        app.notify("UI Error: Could not find prompt list or display.", severity="error")
+    except (DatabaseError, RuntimeError) as e_db:
+        loguru_logger.error(f"Database error loading prompt to chat sidebar: {e_db}", exc_info=True)
+        app.notify("Database Error: Could not load prompt.", severity="error")
+    except Exception as e_unexp:
+        loguru_logger.error(f"Unexpected error loading prompt to chat sidebar: {e_unexp}", exc_info=True)
+        app.notify("Unexpected Error: Could not load prompt.", severity="error")
+
+
+async def handle_chat_copy_system_prompt_button_pressed(app: 'TldwCli') -> None:
+    """Copies the system prompt from the chat sidebar display to clipboard."""
+    loguru_logger.info("Copy System Prompt (chat sidebar) button pressed.")
+    prompt_text = app.chat_sidebar_loaded_prompt_system_text
+    if prompt_text:
+        app.copy_to_clipboard(prompt_text)
+        app.notify("System prompt copied to clipboard!", severity="info", timeout=2)
+    else:
+        app.notify("No system prompt text to copy.", severity="warning", timeout=2)
+
+
+async def handle_chat_copy_user_prompt_button_pressed(app: 'TldwCli') -> None:
+    """Copies the user prompt from the chat sidebar display to clipboard."""
+    loguru_logger.info("Copy User Prompt (chat sidebar) button pressed.")
+    prompt_text = app.chat_sidebar_loaded_prompt_user_text
+    if prompt_text:
+        app.copy_to_clipboard(prompt_text)
+        app.notify("User prompt copied to clipboard!", severity="info", timeout=2)
+    else:
+        app.notify("No user prompt text to copy.", severity="warning", timeout=2)
+>>>>>>> Stashed changes
 
 #
 # End of chat_events.py

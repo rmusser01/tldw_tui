@@ -188,6 +188,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # Reactive variable for current conversation loaded in the Conversations, Characters & Prompts tab
     current_conv_char_tab_conversation_id: reactive[Optional[str]] = reactive(None)
 
+    # For Chat Sidebar Prompts section
+    chat_sidebar_loaded_prompt_id: reactive[Optional[Union[int, str]]] = reactive(None)
+    chat_sidebar_loaded_prompt_title_text: reactive[str] = reactive("")
+    chat_sidebar_loaded_prompt_system_text: reactive[str] = reactive("")
+    chat_sidebar_loaded_prompt_user_text: reactive[str] = reactive("")
+    chat_sidebar_loaded_prompt_keywords_text: reactive[str] = reactive("")
+    chat_sidebar_prompt_display_visible: reactive[bool] = reactive(False, layout=True)
+
     # Prompts
     current_prompt_id: reactive[Optional[int]] = reactive(None)
     current_prompt_uuid: reactive[Optional[str]] = reactive(None)
@@ -215,11 +223,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     _initial_llm_view: Optional[str] = "llm-view-llama-cpp"
 
     # De-Bouncers
+    _chat_sidebar_prompt_search_timer: Optional[Timer] = None
     _conv_char_search_timer: Optional[Timer] = None
     _conversation_search_timer: Optional[Timer] = None
     _notes_search_timer: Optional[Timer] = None
     _chat_sidebar_prompt_search_timer: Optional[Timer] = None
     _chat_sidebar_prompt_keyword_filter_timer: Optional[Timer] = None
+
 
     # Make API_IMPORTS_SUCCESSFUL accessible if needed by old methods or directly
     API_IMPORTS_SUCCESSFUL = API_IMPORTS_SUCCESSFUL
@@ -1009,6 +1019,36 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self._clear_prompt_fields()
             self.current_prompt_id = None  # Reset reactives
 
+    def _initialize_chat_sidebar_prompt_display(self) -> None:
+        """
+        Resets the chat sidebar's loaded prompt display area to its initial state.
+        Clears reactive variables and ensures the display area is hidden.
+        """
+        self.loguru_logger.debug("Initializing/Resetting chat sidebar prompt display state.")
+
+        # Clear reactive variables that hold the loaded prompt's data
+        self.chat_sidebar_loaded_prompt_id = None
+        self.chat_sidebar_loaded_prompt_title_text = ""
+        self.chat_sidebar_loaded_prompt_system_text = ""
+        self.chat_sidebar_loaded_prompt_user_text = ""
+        self.chat_sidebar_loaded_prompt_keywords_text = ""
+
+        # Set the visibility reactive to False. This will trigger the
+        # watch_chat_sidebar_prompt_display_visible watcher, which in turn
+        # will hide the UI elements and disable copy buttons.
+        self.chat_sidebar_prompt_display_visible = False
+
+        # Optionally, clear the list selection if desired, though loading a new prompt
+        # usually happens after a selection. If you want to clear selection on tab switch
+        # or similar, you could do it here.
+        # try:
+        #     prompt_list_view = self.query_one("#chat-prompt-list-view", ListView)
+        #     prompt_list_view.index = None # Deselects any highlighted item
+        # except QueryError:
+        #     self.loguru_logger.warning("Could not find #chat-prompt-list-view to clear selection during init.")
+        # except Exception as e:
+        #     self.loguru_logger.error(f"Error clearing selection in #chat-prompt-list-view: {e}")
+
     def watch_ingest_active_view(self, old_view: Optional[str], new_view: Optional[str]) -> None:
         self.loguru_logger.debug(f"Ingest active view changing from '{old_view}' to: '{new_view}'")
 
@@ -1202,6 +1242,12 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         # For now, let's assume prompt loading in CCP is handled by selecting from its list or "Create New".
         # If you want to auto-load a prompt into CCP editor on tab switch, that needs more logic.
         self.call_later(ccp_handlers.populate_ccp_prompts_list_view, self)
+
+        # Initialize chat sidebar prompts
+        self.call_later(chat_handlers.populate_chat_sidebar_prompts_list, self)  # Initial population
+        self.call_later(
+            self._initialize_chat_sidebar_prompt_display)  # Ensure display area is correctly hidden initially
+
         # Initial search/list for CCP might also be triggered if it's the default tab
         if self.current_tab == TAB_CCP:
             self.call_later(ccp_handlers.perform_ccp_conversation_search, self)
@@ -1290,6 +1336,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.call_later(self._clear_chat_sidebar_prompt_display)
             try: self.query_one("#chat-input", TextArea).focus()
             except QueryError: pass
+            # Populate/refresh chat sidebar prompts list when switching to chat tab
+            self.call_later(chat_handlers.populate_chat_sidebar_prompts_list, self)
+            # Ensure the loaded prompt display is correctly initialized (e.g., hidden if no prompt loaded)
+            # This might be redundant if _initialize_chat_sidebar_prompt_display handles it well,
+            # but explicit reset ensures state consistency when tab is re-entered.
+            if not self.chat_sidebar_loaded_prompt_id:
+                 self.call_later(self._initialize_chat_sidebar_prompt_display)
         elif new_tab == TAB_CCP:
             # Initial population for CCP tab when switched to
             self.call_later(ccp_handlers.populate_ccp_character_select, self)
@@ -1319,6 +1372,67 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     f"Switched to LLM Management tab, activating initial view: {self._initial_llm_view}")
                 self.call_later(setattr, self, 'llm_active_view', self._initial_llm_view)
 
+        # --- Watchers for chat sidebar prompt display ---
+        def watch_chat_sidebar_prompt_display_visible(self, visible: bool) -> None:
+            self.loguru_logger.debug(f"Watcher: chat_sidebar_prompt_display_visible set to {visible}")
+            try:
+                display_area = self.query_one("#chat-loaded-prompt-display-area")
+                copy_system_button = self.query_one("#chat-copy-system-prompt-button", Button)
+                copy_user_button = self.query_one("#chat-copy-user-prompt-button", Button)
+
+                if visible:
+                    display_area.remove_class("hidden")
+                    # Enable copy buttons only if there's text to copy
+                    copy_system_button.disabled = not bool(self.chat_sidebar_loaded_prompt_system_text)
+                    copy_user_button.disabled = not bool(self.chat_sidebar_loaded_prompt_user_text)
+                else:
+                    display_area.add_class("hidden")
+                    copy_system_button.disabled = True
+                    copy_user_button.disabled = True
+            except QueryError as e:
+                self.loguru_logger.error(f"UI component not found in watch_chat_sidebar_prompt_display_visible: {e}")
+            except Exception as e_watch:
+                self.loguru_logger.error(f"Error in watch_chat_sidebar_prompt_display_visible: {e_watch}",
+                                         exc_info=True)
+
+        def watch_chat_sidebar_loaded_prompt_title_text(self, new_title: str) -> None:
+            try:
+                self.query_one("#chat-loaded-prompt-title-static", Static).update(new_title or "N/A")
+            except QueryError:
+                pass
+
+        def watch_chat_sidebar_loaded_prompt_system_text(self, new_system_prompt: str) -> None:
+            try:
+                self.query_one("#chat-loaded-prompt-system-text", TextArea).text = new_system_prompt
+                # Update button disabled state based on new text, only if display area is visible
+                if self.chat_sidebar_prompt_display_visible:
+                    self.query_one("#chat-copy-system-prompt-button", Button).disabled = not bool(new_system_prompt)
+            except QueryError:
+                pass
+
+        def watch_chat_sidebar_loaded_prompt_user_text(self, new_user_prompt: str) -> None:
+            try:
+                self.query_one("#chat-loaded-prompt-user-text", TextArea).text = new_user_prompt
+                if self.chat_sidebar_prompt_display_visible:
+                    self.query_one("#chat-copy-user-prompt-button", Button).disabled = not bool(new_user_prompt)
+            except QueryError:
+                pass
+
+        def watch_chat_sidebar_loaded_prompt_keywords_text(self, new_keywords: str) -> None:
+            try:
+                self.query_one("#chat-loaded-prompt-keywords-static", Static).update(new_keywords or "None")
+            except QueryError:
+                pass
+
+        def _initialize_chat_sidebar_prompt_display(self) -> None:
+            """Ensures the loaded prompt display area is initially hidden and reactives cleared."""
+            self.loguru_logger.debug("Initializing chat sidebar prompt display state.")
+            self.chat_sidebar_loaded_prompt_id = None
+            self.chat_sidebar_loaded_prompt_title_text = ""
+            self.chat_sidebar_loaded_prompt_system_text = ""
+            self.chat_sidebar_loaded_prompt_user_text = ""
+            self.chat_sidebar_loaded_prompt_keywords_text = ""
+            self.chat_sidebar_prompt_display_visible = False  # This will trigger the watcher
 
     # Watchers for sidebar collapsed states (keep as is)
     def watch_chat_sidebar_collapsed(self, collapsed: bool) -> None:
@@ -1480,6 +1594,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 await chat_handlers.handle_chat_save_details_button_pressed(self)
             elif button_id == "chat-conversation-load-selected-button":
                 await chat_handlers.handle_chat_load_selected_button_pressed(self)
+                # --- Chat Sidebar Prompt Buttons ---
+            elif button_id == "chat-prompt-load-selected-button":
+                await chat_handlers.handle_chat_load_selected_sidebar_prompt_button_pressed(self)
+            elif button_id == "chat-copy-system-prompt-button":
+                await chat_handlers.handle_chat_copy_system_prompt_button_pressed(self)
+            elif button_id == "chat-copy-user-prompt-button":
+                await chat_handlers.handle_chat_copy_user_prompt_button_pressed(self)
             else:
                 # This log now has more context if a button is truly unhandled
                 # New buttons for chat sidebar prompt copy
@@ -1615,17 +1736,25 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     async def on_input_changed(self, event: Input.Changed) -> None:
         input_id = event.input.id
         current_active_tab = self.current_tab
-
-        if input_id == "notes-search-input" and current_active_tab == TAB_NOTES:
+        # --- Chat Sidebar Prompt Search ---
+        if input_id == "chat-prompt-search-input" and current_active_tab == TAB_CHAT:
+            await chat_handlers.handle_chat_sidebar_prompt_search_input_changed(self, event.value)
+        # --- Notes Search ---
+        elif input_id == "notes-search-input" and current_active_tab == TAB_NOTES:
             await notes_handlers.handle_notes_search_input_changed(self, event.value)
+        # --- Chat Sidebar Conversation Search ---
         elif input_id == "chat-conversation-search-bar" and current_active_tab == TAB_CHAT:
             await chat_handlers.handle_chat_conversation_search_bar_changed(self, event.value)
         elif input_id == "conv-char-search-input" and current_active_tab == TAB_CCP:
             await ccp_handlers.handle_ccp_conversation_search_input_changed(self, event.value)
+<<<<<<< Updated upstream
         elif input_id == "chat-sidebar-prompt-search-input" and current_active_tab == TAB_CHAT:
             await chat_handlers.handle_chat_sidebar_prompt_search_input_changed(self, event.value)
         elif input_id == "chat-sidebar-prompt-keyword-filter-input" and current_active_tab == TAB_CHAT:
             await chat_handlers.handle_chat_sidebar_prompt_keyword_filter_input_changed(self, event.value)
+=======
+        # --- CCP Prompt Search ---
+>>>>>>> Stashed changes
         elif input_id == "ccp-prompt-search-input" and current_active_tab == TAB_CCP:
             await ccp_handlers.handle_ccp_prompt_search_input_changed(self, event.value)
         # Add more specific input handlers if needed, e.g., for title inputs if they need live validation/reaction
