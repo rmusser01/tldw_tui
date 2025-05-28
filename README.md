@@ -4,7 +4,7 @@ A Textual TUI for interacting with various LLM APIs, managing conversation histo
 
 Current status: Working/In-Progress
 
-![Screenshot](https://raw.githubusercontent.com/rmusser01/tldw_chatbook/main/static/PoC-Frontpage.png)
+![Screenshot]([https://raw.githubusercontent.com/rmusser01/tldw_chatbook/main/static/PoC-Frontpage.png](https://github.com/rmusser01/tldw_chatbook/blob/main/static/PoC-Frontpage.PNG?raw=true))
 
 ## Features
 - **Current Features:**
