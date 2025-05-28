@@ -7,6 +7,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Any, List, Dict, Union
+
+import yaml
 #
 # 3rd-Party Imports
 from loguru import logger as loguru_logger
@@ -32,10 +34,6 @@ if TYPE_CHECKING:
 #
 # Functions:
 
-########################################################################################################################
-#
-# Helper Functions (specific to CCP tab logic, moved from app.py)
-#
 ########################################################################################################################
 
 ########################################################################################################################
@@ -768,6 +766,147 @@ async def handle_ccp_prompts_list_view_selected(app: 'TldwCli', list_view_id: st
         await load_ccp_prompt_for_editing(app, prompt_id=prompt_id_to_load, prompt_uuid=prompt_uuid_to_load)
     else:
         logger.debug("CCP Prompts ListView selection was empty or item lacked ID/UUID.")
+
+
+########################################################################################################################
+#
+# Event Handlers for Conversation Import
+#
+########################################################################################################################
+async def _conversation_import_callback(app: 'TldwCli', selected_path: Optional[Path]) -> None:
+    logger = getattr(app, 'loguru_logger', logging)
+    if selected_path:
+        logger.info(f"Conversation import selected: {selected_path}")
+        if not app.notes_service:
+            app.notify("Database service not available.", severity="error")
+            logger.error("Notes service not available for conversation import.")
+            return
+
+        db = app.notes_service._get_db(app.notes_user_id)
+        try:
+            # ccl.load_chat_history_from_file_and_save_to_db expects a string path or BytesIO
+            # It returns (conversation_id, character_id)
+            conv_id, _ = ccl.load_chat_history_from_file_and_save_to_db(
+                db,
+                str(selected_path),
+                user_name_for_placeholders=app.notes_user_id # Or a more appropriate placeholder
+            )
+            if conv_id:
+                app.notify(f"Conversation imported successfully (ID: {conv_id}).", severity="information")
+                await perform_ccp_conversation_search(app) # Refresh conversation list
+            else:
+                app.notify("Failed to import conversation. Check logs.", severity="error")
+        except Exception as e:
+            app.notify(f"Error importing conversation: {type(e).__name__}", severity="error", timeout=6)
+            logger.error(f"Error importing conversation from '{selected_path}': {e}", exc_info=True)
+    else:
+        logger.info("Conversation import cancelled.")
+        app.notify("Conversation import cancelled.", severity="information", timeout=2)
+
+async def handle_ccp_import_conversation_button_pressed(app: 'TldwCli') -> None:
+    logger = getattr(app, 'loguru_logger', logging)
+    logger.info("CCP Import Conversation button pressed.")
+
+    defined_filters = Filters(
+        ("Chat Log (JSON)", lambda p: p.suffix.lower() == ".json"),
+        ("All files (*.*)", lambda p: True)
+    )
+    await app.push_screen(
+        FileOpen(location=str(Path.home()), title="Select Conversation File", filters=defined_filters),
+        callback=lambda path: _conversation_import_callback(app, path))
+
+########################################################################################################################
+#
+# Event Handlers for Prompt Import
+#
+########################################################################################################################
+def _parse_prompt_from_file_content(file_content_str: str) -> Optional[Dict[str, Any]]:
+    """Parses prompt data from JSON or YAML string content."""
+    if not file_content_str:
+        return None
+    try:
+        # Try JSON first
+        data = json.loads(file_content_str)
+        loguru_logger.debug("Parsed prompt file content as JSON.")
+    except json.JSONDecodeError:
+        try:
+            # Fallback to YAML
+            data = yaml.safe_load(file_content_str)
+            loguru_logger.debug("Parsed prompt file content as YAML.")
+        except yaml.YAMLError as e_yaml:
+            loguru_logger.error(f"Failed to parse prompt file content as YAML: {e_yaml}")
+            return None
+        except Exception as e_yaml_other: # Catch other potential errors from yaml.safe_load
+            loguru_logger.error(f"Unexpected error parsing prompt file as YAML: {e_yaml_other}", exc_info=True)
+            return None
+    except Exception as e_json_other: # Catch other potential errors from json.loads
+        loguru_logger.error(f"Unexpected error parsing prompt file as JSON: {e_json_other}", exc_info=True)
+        return None
+
+    if not isinstance(data, dict) or "name" not in data: # Basic validation
+        loguru_logger.error("Parsed prompt data is not a dictionary or missing 'name' field.")
+        return None
+    return data
+
+async def _prompt_import_callback(app: 'TldwCli', selected_path: Optional[Path]) -> None:
+    logger = getattr(app, 'loguru_logger', logging)
+    if selected_path:
+        logger.info(f"Prompt import selected: {selected_path}")
+        if not app.prompts_service_initialized:
+            app.notify("Prompts service not available.", severity="error")
+            return
+
+        try:
+            with open(selected_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            prompt_data = _parse_prompt_from_file_content(content)
+            if not prompt_data:
+                app.notify("Failed to parse prompt file. Invalid format or missing 'name'.", severity="error", timeout=7)
+                return
+
+            # prompts_interop.add_prompt expects individual arguments.
+            # We need to extract them from the prompt_data dictionary.
+            # It also returns (id, uuid, message_str)
+            prompt_id, prompt_uuid, msg = prompts_interop.add_prompt(
+                name=prompt_data.get("name", "Unnamed Prompt"), # name is required by _parse_prompt...
+                author=prompt_data.get("author"),
+                details=prompt_data.get("details"),
+                system_prompt=prompt_data.get("system_prompt"),
+                user_prompt=prompt_data.get("user_prompt"),
+                keywords=prompt_data.get("keywords"), # Expects List[str] or None
+                overwrite=False # Default to not overwriting, or make configurable
+            )
+
+            if prompt_id is not None or prompt_uuid is not None : # Check if save was successful (id or uuid exists)
+                app.notify(f"Prompt imported: {msg}", severity="information")
+                await populate_ccp_prompts_list_view(app) # Refresh prompt list
+            else:
+                app.notify(f"Failed to import prompt: {msg}", severity="error")
+        except FileNotFoundError:
+            app.notify(f"Prompt file not found: {selected_path}", severity="error")
+            logger.error(f"Prompt file not found: {selected_path}")
+        except Exception as e:
+            app.notify(f"Error importing prompt: {type(e).__name__}", severity="error", timeout=6)
+            logger.error(f"Error importing prompt from '{selected_path}': {e}", exc_info=True)
+    else:
+        logger.info("Prompt import cancelled.")
+        app.notify("Prompt import cancelled.", severity="information", timeout=2)
+
+async def handle_ccp_import_prompt_button_pressed(app: 'TldwCli') -> None:
+    logger = getattr(app, 'loguru_logger', logging)
+    logger.info("CCP Import Prompt button pressed.")
+
+    defined_filters = Filters(
+        ("Prompt files (JSON, YAML)", lambda p: p.suffix.lower() in (".json", ".yaml", ".yml")),
+        ("JSON files (*.json)", lambda p: p.suffix.lower() == ".json"),
+        ("YAML files (*.yaml, *.yml)", lambda p: p.suffix.lower() in (".yaml", ".yml")),
+        ("All files (*.*)", lambda p: True)
+    )
+    await app.push_screen(FileOpen(location=str(Path.home()), title="Select Prompt File", filters=defined_filters),
+                          callback=lambda path: _prompt_import_callback(app, path))
+
+########################################################################################################################
 
 #
 # End of conv_char_events.py

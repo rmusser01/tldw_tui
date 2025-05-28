@@ -542,11 +542,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                                      classes="sidebar-button")
                         yield Select([], prompt="Select Character...", allow_blank=True,id="conv-char-character-select")
                     with Collapsible(title="Conversations", id="conv-char-conversations-collapsible"):
+                        yield Button("Import Conversation", id="ccp-import-conversation-button",
+                                     classes="sidebar-button")
                         yield Input(id="conv-char-search-input", placeholder="Search conversations...", classes="sidebar-input")
                         yield Button("Search", id="conv-char-conversation-search-button", classes="sidebar-button")
                         yield ListView(id="conv-char-search-results-list")
                         yield Button("Load Selected", id="conv-char-load-button", classes="sidebar-button")
                     with Collapsible(title="Prompts", id="ccp-prompts-collapsible"):
+                        yield Button("Import Prompt", id="ccp-import-prompt-button", classes="sidebar-button")
                         yield Button("Create New Prompt", id="ccp-prompt-create-new-button", classes="sidebar-button")
                         yield Input(id="ccp-prompt-search-input", placeholder="Search prompts...", classes="sidebar-input")
                         yield ListView(id="ccp-prompts-listview", classes="sidebar-listview")
@@ -1471,6 +1474,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 await ccp_handlers.handle_ccp_load_conversation_button_pressed(self)
             elif button_id == "conv-char-save-details-button":
                 await ccp_handlers.handle_ccp_save_conversation_details_button_pressed(self)
+            elif button_id == "ccp-import-prompt-button":  # Route new button
+                await ccp_handlers.handle_ccp_import_prompt_button_pressed(self)
             elif button_id == "ccp-prompt-create-new-button":
                 await ccp_handlers.handle_ccp_prompt_create_new_button_pressed(self)
             elif button_id == "ccp-prompt-load-selected-button":
