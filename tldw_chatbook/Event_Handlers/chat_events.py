@@ -17,15 +17,11 @@ from textual.widgets import (
 )
 from textual.containers import VerticalScroll
 from textual.css.query import QueryError
-<<<<<<< Updated upstream
-=======
-
+#
+# Local Imports
 from ..DB.Prompts_DB import DatabaseError
 from ..Prompt_Management.Prompts_Interop import fetch_prompt_details, search_prompts
 from ..Utils.Utils import safe_float, safe_int
->>>>>>> Stashed changes
-#
-# Local Imports
 from ..Utils.Utils import safe_float, safe_int
 from ..Widgets.chat_message import ChatMessage
 from ..Widgets.titlebar import TitleBar
