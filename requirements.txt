@@ -5,14 +5,15 @@ rich
 textual
 psutil
 requests
-PIL
+pillow
 loguru
+pydantic
 # Chunk Library
-tqdm
-langdetect
-transformers
-nltk
-scikit-learn
+#tqdm
+#langdetect
+#transformers
+#nltk
+#scikit-learn
 # LLM
 
 # Audio

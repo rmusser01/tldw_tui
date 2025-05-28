@@ -50,6 +50,7 @@ class NotesSidebarLeft(VerticalScroll):
         """Create child widgets for the notes sidebar."""
         yield Static("My Notes", classes="sidebar-title", id="notes-sidebar-title-main")
         yield Button("Create New Note", id="notes-create-new-button", variant="success")
+        yield Button("Import Note", id="notes-import-button", variant="default")
 
         yield Static("Search & Filter:", classes="sidebar-label")
         yield Input(placeholder="Search notes content...", id="notes-search-input")

@@ -1499,6 +1499,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         elif current_active_tab == TAB_NOTES:
             if button_id == "notes-create-new-button": await notes_handlers.handle_notes_create_new_button_pressed(self)
             elif button_id == "notes-edit-selected-button": await notes_handlers.handle_notes_edit_selected_button_pressed(self)
+            elif button_id == "notes-import-button":
+                await notes_handlers.handle_notes_import_button_pressed(self)
             elif button_id == "notes-search-button": await notes_handlers.handle_notes_search_button_pressed(self)
             elif button_id == "notes-load-selected-button": await notes_handlers.handle_notes_load_selected_button_pressed(self)
             elif button_id == "notes-save-current-button": await notes_handlers.handle_notes_save_current_button_pressed(self)
