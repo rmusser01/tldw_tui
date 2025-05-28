@@ -821,32 +821,121 @@ async def handle_ccp_import_conversation_button_pressed(app: 'TldwCli') -> None:
 #
 ########################################################################################################################
 def _parse_prompt_from_file_content(file_content_str: str) -> Optional[Dict[str, Any]]:
-    """Parses prompt data from JSON or YAML string content."""
+    """
+    Parses prompt data from string content.
+    Tries JSON, then YAML, then a custom plain text format.
+    """
+    logger = loguru_logger
     if not file_content_str:
         return None
-    try:
-        # Try JSON first
-        data = json.loads(file_content_str)
-        loguru_logger.debug("Parsed prompt file content as JSON.")
-    except json.JSONDecodeError:
+        # 1. Try JSON
         try:
-            # Fallback to YAML
-            data = yaml.safe_load(file_content_str)
-            loguru_logger.debug("Parsed prompt file content as YAML.")
-        except yaml.YAMLError as e_yaml:
-            loguru_logger.error(f"Failed to parse prompt file content as YAML: {e_yaml}")
-            return None
-        except Exception as e_yaml_other: # Catch other potential errors from yaml.safe_load
-            loguru_logger.error(f"Unexpected error parsing prompt file as YAML: {e_yaml_other}", exc_info=True)
-            return None
-    except Exception as e_json_other: # Catch other potential errors from json.loads
-        loguru_logger.error(f"Unexpected error parsing prompt file as JSON: {e_json_other}", exc_info=True)
-        return None
+            parsed_json = json.loads(file_content_str)
+            if isinstance(parsed_json, dict) and parsed_json.get("name"):
+                logger.debug("Successfully parsed prompt file content as JSON.")
+                return parsed_json
+            else:
+                logger.debug("Content parsed as JSON but not a valid prompt structure (missing 'name' or not a dict).")
+        except json.JSONDecodeError:
+            logger.debug("Content is not valid JSON. Trying YAML.")
+        except Exception as e_json_other:
+            logger.warning(f"Unexpected error during JSON parsing attempt: {e_json_other}")
 
-    if not isinstance(data, dict) or "name" not in data: # Basic validation
-        loguru_logger.error("Parsed prompt data is not a dictionary or missing 'name' field.")
+        # 2. Try YAML
+        try:
+            parsed_yaml = yaml.safe_load(file_content_str)
+            if isinstance(parsed_yaml, dict) and parsed_yaml.get("name"):
+                logger.debug("Successfully parsed prompt file content as YAML.")
+                return parsed_yaml
+            else:
+                logger.debug("Content parsed as YAML but not a valid prompt structure (missing 'name' or not a dict).")
+        except yaml.YAMLError:
+            logger.debug("Content is not valid YAML. Trying custom plain text format.")
+        except Exception as e_yaml_other:
+            logger.warning(f"Unexpected error during YAML parsing attempt: {e_yaml_other}")
+
+        # 3. Try Custom Plain Text Format
+        logger.debug("Attempting to parse prompt file content as custom plain text format.")
+        try:
+            parsed_custom_data: Dict[str, Any] = {}
+            # Regex to find sections: ### SECTION_NAME ###\nContent until next ### or EOF
+            # Using re.DOTALL so . matches newlines.
+            # Using re.IGNORECASE for section headers.
+            # Capture group 1 is the section name, group 2 is the content.
+            # This regex assumes sections are separated by ### SECTION_NAME ###
+            # and the content is everything until the next ### or end of file.
+
+            # A simpler approach based on your format:
+            # Split by ###, then process pairs.
+            # Example: "### TITLE ###\nSAMPLE PROMPT\n### AUTHOR ###\nrmusser01"
+            # sections_raw = re.split(r'\s*###\s*([A-Z\s])\s*###\s*', file_content_str.strip(), flags=re.IGNORECASE)
+            # Filter out empty strings that result from splitting at the start/end
+            # sections_filtered = [s.strip() for s in sections_raw if s and s.strip()]
+
+            # More robust parsing:
+            header_map = {
+                "TITLE": "name",
+                "AUTHOR": "author",
+                "SYSTEM": "system_prompt",
+                "USER": "user_prompt",
+                "KEYWORDS": "keywords_str",  # Will be split later
+                "DETAILS": "details",
+            }
+
+            # Use re.finditer to find all section blocks
+            # Pattern: ### SECTION_NAME ###\n(content up to next ### or EOF)
+            pattern = r"^\s*###\s*("  "|".join(header_map.keys())
+            r")\s*###\s*\n(.*?)(?=(?:\n\s*###|$))"
+            for match in re.finditer(pattern, file_content_str, re.MULTILINE | re.DOTALL | re.IGNORECASE):
+                section_name_from_file = match.group(1).upper()
+                section_content = match.group(2).strip()
+                dict_key = header_map.get(section_name_from_file)
+                if dict_key:
+                    parsed_custom_data[dict_key] = section_content
+
+            # Post-process keywords if they were read as a string
+            if "keywords_str" in parsed_custom_data:
+                parsed_custom_data["keywords"] = [
+                    kw.strip() for kw in parsed_custom_data["keywords_str"].split(',') if kw.strip()
+                ]
+                del parsed_custom_data["keywords_str"]  # remove the temp string version
+            elif "keywords" not in parsed_custom_data:  # Ensure keywords key exists
+                parsed_custom_data["keywords"] = []
+
+            # If "name" (from TITLE) is missing after regex parsing, try to infer it from the first non-header line
+            if "name" not in parsed_custom_data or not parsed_custom_data["name"]:
+                first_few_lines = file_content_str.strip().split('\n', 5)
+                potential_title_line = ""
+                if first_few_lines:
+                    if first_few_lines[0].upper().strip().startswith("### TITLE ###"):
+                        if len(first_few_lines) > 1 and not first_few_lines[1].upper().strip().startswith("###"):
+                            potential_title_line = first_few_lines[1].strip()
+                    elif not first_few_lines[0].upper().strip().startswith("###"):
+                        potential_title_line = first_few_lines[0].strip()
+                if potential_title_line:
+                    parsed_custom_data["name"] = potential_title_line
+
+            if "name" in parsed_custom_data and parsed_custom_data["name"]:
+                logger.debug(
+                    f"Successfully parsed prompt file content as custom plain text. Data: {parsed_custom_data}")
+                # Ensure all expected fields for add_prompt are present, defaulting to None or empty list
+                final_data_for_add = {
+                    "name": parsed_custom_data.get("name"),
+                    "author": parsed_custom_data.get("author"),
+                    "details": parsed_custom_data.get("details"),
+                    "system_prompt": parsed_custom_data.get("system_prompt"),
+                    "user_prompt": parsed_custom_data.get("user_prompt"),
+                    "keywords": parsed_custom_data.get("keywords", []),
+                }
+                return final_data_for_add
+            else:
+                logger.debug("Custom plain text parsing did not yield a valid 'name' or was empty.")
+        except Exception as e_custom:
+            logger.error(f"Error parsing prompt file as custom plain text: {e_custom}", exc_info=True)
+            return None
+            # If all parsing attempts fail
+        logger.error("All parsing attempts for prompt file failed.")
         return None
-    return data
 
 async def _prompt_import_callback(app: 'TldwCli', selected_path: Optional[Path]) -> None:
     logger = getattr(app, 'loguru_logger', logging)
@@ -898,9 +987,10 @@ async def handle_ccp_import_prompt_button_pressed(app: 'TldwCli') -> None:
     logger.info("CCP Import Prompt button pressed.")
 
     defined_filters = Filters(
-        ("Prompt files (JSON, YAML)", lambda p: p.suffix.lower() in (".json", ".yaml", ".yml")),
+        ("Prompt files (TXT, JSON, YAML)", lambda p: p.suffix.lower() in (".txt", ".json", ".yaml", ".yml")),
         ("JSON files (*.json)", lambda p: p.suffix.lower() == ".json"),
         ("YAML files (*.yaml, *.yml)", lambda p: p.suffix.lower() in (".yaml", ".yml")),
+        ("Text files (*.txt)", lambda p: p.suffix.lower() == ".txt"),
         ("All files (*.*)", lambda p: True)
     )
     await app.push_screen(FileOpen(location=str(Path.home()), title="Select Prompt File", filters=defined_filters),
