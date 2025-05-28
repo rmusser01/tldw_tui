@@ -5,8 +5,7 @@ A Textual TUI for interacting with various LLM APIs, managing conversation histo
 Current status: Working/In-Progress
 
 ![Screenshot](https://github.com/rmusser01/tldw_chatbook/blob/main/static/PoC-Frontpage.PNG?raw=true)
-## Features
-- **Current Features:**
+## Current Features
   - Connect to multiple LLM providers (Local: Llama.cpp, Ollama, Kobold.cpp, vLLM, Aphrodite, Custom-OpenAI API endpoint ; Commercial: OpenAI, Anthropic, Cohere, Deepseek, Google, Groq, Mistral, OpenRouter)
   - Character Card functionality (WIP)
   - Conversation history management
@@ -18,14 +17,6 @@ Current status: Working/In-Progress
   - Environment variable support for API keys
   - Inspiration from Elia Chat Widgets
   - Launch with `python3 -m tldw_chatbook.app` (working on pip packaging)
-- **Planned Features:**
-  - Conversation Forking + History Management thereof
-  - Improved notes and keyword management (Support for syncing notes from a local folder/file)
-  - Additional LLM provider support
-  - More robust configuration options
-  - Enhanced character chat functionality (ASCII art for pictures?)
-  - Improved conversation history management (exporting)
-  - Support for 'ranking' conversation replies (create your own conversational datasets)
 
 ### Planned Features
 - Conversation Forking + History Management thereof (Already implemented, but needs more testing/UI buildout)
