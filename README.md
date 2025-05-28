@@ -4,8 +4,7 @@ A Textual TUI for interacting with various LLM APIs, managing conversation histo
 
 Current status: Working/In-Progress
 
-![Screenshot]([https://raw.githubusercontent.com/rmusser01/tldw_chatbook/main/static/PoC-Frontpage.png](https://github.com/rmusser01/tldw_chatbook/blob/main/static/PoC-Frontpage.PNG?raw=true))
-
+![Screenshot](https://github.com/rmusser01/tldw_chatbook/blob/main/static/PoC-Frontpage.PNG?raw=true)
 ## Features
 - **Current Features:**
   - Connect to multiple LLM providers (Local: Llama.cpp, Ollama, Kobold.cpp, vLLM, Aphrodite, Custom-OpenAI API endpoint ; Commercial: OpenAI, Anthropic, Cohere, Deepseek, Google, Groq, Mistral, OpenRouter)
