@@ -5,6 +5,18 @@ A Textual TUI for interacting with various LLM APIs, managing conversation histo
 Current status: Working/In-Progress
 
 ![Screenshot](https://github.com/rmusser01/tldw_chatbook/blob/main/static/PoC-Frontpage.PNG?raw=true)
+### Quick Start
+- **Via Manual Installation**
+  - Clone the repository: `git clone https://github.com/rmusser01/tldw_chatbook`
+  - Setup a virtual environment (optional but recommended): 
+    ```bash
+    python3 -m venv .venv
+    source .venv/bin/activate
+    ```
+  - Install the dependencies: `pip install -r requirements.txt`
+  - Run the application:
+    - If you are in the root directory of the repository: `python3 -m tldw_chatbook.app`
+
 ## Current Features
   - Connect to multiple LLM providers (Local: Llama.cpp, Ollama, Kobold.cpp, vLLM, Aphrodite, Custom-OpenAI API endpoint ; Commercial: OpenAI, Anthropic, Cohere, Deepseek, Google, Groq, Mistral, OpenRouter)
   - Character Card functionality (WIP)
