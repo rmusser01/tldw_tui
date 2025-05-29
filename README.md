@@ -66,10 +66,28 @@ Current status: Working/In-Progress
     - `tldw_chatbook_prompts.db` - This sqlite DB stores the user's prompts.
   - Each database is created on first run if it doesn't already exist.
 
+### Project Structure
+
+Here's a brief overview of the main directories in the project:
+
+*   **`tldw_chatbook/`**: Contains the core source code of the application.
+    *   **`app.py`**: Main application entry point.
+    *   **`Screens/`**: Application screens (main views).
+    *   **`Widgets/`**: Reusable TUI components.
+    *   **`UI/`**: More complex UI structures and panels.
+    *   **`Chat/`**: Logic for chat functionalities and LLM interactions.
+    *   **`DB/`**: Database interaction modules.
+    *   **`LLM_Calls/`**: Modules for calling LLM APIs.
+    *   **`Notes/`**: Notes management logic.
+    *   **`Event_Handlers/`**: Application event handling.
+*   **`Docs/`**: Project documentation (WIP)
+*   **`Tests/`**: Contains all automated tests.
+*   **`css/`**: Stylesheets for the Textual TUI.
+*   **`static/`**: Static assets like images.
+*   **`Helper_Scripts/`**: Utility scripts for various tasks.
 
 ### Inspiration
-https://github.com/darrenburns/elia/tree/main/elia_chat/widgets
-
+https://github.com/darrenburns/elia
 
 ## Contributing
 - Contributions are welcome! Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file for details on how to contribute to this project.(WIP)

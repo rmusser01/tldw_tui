@@ -28,6 +28,7 @@ from ..Utils.Emoji_Handling import (
     EMOJI_SAVE_EDIT, FALLBACK_SAVE_EDIT, EMOJI_COPIED, FALLBACK_COPIED, EMOJI_COPY, FALLBACK_COPY
 )
 from ..Character_Chat import Character_Chat_Lib as ccl
+from ..Character_Chat.Character_Chat_Lib import load_character_and_image # Added for character data loading
 from ..DB.ChaChaNotes_DB import ConflictError, CharactersRAGDBError # Import specific DB errors
 from ..Prompt_Management import Prompts_Interop as prompts_interop
 #
@@ -1065,6 +1066,27 @@ async def display_conversation_in_chat_tab_ui(app: 'TldwCli', conversation_id: s
     app.current_chat_is_ephemeral = False # Loaded chats are not ephemeral
 
     try:
+        # --- Populate current_chat_active_character_data ---
+        character_id_from_conv = conv_details_disp.get('character_id')
+        if character_id_from_conv:
+            loguru_logger.debug(f"Conversation {conversation_id} is associated with character_id: {character_id_from_conv}")
+            try:
+                # load_character_and_image returns: char_data, base64_image_data, image_mime_type
+                char_data, _, _ = load_character_and_image(db, character_id_from_conv, app.notes_user_id)
+                if char_data:
+                    app.current_chat_active_character_data = char_data
+                    loguru_logger.info(f"Loaded character data for '{char_data.get('name', 'Unknown')}' into app.current_chat_active_character_data.")
+                else:
+                    app.current_chat_active_character_data = None
+                    loguru_logger.warning(f"Could not load character data for character_id: {character_id_from_conv}")
+            except Exception as e_char_load:
+                app.current_chat_active_character_data = None
+                loguru_logger.error(f"Error loading character data for {character_id_from_conv}: {e_char_load}", exc_info=True)
+        else:
+            app.current_chat_active_character_data = None
+            loguru_logger.debug(f"Conversation {conversation_id} has no associated character_id. Setting active character data to None.")
+        # --- End character data population ---
+
         app.query_one("#chat-conversation-title-input", Input).value = conv_details_disp.get('title', '')
         app.query_one("#chat-conversation-uuid-display", Input).value = conversation_id
 

@@ -7,7 +7,7 @@ import logging.handlers
 import sys
 from pathlib import Path
 import traceback
-from typing import Union, Optional, Any
+from typing import Union, Optional, Any, Dict
 #
 # 3rd-Party Libraries
 # --- Textual Imports ---
@@ -189,6 +189,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     current_chat_conversation_id: reactive[Optional[str]] = reactive(None)
     # Reactive variable for current conversation loaded in the Conversations, Characters & Prompts tab
     current_conv_char_tab_conversation_id: reactive[Optional[str]] = reactive(None)
+    current_chat_active_character_data: reactive[Optional[Dict[str, Any]]] = reactive(None)
 
     # Prompts
     current_prompt_id: reactive[Optional[int]] = reactive(None)
