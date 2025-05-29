@@ -838,3 +838,52 @@ MetricsScreen Label.-info-message {
     height: 100%;
     align: center middle;
 }
+
+
+
+/* --- Media Tab Specific Options --- */
+.ingest-form-scrollable {
+    height: 1fr; /* Allow scrolling within the form area */
+}
+
+.ingest-textarea-small {
+    height: 3;
+    margin-bottom: 1;
+}
+.ingest-textarea-medium {
+    height: 5;
+    margin-bottom: 1;
+}
+.ingest-form-row {
+    layout: horizontal;
+    width: 100%;
+    height: auto;
+    margin-bottom: 1;
+}
+.ingest-form-col {
+    width: 1fr;
+    padding: 0 1;
+}
+.ingest-form-col:first-of-type {
+    padding-left: 0;
+}
+.ingest-form-col:last-of-type {
+    padding-right: 0;
+}
+
+.ingest-submit-button {
+    width: 100%;
+    margin-top: 2;
+}
+
+.hidden {
+    display: none;
+}
+.tldw-api-media-specific-options { /* Common class for specific option blocks */
+    padding: 1;
+    border: round $surface;
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+/* --- End of Media Tab Specific Options --- */

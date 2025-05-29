@@ -860,6 +860,11 @@ default_tab = "chat"  # "chat", "character", "logs", "media", "search", "ingest"
 log_level = "DEBUG" # TUI Log Level: DEBUG, INFO, WARNING, ERROR, CRITICAL
 users_name = "default_user" # Default user name for the TUI
 
+[tldw_api]
+base_url = "http://127.0.0.1:8000" # Or your actual default remote endpoint
+# Default auth token can be stored here, or leave empty if user must always provide
+# auth_token = "your_secret_token_if_you_have_a_default"
+
 [logging]
 # Log file will be placed in the same directory as the chachanotes_db_path below.
 log_filename = "tldw_cli_app.log"
