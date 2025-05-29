@@ -1083,14 +1083,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         except Exception as e:
             self.loguru_logger.error(f"_post_mount_setup: Error binding chat provider select: {e}", exc_info=True)
 
-        try:
-            ccp_select = self.query_one(f"#{TAB_CCP}-api-provider", Select)
-            self.watch(ccp_select, "value", self.update_ccp_provider_reactive, init=False)
-            self.loguru_logger.debug(f"Bound CCP provider Select ({ccp_select.id})")
-        except QueryError:
-            self.loguru_logger.error(f"_post_mount_setup: Failed to find CCP provider select: #{TAB_CCP}-api-provider")
-        except Exception as e:
-            self.loguru_logger.error(f"_post_mount_setup: Error binding CCP provider select: {e}", exc_info=True)
+        # try:
+        #     ccp_select = self.query_one(f"#{TAB_CCP}-api-provider", Select)
+        #     #self.watch(ccp_select, "value", self.update_ccp_provider_reactive, init=False)
+        #     #self.loguru_logger.debug(f"Bound CCP provider Select ({ccp_select.id})")
+        # except QueryError:
+        #     self.loguru_logger.error(f"_post_mount_setup: Failed to find CCP provider select: #{TAB_CCP}-api-provider")
+        # except Exception as e:
+        #     self.loguru_logger.error(f"_post_mount_setup: Error binding CCP provider select: {e}", exc_info=True)
 
         # Set initial tab now that other bindings might be ready
         # self.current_tab = self._initial_tab_value # This triggers watchers

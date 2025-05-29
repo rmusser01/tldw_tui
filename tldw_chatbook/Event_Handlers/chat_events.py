@@ -1594,7 +1594,6 @@ async def handle_chat_sidebar_prompt_search_changed(
                 page           = 1,
                 results_per_page = 100,
                 include_deleted = False,
-                order_by       = "name_asc",         # requires 2024-09 schema, else drop arg
             )
         except Exception as e:
             logger.error(f"[Prompts] Default-list load failed: {e}", exc_info=True)
