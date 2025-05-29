@@ -1205,35 +1205,19 @@ async def handle_chat_character_search_input_changed(app: 'TldwCli', event: Inpu
         results_list_view = app.query_one("#chat-character-search-results-list", ListView)
         await results_list_view.clear()
 
-        if not search_term:
+        if not search_term:  # If search term is empty, call _populate_chat_character_search_list with no term to show default
+            await _populate_chat_character_search_list(app)  # Shows default list
             return
 
-        if not app.notes_service:
-            app.notify("Database service not available.", severity="error")
-            loguru_logger.error("Notes service not available for character search.")
-            await results_list_view.append(ListItem(Label("Error: DB service unavailable.")))
-            return
+        # If search term is present, call _populate_chat_character_search_list with the term
+        await _populate_chat_character_search_list(app, search_term)
 
-        db = app.notes_service._get_db(app.notes_user_id)
-        try:
-            characters = db.search_character_cards(search_term=search_term, limit=50)
-            if not characters:
-                await results_list_view.append(ListItem(Label("No characters found.")))
-            else:
-                for char_data in characters:
-                    item = ListItem(Label(char_data.get('name', 'Unnamed Character')))
-                    item.character_id = char_data.get('id') # Store ID on the item
-                    await results_list_view.append(item)
-            loguru_logger.info(f"Character search for '{search_term}' yielded {len(characters)} results.")
-        except Exception as e_search:
-            loguru_logger.error(f"Error during character search DB call: {e_search}", exc_info=True)
-            await results_list_view.append(ListItem(Label("Error during search.")))
     except QueryError as e_query:
         loguru_logger.error(f"UI component not found for character search: {e_query}", exc_info=True)
-        app.notify("Error: Character search UI elements missing.", severity="error")
+        # Don't notify here as it's an input change, could be spammy. Log is enough.
     except Exception as e_unexp:
-        loguru_logger.error(f"Unexpected error in character search: {e_unexp}", exc_info=True)
-        app.notify("Unexpected error during character search.", severity="error")
+        loguru_logger.error(f"Unexpected error in character search input change: {e_unexp}", exc_info=True)
+        # Don't notify here.
 
 
 async def handle_chat_load_character_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
@@ -1258,6 +1242,19 @@ async def handle_chat_load_character_button_pressed(app: 'TldwCli', event: Butto
         db = app.notes_service._get_db(app.notes_user_id)
         character_data = db.get_character_card_by_id(selected_char_id)
 
+        if character_data is None:
+            app.notify(f"Character with ID {selected_char_id} not found in database.", severity="error")
+            loguru_logger.error(f"Could not retrieve data for character ID {selected_char_id} from DB (returned None).")
+            # Optionally clear the fields if a previous character was loaded
+            app.query_one("#chat-character-name-edit", Input).value = ""
+            app.query_one("#chat-character-description-edit", TextArea).text = ""
+            app.query_one("#chat-character-personality-edit", TextArea).text = ""
+            app.query_one("#chat-character-scenario-edit", TextArea).text = ""
+            app.query_one("#chat-character-system-prompt-edit", TextArea).text = ""
+            app.query_one("#chat-character-first-message-edit", TextArea).text = ""
+            app.current_chat_active_character_data = None  # Clear reactive if it was set by a previous load
+            return
+
         if character_data:
             app.current_chat_active_character_data = character_data # Update reactive state
 
@@ -1271,9 +1268,6 @@ async def handle_chat_load_character_button_pressed(app: 'TldwCli', event: Butto
 
             app.notify(f"Character '{character_data.get('name', 'Unknown')}' loaded.", severity="information")
             loguru_logger.info(f"Character ID {selected_char_id} loaded and fields populated.")
-        else:
-            app.notify(f"Failed to load data for character ID {selected_char_id}.", severity="error")
-            loguru_logger.error(f"Could not retrieve data for character ID {selected_char_id}.")
 
     except QueryError as e_query:
         loguru_logger.error(f"UI component not found for loading character: {e_query}", exc_info=True)

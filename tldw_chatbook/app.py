@@ -1204,6 +1204,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             except QueryError: pass
             # Add this line to populate prompts when chat tab is opened:
             self.call_later(chat_handlers.handle_chat_sidebar_prompt_search_changed, self, "") # Call with empty search term
+            self.call_later(chat_handlers._populate_chat_character_search_list, self) # Populate character list
         elif new_tab == TAB_CCP:
             # Initial population for CCP tab when switched to
             self.call_later(ccp_handlers.populate_ccp_character_select, self)
@@ -1616,6 +1617,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 0.5,
                 lambda: chat_handlers.handle_chat_sidebar_prompt_search_changed(self, event.value.strip())
             )
+        elif input_id == "chat-character-search-input" and current_active_tab == TAB_CHAT:
+            # No debouncer here, direct call as per existing handler
+            await chat_handlers.handle_chat_character_search_input_changed(self, event)
         # Add more specific input handlers if needed, e.g., for title inputs if they need live validation/reaction
 
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
