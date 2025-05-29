@@ -220,6 +220,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     _conv_char_search_timer: Optional[Timer] = None
     _conversation_search_timer: Optional[Timer] = None
     _notes_search_timer: Optional[Timer] = None
+    _chat_sidebar_prompt_search_timer: Optional[Timer] = None # New timer
 
     # Make API_IMPORTS_SUCCESSFUL accessible if needed by old methods or directly
     API_IMPORTS_SUCCESSFUL = API_IMPORTS_SUCCESSFUL

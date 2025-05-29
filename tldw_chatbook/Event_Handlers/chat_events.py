@@ -6,7 +6,7 @@ import logging
 import json
 import os
 from datetime import datetime
-from typing import TYPE_CHECKING, List, Dict, Any, Optional
+from typing import TYPE_CHECKING, List, Dict, Any, Optional, Union
 #
 # 3rd-Party Imports
 from loguru import logger as loguru_logger
@@ -29,6 +29,7 @@ from ..Utils.Emoji_Handling import (
 )
 from ..Character_Chat import Character_Chat_Lib as ccl
 from ..DB.ChaChaNotes_DB import ConflictError, CharactersRAGDBError # Import specific DB errors
+from ..Prompt_Management import Prompts_Interop as prompts_interop
 #
 if TYPE_CHECKING:
     from ..app import TldwCli, API_IMPORTS_SUCCESSFUL
@@ -125,6 +126,29 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
     top_k = safe_int(top_k_widget.value, 50, "top_k") # Use imported safe_int
     custom_prompt = ""  # Assuming this isn't used directly in chat send, but passed
     should_stream = False # Defaulting to False as per original logic
+
+    # --- Integration of Active Character Data ---
+    active_char_data = app.current_chat_active_character_data
+    original_system_prompt_from_ui = system_prompt # Keep a reference
+
+    if active_char_data:
+        loguru_logger.info(f"Active character data found: {active_char_data.get('name', 'Unnamed')}. Overriding system prompt for chat.")
+        # Prioritize system_prompt from active_char_data. Fallback to UI if key is missing.
+        system_prompt_override = active_char_data.get('system_prompt')
+        if system_prompt_override is not None:
+            system_prompt = system_prompt_override
+            loguru_logger.debug(f"System prompt overridden by active character's system prompt: '{system_prompt[:100]}...'")
+        else:
+            loguru_logger.debug(f"Active character data present, but 'system_prompt' is None or missing. Using system_prompt: '{system_prompt[:100]}...' (might be from UI or empty).")
+
+        # Optional: Further persona integration (example)
+        # if active_char_data.get('personality'):
+        #     system_prompt = f"Personality: {active_char_data['personality']}\n\n{system_prompt}"
+        # if active_char_data.get('scenario'):
+        #     system_prompt = f"Scenario: {active_char_data['scenario']}\n\n{system_prompt}"
+    else:
+        loguru_logger.info("No active character data. Using system prompt from UI.")
+    # --- End of Integration ---
 
     llm_max_tokens_value = safe_int(llm_max_tokens_widget.value, 1024, "llm_max_tokens")
     llm_seed_value = safe_int(llm_seed_widget.value, None, "llm_seed") # None is a valid default
@@ -546,6 +570,22 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
         min_p_regen = safe_float(min_p_widget_regen.value, 0.05, "min_p")
         top_k_regen = app._safe_int(top_k_widget_regen.value, 50, "top_k")
 
+        # --- Integration of Active Character Data for REGENERATION ---
+        active_char_data_regen = app.current_chat_active_character_data
+        original_system_prompt_from_ui_regen = system_prompt_regen # Keep a reference
+
+        if active_char_data_regen:
+            loguru_logger.info(f"Active character data found for REGENERATION: {active_char_data_regen.get('name', 'Unnamed')}. Overriding system prompt.")
+            system_prompt_override_regen = active_char_data_regen.get('system_prompt')
+            if system_prompt_override_regen is not None:
+                system_prompt_regen = system_prompt_override_regen
+                loguru_logger.debug(f"System prompt for REGENERATION overridden by active character: '{system_prompt_regen[:100]}...'")
+            else:
+                loguru_logger.debug(f"Active character data present for REGENERATION, but 'system_prompt' is None or missing. Using: '{system_prompt_regen[:100]}...' (might be from UI or empty).")
+        else:
+            loguru_logger.info("No active character data for REGENERATION. Using system prompt from UI.")
+        # --- End of Integration for REGENERATION ---
+
         llm_max_tokens_value_regen = app._safe_int(llm_max_tokens_widget_regen.value, 1024, "llm_max_tokens")
         llm_seed_value_regen = app._safe_int(llm_seed_widget_regen.value, None, "llm_seed")
         llm_stop_value_regen = [s.strip() for s in
@@ -639,6 +679,7 @@ async def handle_chat_new_conversation_button_pressed(app: 'TldwCli') -> None:
 
     app.current_chat_conversation_id = None
     app.current_chat_is_ephemeral = True  # This triggers watcher to update UI elements
+    app.current_chat_active_character_data = None
 
     try:
         # Watcher should handle most of this, but explicit clearing is safer
@@ -1133,6 +1174,117 @@ async def load_branched_conversation_history_ui(app: 'TldwCli', target_conversat
         chat_log_widget.scroll_end(animate=False)
     logging.info(
         f"Loaded {len(all_messages_to_display)} messages for conversation {target_conversation_id} (including history).")
+
+
+async def handle_chat_character_search_input_changed(app: 'TldwCli', event: Input.Changed) -> None:
+    search_term = event.value.strip()
+    try:
+        results_list_view = app.query_one("#chat-character-search-results-list", ListView)
+        await results_list_view.clear()
+
+        if not search_term:
+            return
+
+        if not app.notes_service:
+            app.notify("Database service not available.", severity="error")
+            loguru_logger.error("Notes service not available for character search.")
+            await results_list_view.append(ListItem(Label("Error: DB service unavailable.")))
+            return
+
+        db = app.notes_service._get_db(app.notes_user_id)
+        try:
+            characters = db.search_character_cards(search_term=search_term, limit=50)
+            if not characters:
+                await results_list_view.append(ListItem(Label("No characters found.")))
+            else:
+                for char_data in characters:
+                    item = ListItem(Label(char_data.get('name', 'Unnamed Character')))
+                    item.character_id = char_data.get('id') # Store ID on the item
+                    await results_list_view.append(item)
+            loguru_logger.info(f"Character search for '{search_term}' yielded {len(characters)} results.")
+        except Exception as e_search:
+            loguru_logger.error(f"Error during character search DB call: {e_search}", exc_info=True)
+            await results_list_view.append(ListItem(Label("Error during search.")))
+    except QueryError as e_query:
+        loguru_logger.error(f"UI component not found for character search: {e_query}", exc_info=True)
+        app.notify("Error: Character search UI elements missing.", severity="error")
+    except Exception as e_unexp:
+        loguru_logger.error(f"Unexpected error in character search: {e_unexp}", exc_info=True)
+        app.notify("Unexpected error during character search.", severity="error")
+
+
+async def handle_chat_load_character_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
+    loguru_logger.info("Load Character button pressed.")
+    try:
+        results_list_view = app.query_one("#chat-character-search-results-list", ListView)
+        highlighted_item = results_list_view.highlighted_child
+
+        if not (highlighted_item and hasattr(highlighted_item, 'character_id') and highlighted_item.character_id is not None):
+            app.notify("No character selected to load.", severity="warning")
+            loguru_logger.info("No character selected in the list to load.")
+            return
+
+        selected_char_id = highlighted_item.character_id
+        loguru_logger.info(f"Attempting to load character ID: {selected_char_id}")
+
+        if not app.notes_service:
+            app.notify("Database service not available.", severity="error")
+            loguru_logger.error("Notes service not available for loading character.")
+            return
+
+        db = app.notes_service._get_db(app.notes_user_id)
+        character_data = db.get_character_card_by_id(selected_char_id)
+
+        if character_data:
+            app.current_chat_active_character_data = character_data # Update reactive state
+
+            # Populate the editing fields
+            app.query_one("#chat-character-name-edit", Input).value = character_data.get('name', '')
+            app.query_one("#chat-character-description-edit", TextArea).text = character_data.get('description', '')
+            app.query_one("#chat-character-personality-edit", TextArea).text = character_data.get('personality', '')
+            app.query_one("#chat-character-scenario-edit", TextArea).text = character_data.get('scenario', '')
+            app.query_one("#chat-character-system-prompt-edit", TextArea).text = character_data.get('system_prompt', '')
+            app.query_one("#chat-character-first-message-edit", TextArea).text = character_data.get('first_message', '')
+
+            app.notify(f"Character '{character_data.get('name', 'Unknown')}' loaded.", severity="information")
+            loguru_logger.info(f"Character ID {selected_char_id} loaded and fields populated.")
+        else:
+            app.notify(f"Failed to load data for character ID {selected_char_id}.", severity="error")
+            loguru_logger.error(f"Could not retrieve data for character ID {selected_char_id}.")
+
+    except QueryError as e_query:
+        loguru_logger.error(f"UI component not found for loading character: {e_query}", exc_info=True)
+        app.notify("Error: Character load UI elements missing.", severity="error")
+    except Exception as e_unexp:
+        loguru_logger.error(f"Unexpected error loading character: {e_unexp}", exc_info=True)
+        app.notify("Unexpected error during character load.", severity="error")
+
+
+async def handle_chat_character_attribute_changed(app: 'TldwCli', event: Union[Input.Changed, TextArea.Changed]) -> None:
+    if app.current_chat_active_character_data is None:
+        # loguru_logger.warning("Attribute changed but no character loaded in current_chat_active_character_data.")
+        return
+
+    control_id = event.control.id
+    new_value = event.value if isinstance(event, Input.Changed) else event.control.text
+
+    field_map = {
+        "chat-character-name-edit": "name",
+        "chat-character-description-edit": "description",
+        "chat-character-personality-edit": "personality",
+        "chat-character-scenario-edit": "scenario",
+        "chat-character-system-prompt-edit": "system_prompt",
+        "chat-character-first-message-edit": "first_message"
+    }
+
+    if control_id in field_map:
+        attribute_key = field_map[control_id]
+        # Ensure current_chat_active_character_data is not None again, just in case of race conditions (though less likely with async/await)
+        if app.current_chat_active_character_data is not None:
+            app.current_chat_active_character_data[attribute_key] = new_value
+            loguru_logger.debug(f"Temporarily updated active character attribute '{attribute_key}' to: '{str(new_value)[:50]}...'")
+    else:
+        loguru_logger.warning(f"Attribute change event from unmapped control_id: {control_id}")
 
 #
 # End of chat_events.py

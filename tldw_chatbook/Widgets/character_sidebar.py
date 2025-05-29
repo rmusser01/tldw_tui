@@ -79,8 +79,40 @@ def create_character_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tru
         # Prompts (only for chat tab)
         # ===================================================================
         if id_prefix == "chat":
-            with Collapsible(title="Prompts", collapsed=True):
-                yield Static("Prompt management UI placeholder")
+            with Collapsible(title="Prompts", collapsed=True, id=f"{id_prefix}-prompts-collapsible"): # Added ID
+                yield Label("Search Prompts:", classes="sidebar-label")
+                yield Input(
+                    id=f"{id_prefix}-prompt-search-input",
+                    placeholder="Enter search term...",
+                    classes="sidebar-input"
+                )
+                # Consider adding a search button if direct input change handling is complex
+                # yield Button("Search", id=f"{id_prefix}-prompt-search-button", classes="sidebar-button")
+                yield ListView(
+                    id=f"{id_prefix}-prompts-listview",
+                    classes="sidebar-listview" # Add specific styling if needed
+                    # Consider setting an initial height, e.g. .styles.height = 10
+                )
+                yield Button(
+                    "Load Selected Prompt",
+                    id=f"{id_prefix}-prompt-load-selected-button",
+                    variant="default",
+                    classes="sidebar-button"
+                )
+                yield Label("System Prompt:", classes="sidebar-label")
+                yield TextArea(
+                    "", # Initial content
+                    id=f"{id_prefix}-prompt-system-display",
+                    classes="sidebar-textarea prompt-display-textarea", # New class for styling
+                    read_only=True
+                )
+                yield Label("User Prompt:", classes="sidebar-label")
+                yield TextArea(
+                    "", # Initial content
+                    id=f"{id_prefix}-prompt-user-display",
+                    classes="sidebar-textarea prompt-display-textarea", # New class for styling
+                    read_only=True
+                )
 
         # ===================================================================
         # Saved Conversations (only for chat tab)
@@ -126,8 +158,39 @@ def create_character_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tru
         # This part would be more relevant if the chat tab directly supported switching active characters
         # for the ongoing conversation, rather than just for filtering searches.
         # For now, keeping it minimal.
-        with Collapsible(title="Active Character Info", collapsed=True):
-            yield Placeholder("Display Active Character Name")
+        with Collapsible(title="Active Character Info", collapsed=True, id=f"{id_prefix}-active-character-info-collapsible"): # Added ID
+            if id_prefix == "chat":
+                yield Input(
+                    id="chat-character-search-input",
+                    placeholder="Search all characters..."
+                )
+                yield ListView(
+                    id="chat-character-search-results-list"
+                )
+                yield Button(
+                    "Load Character",
+                    id="chat-load-character-button"
+                )
+                yield Input(
+                    id="chat-character-name-edit",
+                    placeholder="Name"
+                )
+                yield TextArea(
+                    id="chat-character-description-edit",
+                )
+                yield TextArea(
+                    id="chat-character-personality-edit",
+                )
+                yield TextArea(
+                    id="chat-character-scenario-edit",
+                )
+                yield TextArea(
+                    id="chat-character-system-prompt-edit",
+                )
+                yield TextArea(
+                    id="chat-character-first-message-edit",
+                )
+            # yield Placeholder("Display Active Character Name") # Removed placeholder
             # Could add a select here to change the character for the *current* chat,
             # which would then influence the AI's persona for subsequent messages.
             # This is a more advanced feature than just "regular" vs. "specific character" chats.

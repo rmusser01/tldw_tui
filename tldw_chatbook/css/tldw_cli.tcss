@@ -73,6 +73,18 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 .sidebar-textarea { width: 100%; border: round $surface; margin-bottom: 1; }
 .sidebar Select { width: 100%; margin-bottom: 1; }
 
+.prompt-display-textarea {
+    height: 7; /* Example height */
+    border: round $primary-lighten-2;
+    background: $primary-background;
+}
+
+.sidebar-listview {
+    height: 10; /* Example height for listviews in sidebars */
+    border: round $primary-lighten-2;
+    background: $primary-background;
+}
+
 /* --- Chat Window specific layouts --- */
 #chat-main-content {
     layout: vertical;
