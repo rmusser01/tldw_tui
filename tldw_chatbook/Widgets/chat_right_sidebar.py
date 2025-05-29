@@ -186,9 +186,11 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
                     id="chat-character-search-input",
                     placeholder="Search all characters..."
                 )
-                yield ListView(
+                character_search_results_list = ListView(  # Assign to variable
                     id="chat-character-search-results-list"
                 )
+                character_search_results_list.styles.height = 7
+                yield character_search_results_list
                 yield Button(
                     "Load Character",
                     id="chat-load-character-button"
@@ -197,21 +199,25 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
                     id="chat-character-name-edit",
                     placeholder="Name"
                 )
-                yield TextArea(
-                    id="chat-character-description-edit",
-                )
-                yield TextArea(
-                    id="chat-character-personality-edit",
-                )
-                yield TextArea(
-                    id="chat-character-scenario-edit",
-                )
-                yield TextArea(
-                    id="chat-character-system-prompt-edit",
-                )
-                yield TextArea(
-                    id="chat-character-first-message-edit",
-                )
+                description_edit_ta = TextArea(id="chat-character-description-edit")
+                description_edit_ta.styles.height = 30
+                yield description_edit_ta
+
+                personality_edit_ta = TextArea(id="chat-character-personality-edit")
+                personality_edit_ta.styles.height = 30
+                yield personality_edit_ta
+
+                scenario_edit_ta = TextArea(id="chat-character-scenario-edit")
+                scenario_edit_ta.styles.height = 30
+                yield scenario_edit_ta
+
+                system_prompt_edit_ta = TextArea(id="chat-character-system-prompt-edit")
+                system_prompt_edit_ta.styles.height = 30
+                yield system_prompt_edit_ta
+
+                first_message_edit_ta = TextArea(id="chat-character-first-message-edit")
+                first_message_edit_ta.styles.height = 30
+                yield first_message_edit_ta
             # yield Placeholder("Display Active Character Name") # Removed placeholder
             # Could add a select here to change the character for the *current* chat,
             # which would then influence the AI's persona for subsequent messages.
