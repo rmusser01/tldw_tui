@@ -23,6 +23,7 @@ from ..Utils.Utils import safe_float, safe_int
 # Local Imports
 from ..Widgets.chat_message import ChatMessage
 from ..Widgets.titlebar import TitleBar
+from ..Prompt_Management import Prompts_Interop as prompts_interop
 from ..Utils.Emoji_Handling import (
     get_char, EMOJI_THINKING, FALLBACK_THINKING, EMOJI_EDIT, FALLBACK_EDIT,
     EMOJI_SAVE_EDIT, FALLBACK_SAVE_EDIT, EMOJI_COPIED, FALLBACK_COPIED, EMOJI_COPY, FALLBACK_COPY
@@ -48,8 +49,8 @@ async def handle_chat_tab_sidebar_toggle(app: 'TldwCli', button_id: str) -> None
         app.chat_sidebar_collapsed = not app.chat_sidebar_collapsed
         logger.debug("Chat tab settings sidebar (left) now %s", "collapsed" if app.chat_sidebar_collapsed else "expanded")
     elif button_id == "toggle-chat-right-sidebar":
-        app.character_sidebar_collapsed = not app.character_sidebar_collapsed
-        logger.debug("Chat tab character sidebar (right) now %s", "collapsed" if app.character_sidebar_collapsed else "expanded")
+        app.chat_right_sidebar_collapsed = not app.chat_right_sidebar_collapsed
+        logger.debug("Chat tab character sidebar (right) now %s", "collapsed" if app.chat_right_sidebar_collapsed else "expanded")
     else:
         logger.warning(f"Unhandled sidebar toggle button ID '{button_id}' in Chat tab handler.")
 
@@ -1307,6 +1308,286 @@ async def handle_chat_character_attribute_changed(app: 'TldwCli', event: Union[I
             loguru_logger.debug(f"Temporarily updated active character attribute '{attribute_key}' to: '{str(new_value)[:50]}...'")
     else:
         loguru_logger.warning(f"Attribute change event from unmapped control_id: {control_id}")
+
+
+async def handle_chat_prompt_search_input_changed(app: 'TldwCli', event_value: str) -> None:
+    logger = getattr(app, 'loguru_logger', logging)
+    search_term = event_value.strip()
+    logger.debug(f"Chat Tab: Prompt search input changed to: '{search_term}'")
+
+    if not app.prompts_service_initialized:
+        logger.warning("Chat Tab: Prompts service not available for prompt search.")
+        # Optionally notify the user or clear list
+        try:
+            results_list_view = app.query_one("#chat-prompt-search-results-listview", ListView)
+            await results_list_view.clear()
+            await results_list_view.append(ListItem(Label("Prompts service unavailable.")))
+        except Exception as e_ui:
+            logger.error(f"Chat Tab: Error accessing prompt search listview: {e_ui}")
+        return
+
+    if not search_term:  # Clear list if search term is empty
+        try:
+            results_list_view = app.query_one("#chat-prompt-search-results-listview", ListView)
+            await results_list_view.clear()
+            logger.debug("Chat Tab: Cleared prompt search results as search term is empty.")
+        except Exception as e_ui_clear:
+            logger.error(f"Chat Tab: Error clearing prompt search listview: {e_ui_clear}")
+        return
+
+    try:
+        results_list_view = app.query_one("#chat-prompt-search-results-listview", ListView)
+        await results_list_view.clear()
+
+        # Assuming search_prompts returns a tuple: (results_list, total_matches)
+        prompt_results, total_matches = prompts_interop.search_prompts(
+            search_query=search_term,
+            search_fields=["name", "details", "keywords"],  # Or other relevant fields
+            page=1,
+            results_per_page=50,  # Adjust as needed
+            include_deleted=False
+        )
+
+        if prompt_results:
+            for prompt_data in prompt_results:
+                item_label = prompt_data.get('name', 'Unnamed Prompt')
+                list_item = ListItem(Label(item_label))
+                # Store necessary identifiers on the ListItem itself
+                list_item.prompt_id = prompt_data.get('id')
+                list_item.prompt_uuid = prompt_data.get('uuid')
+                await results_list_view.append(list_item)
+            logger.info(f"Chat Tab: Prompt search for '{search_term}' yielded {len(prompt_results)} results.")
+        else:
+            await results_list_view.append(ListItem(Label("No prompts found.")))
+            logger.info(f"Chat Tab: Prompt search for '{search_term}' found no results.")
+
+    except prompts_interop.DatabaseError as e_db:
+        logger.error(f"Chat Tab: Database error during prompt search: {e_db}", exc_info=True)
+        try:  # Attempt to update UI with error
+            results_list_view = app.query_one("#chat-prompt-search-results-listview", ListView)
+            await results_list_view.clear()
+            await results_list_view.append(ListItem(Label("DB error searching.")))
+        except Exception:
+            pass
+    except Exception as e:
+        logger.error(f"Chat Tab: Unexpected error during prompt search: {e}", exc_info=True)
+        try:  # Attempt to update UI with error
+            results_list_view = app.query_one("#chat-prompt-search-results-listview", ListView)
+            await results_list_view.clear()
+            await results_list_view.append(ListItem(Label("Search error.")))
+        except Exception:
+            pass
+
+
+async def perform_chat_prompt_search(app: 'TldwCli') -> None:
+    logger = getattr(app, 'loguru_logger', logging)
+    try:
+        search_input_widget = app.query_one("#chat-prompt-search-input",
+                                            Input)  # Ensure Input is imported where this is called
+        await handle_chat_prompt_search_input_changed(app, search_input_widget.value)
+    except Exception as e:
+        logger.error(f"Chat Tab: Error performing prompt search via perform_chat_prompt_search: {e}", exc_info=True)
+
+
+async def handle_chat_view_selected_prompt_button_pressed(app: 'TldwCli') -> None:
+    logger = getattr(app, 'loguru_logger', logging)
+    logger.debug("Chat Tab: View Selected Prompt button pressed.")
+
+    try:
+        results_list_view = app.query_one("#chat-prompt-search-results-listview", ListView)
+        selected_list_item = results_list_view.highlighted_child
+
+        if not selected_list_item:
+            app.notify("No prompt selected in the list.", severity="warning")
+            return
+
+        prompt_id_to_load = getattr(selected_list_item, 'prompt_id', None)
+        prompt_uuid_to_load = getattr(selected_list_item, 'prompt_uuid', None)
+
+        identifier_to_fetch = prompt_id_to_load if prompt_id_to_load is not None else prompt_uuid_to_load
+
+        if identifier_to_fetch is None:
+            app.notify("Selected prompt item is invalid (missing ID/UUID).", severity="error")
+            logger.error("Chat Tab: Selected prompt item missing ID and UUID.")
+            return
+
+        logger.debug(f"Chat Tab: Fetching details for prompt identifier: {identifier_to_fetch}")
+        prompt_details = prompts_interop.fetch_prompt_details(identifier_to_fetch)
+
+        system_display_widget = app.query_one("#chat-prompt-display-system", TextArea)
+        user_display_widget = app.query_one("#chat-prompt-display-user", TextArea)
+        copy_system_button = app.query_one("#chat-prompt-copy-system-button", Button)
+        copy_user_button = app.query_one("#chat-prompt-copy-user-button", Button)
+
+        if prompt_details:
+            system_prompt_content = prompt_details.get('system_prompt', '')
+            user_prompt_content = prompt_details.get('user_prompt', '')
+
+            system_display_widget.text = system_prompt_content
+            user_display_widget.text = user_prompt_content
+
+            # Store the fetched content on the app or widgets for copy buttons
+            # If TextAreas are read-only, their .text property is the source of truth
+            # No need for app.current_loaded_system_prompt etc. unless used elsewhere
+
+            copy_system_button.disabled = not bool(system_prompt_content)
+            copy_user_button.disabled = not bool(user_prompt_content)
+
+            app.notify(f"Prompt '{prompt_details.get('name', 'Selected')}' loaded for viewing.", severity="information")
+            logger.info(f"Chat Tab: Displayed prompt '{prompt_details.get('name', 'Unknown')}' for viewing.")
+        else:
+            system_display_widget.text = "Failed to load prompt details."
+            user_display_widget.text = ""
+            copy_system_button.disabled = True
+            copy_user_button.disabled = True
+            app.notify("Failed to load details for the selected prompt.", severity="error")
+            logger.error(f"Chat Tab: Failed to fetch details for prompt identifier: {identifier_to_fetch}")
+
+    except prompts_interop.DatabaseError as e_db:
+        logger.error(f"Chat Tab: Database error viewing selected prompt: {e_db}", exc_info=True)
+        app.notify("Database error loading prompt.", severity="error")
+    except Exception as e:
+        logger.error(f"Chat Tab: Unexpected error viewing selected prompt: {e}", exc_info=True)
+        app.notify("Error loading prompt for viewing.", severity="error")
+        # Clear display areas on generic error too
+        try:
+            app.query_one("#chat-prompt-display-system", TextArea).text = ""
+            app.query_one("#chat-prompt-display-user", TextArea).text = ""
+            app.query_one("#chat-prompt-copy-system-button", Button).disabled = True
+            app.query_one("#chat-prompt-copy-user-button", Button).disabled = True
+        except Exception:
+            pass  # UI might not be fully available
+
+
+async def handle_chat_copy_system_prompt_button_pressed(app: 'TldwCli') -> None:
+    logger = getattr(app, 'loguru_logger', logging)
+    logger.debug("Chat Tab: Copy System Prompt button pressed.")
+    try:
+        system_display_widget = app.query_one("#chat-prompt-display-system", TextArea)
+        content_to_copy = system_display_widget.text
+        if content_to_copy:
+            app.set_clipboard(content_to_copy)
+            app.notify("System prompt copied to clipboard!")
+            logger.info("Chat Tab: System prompt content copied to clipboard.")
+        else:
+            app.notify("No system prompt content to copy.", severity="warning")
+            logger.warning("Chat Tab: No system prompt content available to copy.")
+    except Exception as e:
+        logger.error(f"Chat Tab: Error copying system prompt: {e}", exc_info=True)
+        app.notify("Error copying system prompt.", severity="error")
+
+
+async def handle_chat_copy_user_prompt_button_pressed(app: 'TldwCli') -> None:
+    logger = getattr(app, 'loguru_logger', logging)
+    logger.debug("Chat Tab: Copy User Prompt button pressed.")
+    try:
+        user_display_widget = app.query_one("#chat-prompt-display-user", TextArea)
+        content_to_copy = user_display_widget.text
+        if content_to_copy:
+            app.set_clipboard(content_to_copy)
+            app.notify("User prompt copied to clipboard!")
+            logger.info("Chat Tab: User prompt content copied to clipboard.")
+        else:
+            app.notify("No user prompt content to copy.", severity="warning")
+            logger.warning("Chat Tab: No user prompt content available to copy.")
+    except Exception as e:
+        logger.error(f"Chat Tab: Error copying user prompt: {e}", exc_info=True)
+        app.notify("Error copying user prompt.", severity="error")
+
+
+async def handle_chat_sidebar_prompt_search_changed(
+    app: "TldwCli",
+    new_value: str,
+) -> None:
+    """
+    Populate / update the *Prompts* list that lives in the Chat-tab’s right sidebar.
+
+    Called
+
+        • each time the search-input (#chat-prompt-search-input) changes, and
+        • once when the Chat tab first becomes active (app.py calls with an empty string).
+
+    Parameters
+    ----------
+    app : TldwCli
+        The running application instance (passed by `call_later` / the watcher).
+    new_value : str
+        The raw text currently in the search-input.  Leading / trailing whitespace is ignored.
+    """
+    logger = getattr(app, "loguru_logger", logging)  # fall back to stdlib if unavailable
+    search_term = (new_value or "").strip()
+    logger.debug(f"Sidebar-Prompt-Search changed → '{search_term}'")
+
+    # Locate UI elements up-front so we can fail fast.
+    try:
+        search_input  : Input    = app.query_one("#chat-prompt-search-input", Input)
+        results_view  : ListView = app.query_one("#chat-prompts-listview", ListView)
+    except QueryError as q_err:
+        logger.error(f"[Prompts] UI element(s) missing: {q_err}")
+        return
+
+    # Keep the search-box in sync if we were called programmatically (e.g. with "").
+    if search_input.value != new_value:
+        search_input.value = new_value
+
+    # Always start with a clean slate.
+    await results_view.clear()
+
+    # Ensure the prompts subsystem is ready.
+    if not getattr(app, "prompts_service_initialized", False):
+        await results_view.append(ListItem(Label("Prompt service unavailable.")))
+        logger.warning("[Prompts] Service not initialised – cannot search.")
+        return
+
+    # === No term supplied → Show a convenient default list (first 100, alpha order). ===
+    if not search_term:
+        try:
+            prompts, _total = prompts_interop.search_prompts(
+                search_query   = "",                 # empty → match all
+                search_fields  = ["name"],           # cheap field only
+                page           = 1,
+                results_per_page = 100,
+                include_deleted = False,
+                order_by       = "name_asc",         # requires 2024-09 schema, else drop arg
+            )
+        except Exception as e:
+            logger.error(f"[Prompts] Default-list load failed: {e}", exc_info=True)
+            await results_view.append(ListItem(Label("Failed to load prompts.")))
+            return
+    # === A term is present → Run a full search. ===
+    else:
+        try:
+            prompts, _total = prompts_interop.search_prompts(
+                search_query     = search_term,
+                search_fields    = ["name", "details", "keywords"],
+                page             = 1,
+                results_per_page = 100,              # generous but safe
+                include_deleted  = False,
+            )
+        except prompts_interop.DatabaseError as dbe:
+            logger.error(f"[Prompts] DB error during search: {dbe}", exc_info=True)
+            await results_view.append(ListItem(Label("Database error while searching.")))
+            return
+        except Exception as ex:
+            logger.error(f"[Prompts] Unknown error during search: {ex}", exc_info=True)
+            await results_view.append(ListItem(Label("Error during search.")))
+            return
+
+    # ----- Render results -----
+    if not prompts:
+        await results_view.append(ListItem(Label("No prompts found.")))
+        logger.info(f"[Prompts] Search '{search_term}' → 0 results.")
+        return
+
+    for pr in prompts:
+        item = ListItem(Label(pr.get("name", "Unnamed Prompt")))
+        # Stash useful identifiers on the ListItem for later pick-up by the “Load Selected Prompt” button.
+        item.prompt_id   = pr.get("id")
+        item.prompt_uuid = pr.get("uuid")
+        await results_view.append(item)
+
+    logger.info(f"[Prompts] Search '{search_term}' → {len(prompts)} results.")
+
 
 #
 # End of chat_events.py

@@ -195,8 +195,10 @@ async def load_ccp_prompt_for_editing(app: 'TldwCli', prompt_id: Optional[int] =
         clear_ccp_prompt_fields(app)
         return
 
+    logger.debug(f"CCP Load Prompt: identifier_to_fetch is: {identifier_to_fetch}")
     try:
         prompt_details = prompts_interop.fetch_prompt_details(identifier_to_fetch)
+        logger.debug(f"CCP Load Prompt: Fetched prompt_details: {prompt_details}")
 
         if prompt_details:
             app.current_prompt_id = prompt_details.get('id')
@@ -211,14 +213,22 @@ async def load_ccp_prompt_for_editing(app: 'TldwCli', prompt_id: Optional[int] =
             app.current_prompt_keywords_str = ", ".join(keywords_list_from_db if keywords_list_from_db else [])
             app.current_prompt_version = prompt_details.get('version')
 
+            logger.debug("CCP Load Prompt: Attempting to populate UI fields.")
             app.query_one("#ccp-prompt-name-input", Input).value = app.current_prompt_name or ""
+            logger.debug(f"CCP Load Prompt: Set name to: {app.current_prompt_name or ''}")
             app.query_one("#ccp-prompt-author-input", Input).value = app.current_prompt_author or ""
+            logger.debug(f"CCP Load Prompt: Set author to: {app.current_prompt_author or ''}")
             app.query_one("#ccp-prompt-description-textarea", TextArea).text = app.current_prompt_details or ""
+            logger.debug(f"CCP Load Prompt: Set description to: {app.current_prompt_details or ''}")
             app.query_one("#ccp-prompt-system-textarea", TextArea).text = app.current_prompt_system or ""
+            logger.debug(f"CCP Load Prompt: Set system to: {app.current_prompt_system or ''}")
             app.query_one("#ccp-prompt-user-textarea", TextArea).text = app.current_prompt_user or ""
+            logger.debug(f"CCP Load Prompt: Set user to: {app.current_prompt_user or ''}")
             app.query_one("#ccp-prompt-keywords-textarea",
                           TextArea).text = app.current_prompt_keywords_str  # Already a string
+            logger.debug(f"CCP Load Prompt: Set keywords to: {app.current_prompt_keywords_str}")
 
+            logger.debug("CCP Load Prompt: Finished populating UI fields.")
             app.query_one("#ccp-prompt-details-collapsible", Collapsible).collapsed = False
             app.query_one("#ccp-conversation-details-collapsible", Collapsible).collapsed = True
             app.query_one("#ccp-prompt-name-input", Input).focus()
@@ -227,9 +237,10 @@ async def load_ccp_prompt_for_editing(app: 'TldwCli', prompt_id: Optional[int] =
             app.notify(f"Failed to load prompt (ID/UUID: {identifier_to_fetch}).", severity="error")
             clear_ccp_prompt_fields(app)
     except Exception as e:
-        logger.error(f"Error loading CCP prompt for editing: {e}", exc_info=True)
+        logger.critical(f"CRITICAL ERROR in load_ccp_prompt_for_editing: {e}", exc_info=True)
         app.notify(f"Error loading prompt: {type(e).__name__}", severity="error")
         clear_ccp_prompt_fields(app)
+        logger.debug("CCP Load Prompt: Cleared prompt fields due to exception.")
 
 ########################################################################################################################
 #
@@ -545,10 +556,8 @@ async def handle_ccp_save_conversation_details_button_pressed(app: 'TldwCli') ->
 async def handle_ccp_prompt_create_new_button_pressed(app: 'TldwCli') -> None:
     """Handles creating a new prompt in the CCP tab."""
     logger = getattr(app, 'loguru_logger', logging)
-    logger.info("CCP Create New Prompt button pressed (targets right pane editor).")
-
-    clear_ccp_prompt_fields(app) # This clears the right pane editor and related reactives
-
+    logger.info("CCP Create New Prompt button pressed.")
+    clear_ccp_prompt_fields(app)
     try:
         app.query_one("#ccp-prompt-name-input", Input).value = "New Prompt"  # Default name in right pane
         author_name = app.app_config.get("user_defaults", {}).get("author_name", "User")

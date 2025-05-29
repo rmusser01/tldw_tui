@@ -19,7 +19,7 @@ from textual.widgets import Static, Collapsible, Placeholder, Select, Input, Lab
 #
 # Functions:
 
-def create_character_sidebar(id_prefix: str, initial_ephemeral_state: bool = True) -> ComposeResult:
+def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = True) -> ComposeResult:
     """
     Yield the widgets for the character and chat session settings sidebar.
     id_prefix is typically "chat".
@@ -79,7 +79,7 @@ def create_character_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tru
         # Prompts (only for chat tab)
         # ===================================================================
         if id_prefix == "chat":
-            with Collapsible(title="Prompts", collapsed=True, id=f"{id_prefix}-prompts-collapsible"): # Added ID
+            with Collapsible(title="Prompts", collapsed=True, id=f"{id_prefix}-prompts-collapsible"):  # Added ID
                 yield Label("Search Prompts:", classes="sidebar-label")
                 yield Input(
                     id=f"{id_prefix}-prompt-search-input",
@@ -88,11 +88,14 @@ def create_character_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tru
                 )
                 # Consider adding a search button if direct input change handling is complex
                 # yield Button("Search", id=f"{id_prefix}-prompt-search-button", classes="sidebar-button")
-                yield ListView(
+
+                results_list_view = ListView(
                     id=f"{id_prefix}-prompts-listview",
-                    classes="sidebar-listview" # Add specific styling if needed
-                    # Consider setting an initial height, e.g. .styles.height = 10
+                    classes="sidebar-listview"
                 )
+                results_list_view.styles.height = 7  # Set height for ListView
+                yield results_list_view
+
                 yield Button(
                     "Load Selected Prompt",
                     id=f"{id_prefix}-prompt-load-selected-button",
@@ -100,18 +103,37 @@ def create_character_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tru
                     classes="sidebar-button"
                 )
                 yield Label("System Prompt:", classes="sidebar-label")
-                yield TextArea(
-                    "", # Initial content
+
+                system_prompt_display = TextArea(
+                    "",  # Initial content
                     id=f"{id_prefix}-prompt-system-display",
-                    classes="sidebar-textarea prompt-display-textarea", # New class for styling
+                    classes="sidebar-textarea prompt-display-textarea",
                     read_only=True
                 )
+                system_prompt_display.styles.height = 5  # Set height for TextArea
+                yield system_prompt_display
+                yield Button(
+                    "Copy System",
+                    id="chat-prompt-copy-system-button",
+                    classes="sidebar-button copy-button",
+                    disabled=True
+                )
+
                 yield Label("User Prompt:", classes="sidebar-label")
-                yield TextArea(
-                    "", # Initial content
+
+                user_prompt_display = TextArea(
+                    "",  # Initial content
                     id=f"{id_prefix}-prompt-user-display",
-                    classes="sidebar-textarea prompt-display-textarea", # New class for styling
+                    classes="sidebar-textarea prompt-display-textarea",
                     read_only=True
+                )
+                user_prompt_display.styles.height = 5  # Set height for TextArea
+                yield user_prompt_display
+                yield Button(
+                    "Copy User",
+                    id="chat-prompt-copy-user-button",
+                    classes="sidebar-button copy-button",
+                    disabled=True
                 )
 
         # ===================================================================

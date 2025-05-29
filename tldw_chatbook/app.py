@@ -171,7 +171,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
     # Reactives for sidebar
     chat_sidebar_collapsed: reactive[bool] = reactive(False)
-    character_sidebar_collapsed: reactive[bool] = reactive(False)  # For character sidebar
+    chat_right_sidebar_collapsed: reactive[bool] = reactive(False)  # For character sidebar
     notes_sidebar_left_collapsed: reactive[bool] = reactive(False)
     notes_sidebar_right_collapsed: reactive[bool] = reactive(False)
     conv_char_sidebar_left_collapsed: reactive[bool] = reactive(False)
@@ -1066,6 +1066,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             # If chat tab becomes active, maybe re-focus chat input
             try: self.query_one("#chat-input", TextArea).focus()
             except QueryError: pass
+            # Add this line to populate prompts when chat tab is opened:
+            self.call_later(chat_handlers.handle_chat_sidebar_prompt_search_changed, self, "") # Call with empty search term
         elif new_tab == TAB_CCP:
             # Initial population for CCP tab when switched to
             self.call_later(ccp_handlers.populate_ccp_character_select, self)
@@ -1112,14 +1114,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         except Exception as e:
             self.loguru_logger.error(f"Error toggling chat left sidebar: {e}", exc_info=True)
 
-    def watch_character_sidebar_collapsed(self, collapsed: bool) -> None:
+    def watch_chat_right_sidebar_collapsed(self, collapsed: bool) -> None:
         """Hide or show the character settings sidebar."""
         if not hasattr(self, "app") or not self.app:  # Check if app is ready
             return
         if not self._ui_ready:
             return
         try:
-            sidebar = self.query_one("#chat-right-sidebar")  # ID from create_character_sidebar
+            sidebar = self.query_one("#chat-right-sidebar")  # ID from create_chat_right_sidebar
             sidebar.display = not collapsed
         except QueryError:
             logging.error("Character sidebar widget (#chat-right-sidebar) not found.")
@@ -1400,6 +1402,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             await ccp_handlers.handle_ccp_conversation_search_input_changed(self, event.value)
         elif input_id == "ccp-prompt-search-input" and current_active_tab == TAB_CCP:
             await ccp_handlers.handle_ccp_prompt_search_input_changed(self, event.value)
+        elif input_id == "chat-prompt-search-input" and current_active_tab == TAB_CHAT: # New condition
+            if self._chat_sidebar_prompt_search_timer: # Use the new timer variable
+                self._chat_sidebar_prompt_search_timer.stop()
+            self._chat_sidebar_prompt_search_timer = self.set_timer(
+                0.5,
+                lambda: chat_handlers.handle_chat_sidebar_prompt_search_changed(self, event.value.strip())
+            )
         # Add more specific input handlers if needed, e.g., for title inputs if they need live validation/reaction
 
     async def on_list_view_selected(self, event: ListView.Selected) -> None:

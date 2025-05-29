@@ -11,7 +11,7 @@ from textual.widgets import Button, TextArea
 #
 # Local Imports
 from ..Widgets.settings_sidebar import create_settings_sidebar
-from ..Widgets.character_sidebar import create_character_sidebar
+from ..Widgets.chat_right_sidebar import create_chat_right_sidebar
 from ..Constants import TAB_CHAT
 from ..Utils.Emoji_Handling import get_char, EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE, EMOJI_SEND, FALLBACK_SEND, EMOJI_CHARACTER_ICON, FALLBACK_CHARACTER_ICON
 #
@@ -46,7 +46,7 @@ class ChatWindow(Container):
                              classes="sidebar-toggle")
 
         # Character Details Sidebar (Right)
-        yield from create_character_sidebar(
+        yield from create_chat_right_sidebar(
             "chat",
             initial_ephemeral_state=self.app_instance.current_chat_is_ephemeral
         )
