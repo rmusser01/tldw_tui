@@ -7,7 +7,7 @@ import logging.handlers
 import sys
 from pathlib import Path
 import traceback
-from typing import Union, Optional, Any, Dict
+from typing import Union, Optional, Any, Dict, List
 #
 # 3rd-Party Libraries
 # --- Textual Imports ---
@@ -27,6 +27,7 @@ from textual.timer import Timer
 from textual.css.query import QueryError  # For specific error handling
 #
 # --- Local API library Imports ---
+from .UI.MediaWindow import MediaWindow, slugify as media_slugify
 from tldw_chatbook.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, TAB_STATS, TAB_TOOLS_SETTINGS, \
     TAB_INGEST, TAB_LLM, TAB_MEDIA, TAB_SEARCH
 from tldw_chatbook.DB.Client_Media_DB_v2 import MediaDatabase
@@ -51,6 +52,7 @@ from .Event_Handlers import (
     tab_events as tab_handlers,
     chat_events as chat_handlers,
     conv_char_events as ccp_handlers,
+    media_events as media_handlers,
     notes_events as notes_handlers,
     worker_events as worker_handlers, worker_events, ingest_events,
 )
@@ -212,6 +214,18 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
     # Media Tab
     media_active_view: reactive[Optional[str]] = reactive(None)
+    _media_types_for_ui: List[str] = []
+    _initial_media_view_slug: Optional[str] = reactive(media_slugify("All Media"))  # Default to "All Media" slug
+
+    current_media_type_filter_slug: reactive[Optional[str]] = reactive(media_slugify("All Media"))  # Slug for filtering
+    current_media_type_filter_display_name: reactive[Optional[str]] = reactive("All Media")  # Display name
+
+    # current_media_search_term: reactive[str] = reactive("") # Handled by inputs directly
+    current_loaded_media_item: reactive[Optional[Dict[str, Any]]] = reactive(None)
+    _media_search_timers: Dict[str, Timer] = {}  # For debouncing per media type
+
+    # Add media_types_for_ui to store fetched types
+    media_types_for_ui: List[str] = []
     _initial_media_view: Optional[str] = "media-view-video-audio"  # Default to the first sub-tab
     media_db: Optional[MediaDatabase] = None
 
@@ -575,11 +589,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         # This parent container is crucial
         with Container(id="content"):
-            composed_window_ids = set() # Keep track of IDs yielded within this 'with' block
+            composed_window_ids = set()
 
-            # Helper for clarity
             def _yield_and_track(window_instance, tab_constant_val, actual_window_id_val):
-                nonlocal composed_window_ids # Ensure we're modifying the outer scope's set
+                nonlocal composed_window_ids
                 if self._initial_tab_value != tab_constant_val:
                     window_instance.styles.display = "none"
                 else:
@@ -588,7 +601,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 composed_window_ids.add(actual_window_id_val)
                 self.loguru_logger.debug(f"Yielded {window_instance.__class__.__name__}, ID: {actual_window_id_val}, Display: {window_instance.styles.display}")
 
-            # --- Concrete Windows ---
             self.loguru_logger.debug("Instantiating and yielding concrete tab windows...")
 
             yield from _yield_and_track(ChatWindow(self, id="chat-window", classes="window"), TAB_CHAT, "chat-window")
@@ -600,14 +612,16 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             yield from _yield_and_track(LogsWindow(self, id="logs-window", classes="window"), TAB_LOGS, "logs-window")
             yield from _yield_and_track(StatsWindow(self, id="stats-window", classes="window"), TAB_STATS, "stats-window")
 
-            # --- EXPLICITLY YIELD MediaWindow and SearchWindow ---
-            yield from _yield_and_track(MediaWindow(self, id="media-window", classes="window"), TAB_MEDIA, "media-window")
+            # --- Pass fetched media types to MediaWindow ---
+            media_window_instance = MediaWindow(self, id="media-window", classes="window")
+            media_window_instance.media_types_from_db = self._media_types_for_ui # Set before compose
+            yield from _yield_and_track(media_window_instance, TAB_MEDIA, "media-window")
+            # --- End MediaWindow with passed types ---
+
             yield from _yield_and_track(SearchWindow(self, id="search-window", classes="window"), TAB_SEARCH, "search-window")
-            # ----------------------------------------------------
 
             self.loguru_logger.info(f"Finished yielding concrete windows. Composed IDs: {composed_window_ids}")
 
-            # --- Placeholder Windows for any *truly* remaining tabs ---
             self.loguru_logger.info(f"Starting placeholder loop. ALL_TABS: {ALL_TABS}")
             unique_tab_constants = set(ALL_TABS)
             self.loguru_logger.info(f"Unique tab constants for placeholder loop: {unique_tab_constants}")
@@ -615,29 +629,22 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
             for tab_constant_for_placeholder in unique_tab_constants:
                 target_window_id = "llm_management-window" if tab_constant_for_placeholder == TAB_LLM else f"{tab_constant_for_placeholder}-window"
-
                 self.loguru_logger.debug(f"Placeholder Loop: tab_const='{tab_constant_for_placeholder}', target_id='{target_window_id}'")
-
                 if target_window_id not in composed_window_ids:
                     self.loguru_logger.info(f"  --> CREATING placeholder for '{tab_constant_for_placeholder}' (ID '{target_window_id}') as it's not in composed_window_ids.")
-
                     placeholder_container = Container(id=target_window_id, classes="window placeholder-window")
                     if self._initial_tab_value != tab_constant_for_placeholder:
                         placeholder_container.styles.display = "none"
                     else:
                         placeholder_container.styles.display = "block"
-
                     with placeholder_container:
                         yield Static(f"{tab_constant_for_placeholder.replace('_', ' ').capitalize()} Window Placeholder")
-                        # Make button ID super unique for placeholders to avoid any conflict
                         yield Button("Coming Soon...", id=f"ph-btn-{tab_constant_for_placeholder}", disabled=True)
-
                     yield placeholder_container
-                    composed_window_ids.add(target_window_id) # Add after yielding this specific placeholder
-                    self.loguru_logger.debug(f"  Yielded and added placeholder '{target_window_id}'. composed_window_ids: {composed_window_ids}")
+                    composed_window_ids.add(target_window_id)
+                    self.loguru_logger.debug(f"  --> Yielded and added placeholder '{target_window_id}'. composed_window_ids: {composed_window_ids}")
                 else:
                     self.loguru_logger.debug(f"  --> SKIPPING placeholder for '{target_window_id}', already in composed_window_ids.")
-
             self._ui_ready = True
             self.loguru_logger.info(f"--- FINISHED COMPOSE CONTENT AREA --- Final composed IDs: {composed_window_ids}")
             self.loguru_logger.info("UI composition completed - watchers enabled")
@@ -1504,6 +1511,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 view_to_activate = button_id.replace("media-nav-", "media-view-")
                 self.loguru_logger.debug(f"Media nav button '{button_id}' pressed. Activating view '{view_to_activate}'.")
                 self.media_active_view = view_to_activate # Triggers watcher
+                await media_handlers.handle_media_nav_button_pressed(self, button_id)
+                return
+            elif button_id and button_id.startswith("media-search-button-"):
+                await media_handlers.handle_media_search_button_pressed(self, button_id)
+                return
+            elif button_id and button_id.startswith("media-load-selected-button-"):
+                await media_handlers.handle_media_load_selected_button_pressed(self, button_id)
+                return
             else:
                 self.loguru_logger.warning(f"Unhandled button on MEDIA tab: ID:{button_id}, Label:'{button.label}'")
 
@@ -1568,6 +1583,15 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         else:
             self.loguru_logger.warning(f"  _get_chat_message_widget_from_button could not find parent ChatMessage for button: {button.id}")
         return None
+
+    async def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        """Handles text area changes, e.g., for live updates to character data."""
+        control_id = event.control.id
+        current_active_tab = self.current_tab
+
+        if current_active_tab == TAB_CHAT and control_id and control_id.startswith("chat-character-"):
+            if control_id != "chat-character-search-input": # Exclude search input
+                await chat_handlers.handle_chat_character_attribute_changed(self, event)
 
     async def on_input_changed(self, event: Input.Changed) -> None:
         input_id = event.input.id
