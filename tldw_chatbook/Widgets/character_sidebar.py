@@ -25,7 +25,7 @@ def create_character_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tru
     id_prefix is typically "chat".
     initial_ephemeral_state determines the initial state of controls related to saving.
     """
-    with VerticalScroll(id="character-sidebar", classes="sidebar"): # Main ID for the whole sidebar
+    with VerticalScroll(id="chat-right-sidebar", classes="sidebar"): # Main ID for the whole sidebar
         yield Static("Session & Character", classes="sidebar-title")
 
         # Section for current chat session details (title, keywords, etc.)
@@ -136,7 +136,7 @@ def create_character_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tru
             yield Placeholder("Tool 1")
             yield Placeholder("Tool 2")
 
-        logging.debug(f"Character sidebar (id='character-sidebar', prefix='{id_prefix}') created with ephemeral state: {initial_ephemeral_state}")
+        logging.debug(f"Character sidebar (id='chat-right-sidebar', prefix='{id_prefix}') created with ephemeral state: {initial_ephemeral_state}")
 
 #
 # End of character_sidebar.py

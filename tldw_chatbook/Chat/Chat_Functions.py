@@ -906,11 +906,64 @@ def chat(
         logging.debug(f"Debug - Chat Function - API Key: {api_key[:10] if api_key else 'None'}")
         logging.debug(f"Debug - Chat Function - Prompt: {custom_prompt}")
 
+        #####################################################################
+        # --- Adapt payload for specific provider requirements ---
+        #####################################################################
+        final_api_payload_for_provider = llm_messages_payload  # Default to the multimodal one
+
+        if api_endpoint.lower() == 'deepseek':
+            logging.info("Adapting message payload for DeepSeek (text-only string content).")
+            adapted_payload_for_deepseek = []
+            for msg_obj in llm_messages_payload:
+                role = msg_obj.get("role")
+                content_input = msg_obj.get("content")
+
+                text_parts = []
+                image_detected_and_ignored = False
+
+                if isinstance(content_input, list):  # Standard multimodal format
+                    for part in content_input:
+                        if part.get("type") == "text":
+                            text_parts.append(part.get("text", ""))
+                        elif part.get("type") == "image_url":
+                            image_detected_and_ignored = True
+                            # You already log warnings about image handling during payload construction if current_image_input is present.
+                            # This is an additional safeguard if history contains images.
+                            logging.warning(
+                                f"DeepSeek (API: {api_endpoint}) does not support images. Image part in role '{role}' will be ignored.")
+                elif isinstance(content_input, str):  # If content somehow became a string already
+                    text_parts.append(content_input)
+                else:
+                    logging.warning(
+                        f"Unexpected content type for role '{role}' in payload for DeepSeek: {type(content_input)}. Attempting to coerce to string.")
+                    text_parts.append(str(content_input))
+
+                final_text_content = "\n".join(text_parts).strip()
+
+                # If only an image was present and ignored, the content might be empty.
+                # DeepSeek might not like empty content strings, decide on a placeholder if necessary.
+                # For now, we'll pass the potentially empty string.
+                if image_detected_and_ignored and not final_text_content:
+                    logging.debug(
+                        f"Message for role '{role}' contained only an image (ignored for DeepSeek), resulting in empty text content.")
+
+                adapted_payload_for_deepseek.append({"role": role, "content": final_text_content})
+
+            final_api_payload_for_provider = adapted_payload_for_deepseek
+
+            # Optional: Re-log the adapted payload for DeepSeek to confirm its structure
+            logging.debug("Debug - Chat Function - Adapted LLM Payload for DeepSeek:")
+            for i, msg_p in enumerate(final_api_payload_for_provider):
+                # Ensure content is logged even if it's long by truncating
+                content_preview = str(msg_p.get('content', ''))[:100] + (
+                    '...' if len(str(msg_p.get('content', ''))) > 100 else '')
+                logging.debug(f"  Msg {i}: Role: {msg_p['role']}, Content: '{content_preview}'")
+
         # --- Call the LLM via the updated chat_api_call ---
         response = chat_api_call(
             api_endpoint=api_endpoint,
             api_key=api_key,
-            messages_payload=llm_messages_payload,
+            messages_payload=final_api_payload_for_provider,
             temp=temperature_float,
             system_message=system_message,
             streaming=streaming,

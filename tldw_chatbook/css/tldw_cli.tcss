@@ -18,7 +18,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 .placeholder-window { align: center middle; background: $panel; }
 
 /* Sidebar Styling */
-/* Generic .sidebar (used by #chat-sidebar and potentially others) */
+/* Generic .sidebar (used by #chat-left-sidebar and potentially others) */
 .sidebar {
     dock: left;
     width: 25%; /* <-- CHANGE to percentage (adjust 20% to 35% as needed) */
@@ -41,8 +41,8 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     display: none; /* ensures it doesn’t grab focus */
 }
 
-/* Right sidebar (character-sidebar) */
-#character-sidebar {
+/* Right sidebar (chat-right-sidebar) */
+#chat-right-sidebar {
     dock: right;
     /* width: 70;   <-- REMOVE fixed width */
     width: 25%;  /* <-- CHANGE to percentage (match .sidebar or use a different one) */
@@ -57,7 +57,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 }
 
 /* Collapsed state for the new right sidebar */
-#character-sidebar.collapsed {
+#chat-right-sidebar.collapsed {
     width: 0 !important;
     min-width: 0 !important; /* Ensure min-width is also 0 */
     border-left: none !important;
@@ -306,11 +306,11 @@ ChatMessage.-ai .message-actions.-generating {
 .sidebar-toggle:hover { background: $surface; }
 
 /* Specific margins for sidebar toggles based on position */
-#toggle-chat-sidebar {
+#toggle-chat-left-sidebar {
     margin-right: 1; /* Original toggle on the left of input area */
 }
 
-#toggle-character-sidebar {
+#toggle-chat-right-sidebar {
     margin-left: 1; /* New toggle on the right of input area */
 }
 
@@ -438,12 +438,12 @@ MetricsScreen Label.-info-message {
 
 
 /* Character Sidebar Specific Styles */
-#character-sidebar #chat-conversation-title-input { /* Title input */
+#chat-right-sidebar #chat-conversation-title-input { /* Title input */
     /* width: 100%; (from .sidebar-input) */
     /* margin-bottom: 1; (from .sidebar-input) */
 }
 
-#character-sidebar .chat-keywords-textarea { /* Keywords TextArea specific class */
+#chat-right-sidebar .chat-keywords-textarea { /* Keywords TextArea specific class */
     height: 4;  /* Or 3 to 5, adjust as preferred */
     /* width: 100%; (from .sidebar-textarea) */
     /* border: round $surface; (from .sidebar-textarea) */
@@ -451,13 +451,13 @@ MetricsScreen Label.-info-message {
 }
 
 /* Styling for the new "Save Details" button */
-#character-sidebar .save-details-button {
+#chat-right-sidebar .save-details-button {
     margin-top: 1; /* Space above this button */
     /* width: 100%;    Make it full width */
 }
 
 /* Ensure the Save Current Chat button also has clear styling if needed */
-#character-sidebar .save-chat-button {
+#chat-right-sidebar .save-chat-button {
     margin-top: 1; /* Ensure it has some space if it's after keywords */
     /* width: 100%; */
 }

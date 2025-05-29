@@ -21,9 +21,25 @@ from ..DB.ChaChaNotes_DB import ConflictError, CharactersRAGDBError
 from ..Widgets.notes_sidebar_left import NotesSidebarLeft
 from ..Third_Party.textual_fspicker import FileOpen, Filters
 #
+if TYPE_CHECKING:
+    pass # app.TldwCli is already imported above
+#
 ########################################################################################################################
 #
 # Functions:
+
+async def handle_notes_tab_sidebar_toggle(app: 'TldwCli', button_id: str) -> None:
+    """Handles sidebar toggles specific to the Notes tab."""
+    logger_instance = getattr(app, 'loguru_logger', logger) # Use app's logger or global
+    if button_id == "toggle-notes-sidebar-left":
+        app.notes_sidebar_left_collapsed = not app.notes_sidebar_left_collapsed
+        logger_instance.debug("Notes left sidebar now %s", "collapsed" if app.notes_sidebar_left_collapsed else "expanded")
+    elif button_id == "toggle-notes-sidebar-right":
+        app.notes_sidebar_right_collapsed = not app.notes_sidebar_right_collapsed
+        logger_instance.debug("Notes right sidebar now %s", "collapsed" if app.notes_sidebar_right_collapsed else "expanded")
+    else:
+        logger_instance.warning(f"Unhandled sidebar toggle button ID '{button_id}' in Notes tab handler.")
+
 
 ########################################################################################################################
 #

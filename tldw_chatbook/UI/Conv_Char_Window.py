@@ -2,25 +2,136 @@
 # Description: This file contains the UI functions for the Conv_Char_Window tab
 #
 # Imports
+from typing import TYPE_CHECKING
 #
 # Third-Party Imports
+from textual.app import ComposeResult
+from textual.containers import Container, VerticalScroll, Horizontal
+from textual.widgets import Static, Button, Input, ListView, Select, Collapsible, Label, TextArea
+#
 #
 # Local Imports
+from ..Utils.Emoji_Handling import get_char, EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE
+if TYPE_CHECKING:
+    from ..app import TldwCli
 #
 #######################################################################################################################
 #
 # Functions:
 
+class CCPWindow(Container):
+    """
+    Container for the Conversations, Characters & Prompts (CCP) Tab's UI.
+    """
 
+    def __init__(self, app_instance: 'TldwCli', **kwargs):
+        super().__init__(**kwargs)
+        self.app_instance = app_instance
 
+    def compose(self) -> ComposeResult:
+        # Left Pane
+        with VerticalScroll(id="conv-char-left-pane", classes="cc-left-pane"):
+            yield Static("CCP Menu", classes="sidebar-title cc-section-title-text")
+            with Collapsible(title="Characters", id="conv-char-characters-collapsible"):
+                yield Button("Import Character Card", id="ccp-import-character-button",
+                             classes="sidebar-button")
+                yield Select([], prompt="Select Character...", allow_blank=True, id="conv-char-character-select")
+            with Collapsible(title="Conversations", id="conv-char-conversations-collapsible"):
+                yield Button("Import Conversation", id="ccp-import-conversation-button",
+                             classes="sidebar-button")
+                yield Input(id="conv-char-search-input", placeholder="Search conversations...", classes="sidebar-input")
+                yield Button("Search", id="conv-char-conversation-search-button", classes="sidebar-button")
+                yield ListView(id="conv-char-search-results-list")
+                yield Button("Load Selected", id="conv-char-load-button", classes="sidebar-button")
+            with Collapsible(title="Prompts", id="ccp-prompts-collapsible"):
+                yield Button("Import Prompt", id="ccp-import-prompt-button", classes="sidebar-button")
+                yield Button("Create New Prompt", id="ccp-prompt-create-new-button", classes="sidebar-button")
+                yield Input(id="ccp-prompt-search-input", placeholder="Search prompts...", classes="sidebar-input")
+                yield ListView(id="ccp-prompts-listview", classes="sidebar-listview")
+                yield Button("Load Selected Prompt", id="ccp-prompt-load-selected-button", classes="sidebar-button")
 
+        yield Button(get_char(EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE), id="toggle-conv-char-left-sidebar",
+                     classes="cc-sidebar-toggle-button")
 
+        # Center Pane
+        with VerticalScroll(id="conv-char-center-pane", classes="cc-center-pane"):
+            # Container for conversation messages
+            with Container(id="ccp-conversation-messages-view", classes="ccp-view-area"):
+                yield Static("Conversation History", classes="pane-title", id="ccp-center-pane-title-conv")
+                # Messages will be mounted dynamically here
 
+            # Container for prompt editing UI (initially hidden by CSS)
+            with Container(id="ccp-prompt-editor-view", classes="ccp-view-area"):
+                yield Static("Prompt Editor", classes="pane-title", id="ccp-center-pane-title-prompt")
+                yield Label("Prompt Name:", classes="sidebar-label")
+                yield Input(id="ccp-editor-prompt-name-input", placeholder="Unique prompt name...",
+                            classes="sidebar-input")
+                yield Label("Author:", classes="sidebar-label")
+                yield Input(id="ccp-editor-prompt-author-input", placeholder="Author name...", classes="sidebar-input")
+                yield Label("Details/Description:", classes="sidebar-label")
+                yield TextArea("", id="ccp-editor-prompt-description-textarea",
+                               classes="sidebar-textarea ccp-prompt-textarea")
+                yield Label("System Prompt:", classes="sidebar-label")
+                yield TextArea("", id="ccp-editor-prompt-system-textarea",
+                               classes="sidebar-textarea ccp-prompt-textarea")
+                yield Label("User Prompt (Template):", classes="sidebar-label")
+                yield TextArea("", id="ccp-editor-prompt-user-textarea", classes="sidebar-textarea ccp-prompt-textarea")
+                yield Label("Keywords (comma-separated):", classes="sidebar-label")
+                yield TextArea("", id="ccp-editor-prompt-keywords-textarea",
+                               classes="sidebar-textarea ccp-prompt-textarea")
+                with Horizontal(classes="ccp-prompt-action-buttons"):
+                    yield Button("Save Prompt", id="ccp-editor-prompt-save-button", variant="success",
+                                 classes="sidebar-button")
+                    yield Button("Clone Prompt", id="ccp-editor-prompt-clone-button", classes="sidebar-button")
+                    yield Button("Delete Prompt", id="ccp-editor-prompt-delete-button", variant="error",
+                                 classes="sidebar-button")
 
+        # Button to toggle the right sidebar for CCP tab
+        yield Button(get_char(EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE),
+                     id="toggle-conv-char-right-sidebar", classes="cc-sidebar-toggle-button")
 
+        # Right Pane - MODIFIED
+        with VerticalScroll(id="conv-char-right-pane", classes="cc-right-pane"):
+            yield Static("Details & Settings", classes="sidebar-title") # This title is for the whole pane
 
+            # REMOVE or COMMENT OUT the LLM settings container and its contents:
+            # with Container(id="ccp-right-pane-llm-settings-container"):
+            #     # yield from create_settings_sidebar(TAB_CCP, self.app_instance.app_config) # <<< REMOVE THIS LINE
+            #     pass
 
+            # Conversation Details Collapsible
+            with Collapsible(title="Conversation Details", id="ccp-conversation-details-collapsible",
+                             collapsed=False):  # Start expanded
+                yield Static("Title:", classes="sidebar-label")
+                yield Input(id="conv-char-title-input", placeholder="Conversation title...", classes="sidebar-input")
+                yield Static("Keywords:", classes="sidebar-label")
+                yield TextArea("", id="conv-char-keywords-input", classes="conv-char-keywords-textarea")
+                yield Button("Save Conversation Details", id="conv-char-save-details-button", classes="sidebar-button")
+                yield Static("Export Options", classes="sidebar-label export-label")
+                yield Button("Export as Text", id="conv-char-export-text-button", classes="sidebar-button")
+                yield Button("Export as JSON", id="conv-char-export-json-button", classes="sidebar-button")
 
+            # Prompt Details Collapsible (for the right-pane prompt editor)
+            with Collapsible(title="Prompt Details", id="ccp-prompt-details-collapsible", collapsed=True):
+                yield Label("Prompt Name:", classes="sidebar-label")
+                yield Input(id="ccp-prompt-name-input", placeholder="Unique prompt name...",
+                            classes="sidebar-input")  # No -editor prefix for right pane
+                yield Label("Author:", classes="sidebar-label")
+                yield Input(id="ccp-prompt-author-input", placeholder="Author name...", classes="sidebar-input")
+                yield Label("Details/Description:", classes="sidebar-label")
+                yield TextArea("", id="ccp-prompt-description-textarea", classes="sidebar-textarea ccp-prompt-textarea")
+                yield Label("System Prompt:", classes="sidebar-label")
+                yield TextArea("", id="ccp-prompt-system-textarea", classes="sidebar-textarea ccp-prompt-textarea")
+                yield Label("User Prompt (Template):", classes="sidebar-label")
+                yield TextArea("", id="ccp-prompt-user-textarea", classes="sidebar-textarea ccp-prompt-textarea")
+                yield Label("Keywords (comma-separated):", classes="sidebar-label")
+                yield TextArea("", id="ccp-prompt-keywords-textarea", classes="sidebar-textarea ccp-prompt-textarea")
+                with Horizontal(classes="ccp-prompt-action-buttons"):
+                    yield Button("Save Prompt", id="ccp-prompt-save-button", variant="success",
+                                 classes="sidebar-button")
+                    yield Button("Clone Prompt", id="ccp-prompt-clone-button", classes="sidebar-button")
+                    yield Button("Delete Prompt", id="ccp-prompt-delete-button", variant="error",
+                                 classes="sidebar-button")
 
 #
 # End of Conv_Char_Window.py

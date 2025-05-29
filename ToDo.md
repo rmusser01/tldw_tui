@@ -77,7 +77,7 @@ Date: July 23, 2024 Prepared by: Jules (AI Software Engineering Agent)
         *   **Notes Tab Sidebars (`NotesSidebarLeft`, `NotesSidebarRight`)**:
             *   In `NotesSidebarLeft`, consolidate all note actions (Create New, Load, Save, Delete) within the "Notes Actions" `Collapsible`. Remove redundant standalone "New Note" and "Delete Selected Note" buttons.
             *   Unify the "Save Keywords" button (from `NotesSidebarRight`) with the main "Save Current Note" action to persist all note changes (title, content, keywords) simultaneously.
-        *   **General Sidebar Width**: In `tldw_cli.tcss`, reduce the default width for `.sidebar` and `#character-sidebar` from `70` to a more appropriate `35` to `45` units.
+        *   **General Sidebar Width**: In `tldw_cli.tcss`, reduce the default width for `.sidebar` and `#chat-right-sidebar` from `70` to a more appropriate `35` to `45` units.
     *   **Justification**: These changes will improve the information hierarchy within sidebars, reduce visual clutter, make main content areas more spacious and usable, and streamline your actions like saving notes.
 
 **3.3. Layout of Multi-Pane Tabs**

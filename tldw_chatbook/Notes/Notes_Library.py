@@ -18,6 +18,7 @@ from tldw_chatbook.DB.ChaChaNotes_DB import (
     InputError,
     ConflictError
 )
+from tldw_chatbook.config import chachanotes_db as global_db_from_config
 #
 #######################################################################################################################
 #
@@ -27,36 +28,40 @@ logger = logging.getLogger(__name__)
 
 
 class NotesInteropService:
-    """
-    A service layer for interacting with the notes-specific functionalities
-    of CharactersRAGDB, designed for per-user database instances.
-    This service manages CharactersRAGDB instances for each user and exposes
-    methods for note and related keyword operations.
-    """
+    def __init__(self,
+                 base_db_directory: Union[str, Path], # Still useful to ensure parent dir exists
+                 api_client_id: str,
+                 # ADD this parameter to accept the pre-initialized global DB
+                 global_db_to_use: Optional[CharactersRAGDB] = None):
 
-    def __init__(self, base_db_directory: Union[str, Path], api_client_id: str):
-        """
-        Initializes the NotesInteropService.
-
-        Args:
-            base_db_directory: The base directory where user-specific SQLite database
-                               files will be stored (e.g., "data/user_dbs").
-                               Each user's DB will be in a sub-file like "user_{user_id}.sqlite".
-            api_client_id: A client ID string representing this API application.
-                           This ID is passed to CharactersRAGDB instances.
-        """
         self.base_db_directory = Path(base_db_directory).resolve()
-        self.api_client_id = api_client_id
-        self._db_instances: Dict[str, CharactersRAGDB] = {}
-        self._db_lock = threading.Lock()  # To protect access to _db_instances
+        self.api_client_id = api_client_id # May or may not be used by unified DB directly
+
+        # self._db_instances is no longer the primary way to get the DB if using a global one.
+        # You might keep it for some other reason, or remove it if truly unused.
+        self._db_instances: Dict[str, CharactersRAGDB] = {} # Could be removed if not used
+        self._db_lock = threading.Lock()
 
         try:
             self.base_db_directory.mkdir(parents=True, exist_ok=True)
-            logger.info(f"NotesInteropService initialized. Base DB directory: {self.base_db_directory}")
+            logger.info(f"NotesInteropService: Ensured base directory exists: {self.base_db_directory}")
         except OSError as e:
             logger.error(f"Failed to create base DB directory {self.base_db_directory}: {e}")
-            # This is a critical failure for the service's operation.
             raise CharactersRAGDBError(f"Failed to create base DB directory {self.base_db_directory}: {e}") from e
+
+        # Store the global DB instance
+        if global_db_to_use:
+            self.unified_db = global_db_to_use
+            logger.info(f"NotesInteropService will use provided unified DB: {self.unified_db.db_path}")
+        elif global_db_from_config: # Fallback to imported global if not passed
+            self.unified_db = global_db_from_config
+            logger.info(f"NotesInteropService will use imported global config DB: {self.unified_db.db_path}")
+        else:
+            self.unified_db = None
+
+        if not self.unified_db:
+            logger.error("NotesInteropService CRITICAL: No unified database instance available!")
+            raise CharactersRAGDBError("No unified database instance for NotesInteropService.")
 
     def _get_db(self, user_id: str) -> CharactersRAGDB:
         """

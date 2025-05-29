@@ -61,9 +61,9 @@ Current status: Working/In-Progress
 - **User Database**
   - The application uses several user databases stored at `~/.share/tldw_cli/`.
   - The databases are: 
-    - `tldw_cli_data.db` - This sqlite DB stores your conversations, characters, and notes.
-    - `tldw_cli_media_v2.db` - This sqlite DB stores the user's ingested media files.
-    - `tldw_cli_prompts.db` - This sqlite DB stores the user's prompts.
+    - `tldw_chatbook_ChaChaNotes.db` - This sqlite DB stores your conversations, characters, and notes.
+    - `tldw_chatbook_media_v2.db` - This sqlite DB stores the user's ingested media files.
+    - `tldw_chatbook_prompts.db` - This sqlite DB stores the user's prompts.
   - Each database is created on first run if it doesn't already exist.
 
 

@@ -22,6 +22,7 @@ from tldw_chatbook.DB.Prompts_DB import PromptsDatabase, DatabaseError as Prompt
 #
 # Functions:
 
+logger.critical("CRITICAL DEBUG: config.py module is being imported/executed NOW.")
 # --- Constants ---
 # Client ID used by the Server API itself when writing to sync logs
 SERVER_CLIENT_ID = "SERVER_API_V1"
@@ -230,26 +231,22 @@ def load_settings() -> Dict:
     single_user_api_key = os.getenv("API_KEY", _get_typed_value(api_section, "single_user_api_key", "default-secret-key-for-single-user"))
 
     # --- Paths ---
-    default_user_data_base_dir = ACTUAL_PROJECT_ROOT / "user_databases"
-    user_data_base_dir_str = os.getenv("USER_DB_BASE_DIR", _get_typed_value(paths_section, "user_db_base_dir", str(default_user_data_base_dir.resolve())))
-    user_data_base_dir = Path(user_data_base_dir_str)
-
-    default_main_db_path = (user_data_base_dir / str(single_user_fixed_id) / "tldw.db").resolve()
-    if single_user_mode:
-         # For single user, db path might be simpler or directly under project root if not user-specific
-        default_main_db_path = (ACTUAL_PROJECT_ROOT / "user_databases" / "single_user" / "tldw.db").resolve()
-
     api_section_legacy = get_toml_section('API')  # For legacy direct API key access if any
     paths_section_legacy = get_toml_section('Paths')
     processing_section_legacy = get_toml_section('Processing')
     chunking_section_legacy = get_toml_section('Chunking')
 
-    default_database_url = f"sqlite:///{default_main_db_path}"
-    database_url = os.getenv("DATABASE_URL", _get_typed_value(paths_section, "database_url", default_database_url))
+    # --- User Name ---
+    default_users_name_fallback = "default_user"
+    users_name_from_toml_general = _get_typed_value(final_general_settings_cli, "users_name",
+                                                    default_users_name_fallback, str)
+    users_name = os.getenv("USERS_NAME", users_name_from_toml_general)
 
     users_db_configured = os.getenv("USERS_DB_ENABLED", _get_typed_value(processing_section, "users_db_enabled", "false", str)).lower() == "true"
     log_level_env = os.getenv("LOG_LEVEL", "INFO").upper()
     log_level_toml = _get_typed_value(logging_section_server, "log_level", log_level_env, str).upper()
+
+
 
     # --- Load specific configurations from TOML or use defaults ---
     app_tts_config = get_toml_section('AppTTSConfig') # For APP_CONFIG related values
@@ -279,6 +276,7 @@ def load_settings() -> Dict:
         "LOG_LEVEL": final_logging_settings.get("file_log_level", "INFO").upper(),
         "PROJECT_ROOT": ACTUAL_PROJECT_ROOT,
         "API_COMPONENT_ROOT": APP_COMPONENT_ROOT,
+        "USERS_NAME": users_name,
 
         # --- Pass through the full tables ---
         "general": final_general_settings_cli,  # For TUI settings like default_tab
@@ -296,7 +294,6 @@ def load_settings() -> Dict:
         "SINGLE_USER_API_KEY": get_api_key("single_user_api_key", "API_KEY", section=api_section_legacy) or "default-secret-key-for-single-user",
         "DATABASE_URL": os.getenv("DATABASE_URL", paths_section_legacy.get("database_url",
                                                                            f"sqlite:///{ACTUAL_PROJECT_ROOT / 'user_databases' / 'single_user' / 'tldw.db'}")),
-        "USER_DB_BASE_DIR": user_data_base_dir,
         "USERS_DB_CONFIGURED": users_db_configured,
 
         # --- Configurations migrated from load_and_log_configs ---
@@ -861,6 +858,7 @@ CONFIG_TOML_CONTENT = """
 [general]
 default_tab = "chat"  # "chat", "character", "logs", "media", "search", "ingest", "stats"
 log_level = "DEBUG" # TUI Log Level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+users_name = "default_user" # Default user name for the TUI
 
 [logging]
 # Log file will be placed in the same directory as the chachanotes_db_path below.
@@ -871,7 +869,7 @@ log_backup_count = 5
 
 [database]
 # Path to the ChaChaNotes (Character, Chat, Notes) database.
-chachanotes_db_path = "~/.local/share/tldw_cli/tldw_cli_data.db"
+chachanotes_db_path = "~/.local/share/tldw_cli/tldw_chatbook_ChaChaNotes.db"
 # Path to the Prompts database.
 prompts_db_path = "~/.local/share/tldw_cli/tldw_cli_prompts.db"
 # Path to the Media V2 database.
@@ -1308,19 +1306,19 @@ def get_cli_providers_and_models() -> Dict[str, List[str]]:
 BASE_DATA_DIR_CLI = Path.home() / ".local" / "share" / "tldw_cli" # Renamed for clarity
 
 def get_chachanotes_db_path() -> Path:
-    default_db_path_str = DEFAULT_CONFIG_FROM_TOML.get("database", {}).get("chachanotes_db_path", str(BASE_DATA_DIR_CLI / "tldw_cli_data.db"))
+    default_db_path_str = DEFAULT_CONFIG_FROM_TOML.get("database", {}).get("chachanotes_db_path", str(BASE_DATA_DIR_CLI / "tldw_chatbook_ChaChaNotes.db"))
     db_path_str = get_cli_setting("database", "chachanotes_db_path", default_db_path_str)
     db_path = Path(db_path_str).expanduser().resolve()
     return db_path
 
 def get_prompts_db_path() -> Path:
-    default_db_path_str = DEFAULT_CONFIG_FROM_TOML.get("database", {}).get("prompts_db_path", str(BASE_DATA_DIR_CLI / "tldw_cli_prompts.db"))
+    default_db_path_str = DEFAULT_CONFIG_FROM_TOML.get("database", {}).get("prompts_db_path", str(BASE_DATA_DIR_CLI / "tldw_chatbook_prompts.db"))
     db_path_str = get_cli_setting("database", "prompts_db_path", default_db_path_str)
     db_path = Path(db_path_str).expanduser().resolve()
     return db_path
 
 def get_media_db_path() -> Path:
-    default_db_path_str = DEFAULT_CONFIG_FROM_TOML.get("database", {}).get("media_db_path", str(BASE_DATA_DIR_CLI / "tldw_cli_media_v2.db"))
+    default_db_path_str = DEFAULT_CONFIG_FROM_TOML.get("database", {}).get("media_db_path", str(BASE_DATA_DIR_CLI / "tldw_chatbook_media_v2.db"))
     db_path_str = get_cli_setting("database", "media_db_path", default_db_path_str)
     db_path = Path(db_path_str).expanduser().resolve()
     return db_path
@@ -1344,6 +1342,7 @@ media_db: Optional[MediaDatabase] = None
 # --- Database Initialization Function (remains largely the same) ---
 def initialize_all_databases():
     global chachanotes_db, prompts_db, media_db
+    logger.critical("CRITICAL DEBUG: INSIDE initialize_all_databases() NOW.")
     logger.info("Initializing CLI databases...")
     # ChaChaNotes DB
     chachanotes_path = get_chachanotes_db_path()
@@ -1427,6 +1426,7 @@ RAG_SEARCH_CONFIG = settings.get("APP_RAG_SEARCH_CONFIG", DEFAULT_RAG_SEARCH_CON
 
 # --- Load CLI Config and Initialize Databases on module import ---
 # The `settings` global variable is now the result of the unified load_settings()
+logger.critical("CRITICAL DEBUG: CALLING initialize_all_databases() from config.py module level.") # Add this
 initialize_all_databases()
 
 # Make APP_CONFIG available globally if needed by other modules that import from config.py

@@ -4,6 +4,7 @@
 # Imports
 import json  # For export
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Any, List, Dict, Union
@@ -544,32 +545,42 @@ async def handle_ccp_save_conversation_details_button_pressed(app: 'TldwCli') ->
 async def handle_ccp_prompt_create_new_button_pressed(app: 'TldwCli') -> None:
     """Handles creating a new prompt in the CCP tab."""
     logger = getattr(app, 'loguru_logger', logging)
-    logger.info("CCP Create New Prompt button pressed.")
-    clear_ccp_prompt_fields(app)
-    try:
-        app.query_one("#ccp-prompt-name-input", Input).value = "New Prompt"  # Default name
-        author_name = app.app_config.get("user_defaults", {}).get("author_name", "User")  # Get default from config
-        app.query_one("#ccp-prompt-author-input", Input).value = author_name
+    logger.info("CCP Create New Prompt button pressed (targets right pane editor).")
 
-        app.query_one("#ccp-prompt-details-collapsible", Collapsible).collapsed = False
-        app.query_one("#ccp-conversation-details-collapsible", Collapsible).collapsed = True
-        app.query_one("#ccp-prompt-name-input", Input).focus()
-        app.notify("Ready to create a new prompt.", severity="information")
+    clear_ccp_prompt_fields(app) # This clears the right pane editor and related reactives
+
+    try:
+        app.query_one("#ccp-prompt-name-input", Input).value = "New Prompt"  # Default name in right pane
+        author_name = app.app_config.get("user_defaults", {}).get("author_name", "User")
+        app.query_one("#ccp-prompt-author-input", Input).value = author_name # In right pane
+
+        app.query_one("#ccp-prompt-details-collapsible", Collapsible).collapsed = False # Expand right pane prompt details
+        app.query_one("#ccp-conversation-details-collapsible", Collapsible).collapsed = True # Collapse right pane conv details
+
+        app.ccp_active_view = "conversation_details_view" # Ensure center pane is NOT on its editor view.
+                                                        # Or, if you want to clear the center editor too:
+                                                        # app.ccp_active_view = "prompt_editor_view"
+                                                        # await app._clear_prompt_fields() # This clears center editor
+                                                        # Then perhaps switch back to conv view or focus right pane
+
+        app.query_one("#ccp-prompt-name-input", Input).focus() # Focus in right pane
+        app.notify("Ready to create a new prompt in the right-side editor.", severity="information")
     except QueryError as e_query:
-        logger.error(f"CCP: UI error preparing for new prompt: {e_query}", exc_info=True)
+        logger.error(f"CCP: UI error preparing for new prompt (right pane): {e_query}", exc_info=True)
         app.notify("UI error creating new prompt.", severity="error")
 
 
 async def handle_ccp_prompt_load_selected_button_pressed(app: 'TldwCli') -> None:
-    """Handles loading a selected prompt in the CCP tab."""
+    """Handles loading a selected prompt from the LEFT PANE list into the RIGHT PANE editor."""
     logger = getattr(app, 'loguru_logger', logging)
-    logger.info("CCP Load Selected Prompt button pressed.")
+    logger.info("CCP Load Selected Prompt button pressed (loads into right pane editor).")
     try:
         list_view = app.query_one("#ccp-prompts-listview", ListView)
         selected_item = list_view.highlighted_child
         if selected_item and (hasattr(selected_item, 'prompt_id') or hasattr(selected_item, 'prompt_uuid')):
             prompt_id_to_load = getattr(selected_item, 'prompt_id', None)
             prompt_uuid_to_load = getattr(selected_item, 'prompt_uuid', None)
+            # load_ccp_prompt_for_editing populates the RIGHT PANE editor
             await load_ccp_prompt_for_editing(app, prompt_id=prompt_id_to_load, prompt_uuid=prompt_uuid_to_load)
         else:
             app.notify("No prompt selected in the list.", severity="warning")
@@ -581,14 +592,15 @@ async def handle_ccp_prompt_load_selected_button_pressed(app: 'TldwCli') -> None
 
 
 async def handle_ccp_prompt_save_button_pressed(app: 'TldwCli') -> None:
-    """Handles saving a new or existing prompt in the CCP tab."""
+    """Handles saving a new or existing prompt from the RIGHT PANE editor."""
     logger = getattr(app, 'loguru_logger', logging)
-    logger.info("CCP Save Prompt button pressed.")
+    logger.info("CCP Save Prompt button pressed (saves from right pane editor).")
     if not app.prompts_service_initialized:
         app.notify("Prompts service not available.", severity="error")
         return
 
     try:
+        # Query fields from the RIGHT PANE editor
         name = app.query_one("#ccp-prompt-name-input", Input).value.strip()
         author = app.query_one("#ccp-prompt-author-input", Input).value.strip()
         details = app.query_one("#ccp-prompt-description-textarea", TextArea).text.strip()
@@ -599,37 +611,40 @@ async def handle_ccp_prompt_save_button_pressed(app: 'TldwCli') -> None:
 
         if not name:
             app.notify("Prompt Name is required.", severity="error", timeout=4)
-            app.query_one("#ccp-prompt-name-input", Input).focus()
+            app.query_one("#ccp-prompt-name-input", Input).focus() # Focus in right pane
             return
 
         saved_id: Optional[int] = None
         saved_uuid: Optional[str] = None
-        message_from_save: str = ""  # Renamed to avoid conflict
+        message_from_save: str = ""
 
-        if app.current_prompt_id is None:
-            logger.info(f"CCP: Saving new prompt: {name}")
+        if app.current_prompt_id is None: # This implies a new prompt being saved from the right pane editor
+            logger.info(f"CCP: Saving new prompt from right pane: {name}")
             saved_id, saved_uuid, message_from_save = prompts_interop.add_prompt(
                 name=name, author=author, details=details,
                 system_prompt=system_prompt, user_prompt=user_prompt,
                 keywords=keywords_list, overwrite=False
             )
-        else:
-            logger.info(f"CCP: Updating prompt ID: {app.current_prompt_id}, Name: {name}")
+        else: # Updating an existing prompt loaded into the right pane editor
+            logger.info(f"CCP: Updating prompt ID (from right pane): {app.current_prompt_id}, Name: {name}")
             update_payload = {
                 'name': name, 'author': author, 'details': details,
                 'system_prompt': system_prompt, 'user_prompt': user_prompt,
                 'keywords': keywords_list
             }
+            # Assuming update_prompt_by_id takes the ID from app.current_prompt_id
+            # and returns (uuid, message_str)
             updated_uuid, message_from_save = prompts_interop.get_db_instance().update_prompt_by_id(
                 prompt_id=app.current_prompt_id,
                 update_data=update_payload,
-            )
+            ) # Removed version since it's not used by Prompts_DB update.
             saved_id = app.current_prompt_id
             saved_uuid = updated_uuid
 
-        if saved_id is not None or saved_uuid is not None:  # Check if save was successful
+        if saved_id is not None or saved_uuid is not None:
             app.notify(message_from_save, severity="information")
-            await populate_ccp_prompts_list_view(app)
+            await populate_ccp_prompts_list_view(app) # Refresh list in left pane
+            # Reload the saved/updated prompt back into the RIGHT PANE editor to confirm changes and get new version
             await load_ccp_prompt_for_editing(app, prompt_id=saved_id, prompt_uuid=saved_uuid)
         else:
             app.notify(f"Failed to save prompt: {message_from_save or 'Unknown error'}", severity="error")
@@ -641,26 +656,26 @@ async def handle_ccp_prompt_save_button_pressed(app: 'TldwCli') -> None:
     except prompts_interop.DatabaseError as e_db:
         app.notify(f"Database Error: {e_db}", severity="error", timeout=6)
     except QueryError as e_query:
-        logger.error(f"CCP Save Prompt: UI component error: {e_query}", exc_info=True)
+        logger.error(f"CCP Save Prompt (right pane): UI component error: {e_query}", exc_info=True)
         app.notify("UI Error saving prompt.", severity="error")
     except Exception as e_save:
-        logger.error(f"CCP: Error saving prompt: {e_save}", exc_info=True)
+        logger.error(f"CCP: Error saving prompt (right pane): {e_save}", exc_info=True)
         app.notify(f"Error saving prompt: {type(e_save).__name__}", severity="error")
 
 
 async def handle_ccp_prompt_clone_button_pressed(app: 'TldwCli') -> None:
-    """Handles cloning the currently loaded prompt in the CCP tab."""
+    """Handles cloning the currently loaded prompt in the RIGHT PANE editor."""
     logger = getattr(app, 'loguru_logger', logging)
-    logger.info("CCP Clone Prompt button pressed.")
+    logger.info("CCP Clone Prompt button pressed (clones from right pane editor).")
     if not app.prompts_service_initialized or app.current_prompt_id is None:
-        app.notify("No prompt loaded to clone or service unavailable.", severity="warning")
+        app.notify("No prompt loaded in right pane editor to clone or service unavailable.", severity="warning")
         return
     try:
-        original_name = app.current_prompt_name or "Prompt"  # Use reactive, ensure it's a string
+        original_name = app.current_prompt_name or "Prompt"
         timestamp = datetime.now().strftime('%y%m%d%H%M%S')
         cloned_name = f"Clone of {original_name} ({timestamp})"[:100]
 
-        cloned_id, cloned_uuid, msg_clone = prompts_interop.add_prompt(  # Renamed msg to msg_clone
+        cloned_id, cloned_uuid, msg_clone = prompts_interop.add_prompt(
             name=cloned_name,
             author=app.current_prompt_author or "",
             details=f"Clone of: {app.current_prompt_details or ''}",
@@ -671,26 +686,27 @@ async def handle_ccp_prompt_clone_button_pressed(app: 'TldwCli') -> None:
         )
         if cloned_id:
             app.notify(f"Prompt cloned as '{cloned_name}'. {msg_clone}", severity="information")
-            await populate_ccp_prompts_list_view(app)
+            await populate_ccp_prompts_list_view(app) # Refresh list in left pane
+            # Load the newly cloned prompt into the RIGHT PANE editor
             await load_ccp_prompt_for_editing(app, prompt_id=cloned_id, prompt_uuid=cloned_uuid)
         else:
             app.notify(f"Failed to clone prompt: {msg_clone}", severity="error")
     except Exception as e_clone:
-        logger.error(f"CCP: Error cloning prompt: {e_clone}", exc_info=True)
+        logger.error(f"CCP: Error cloning prompt (from right pane): {e_clone}", exc_info=True)
         app.notify(f"Error cloning prompt: {type(e_clone).__name__}", severity="error")
 
 
 async def handle_ccp_prompt_delete_button_pressed(app: 'TldwCli') -> None:
-    """Handles deleting (soft) the currently loaded prompt in the CCP tab."""
+    """Handles deleting (soft) the currently loaded prompt from the RIGHT PANE editor."""
     logger = getattr(app, 'loguru_logger', logging)
-    logger.info("CCP Delete Prompt button pressed.")
+    logger.info("CCP Delete Prompt button pressed (deletes based on right pane editor state).")
     if not app.prompts_service_initialized or app.current_prompt_id is None:
-        app.notify("No prompt loaded to delete or service unavailable.", severity="warning")
+        app.notify("No prompt loaded in right pane editor to delete or service unavailable.", severity="warning")
         return
 
     try:
         prompt_id_to_delete = app.current_prompt_id
-        if prompt_id_to_delete is None: # Should be caught by above check, but defensive
+        if prompt_id_to_delete is None:
             app.notify("Error: No prompt ID available for deletion.", severity="error")
             return
 
@@ -701,10 +717,9 @@ async def handle_ccp_prompt_delete_button_pressed(app: 'TldwCli') -> None:
         if success:
             app.notify(f"Prompt '{app.current_prompt_name or 'selected'}' deleted.",
                        severity="information")
-            clear_ccp_prompt_fields(app) # This will reset app.current_prompt_id and other reactives
-            await populate_ccp_prompts_list_view(app)
-            # Ensure the details pane is collapsed after deletion
-            try:
+            clear_ccp_prompt_fields(app) # Clear right pane editor and reactives
+            await populate_ccp_prompts_list_view(app) # Refresh list in left pane
+            try: # Collapse details in right pane
                 app.query_one("#ccp-prompt-details-collapsible", Collapsible).collapsed = True
             except QueryError:
                 logger.warning("Could not find #ccp-prompt-details-collapsible to collapse after delete.")
@@ -757,12 +772,13 @@ async def handle_ccp_character_select_changed(app: 'TldwCli', selected_value: An
 
 
 async def handle_ccp_prompts_list_view_selected(app: 'TldwCli', list_view_id: str, item: Any) -> None:
-    """Handles selecting a prompt from the list in the CCP tab."""
+    """Handles selecting a prompt from the list in the CCP tab (loads to RIGHT pane)."""
     logger = getattr(app, 'loguru_logger', logging)
     if item and (hasattr(item, 'prompt_id') or hasattr(item, 'prompt_uuid')):
         prompt_id_to_load = getattr(item, 'prompt_id', None)
         prompt_uuid_to_load = getattr(item, 'prompt_uuid', None)
-        logger.info(f"CCP Prompt selected from list: ID={prompt_id_to_load}, UUID={prompt_uuid_to_load}")
+        logger.info(f"CCP Prompt selected from list: ID={prompt_id_to_load}, UUID={prompt_uuid_to_load}. Loading to right pane.")
+        # load_ccp_prompt_for_editing loads into the RIGHT PANE editor
         await load_ccp_prompt_for_editing(app, prompt_id=prompt_id_to_load, prompt_uuid=prompt_uuid_to_load)
     else:
         logger.debug("CCP Prompts ListView selection was empty or item lacked ID/UUID.")
@@ -828,114 +844,114 @@ def _parse_prompt_from_file_content(file_content_str: str) -> Optional[Dict[str,
     logger = loguru_logger
     if not file_content_str:
         return None
-        # 1. Try JSON
-        try:
-            parsed_json = json.loads(file_content_str)
-            if isinstance(parsed_json, dict) and parsed_json.get("name"):
-                logger.debug("Successfully parsed prompt file content as JSON.")
-                return parsed_json
-            else:
-                logger.debug("Content parsed as JSON but not a valid prompt structure (missing 'name' or not a dict).")
-        except json.JSONDecodeError:
-            logger.debug("Content is not valid JSON. Trying YAML.")
-        except Exception as e_json_other:
-            logger.warning(f"Unexpected error during JSON parsing attempt: {e_json_other}")
+    # 1. Try JSON
+    try:
+        parsed_json = json.loads(file_content_str)
+        if isinstance(parsed_json, dict) and parsed_json.get("name"):
+            logger.debug("Successfully parsed prompt file content as JSON.")
+            return parsed_json
+        else:
+            logger.debug("Content parsed as JSON but not a valid prompt structure (missing 'name' or not a dict).")
+    except json.JSONDecodeError:
+        logger.debug("Content is not valid JSON. Trying YAML.")
+    except Exception as e_json_other:
+        logger.warning(f"Unexpected error during JSON parsing attempt: {e_json_other}")
 
-        # 2. Try YAML
-        try:
-            parsed_yaml = yaml.safe_load(file_content_str)
-            if isinstance(parsed_yaml, dict) and parsed_yaml.get("name"):
-                logger.debug("Successfully parsed prompt file content as YAML.")
-                return parsed_yaml
-            else:
-                logger.debug("Content parsed as YAML but not a valid prompt structure (missing 'name' or not a dict).")
-        except yaml.YAMLError:
-            logger.debug("Content is not valid YAML. Trying custom plain text format.")
-        except Exception as e_yaml_other:
-            logger.warning(f"Unexpected error during YAML parsing attempt: {e_yaml_other}")
+    # 2. Try YAML
+    try:
+        parsed_yaml = yaml.safe_load(file_content_str)
+        if isinstance(parsed_yaml, dict) and parsed_yaml.get("name"):
+            logger.debug("Successfully parsed prompt file content as YAML.")
+            return parsed_yaml
+        else:
+            logger.debug("Content parsed as YAML but not a valid prompt structure (missing 'name' or not a dict).")
+    except yaml.YAMLError:
+        logger.debug("Content is not valid YAML. Trying custom plain text format.")
+    except Exception as e_yaml_other:
+        logger.warning(f"Unexpected error during YAML parsing attempt: {e_yaml_other}")
 
-        # 3. Try Custom Plain Text Format
-        logger.debug("Attempting to parse prompt file content as custom plain text format.")
-        try:
-            parsed_custom_data: Dict[str, Any] = {}
-            # Regex to find sections: ### SECTION_NAME ###\nContent until next ### or EOF
-            # Using re.DOTALL so . matches newlines.
-            # Using re.IGNORECASE for section headers.
-            # Capture group 1 is the section name, group 2 is the content.
-            # This regex assumes sections are separated by ### SECTION_NAME ###
-            # and the content is everything until the next ### or end of file.
+    # 3. Try Custom Plain Text Format
+    logger.debug("Attempting to parse prompt file content as custom plain text format.")
+    try:
+        parsed_custom_data: Dict[str, Any] = {}
+        # Regex to find sections: ### SECTION_NAME ###\nContent until next ### or EOF
+        # Using re.DOTALL so . matches newlines.
+        # Using re.IGNORECASE for section headers.
+        # Capture group 1 is the section name, group 2 is the content.
+        # This regex assumes sections are separated by ### SECTION_NAME ###
+        # and the content is everything until the next ### or end of file.
 
-            # A simpler approach based on your format:
-            # Split by ###, then process pairs.
-            # Example: "### TITLE ###\nSAMPLE PROMPT\n### AUTHOR ###\nrmusser01"
-            # sections_raw = re.split(r'\s*###\s*([A-Z\s])\s*###\s*', file_content_str.strip(), flags=re.IGNORECASE)
-            # Filter out empty strings that result from splitting at the start/end
-            # sections_filtered = [s.strip() for s in sections_raw if s and s.strip()]
+        # A simpler approach based on your format:
+        # Split by ###, then process pairs.
+        # Example: "### TITLE ###\nSAMPLE PROMPT\n### AUTHOR ###\nrmusser01"
+        # sections_raw = re.split(r'\s*###\s*([A-Z\s])\s*###\s*', file_content_str.strip(), flags=re.IGNORECASE)
+        # Filter out empty strings that result from splitting at the start/end
+        # sections_filtered = [s.strip() for s in sections_raw if s and s.strip()]
 
-            # More robust parsing:
-            header_map = {
-                "TITLE": "name",
-                "AUTHOR": "author",
-                "SYSTEM": "system_prompt",
-                "USER": "user_prompt",
-                "KEYWORDS": "keywords_str",  # Will be split later
-                "DETAILS": "details",
+        # More robust parsing:
+        header_map = {
+            "TITLE": "name",
+            "AUTHOR": "author",
+            "SYSTEM": "system_prompt",
+            "USER": "user_prompt",
+            "KEYWORDS": "keywords_str",  # Will be split later
+            "DETAILS": "details",
+        }
+
+        # Use re.finditer to find all section blocks
+        # Pattern: ### SECTION_NAME ###\n(content up to next ### or EOF)
+        pattern = r"^\s*###\s*("  "|".join(header_map.keys())
+        r")\s*###\s*\n(.*?)(?=(?:\n\s*###|$))"
+        for match in re.finditer(pattern, file_content_str, re.MULTILINE | re.DOTALL | re.IGNORECASE):
+            section_name_from_file = match.group(1).upper()
+            section_content = match.group(2).strip()
+            dict_key = header_map.get(section_name_from_file)
+            if dict_key:
+                parsed_custom_data[dict_key] = section_content
+
+        # Post-process keywords if they were read as a string
+        if "keywords_str" in parsed_custom_data:
+            parsed_custom_data["keywords"] = [
+                kw.strip() for kw in parsed_custom_data["keywords_str"].split(',') if kw.strip()
+            ]
+            del parsed_custom_data["keywords_str"]  # remove the temp string version
+        elif "keywords" not in parsed_custom_data:  # Ensure keywords key exists
+            parsed_custom_data["keywords"] = []
+
+        # If "name" (from TITLE) is missing after regex parsing, try to infer it from the first non-header line
+        if "name" not in parsed_custom_data or not parsed_custom_data["name"]:
+            first_few_lines = file_content_str.strip().split('\n', 5)
+            potential_title_line = ""
+            if first_few_lines:
+                if first_few_lines[0].upper().strip().startswith("### TITLE ###"):
+                    if len(first_few_lines) > 1 and not first_few_lines[1].upper().strip().startswith("###"):
+                        potential_title_line = first_few_lines[1].strip()
+                elif not first_few_lines[0].upper().strip().startswith("###"):
+                    potential_title_line = first_few_lines[0].strip()
+            if potential_title_line:
+                parsed_custom_data["name"] = potential_title_line
+
+        if "name" in parsed_custom_data and parsed_custom_data["name"]:
+            logger.debug(
+                f"Successfully parsed prompt file content as custom plain text. Data: {parsed_custom_data}")
+            # Ensure all expected fields for add_prompt are present, defaulting to None or empty list
+            final_data_for_add = {
+                "name": parsed_custom_data.get("name"),
+                "author": parsed_custom_data.get("author"),
+                "details": parsed_custom_data.get("details"),
+                "system_prompt": parsed_custom_data.get("system_prompt"),
+                "user_prompt": parsed_custom_data.get("user_prompt"),
+                "keywords": parsed_custom_data.get("keywords", []),
             }
-
-            # Use re.finditer to find all section blocks
-            # Pattern: ### SECTION_NAME ###\n(content up to next ### or EOF)
-            pattern = r"^\s*###\s*("  "|".join(header_map.keys())
-            r")\s*###\s*\n(.*?)(?=(?:\n\s*###|$))"
-            for match in re.finditer(pattern, file_content_str, re.MULTILINE | re.DOTALL | re.IGNORECASE):
-                section_name_from_file = match.group(1).upper()
-                section_content = match.group(2).strip()
-                dict_key = header_map.get(section_name_from_file)
-                if dict_key:
-                    parsed_custom_data[dict_key] = section_content
-
-            # Post-process keywords if they were read as a string
-            if "keywords_str" in parsed_custom_data:
-                parsed_custom_data["keywords"] = [
-                    kw.strip() for kw in parsed_custom_data["keywords_str"].split(',') if kw.strip()
-                ]
-                del parsed_custom_data["keywords_str"]  # remove the temp string version
-            elif "keywords" not in parsed_custom_data:  # Ensure keywords key exists
-                parsed_custom_data["keywords"] = []
-
-            # If "name" (from TITLE) is missing after regex parsing, try to infer it from the first non-header line
-            if "name" not in parsed_custom_data or not parsed_custom_data["name"]:
-                first_few_lines = file_content_str.strip().split('\n', 5)
-                potential_title_line = ""
-                if first_few_lines:
-                    if first_few_lines[0].upper().strip().startswith("### TITLE ###"):
-                        if len(first_few_lines) > 1 and not first_few_lines[1].upper().strip().startswith("###"):
-                            potential_title_line = first_few_lines[1].strip()
-                    elif not first_few_lines[0].upper().strip().startswith("###"):
-                        potential_title_line = first_few_lines[0].strip()
-                if potential_title_line:
-                    parsed_custom_data["name"] = potential_title_line
-
-            if "name" in parsed_custom_data and parsed_custom_data["name"]:
-                logger.debug(
-                    f"Successfully parsed prompt file content as custom plain text. Data: {parsed_custom_data}")
-                # Ensure all expected fields for add_prompt are present, defaulting to None or empty list
-                final_data_for_add = {
-                    "name": parsed_custom_data.get("name"),
-                    "author": parsed_custom_data.get("author"),
-                    "details": parsed_custom_data.get("details"),
-                    "system_prompt": parsed_custom_data.get("system_prompt"),
-                    "user_prompt": parsed_custom_data.get("user_prompt"),
-                    "keywords": parsed_custom_data.get("keywords", []),
-                }
-                return final_data_for_add
-            else:
-                logger.debug("Custom plain text parsing did not yield a valid 'name' or was empty.")
-        except Exception as e_custom:
-            logger.error(f"Error parsing prompt file as custom plain text: {e_custom}", exc_info=True)
-            return None
-            # If all parsing attempts fail
-        logger.error("All parsing attempts for prompt file failed.")
+            return final_data_for_add
+        else:
+            logger.debug("Custom plain text parsing did not yield a valid 'name' or was empty.")
+    except Exception as e_custom:
+        logger.error(f"Error parsing prompt file as custom plain text: {e_custom}", exc_info=True)
         return None
+        # If all parsing attempts fail
+    logger.error("All parsing attempts for prompt file failed.")
+    return None
 
 async def _prompt_import_callback(app: 'TldwCli', selected_path: Optional[Path]) -> None:
     logger = getattr(app, 'loguru_logger', logging)
@@ -997,6 +1013,175 @@ async def handle_ccp_import_prompt_button_pressed(app: 'TldwCli') -> None:
                           callback=lambda path: _prompt_import_callback(app, path))
 
 ########################################################################################################################
+# CCP Center Pane Editor Button Handlers (these operate on the #ccp-editor-* prefixed IDs)
+########################################################################################################################
+async def handle_ccp_editor_prompt_save_button_pressed(app: 'TldwCli') -> None:
+    """Handles saving a new or existing prompt from the CENTER PANE editor."""
+    logger = getattr(app, 'loguru_logger', logging)
+    logger.info("CCP Editor Save Prompt button pressed (saves from center pane editor).")
+    if not app.prompts_service_initialized:
+        app.notify("Prompts service not available.", severity="error")
+        return
+
+    try:
+        # Query fields from the CENTER PANE editor
+        name = app.query_one("#ccp-editor-prompt-name-input", Input).value.strip()
+        author = app.query_one("#ccp-editor-prompt-author-input", Input).value.strip()
+        details = app.query_one("#ccp-editor-prompt-description-textarea", TextArea).text.strip()
+        system_prompt = app.query_one("#ccp-editor-prompt-system-textarea", TextArea).text.strip()
+        user_prompt = app.query_one("#ccp-editor-prompt-user-textarea", TextArea).text.strip()
+        keywords_str = app.query_one("#ccp-editor-prompt-keywords-textarea", TextArea).text.strip()
+        keywords_list = [kw.strip() for kw in keywords_str.split(',') if kw.strip()]
+
+        if not name:
+            app.notify("Prompt Name is required for editor save.", severity="error", timeout=4)
+            app.query_one("#ccp-editor-prompt-name-input", Input).focus()
+            return
+
+        saved_id: Optional[int] = None
+        saved_uuid: Optional[str] = None
+        message_from_save: str = ""
+
+        # current_prompt_id, etc. are used to track the prompt loaded into *either* editor.
+        # If the center pane editor is active, these reactives should reflect that.
+        if app.current_prompt_id is None: # Saving a NEW prompt via center editor
+            logger.info(f"CCP Editor: Saving new prompt: {name}")
+            saved_id, saved_uuid, message_from_save = prompts_interop.add_prompt(
+                name=name, author=author, details=details,
+                system_prompt=system_prompt, user_prompt=user_prompt,
+                keywords=keywords_list, overwrite=False
+            )
+        else: # Updating an EXISTING prompt via center editor
+            logger.info(f"CCP Editor: Updating prompt ID: {app.current_prompt_id}, Name: {name}")
+            update_payload = {
+                'name': name, 'author': author, 'details': details,
+                'system_prompt': system_prompt, 'user_prompt': user_prompt,
+                'keywords': keywords_list
+            }
+            updated_uuid, message_from_save = prompts_interop.get_db_instance().update_prompt_by_id(
+                prompt_id=app.current_prompt_id,
+                update_data=update_payload,
+            )
+            saved_id = app.current_prompt_id
+            saved_uuid = updated_uuid
+
+        if saved_id is not None or saved_uuid is not None:
+            app.notify(f"Prompt Editor: {message_from_save}", severity="information")
+            await populate_ccp_prompts_list_view(app) # Refresh list in left pane
+            # After saving from center editor, reload it into the center editor.
+            # _load_prompt_for_editing already handles setting reactives and populating center editor.
+            await app._load_prompt_for_editing(prompt_id=saved_id, prompt_uuid=saved_uuid)
+        else:
+            app.notify(f"Prompt Editor: Failed to save prompt: {message_from_save or 'Unknown error'}", severity="error")
+
+    except prompts_interop.InputError as e_in:
+        app.notify(f"Editor Input Error: {e_in}", severity="error", timeout=6)
+    except prompts_interop.ConflictError as e_cf:
+        app.notify(f"Editor Save Conflict: {e_cf}", severity="error", timeout=6)
+    except prompts_interop.DatabaseError as e_db:
+        app.notify(f"Editor Database Error: {e_db}", severity="error", timeout=6)
+    except QueryError as e_query:
+        logger.error(f"CCP Editor Save Prompt: UI component error: {e_query}", exc_info=True)
+        app.notify("UI Error saving prompt from editor.", severity="error")
+    except Exception as e_save:
+        logger.error(f"CCP Editor: Error saving prompt: {e_save}", exc_info=True)
+        app.notify(f"Editor: Error saving prompt: {type(e_save).__name__}", severity="error")
+
+
+async def handle_ccp_editor_prompt_clone_button_pressed(app: 'TldwCli') -> None:
+    """Handles cloning the prompt currently in the CENTER PANE editor."""
+    logger = getattr(app, 'loguru_logger', logging)
+    logger.info("CCP Editor Clone Prompt button pressed.")
+    if not app.prompts_service_initialized or app.current_prompt_id is None:
+        app.notify("No prompt loaded in editor to clone or service unavailable.", severity="warning")
+        return
+
+    try:
+        # Assume current_prompt_* reactives hold the state of the editor
+        original_name = app.current_prompt_name or "Prompt"
+        timestamp = datetime.now().strftime('%y%m%d%H%M%S')
+        cloned_name = f"Clone of {original_name} ({timestamp})"[:100]
+
+        cloned_id, cloned_uuid, msg_clone = prompts_interop.add_prompt(
+            name=cloned_name,
+            author=app.current_prompt_author or "",
+            details=f"Clone of: {app.current_prompt_details or ''}",
+            system_prompt=app.current_prompt_system or "",
+            user_prompt=app.current_prompt_user or "",
+            keywords=[kw.strip() for kw in (app.current_prompt_keywords_str or "").split(',') if kw.strip()],
+            overwrite=False
+        )
+        if cloned_id:
+            app.notify(f"Editor: Prompt cloned as '{cloned_name}'. {msg_clone}", severity="information")
+            await populate_ccp_prompts_list_view(app)
+            # Load the newly cloned prompt into the CENTER PANE editor
+            await app._load_prompt_for_editing(prompt_id=cloned_id, prompt_uuid=cloned_uuid)
+        else:
+            app.notify(f"Editor: Failed to clone prompt: {msg_clone}", severity="error")
+    except Exception as e_clone:
+        logger.error(f"CCP Editor: Error cloning prompt: {e_clone}", exc_info=True)
+        app.notify(f"Editor: Error cloning prompt: {type(e_clone).__name__}", severity="error")
+
+
+async def handle_ccp_editor_prompt_delete_button_pressed(app: 'TldwCli') -> None:
+    """Handles deleting the prompt currently in the CENTER PANE editor."""
+    logger = getattr(app, 'loguru_logger', logging)
+    logger.info("CCP Editor Delete Prompt button pressed.")
+    if not app.prompts_service_initialized or app.current_prompt_id is None:
+        app.notify("No prompt loaded in editor to delete or service unavailable.", severity="warning")
+        return
+
+    try:
+        prompt_id_to_delete = app.current_prompt_id
+        if prompt_id_to_delete is None:
+            app.notify("Editor: No prompt ID available for deletion.", severity="error")
+            return
+
+        success = prompts_interop.soft_delete_prompt(prompt_id_to_delete)
+
+        if success:
+            app.notify(f"Editor: Prompt '{app.current_prompt_name or 'selected'}' deleted.", severity="information")
+            app._clear_prompt_fields() # Clear center editor and reactives
+            await populate_ccp_prompts_list_view(app)
+            app.ccp_active_view = "conversation_details_view" # Switch view back
+        else:
+            app.notify(f"Editor: Failed to delete prompt. It might have been already deleted.", severity="error")
+            await populate_ccp_prompts_list_view(app)
+            if app.current_prompt_id == prompt_id_to_delete: # If it was the one we tried to delete
+                app._clear_prompt_fields()
+                app.ccp_active_view = "conversation_details_view"
+
+    except prompts_interop.ConflictError as e_cf_del:
+        logger.error(f"CCP Editor: Conflict deleting prompt: {e_cf_del}", exc_info=True)
+        app.notify(f"Editor: Conflict error deleting prompt: {e_cf_del}", severity="error")
+    except prompts_interop.DatabaseError as e_db_del:
+        logger.error(f"CCP Editor: Database error deleting prompt: {e_db_del}", exc_info=True)
+        app.notify(f"Editor: Database error deleting prompt: {type(e_db_del).__name__}", severity="error")
+    except Exception as e_del:
+        logger.error(f"CCP Editor: Unexpected error deleting prompt: {e_del}", exc_info=True)
+        app.notify(f"Editor: Unexpected error deleting prompt: {type(e_del).__name__}", severity="error")
+
+# ##############################################################
+# --- CCP Center Pane Editor Button Handlers End ---
+# ##############################################################
+
+
+
+# ##############################################################
+# --- CCP Right Pane Editor Button Handlers ---
+# ##############################################################
+async def handle_ccp_tab_sidebar_toggle(app: 'TldwCli', button_id: str) -> None:
+    """Handles sidebar toggles specific to the CCP tab."""
+    logger = getattr(app, 'loguru_logger', logging)
+    if button_id == "toggle-conv-char-left-sidebar":
+        app.conv_char_sidebar_left_collapsed = not app.conv_char_sidebar_left_collapsed
+        logger.debug("CCP left sidebar now %s", "collapsed" if app.conv_char_sidebar_left_collapsed else "expanded")
+    elif button_id == "toggle-conv-char-right-sidebar":
+        app.conv_char_sidebar_right_collapsed = not app.conv_char_sidebar_right_collapsed
+        logger.debug("CCP right sidebar now %s", "collapsed" if app.conv_char_sidebar_right_collapsed else "expanded")
+    else:
+        logger.warning(f"Unhandled sidebar toggle button ID '{button_id}' in CCP tab handler.")
+
 
 #
 # End of conv_char_events.py

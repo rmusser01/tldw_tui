@@ -39,6 +39,18 @@ if TYPE_CHECKING:
 #
 # Functions:
 
+async def handle_chat_tab_sidebar_toggle(app: 'TldwCli', button_id: str) -> None:
+    """Handles sidebar toggles specific to the Chat tab."""
+    logger = getattr(app, 'loguru_logger', logging)
+    if button_id == "toggle-chat-left-sidebar":
+        app.chat_sidebar_collapsed = not app.chat_sidebar_collapsed
+        logger.debug("Chat tab settings sidebar (left) now %s", "collapsed" if app.chat_sidebar_collapsed else "expanded")
+    elif button_id == "toggle-chat-right-sidebar":
+        app.character_sidebar_collapsed = not app.character_sidebar_collapsed
+        logger.debug("Chat tab character sidebar (right) now %s", "collapsed" if app.character_sidebar_collapsed else "expanded")
+    else:
+        logger.warning(f"Unhandled sidebar toggle button ID '{button_id}' in Chat tab handler.")
+
 async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
     """Handles the send button press for the main chat tab."""
     loguru_logger.info(f"Send button pressed for '{prefix}' (main chat)") # Use loguru_logger consistently
