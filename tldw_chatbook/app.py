@@ -1595,7 +1595,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         current_active_tab = self.current_tab
 
         if current_active_tab == TAB_CHAT and control_id and control_id.startswith("chat-character-"):
-            if control_id != "chat-character-search-input": # Exclude search input
+            # Ensure it's one of the actual attribute TextAreas, not something else
+            if control_id in [
+                "chat-character-description-edit",
+                "chat-character-personality-edit",
+                "chat-character-scenario-edit",
+                "chat-character-system-prompt-edit",
+                "chat-character-first-message-edit"
+            ]:
                 await chat_handlers.handle_chat_character_attribute_changed(self, event)
 
     async def on_input_changed(self, event: Input.Changed) -> None:
@@ -1620,6 +1627,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         elif input_id == "chat-character-search-input" and current_active_tab == TAB_CHAT:
             # No debouncer here, direct call as per existing handler
             await chat_handlers.handle_chat_character_search_input_changed(self, event)
+        elif input_id == "chat-character-name-edit" and current_active_tab == TAB_CHAT:
+            await chat_handlers.handle_chat_character_attribute_changed(self, event)
         # Add more specific input handlers if needed, e.g., for title inputs if they need live validation/reaction
 
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
