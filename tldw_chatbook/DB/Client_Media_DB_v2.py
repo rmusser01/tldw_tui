@@ -3151,6 +3151,45 @@ class MediaDatabase:
             # Wrap unexpected errors in DatabaseError
             raise DatabaseError(f"Unexpected error during pagination: {e}") from e
 
+    def get_distinct_media_types(self, include_deleted=False, include_trash=False) -> List[str]:
+        """
+        Retrieves a list of all distinct, non-null media types present in the Media table.
+
+        Args:
+            include_deleted (bool): If True, consider types from soft-deleted media items.
+            include_trash (bool): If True, consider types from trashed media items.
+
+        Returns:
+            List[str]: A sorted list of unique media type strings.
+                       Returns an empty list if no types are found or in case of error.
+
+        Raises:
+            DatabaseError: If a database query error occurs.
+        """
+        logger.debug(
+            f"Fetching distinct media types from DB: {self.db_path_str} (deleted={include_deleted}, trash={include_trash})")
+        conditions = ["type IS NOT NULL AND type != ''"]
+        if not include_deleted:
+            conditions.append("deleted = 0")
+        if not include_trash:
+            conditions.append("is_trash = 0")
+
+        where_clause = " AND ".join(conditions)
+
+        query = f"SELECT DISTINCT type FROM Media WHERE {where_clause} ORDER BY type ASC"
+        try:
+            cursor = self.execute_query(query)
+            results = [row['type'] for row in cursor.fetchall() if row['type']]
+            logger.info(f"Found {len(results)} distinct media types: {results}")
+            return results
+        except sqlite3.Error as e:
+            logger.error(f"Error fetching distinct media types from DB {self.db_path_str}: {e}", exc_info=True)
+            raise DatabaseError(f"Failed to fetch distinct media types: {e}") from e
+        except Exception as e:
+            logger.error(f"Unexpected error fetching distinct media types from DB {self.db_path_str}: {e}",
+                         exc_info=True)
+            raise DatabaseError(f"An unexpected error occurred while fetching distinct media types: {e}") from e
+
     def add_media_chunk(self, media_id: int, chunk_text: str, start_index: int, end_index: int, chunk_id: str) -> Optional[Dict]:
         """
         Adds a single chunk record to the MediaChunks table for an active media item.

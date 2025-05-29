@@ -29,7 +29,8 @@ from textual.css.query import QueryError  # For specific error handling
 # --- Local API library Imports ---
 from tldw_chatbook.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, TAB_STATS, TAB_TOOLS_SETTINGS, \
     TAB_INGEST, TAB_LLM, TAB_MEDIA, TAB_SEARCH
-from tldw_chatbook.config import chachanotes_db as global_chachanotes_db_instance
+from tldw_chatbook.DB.Client_Media_DB_v2 import MediaDatabase
+from tldw_chatbook.config import chachanotes_db as global_chachanotes_db_instance, get_media_db_path, CLI_APP_CLIENT_ID
 from tldw_chatbook.Logging_Config import RichLogHandler
 from tldw_chatbook.Prompt_Management import Prompts_Interop as prompts_interop
 from tldw_chatbook.Utils.Emoji_Handling import get_char, EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN, EMOJI_TITLE_NOTE, \
@@ -51,7 +52,7 @@ from .Event_Handlers import (
     chat_events as chat_handlers,
     conv_char_events as ccp_handlers,
     notes_events as notes_handlers,
-    worker_events as worker_handlers, worker_events,
+    worker_events as worker_handlers, worker_events, ingest_events,
 )
 from .Notes.Notes_Library import NotesInteropService
 from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
@@ -212,6 +213,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # Media Tab
     media_active_view: reactive[Optional[str]] = reactive(None)
     _initial_media_view: Optional[str] = "media-view-video-audio"  # Default to the first sub-tab
+    media_db: Optional[MediaDatabase] = None
 
     # Search Tab's active sub-view reactives
     search_active_sub_tab: reactive[Optional[str]] = reactive(None)
@@ -220,6 +222,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # Ingest Tab
     ingest_active_view: reactive[Optional[str]] = reactive(None)
     _initial_ingest_view: Optional[str] = "ingest-view-prompts"
+
 
     # Tools Tab
     tools_settings_active_view: reactive[Optional[str]] = reactive(None)  # Or a default view ID
@@ -242,6 +245,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
     def __init__(self):
         super().__init__()
+        self.MediaDatabase = MediaDatabase
         self.app_config = load_settings() # Already loading this
         self.loguru_logger = loguru_logger # Make loguru_logger an instance variable for handlers
         self.prompts_client_id = "tldw_tui_client_v1" # Store client ID for prompts service
@@ -318,12 +322,23 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         self._prompt_search_timer = None  # Initialize here
 
+        try:
+            media_db_path = get_media_db_path()  # From your config.py
+            self.media_db = MediaDatabase(db_path=media_db_path,
+                                          client_id=CLI_APP_CLIENT_ID)  # Use constant for client_id
+            self.loguru_logger.info(
+                f"Media_DB_v2 initialized successfully for client '{CLI_APP_CLIENT_ID}' at {media_db_path}")
+        except Exception as e:
+            self.loguru_logger.error(f"Failed to initialize Media_DB_v2: {e}", exc_info=True)
+            self.media_db = None
+
         # --- Setup Default view for CCP tab ---
         # Initialize self.ccp_active_view based on initial tab or default state if needed
         if self._initial_tab_value == TAB_CCP:
             self.ccp_active_view = "conversation_details_view"  # Default view for CCP tab
         # else: it will default to "conversation_details_view" anyway
         self._ui_ready = False  # Track if UI is fully composed
+
 
     def _setup_logging(self):
         """Sets up all logging handlers, including Loguru integration."""
@@ -1389,8 +1404,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     await notes_handlers.handle_notes_tab_sidebar_toggle(self, button_id)
                     return
             elif current_active_tab == TAB_SEARCH:
-                button_id = event.button.id
-                # Map Search Tab's navigation button IDs to their corresponding view IDs
+                self.loguru_logger.info(f"Button '{button_id}' on active Search tab.")
                 search_button_id_to_view_map = {
                     SEARCH_NAV_RAG_QA: SEARCH_VIEW_RAG_QA,
                     SEARCH_NAV_RAG_CHAT: SEARCH_VIEW_RAG_CHAT,
@@ -1402,8 +1416,28 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     view_to_activate = search_button_id_to_view_map[button_id]
                     self.loguru_logger.debug(
                         f"Search nav button '{button_id}' pressed. Activating view '{view_to_activate}'.")
-                    self.search_active_sub_tab = view_to_activate  # This will trigger the watcher
-                    return  # Handled
+                    self.search_active_sub_tab = view_to_activate
+                    return  # Search sub-navigation button handled.
+                else:
+                    self.loguru_logger.warning(
+                        f"Unhandled button on SEARCH tab: ID:{button_id}, Label:'{event.button.label}'")
+                return  # Explicitly return after handling (or logging unhandled) buttons on Search tab.
+            elif current_active_tab == TAB_INGEST:
+                if button_id and button_id.startswith("ingest-nav-"):
+                    # Handle existing ingest nav buttons
+                    if button_id == "ingest-nav-tldw-api":  # Our new button
+                        view_to_activate = "ingest-view-tldw-api"
+                    else:  # Existing logic for other ingest views
+                        view_to_activate = button_id.replace("ingest-nav-", "ingest-view-")
+
+                    self.loguru_logger.debug(
+                        f"Ingest nav button '{button_id}' pressed. Activating view '{view_to_activate}'.")
+                    self.ingest_active_view = view_to_activate
+                elif button_id == "tldw-api-submit":  # The new submit button
+                    await ingest_events.handle_tldw_api_submit_button_pressed(self)
+                else:
+                    self.loguru_logger.warning(
+                        f"Unhandled button on INGEST tab: ID:{button_id}, Label:'{event.button.label}'")
             # If it's a toggle button but not matched above for the current tab
             self.loguru_logger.warning(f"Unhandled toggle button ID '{button_id}' for tab '{current_active_tab}' or button not applicable to this tab.")
             return # Considered handled as a toggle attempt, even if no action for current tab
@@ -1582,8 +1616,15 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         if select_id == "conv-char-character-select" and current_active_tab == TAB_CCP:
             await ccp_handlers.handle_ccp_character_select_changed(self, event.value)
-        # Note: API provider/model Selects are handled by watchers on their reactive variables
-        # (e.g., watch_chat_api_provider_value) which call _update_model_select.
+
+        current_active_tab = self.current_tab
+
+        if select_id == "conv-char-character-select" and current_active_tab == TAB_CCP:
+            await ccp_handlers.handle_ccp_character_select_changed(self, event.value)
+        elif select_id == "tldw-api-auth-method" and current_active_tab == TAB_INGEST:
+            await ingest_events.handle_tldw_api_auth_method_changed(self, str(event.value))
+        elif select_id == "tldw-api-media-type" and current_active_tab == TAB_INGEST:
+            await ingest_events.handle_tldw_api_media_type_changed(self, str(event.value))
 
     async def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         # Delegate all worker state changes to the central handler
