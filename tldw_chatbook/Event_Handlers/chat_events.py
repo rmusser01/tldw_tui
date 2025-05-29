@@ -1394,7 +1394,7 @@ async def handle_chat_view_selected_prompt_button_pressed(app: 'TldwCli') -> Non
     logger.debug("Chat Tab: View Selected Prompt button pressed.")
 
     try:
-        results_list_view = app.query_one("#chat-prompt-search-results-listview", ListView)
+        results_list_view = app.query_one("#chat-prompts-listview", ListView)
         selected_list_item = results_list_view.highlighted_child
 
         if not selected_list_item:
@@ -1414,8 +1414,8 @@ async def handle_chat_view_selected_prompt_button_pressed(app: 'TldwCli') -> Non
         logger.debug(f"Chat Tab: Fetching details for prompt identifier: {identifier_to_fetch}")
         prompt_details = prompts_interop.fetch_prompt_details(identifier_to_fetch)
 
-        system_display_widget = app.query_one("#chat-prompt-display-system", TextArea)
-        user_display_widget = app.query_one("#chat-prompt-display-user", TextArea)
+        system_display_widget = app.query_one("#chat-prompt-system-display", TextArea)
+        user_display_widget = app.query_one("#chat-prompt-user-display", TextArea)
         copy_system_button = app.query_one("#chat-prompt-copy-system-button", Button)
         copy_user_button = app.query_one("#chat-prompt-copy-user-button", Button)
 
@@ -1509,10 +1509,10 @@ async def handle_chat_copy_system_prompt_button_pressed(app: 'TldwCli') -> None:
     logger = getattr(app, 'loguru_logger', logging)
     logger.debug("Chat Tab: Copy System Prompt button pressed.")
     try:
-        system_display_widget = app.query_one("#chat-prompt-display-system", TextArea)
+        system_display_widget = app.query_one("#chat-prompt-system-display", TextArea)
         content_to_copy = system_display_widget.text
         if content_to_copy:
-            app.set_clipboard(content_to_copy)
+            app.copy_to_clipboard(content_to_copy)
             app.notify("System prompt copied to clipboard!")
             logger.info("Chat Tab: System prompt content copied to clipboard.")
         else:
@@ -1527,10 +1527,10 @@ async def handle_chat_copy_user_prompt_button_pressed(app: 'TldwCli') -> None:
     logger = getattr(app, 'loguru_logger', logging)
     logger.debug("Chat Tab: Copy User Prompt button pressed.")
     try:
-        user_display_widget = app.query_one("#chat-prompt-display-user", TextArea)
+        user_display_widget = app.query_one("#chat-prompt-user-display", TextArea)
         content_to_copy = user_display_widget.text
         if content_to_copy:
-            app.set_clipboard(content_to_copy)
+            app.copy_to_clipboard(content_to_copy)
             app.notify("User prompt copied to clipboard!")
             logger.info("Chat Tab: User prompt content copied to clipboard.")
         else:

@@ -1012,10 +1012,11 @@ async def handle_ccp_import_prompt_button_pressed(app: 'TldwCli') -> None:
     logger.info("CCP Import Prompt button pressed.")
 
     defined_filters = Filters(
-        ("Prompt files (TXT, JSON, YAML)", lambda p: p.suffix.lower() in (".txt", ".json", ".yaml", ".yml")),
+        ("Prompt files (TXT, MD, JSON, YAML)", lambda p: p.suffix.lower() in (".txt", ".md", ".json", ".yaml", ".yml")),
         ("JSON files (*.json)", lambda p: p.suffix.lower() == ".json"),
         ("YAML files (*.yaml, *.yml)", lambda p: p.suffix.lower() in (".yaml", ".yml")),
         ("Text files (*.txt)", lambda p: p.suffix.lower() == ".txt"),
+        ("Markdown files (*.md)", lambda p: p.suffix.lower() == ".md"),
         ("All files (*.*)", lambda p: True)
     )
     await app.push_screen(FileOpen(location=str(Path.home()), title="Select Prompt File", filters=defined_filters),

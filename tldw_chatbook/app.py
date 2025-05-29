@@ -1463,6 +1463,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             elif button_id == "chat-save-current-chat-button": await chat_handlers.handle_chat_save_current_chat_button_pressed(self)
             elif button_id == "chat-save-conversation-details-button": await chat_handlers.handle_chat_save_details_button_pressed(self)
             elif button_id == "chat-conversation-load-selected-button": await chat_handlers.handle_chat_load_selected_button_pressed(self)
+            elif button_id == "chat-prompt-load-selected-button": await chat_handlers.handle_chat_view_selected_prompt_button_pressed(self)
+            elif button_id == "chat-prompt-copy-system-button": await chat_handlers.handle_chat_copy_system_prompt_button_pressed(self)
+            elif button_id == "chat-prompt-copy-user-button": await chat_handlers.handle_chat_copy_user_prompt_button_pressed(self)
+            elif button_id == "chat-load-character-button": await chat_handlers.handle_chat_load_character_button_pressed(self, event) # Pass event if needed by handler
             else: self.loguru_logger.warning(f"Unhandled button on CHAT tab -> ID: {button_id}, Label: '{button.label}'")
 
         elif current_active_tab == TAB_CCP:
