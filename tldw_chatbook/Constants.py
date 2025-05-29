@@ -104,6 +104,18 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 .sidebar-textarea { width: 100%; border: round $surface; margin-bottom: 1; }
 .sidebar Select { width: 100%; margin-bottom: 1; }
 
+.prompt-display-textarea {
+    height: 7; /* Example height */
+    border: round $primary-lighten-2;
+    background: $primary-background;
+}
+
+.sidebar-listview {
+    height: 10; /* Example height for listviews in sidebars */
+    border: round $primary-lighten-2;
+    background: $primary-background;
+}
+
 /* --- Chat Window specific layouts --- */
 #chat-main-content {
     layout: vertical;
@@ -761,6 +773,46 @@ MetricsScreen Label.-info-message {
 .llm-view-area { /* Common class for individual content areas */
     width: 100%;
     height: 100%; /* Or auto */
+}
+
+/* --- Media Tab --- */
+#media-window { /* Matches TAB_MEDIA */
+    layout: horizontal; /* Main layout for this tab */
+}
+
+.media-nav-pane {
+    dock: left;
+    width: 25%; /* Adjust as needed */
+    min-width: 20; /* Example min-width */
+    max-width: 50; /* Example max-width */
+    height: 100%;
+    background: $boost; /* Or a different background */
+    padding: 1;
+    border-right: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.media-nav-pane .media-nav-button { /* Style for navigation buttons */
+    width: 100%;
+    margin-bottom: 1;
+    border: none;
+    height: 3;
+}
+.media-nav-pane .media-nav-button:hover {
+    background: $accent 75%; /* Example hover, distinct from other navs */
+}
+
+.media-content-pane {
+    width: 1fr; /* Takes remaining horizontal space */
+    height: 100%;
+    padding: 1 2; /* Padding for the content area */
+    overflow-y: auto; /* If content within sub-views might scroll */
+}
+
+.media-view-area { /* Class for individual content areas in Media tab */
+    width: 100%;
+    height: 100%; /* Or auto if content dictates height */
 }
     """
 

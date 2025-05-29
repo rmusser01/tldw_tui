@@ -203,6 +203,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     current_prompt_version: reactive[Optional[int]] = reactive(None) # If DB provides it and you need it
     # is_new_prompt can be inferred from current_prompt_id being None
 
+    # Media Tab
+    media_active_view: reactive[Optional[str]] = reactive(None)
+    _initial_media_view: Optional[str] = "media-view-video-audio"  # Default to the first sub-tab
+
     # Ingest Tab
     ingest_active_view: reactive[Optional[str]] = reactive(None)
     _initial_ingest_view: Optional[str] = "ingest-view-prompts"
@@ -869,6 +873,37 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         else:
             self.loguru_logger.debug("LLM Management active view is None, all LLM views hidden.")
 
+    # --- Media Tab Watcher ---
+    def watch_media_active_view(self, old_view: Optional[str], new_view: Optional[str]) -> None:
+        if not hasattr(self, "app") or not self.app:
+            return
+        if not self._ui_ready:
+            return
+        self.loguru_logger.debug(f"Media active view changing from '{old_view}' to: '{new_view}'")
+
+        try:
+            content_pane = self.query_one("#media-content-pane")
+        except QueryError:
+            self.loguru_logger.error("#media-content-pane not found. Cannot switch Media views.")
+            return
+
+        # Hide all media view areas first
+        for child in content_pane.query(".media-view-area"):
+            child.styles.display = "none"
+
+        if new_view: # new_view is the ID of the view container, e.g., "media-view-video-audio"
+            try:
+                target_view_id_selector = f"#{new_view}"
+                view_to_show = content_pane.query_one(target_view_id_selector, Container)
+                view_to_show.styles.display = "block" # Or "flex", etc.
+                self.loguru_logger.info(f"Switched Media view to: {new_view}")
+            except QueryError as e:
+                self.loguru_logger.error(f"UI component '{new_view}' not found in #media-content-pane: {e}", exc_info=True)
+        else:
+            self.loguru_logger.debug("Media active view is None, all media views hidden.")
+
+
+
     def watch_current_chat_is_ephemeral(self, is_ephemeral: bool) -> None:
         self.loguru_logger.debug(f"Chat ephemeral state changed to: {is_ephemeral}")
         if not hasattr(self, "app") or not self.app:  # Check if app is ready
@@ -1327,6 +1362,16 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             elif button_id == "notes-delete-button": await notes_handlers.handle_notes_delete_button_pressed(self)
             elif button_id == "notes-save-keywords-button": await notes_handlers.handle_notes_save_keywords_button_pressed(self)
             else: self.loguru_logger.warning(f"Unhandled button on NOTES tab: {button_id}")
+
+        # --- Media Tab ---
+        elif current_active_tab == TAB_MEDIA:
+            if button_id and button_id.startswith("media-nav-"):
+                # e.g., "media-nav-video-audio" -> "media-view-video-audio"
+                view_to_activate = button_id.replace("media-nav-", "media-view-")
+                self.loguru_logger.debug(f"Media nav button '{button_id}' pressed. Activating view '{view_to_activate}'.")
+                self.media_active_view = view_to_activate # Triggers watcher
+            else:
+                self.loguru_logger.warning(f"Unhandled button on MEDIA tab: ID:{button_id}, Label:'{button.label}'")
 
         # --- Ingestion Tab ---
         elif current_active_tab == TAB_INGEST:
