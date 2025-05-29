@@ -783,3 +783,58 @@ MetricsScreen Label.-info-message {
     width: 100%;
     height: 100%; /* Or auto if content dictates height */
 }
+
+/* --- Search Tab (RAG/Embeddings) --- */
+#search-window { /* Matches TAB_SEARCH, .window class provides layout: horizontal */
+    /* No explicit layout needed here if .window handles it */
+}
+
+.search-nav-pane { /* Style for the left navigation pane in Search Tab */
+    dock: left;
+    width: 25%;
+    min-width: 25;
+    max-width: 60;
+    height: 100%;
+    background: $boost;
+    padding: 1;
+    border-right: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.search-nav-pane .search-nav-button { /* Style for navigation buttons in Search Tab */
+    width: 100%;
+    margin-bottom: 1;
+    border: none;
+    height: 3;
+}
+.search-nav-pane .search-nav-button:hover {
+    background: $accent 80%; /* Example: accent color with 80% opacity */
+}
+/* Active state for selected search nav button */
+.search-nav-pane .search-nav-button.-active-search-sub-view {
+    background: $accent;
+    color: $text;
+    text-style: bold;
+}
+
+.search-content-pane { /* Style for the right content display area in Search Tab */
+    width: 1fr;
+    height: 100%;
+    padding: 1 2;
+    overflow-y: auto;
+}
+
+.search-view-area { /* Common class for individual content areas in Search Tab */
+    width: 100%;
+    height: 100%;
+    /* display: none; /* All initially hidden, watcher will show one */
+    /* align: center middle; /* Useful if content is just a Static placeholder */
+}
+
+/* Center placeholder text inside view areas if they are simple Statics for now */
+.search-view-area Static {
+    width: 100%;
+    height: 100%;
+    align: center middle;
+}

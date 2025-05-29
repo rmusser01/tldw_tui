@@ -83,6 +83,12 @@ from .UI.LLM_Management_Window import LLMManagementWindow
 from .UI.Tab_Bar import TabBar
 from .UI.MediaWindow import MediaWindow
 from .UI.SearchWindow import SearchWindow
+from .UI.SearchWindow import ( # Import new constants from SearchWindow.py
+    SEARCH_VIEW_RAG_QA, SEARCH_VIEW_RAG_CHAT, SEARCH_VIEW_EMBEDDINGS_CREATION,
+    SEARCH_VIEW_RAG_MANAGEMENT, SEARCH_VIEW_EMBEDDINGS_MANAGEMENT,
+    SEARCH_NAV_RAG_QA, SEARCH_NAV_RAG_CHAT, SEARCH_NAV_EMBEDDINGS_CREATION,
+    SEARCH_NAV_RAG_MANAGEMENT, SEARCH_NAV_EMBEDDINGS_MANAGEMENT
+)
 API_IMPORTS_SUCCESSFUL = True
 #
 #######################################################################################################################
@@ -206,6 +212,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # Media Tab
     media_active_view: reactive[Optional[str]] = reactive(None)
     _initial_media_view: Optional[str] = "media-view-video-audio"  # Default to the first sub-tab
+
+    # Search Tab's active sub-view reactives
+    search_active_sub_tab: reactive[Optional[str]] = reactive(None)
+    _initial_search_sub_tab_view: Optional[str] = SEARCH_VIEW_RAG_QA
 
     # Ingest Tab
     ingest_active_view: reactive[Optional[str]] = reactive(None)
@@ -761,6 +771,75 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self._clear_prompt_fields()
             self.current_prompt_id = None  # Reset reactives
 
+    # ##################################################
+    # --- Watcher for Search Tab Active Sub-View ---
+    # ##################################################
+    def watch_search_active_sub_tab(self, old_sub_tab: Optional[str], new_sub_tab: Optional[str]) -> None:
+        if not self._ui_ready:
+            self.loguru_logger.debug(
+                f"watch_search_active_sub_tab: UI not ready. Old: {old_sub_tab}, New: {new_sub_tab}.")
+            return
+        if not new_sub_tab:  # If new_sub_tab is None (e.g. on initial load before set)
+            self.loguru_logger.debug(f"watch_search_active_sub_tab: new_sub_tab is None. Old: {old_sub_tab}.")
+            # Optionally hide all if new_sub_tab is explicitly set to None to clear view
+            if old_sub_tab:  # If there was an old tab, ensure it's hidden and button deactivated
+                try:
+                    self.query_one(f"#{old_sub_tab.replace('-view-', '-nav-')}", Button).remove_class(
+                        "-active-search-sub-view")
+                    self.query_one(f"#{old_sub_tab}", Container).styles.display = "none"
+                except QueryError:
+                    pass  # It might already be gone or not exist
+            return
+
+        self.loguru_logger.debug(f"Search active sub-tab changing from '{old_sub_tab}' to: '{new_sub_tab}'")
+
+        try:
+            search_content_pane = self.query_one("#search-content-pane")
+            search_nav_pane = self.query_one("#search-left-nav-pane")
+
+            # Hide all search view areas first
+            for view_area in search_content_pane.query(".search-view-area"):
+                view_area.styles.display = "none"
+
+            # Deactivate all nav buttons in search tab
+            for nav_button in search_nav_pane.query(".search-nav-button"):
+                nav_button.remove_class("-active-search-sub-view")
+
+            # Show the selected view and activate its button
+            target_view_id_selector = f"#{new_sub_tab}"
+            view_to_show = self.query_one(target_view_id_selector, Container)
+            view_to_show.styles.display = "block"  # Or "flex" etc. if needed by content
+
+            # Activate corresponding button
+            # Button ID is like "search-nav-..." and view ID is "search-view-..."
+            button_id_to_activate = new_sub_tab.replace("-view-", "-nav-")
+            try:
+                active_button = self.query_one(f"#{button_id_to_activate}", Button)
+                active_button.add_class("-active-search-sub-view")
+            except QueryError:
+                self.loguru_logger.warning(
+                    f"Could not find button '{button_id_to_activate}' to activate for sub-tab '{new_sub_tab}'.")
+
+            self.loguru_logger.info(f"Switched Search sub-tab view to: {new_sub_tab}")
+
+            # Optional: Focus an element within the newly shown view
+            # try:
+            #     first_focusable = view_to_show.query(Input, TextArea, Button)[0]
+            #     self.set_timer(0.1, first_focusable.focus)
+            # except IndexError:
+            #     pass # No focusable element
+            # except QueryError: # If view_to_show doesn't exist (should not happen if previous query_one succeeded)
+            #     self.loguru_logger.error(f"Cannot focus in {new_sub_tab}, view not found after successful query.")
+
+        except QueryError as e:
+            self.loguru_logger.error(f"UI component not found during Search sub-tab view switch: {e}",
+                                     exc_info=True)
+        except Exception as e_watch:
+            self.loguru_logger.error(f"Unexpected error in watch_search_active_sub_tab: {e_watch}", exc_info=True)
+
+    # ############################################
+    # --- Ingest Tab Watcher ---
+    # ############################################
     def watch_ingest_active_view(self, old_view: Optional[str], new_view: Optional[str]) -> None:
         if not hasattr(self, "app") or not self.app:  # Check if app is ready
             return
@@ -1110,6 +1189,11 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.call_later(ccp_handlers.perform_ccp_conversation_search, self) # Initial search/list for conversations
         elif new_tab == TAB_NOTES:
             self.call_later(notes_handlers.load_and_display_notes_handler, self)
+        if new_tab == TAB_SEARCH:
+            if not self.search_active_sub_tab: # If no sub-tab is active yet for Search tab
+                self.loguru_logger.debug(f"Switched to Search tab, activating initial sub-tab view: {self._initial_search_sub_tab_view}")
+                # Use call_later to ensure the UI for SearchWindow is fully composed and ready
+                self.call_later(setattr, self, 'search_active_sub_tab', self._initial_search_sub_tab_view)
         elif new_tab == TAB_INGEST:
             if not self.ingest_active_view:
                 self.loguru_logger.debug(
@@ -1304,6 +1388,22 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 if button_id in ["toggle-notes-sidebar-left", "toggle-notes-sidebar-right"]:
                     await notes_handlers.handle_notes_tab_sidebar_toggle(self, button_id)
                     return
+            elif current_active_tab == TAB_SEARCH:
+                button_id = event.button.id
+                # Map Search Tab's navigation button IDs to their corresponding view IDs
+                search_button_id_to_view_map = {
+                    SEARCH_NAV_RAG_QA: SEARCH_VIEW_RAG_QA,
+                    SEARCH_NAV_RAG_CHAT: SEARCH_VIEW_RAG_CHAT,
+                    SEARCH_NAV_EMBEDDINGS_CREATION: SEARCH_VIEW_EMBEDDINGS_CREATION,
+                    SEARCH_NAV_RAG_MANAGEMENT: SEARCH_VIEW_RAG_MANAGEMENT,
+                    SEARCH_NAV_EMBEDDINGS_MANAGEMENT: SEARCH_VIEW_EMBEDDINGS_MANAGEMENT,
+                }
+                if button_id in search_button_id_to_view_map:
+                    view_to_activate = search_button_id_to_view_map[button_id]
+                    self.loguru_logger.debug(
+                        f"Search nav button '{button_id}' pressed. Activating view '{view_to_activate}'.")
+                    self.search_active_sub_tab = view_to_activate  # This will trigger the watcher
+                    return  # Handled
             # If it's a toggle button but not matched above for the current tab
             self.loguru_logger.warning(f"Unhandled toggle button ID '{button_id}' for tab '{current_active_tab}' or button not applicable to this tab.")
             return # Considered handled as a toggle attempt, even if no action for current tab
