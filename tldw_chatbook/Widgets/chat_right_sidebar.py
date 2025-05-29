@@ -1,5 +1,5 @@
-# character_sidebar.py
-# Description: character sidebar widget
+# chat_right_sidebar.py
+# Description: chat right sidebar widget
 #
 # Imports
 #
@@ -224,5 +224,5 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
         logging.debug(f"Character sidebar (id='chat-right-sidebar', prefix='{id_prefix}') created with ephemeral state: {initial_ephemeral_state}")
 
 #
-# End of character_sidebar.py
+# End of chat_right_sidebar.py
 #######################################################################################################################

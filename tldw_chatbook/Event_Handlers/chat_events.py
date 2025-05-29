@@ -1459,6 +1459,52 @@ async def handle_chat_view_selected_prompt_button_pressed(app: 'TldwCli') -> Non
             pass  # UI might not be fully available
 
 
+async def _populate_chat_character_search_list(app: 'TldwCli', search_term: Optional[str] = None) -> None:
+    try:
+        results_list_view = app.query_one("#chat-character-search-results-list", ListView)
+        await results_list_view.clear()
+
+        if not app.notes_service:
+            app.notify("Database service not available.", severity="error")
+            loguru_logger.error("Notes service not available for character list population.")
+            await results_list_view.append(ListItem(Label("Error: DB service unavailable.")))
+            return
+
+        db = app.notes_service._get_db(app.notes_user_id)
+        characters = []
+        operation_type = "list_character_cards"  # For logging
+
+        try:
+            if search_term:
+                operation_type = "search_character_cards"
+                loguru_logger.debug(f"Populating character list by searching for: '{search_term}'")
+                characters = db.search_character_cards(search_term=search_term, limit=50)
+            else:
+                loguru_logger.debug("Populating character list with default list (limit 40).")
+                characters = db.list_character_cards(limit=40)
+
+            if not characters:
+                await results_list_view.append(ListItem(Label("No characters found.")))
+            else:
+                for char_data in characters:
+                    item = ListItem(Label(char_data.get('name', 'Unnamed Character')))
+                    item.character_id = char_data.get('id')  # Store ID on the item
+                    await results_list_view.append(item)
+            loguru_logger.info(f"Character list populated using {operation_type}. Found {len(characters)} characters.")
+
+        except Exception as e_db_call:
+            loguru_logger.error(f"Error during DB call ({operation_type}): {e_db_call}", exc_info=True)
+            await results_list_view.append(ListItem(Label(f"Error during {operation_type}.")))
+
+    except QueryError as e_query:
+        loguru_logger.error(f"UI component not found for character list population: {e_query}", exc_info=True)
+        # Avoid app.notify here as this function might be called when tab is not fully visible.
+        # Let the calling context (e.g., direct user action) handle user notifications if appropriate.
+    except Exception as e_unexp:
+        loguru_logger.error(f"Unexpected error in _populate_chat_character_search_list: {e_unexp}", exc_info=True)
+        # Avoid app.notify here as well.
+
+
 async def handle_chat_copy_system_prompt_button_pressed(app: 'TldwCli') -> None:
     logger = getattr(app, 'loguru_logger', logging)
     logger.debug("Chat Tab: Copy System Prompt button pressed.")
