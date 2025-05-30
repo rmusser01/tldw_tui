@@ -137,6 +137,64 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
                 )
 
         # ===================================================================
+        # Notes (only for chat tab)
+        # ===================================================================
+        if id_prefix == "chat":
+            with Collapsible(title="Notes", collapsed=True, id=f"{id_prefix}-notes-collapsible"):
+                yield Label("Search Notes:", classes="sidebar-label")
+                yield Input(
+                    id=f"{id_prefix}-notes-search-input",
+                    placeholder="Search notes...",
+                    classes="sidebar-input"
+                )
+                yield Button(
+                    "Search",
+                    id=f"{id_prefix}-notes-search-button",
+                    classes="sidebar-button"
+                )
+
+                notes_list_view = ListView(
+                    id=f"{id_prefix}-notes-listview",
+                    classes="sidebar-listview"
+                )
+                notes_list_view.styles.height = 7
+                yield notes_list_view
+
+                yield Button(
+                    "Load Note",
+                    id=f"{id_prefix}-notes-load-button",
+                    classes="sidebar-button"
+                )
+                yield Button(
+                    "Create New Note",
+                    id=f"{id_prefix}-notes-create-new-button",
+                    variant="primary",
+                    classes="sidebar-button"
+                )
+
+                yield Label("Note Title:", classes="sidebar-label")
+                yield Input(
+                    id=f"{id_prefix}-notes-title-input",
+                    placeholder="Note title...",
+                    classes="sidebar-input"
+                )
+
+                yield Label("Note Content:", classes="sidebar-label")
+                note_content_area = TextArea(
+                    id=f"{id_prefix}-notes-content-textarea",
+                    classes="sidebar-textarea" # Assuming a general class, can be more specific
+                )
+                note_content_area.styles.height = 10
+                yield note_content_area
+
+                yield Button(
+                    "Save Note",
+                    id=f"{id_prefix}-notes-save-button",
+                    variant="success",
+                    classes="sidebar-button"
+                )
+
+        # ===================================================================
         # Saved Conversations (only for chat tab)
         # ===================================================================
         with Collapsible(title="Search & Load Conversations", collapsed=True):

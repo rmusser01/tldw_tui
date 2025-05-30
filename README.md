@@ -57,15 +57,20 @@ Current status: Working/In-Progress
   - Run the application from your terminal: `tldw_chatbook`
 - **Via Manual Installation**
   - Clone the repository: `git clone https://github.com/rmusser01/tldw_chatbook`
-  - Setup a virtual environment (optional but recommended): 
+  - Setup a virtual environment (optional but recommended) and run tldw_chatbook: 
     ```bash
     python3 -m venv .venv
-    source .venv/bin/activate
+    source .venv/bin/activate or .venv\Scripts\activate
     ```
-  - Install the dependencies: `pip install -r requirements.txt`
+  - Install the dependencies: `pip install -r requirements.txt` 
+    ```bash
+    pip install -r requirements.txt
+    ```
   - Run the application:
     - If you are in the root directory of the repository: `python3 -m tldw_chatbook.app`
-    - If you have installed it via pip, you can run it directly: `tldw_chatbook`
+    ```bash
+    python3 -m tldw_chatbook.app
+    ```
 - **Configuration**
   - The application uses a `config.toml` file located at `~/.config/tldw_cli/config.toml`.
   - On first run, a default configuration file will be created if one doesn't exist. You'll need to edit this file to add your API keys for the services you want to use.

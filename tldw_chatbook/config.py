@@ -921,7 +921,7 @@ local-llm = ["None"] # Add if you have a specific local-llm provider entry
     # --- Cloud Providers ---
     [api_settings.openai]
     api_key_env_var = "OPENAI_API_KEY"
-    # api_key = "" # Less secure fallback - use env var instead
+    api_key = "<API_KEY_HERE>" # Less secure fallback - use env var instead
     model = "gpt-4o" # Default model for direct calls (if not overridden)
     temperature = 0.7
     top_p = 1.0 # OpenAI uses top_p (represented as maxp sometimes in UI)
@@ -933,7 +933,7 @@ local-llm = ["None"] # Add if you have a specific local-llm provider entry
 
     [api_settings.anthropic]
     api_key_env_var = "ANTHROPIC_API_KEY"
-    # api_key = "" # Less secure fallback - use env var instead
+    api_key = "<API_KEY_HERE>" # Less secure fallback - use env var instead
     model = "claude-3-haiku-20240307"
     temperature = 0.7
     top_p = 1.0 # Anthropic uses top_p (represented as topp in UI)
@@ -944,45 +944,9 @@ local-llm = ["None"] # Add if you have a specific local-llm provider entry
     retry_delay = 5
     streaming = false
 
-    [api_settings.google]
-    api_key_env_var = "GOOGLE_API_KEY"
-    model = "gemini-1.5-pro-latest"
-    temperature = 0.7
-    top_p = 0.9 # Google uses topP (represented as topp in UI)
-    top_k = 100 # Google uses topK
-    max_tokens = 8192 # Google uses maxOutputTokens
-    timeout = 120
-    retries = 3
-    retry_delay = 5
-    streaming = false
-
-    [api_settings.mistralai] # Matches key in [providers]
-    api_key_env_var = "MISTRAL_API_KEY"
-    # api_key = "" # Less secure fallback - use env var instead
-    model = "mistral-large-latest"
-    temperature = 0.7
-    top_p = 1.0 # Mistral uses top_p (represented as topp in UI)
-    max_tokens = 4096
-    timeout = 60
-    retries = 3
-    retry_delay = 5
-    streaming = false
-
-    [api_settings.groq]
-    api_key_env_var = "GROQ_API_KEY"
-    # api_key = "" # Less secure fallback - use env var instead
-    model = "llama3-70b-8192"
-    temperature = 0.7
-    top_p = 1.0 # Groq uses top_p (represented as maxp in UI)
-    max_tokens = 8192
-    timeout = 60
-    retries = 3
-    retry_delay = 5
-    streaming = false
-
     [api_settings.cohere]
     api_key_env_var = "COHERE_API_KEY"
-    # api_key = "" # Less secure fallback - use env var instead
+    api_key = "<API_KEY_HERE>" # Less secure fallback - use env var instead
     model = "command-r-plus"
     temperature = 0.3
     top_p = 0.75 # Cohere uses 'p' (represented as topp in UI)
@@ -993,9 +957,71 @@ local-llm = ["None"] # Add if you have a specific local-llm provider entry
     retry_delay = 5
     streaming = false
 
+    [api_settings.deepseek]
+    api_key_env_var = "DEEPSEEK_API_KEY"
+    api_key = "<KEY_GOES_HERE>" # Less secure fallback - use env var instead
+    model = "deepseek-chat"
+    temperature = 0.7
+    top_p = 1.0 # Deepseek uses top_p (represented as topp in UI)
+    max_tokens = 4096
+    timeout = 60
+    retries = 3
+    retry_delay = 5
+    streaming = false
+
+    [api_settings.groq]
+    api_key_env_var = "GROQ_API_KEY"
+    api_key = "<API_KEY_HERE>" # Less secure fallback - use env var instead
+    model = "llama3-70b-8192"
+    temperature = 0.7
+    top_p = 1.0 # Groq uses top_p (represented as maxp in UI)
+    max_tokens = 8192
+    timeout = 60
+    retries = 3
+    retry_delay = 5
+    streaming = false
+    
+    [api_settings.google]
+    api_key_env_var = "GOOGLE_API_KEY"
+    api_key = "<API_KEY_HERE>"
+    model = "gemini-1.5-pro-latest"
+    temperature = 0.7
+    top_p = 0.9 # Google uses topP (represented as topp in UI)
+    top_k = 100 # Google uses topK
+    max_tokens = 8192 # Google uses maxOutputTokens
+    timeout = 120
+    retries = 3
+    retry_delay = 5
+    streaming = false
+
+    [api_settings.huggingface]
+    api_key_env_var = "HUGGINGFACE_API_KEY"
+    api_key = "<API_KEY_HERE>" # Less secure fallback - use env var instead
+    model = "mistralai/Mixtral-8x7B-Instruct-v0.1"
+    temperature = 0.7
+    top_p = 1.0 # HF Inference API uses top_p
+    top_k = 50  # HF Inference API uses top_k
+    max_tokens = 4096 # HF Inf API uses max_tokens / max_new_tokens
+    timeout = 60
+    retries = 3
+    retry_delay = 5
+    streaming = false
+
+    [api_settings.mistralai] # Matches key in [providers]
+    api_key_env_var = "MISTRAL_API_KEY"
+    api_key = "<API_KEY_HERE>" # Less secure fallback - use env var instead
+    model = "mistral-large-latest"
+    temperature = 0.7
+    top_p = 1.0 # Mistral uses top_p (represented as topp in UI)
+    max_tokens = 4096
+    timeout = 60
+    retries = 3
+    retry_delay = 5
+    streaming = false
+
     [api_settings.openrouter]
     api_key_env_var = "OPENROUTER_API_KEY"
-    # api_key = "" # Less secure fallback - use env var instead
+    api_key = "<API_KEY_HERE>" # Less secure fallback - use env var instead
     model = "meta-llama/Llama-3.1-8B-Instruct"
     temperature = 0.7
     top_p = 1.0 # OpenRouter uses top_p
@@ -1007,47 +1033,7 @@ local-llm = ["None"] # Add if you have a specific local-llm provider entry
     retry_delay = 5
     streaming = false
 
-    [api_settings.huggingface]
-    api_key_env_var = "HUGGINGFACE_API_KEY"
-    # api_key = "" # Less secure fallback - use env var instead
-    model = "mistralai/Mixtral-8x7B-Instruct-v0.1"
-    temperature = 0.7
-    top_p = 1.0 # HF Inference API uses top_p
-    top_k = 50  # HF Inference API uses top_k
-    max_tokens = 4096 # HF Inf API uses max_tokens / max_new_tokens
-    timeout = 60
-    retries = 3
-    retry_delay = 5
-    streaming = false
-
-    [api_settings.deepseek]
-    api_key_env_var = "DEEPSEEK_API_KEY"
-    # api_key = "" # Less secure fallback - use env var instead
-    model = "deepseek-chat"
-    temperature = 0.7
-    top_p = 1.0 # Deepseek uses top_p (represented as topp in UI)
-    max_tokens = 4096
-    timeout = 60
-    retries = 3
-    retry_delay = 5
-    streaming = false
-
     # --- Local Providers ---
-    [api_settings.ollama]
-    # No API Key usually needed
-    api_url = "http://localhost:11434/v1/chat/completions" # Default Ollama OpenAI endpoint
-    model = "llama3:latest"
-    temperature = 0.7
-    top_p = 0.9
-    top_k = 40 # Ollama supports top_k via OpenAI endpoint
-    # min_p = 0.05 # Ollama OpenAI endpoint doesn't support min_p directly
-    max_tokens = 4096
-    timeout = 300 # Longer timeout for local models
-    retries = 1
-    retry_delay = 2
-    streaming = false
-    system_prompt = "You are a helpful AI assistant"
-
     [api_settings.llama_cpp] # Matches key in [providers]
     api_key_env_var = "LLAMA_CPP_API_KEY" # If you set one on the server
     # api_key = ""
@@ -1094,6 +1080,21 @@ local-llm = ["None"] # Add if you have a specific local-llm provider entry
     streaming = false # Kobold streaming is non-standard, handle carefully
     system_prompt = "You are a helpful AI assistant"
 
+    [api_settings.ollama]
+    # No API Key usually needed
+    api_url = "http://localhost:11434/v1/chat/completions" # Default Ollama OpenAI endpoint
+    model = "llama3:latest"
+    temperature = 0.7
+    top_p = 0.9
+    top_k = 40 # Ollama supports top_k via OpenAI endpoint
+    # min_p = 0.05 # Ollama OpenAI endpoint doesn't support min_p directly
+    max_tokens = 4096
+    timeout = 300 # Longer timeout for local models
+    retries = 1
+    retry_delay = 2
+    streaming = false
+    system_prompt = "You are a helpful AI assistant"
+
     [api_settings.vllm] # Matches key in [providers]
     api_key_env_var = "VLLM_API_KEY" # If served behind auth
     api_url = "http://localhost:8000/v1/chat/completions" # vLLM OpenAI compatible endpoint
@@ -1106,6 +1107,36 @@ local-llm = ["None"] # Add if you have a specific local-llm provider entry
     timeout = 300
     retries = 1
     retry_delay = 2
+    streaming = false
+    system_prompt = "You are a helpful AI assistant"
+
+    [api_settings.aphrodite] # Matches key in [providers]
+    api_key_env_var = "APHRODITE_API_KEY" # If served behind auth
+    api_url = "http://localhost:2242/v1/chat/completions" # Default Aphrodite port
+    model = "aphrodite-engine" # Model loaded in Aphrodite
+    temperature = 0.7
+    top_p = 0.95
+    top_k = 50
+    min_p = 0.05
+    max_tokens = 4096
+    timeout = 300
+    retries = 1
+    retry_delay = 2
+    streaming = false
+    system_prompt = "You are a helpful AI assistant"
+
+    [api_settings.tabbyapi] # Matches key in [providers]
+    api_key_env_var = "TABBYAPI_API_KEY"
+    api_url = "http://localhost:8080/v1/chat/completions" # Check TabbyAPI docs for exact URL
+    model = "tabby-model" # Model configured in TabbyAPI
+    temperature = 0.7
+    top_p = 0.95
+    top_k = 50
+    min_p = 0.05
+    max_tokens = 4096
+    timeout = 120
+    retries = 2
+    retry_delay = 3
     streaming = false
     system_prompt = "You are a helpful AI assistant"
 
@@ -1136,36 +1167,6 @@ local-llm = ["None"] # Add if you have a specific local-llm provider entry
     timeout = 120
     retries = 2
     retry_delay = 5
-    streaming = false
-    system_prompt = "You are a helpful AI assistant"
-
-    [api_settings.tabbyapi] # Matches key in [providers]
-    api_key_env_var = "TABBYAPI_API_KEY"
-    api_url = "http://localhost:8080/v1/chat/completions" # Check TabbyAPI docs for exact URL
-    model = "tabby-model" # Model configured in TabbyAPI
-    temperature = 0.7
-    top_p = 0.95
-    top_k = 50
-    min_p = 0.05
-    max_tokens = 4096
-    timeout = 120
-    retries = 2
-    retry_delay = 3
-    streaming = false
-    system_prompt = "You are a helpful AI assistant"
-
-    [api_settings.aphrodite] # Matches key in [providers]
-    api_key_env_var = "APHRODITE_API_KEY" # If served behind auth
-    api_url = "http://localhost:2242/v1/chat/completions" # Default Aphrodite port
-    model = "aphrodite-engine" # Model loaded in Aphrodite
-    temperature = 0.7
-    top_p = 0.95
-    top_k = 50
-    min_p = 0.05
-    max_tokens = 4096
-    timeout = 300
-    retries = 1
-    retry_delay = 2
     streaming = false
     system_prompt = "You are a helpful AI assistant"
 

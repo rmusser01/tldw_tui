@@ -12,11 +12,12 @@ from typing import Union, Optional, Any, Dict, List
 # 3rd-Party Libraries
 # --- Textual Imports ---
 from loguru import logger as loguru_logger, logger  # Keep if app.py uses it directly, or pass app.loguru_logger
+from textual import on
 # --- Textual Imports ---
 from textual.app import App, ComposeResult
 from textual.logging import TextualHandler
 from textual.widgets import (
-    Static, Button, Input, Header, Footer, RichLog, TextArea, Select, ListView, Checkbox, Collapsible
+    Static, Button, Input, Header, Footer, RichLog, TextArea, Select, ListView, Checkbox, Collapsible, ListItem, Label
 )
 from textual.containers import Horizontal, Container, HorizontalScroll
 from textual.reactive import reactive
@@ -256,6 +257,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
     # Make API_IMPORTS_SUCCESSFUL accessible if needed by old methods or directly
     API_IMPORTS_SUCCESSFUL = API_IMPORTS_SUCCESSFUL
+
+    # User ID for notes, will be initialized in __init__
+    current_user_id: str = "default_user" # Will be overridden by self.notes_user_id
+
+    # For Chat Tab's Notes section
+    current_chat_note_id: Optional[str] = None
+    current_chat_note_version: Optional[int] = None
 
     def __init__(self):
         super().__init__()
@@ -1383,6 +1391,325 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             # self.notify("Unexpected error saving note.", severity="error")
             return False
 
+    # --- Notes UI Event Handlers (Chat Tab Sidebar) ---
+    @on(Button.Pressed, "#chat-notes-create-new-button")
+    async def handle_chat_notes_create_new(self, event: Button.Pressed) -> None:
+        """Handles the 'Create New Note' button press in the chat sidebar's notes section."""
+        self.loguru_logger.info(f"Attempting to create new note for user: {self.notes_user_id}")
+        default_title = "New Note"
+        default_content = ""
+
+        if not self.notes_service:
+            self.notify("Notes service is not available.", severity="error")
+            self.loguru_logger.error("Notes service not available in handle_chat_notes_create_new.")
+            return
+
+        try:
+            # 1. Call self.notes_service.add_note
+            new_note_id = self.notes_service.add_note(
+                user_id=self.notes_user_id,
+                title=default_title,
+                content=default_content,
+                # keywords, parent_id, etc., can be added if needed
+            )
+
+            if new_note_id:
+                # 2. Store Note ID and Version
+                self.current_chat_note_id = new_note_id
+                self.current_chat_note_version = 1  # Assuming version starts at 1
+                self.loguru_logger.info(f"New note created with ID: {new_note_id}, Version: {self.current_chat_note_version}")
+
+                # 3. Update UI Input Fields
+                title_input = self.query_one("#chat-notes-title-input", Input)
+                content_textarea = self.query_one("#chat-notes-content-textarea", TextArea)
+                title_input.value = default_title
+                content_textarea.text = default_content
+
+                # 4. Add to ListView
+                notes_list_view = self.query_one("#chat-notes-listview", ListView)
+                new_list_item = ListItem(Label(default_title))
+                new_list_item.id = f"note-item-{new_note_id}" # Ensure unique DOM ID for the ListItem itself
+                # We'll need a way to store the actual note_id on the ListItem for retrieval,
+                # Textual's ListItem doesn't have a direct `data` attribute.
+                # A common pattern is to use a custom ListItem subclass or manage a mapping.
+                # For now, we can set the DOM ID and parse it, or use a custom attribute if we make one.
+                # setattr(new_list_item, "_note_id", new_note_id) # Example of custom attribute
+                # Or, more simply for now, we can rely on on_chat_notes_collapsible_toggle to refresh the whole list
+                # which will then pick up the new note from the DB.
+                # For immediate feedback without full list refresh:
+                await notes_list_view.prepend(new_list_item) # Prepend to show at top
+
+                # 5. Set Focus
+                title_input.focus()
+
+                self.notify("New note created in sidebar.", severity="information")
+            else:
+                self.notify("Failed to create new note (no ID returned).", severity="error")
+                self.loguru_logger.error("notes_service.add_note did not return a new_note_id.")
+
+        except CharactersRAGDBError as e: # Specific DB error
+            self.loguru_logger.error(f"Database error creating new note: {e}", exc_info=True)
+            self.notify(f"DB error creating note: {e}", severity="error")
+        except Exception as e: # Catch-all for other unexpected errors
+            self.loguru_logger.error(f"Unexpected error creating new note: {e}", exc_info=True)
+            self.notify(f"Error creating note: {type(e).__name__}", severity="error")
+
+    @on(Button.Pressed, "#chat-notes-search-button")
+    async def handle_chat_notes_search(self, event: Button.Pressed) -> None:
+        """Handles the 'Search' button press in the chat sidebar's notes section."""
+        self.loguru_logger.info(f"Search Notes button pressed. User ID: {self.notes_user_id}")
+
+        if not self.notes_service:
+            self.notify("Notes service is not available.", severity="error")
+            self.loguru_logger.error("Notes service not available in handle_chat_notes_search.")
+            return
+
+        try:
+            search_input = self.query_one("#chat-notes-search-input", Input)
+            search_term = search_input.value.strip()
+
+            notes_list_view = self.query_one("#chat-notes-listview", ListView)
+            await notes_list_view.clear()
+
+            listed_notes: List[Dict[str, Any]] = []
+            limit = 50
+
+            if not search_term:
+                self.loguru_logger.info("Empty search term, listing all notes.")
+                listed_notes = self.notes_service.list_notes(user_id=self.notes_user_id, limit=limit)
+            else:
+                self.loguru_logger.info(f"Searching notes with term: '{search_term}'")
+                listed_notes = self.notes_service.search_notes(user_id=self.notes_user_id, search_term=search_term, limit=limit)
+
+            if listed_notes:
+                for note in listed_notes:
+                    note_title = note.get('title', 'Untitled Note')
+                    note_id = note.get('id')
+                    if not note_id:
+                        self.loguru_logger.warning(f"Note found without an ID during search: {note_title}. Skipping.")
+                        continue
+
+                    list_item_label = Label(note_title)
+                    new_list_item = ListItem(list_item_label)
+                    new_list_item.id = f"note-item-{note_id}"
+                    # setattr(new_list_item, "_note_data", note) # If needed later for load
+                    await notes_list_view.append(new_list_item)
+
+                self.notify(f"{len(listed_notes)} notes found.", severity="information")
+                self.loguru_logger.info(f"Populated notes list with {len(listed_notes)} search results.")
+                self.loguru_logger.debug(f"ListView child count after search population: {notes_list_view.child_count}") # Added log
+            else:
+                msg = "No notes match your search." if search_term else "No notes found."
+                self.notify(msg, severity="information")
+                self.loguru_logger.info(msg)
+
+        except CharactersRAGDBError as e:
+            self.loguru_logger.error(f"Database error searching notes: {e}", exc_info=True)
+            self.notify(f"DB error searching notes: {e}", severity="error")
+        except QueryError as e_query:
+            self.loguru_logger.error(f"UI element not found during notes search: {e_query}", exc_info=True)
+            self.notify("UI error during notes search.", severity="error")
+        except Exception as e:
+            self.loguru_logger.error(f"Unexpected error searching notes: {e}", exc_info=True)
+            self.notify(f"Error searching notes: {type(e).__name__}", severity="error")
+
+    @on(Button.Pressed, "#chat-notes-load-button")
+    async def handle_chat_notes_load(self, event: Button.Pressed) -> None:
+        """Handles the 'Load Note' button press in the chat sidebar's notes section."""
+        self.loguru_logger.info(f"Load Note button pressed. User ID: {self.notes_user_id}")
+
+        if not self.notes_service:
+            self.notify("Notes service is not available.", severity="error")
+            self.loguru_logger.error("Notes service not available in handle_chat_notes_load.")
+            return
+
+        try:
+            notes_list_view = self.query_one("#chat-notes-listview", ListView)
+            selected_list_item = notes_list_view.highlighted_child
+
+            if selected_list_item is None or not selected_list_item.id:
+                self.notify("Please select a note to load.", severity="warning")
+                return
+
+            # Extract actual_note_id from the ListItem's DOM ID
+            dom_id_parts = selected_list_item.id.split("note-item-")
+            if len(dom_id_parts) < 2 or not dom_id_parts[1]:
+                self.notify("Selected item has an invalid ID format.", severity="error")
+                self.loguru_logger.error(f"Invalid ListItem ID format: {selected_list_item.id}")
+                return
+
+            actual_note_id = dom_id_parts[1]
+            self.loguru_logger.info(f"Attempting to load note with ID: {actual_note_id}")
+
+            note_data = self.notes_service.get_note_by_id(user_id=self.notes_user_id, note_id=actual_note_id)
+
+            if note_data:
+                title_input = self.query_one("#chat-notes-title-input", Input)
+                content_textarea = self.query_one("#chat-notes-content-textarea", TextArea)
+
+                loaded_title = note_data.get('title', '')
+                loaded_content = note_data.get('content', '')
+                loaded_version = note_data.get('version')
+                loaded_id = note_data.get('id')
+
+                title_input.value = loaded_title
+                content_textarea.text = loaded_content
+
+                self.current_chat_note_id = loaded_id
+                self.current_chat_note_version = loaded_version
+
+                self.notify(f"Note '{loaded_title}' loaded.", severity="information")
+                self.loguru_logger.info(f"Note '{loaded_title}' (ID: {loaded_id}, Version: {loaded_version}) loaded into UI.")
+            else:
+                self.notify(f"Could not load note (ID: {actual_note_id}). It might have been deleted.", severity="warning")
+                self.loguru_logger.warning(f"Note with ID {actual_note_id} not found by service.")
+                # Clear fields if note not found
+                self.query_one("#chat-notes-title-input", Input).value = ""
+                self.query_one("#chat-notes-content-textarea", TextArea).text = ""
+                self.current_chat_note_id = None
+                self.current_chat_note_version = None
+
+        except CharactersRAGDBError as e_db:
+            self.loguru_logger.error(f"Database error loading note: {e_db}", exc_info=True)
+            self.notify(f"DB error loading note: {e_db}", severity="error")
+        except QueryError as e_query:
+            self.loguru_logger.error(f"UI element not found during note load: {e_query}", exc_info=True)
+            self.notify("UI error during note load.", severity="error")
+        except Exception as e:
+            self.loguru_logger.error(f"Unexpected error loading note: {e}", exc_info=True)
+            self.notify(f"Error loading note: {type(e).__name__}", severity="error")
+
+    @on(Button.Pressed, "#chat-notes-save-button")
+    async def handle_chat_notes_save(self, event: Button.Pressed) -> None:
+        """Handles the 'Save Note' button press in the chat sidebar's notes section."""
+        self.loguru_logger.info(f"Save Note button pressed. User ID: {self.notes_user_id}")
+
+        if not self.notes_service:
+            self.notify("Notes service is not available.", severity="error")
+            self.loguru_logger.error("Notes service not available in handle_chat_notes_save.")
+            return
+
+        if not self.current_chat_note_id or self.current_chat_note_version is None:
+            self.notify("No active note to save. Load or create a note first.", severity="warning")
+            self.loguru_logger.warning("handle_chat_notes_save called without an active note_id or version.")
+            return
+
+        try:
+            title_input = self.query_one("#chat-notes-title-input", Input)
+            content_textarea = self.query_one("#chat-notes-content-textarea", TextArea)
+
+            title = title_input.value
+            content = content_textarea.text
+
+            update_data = {"title": title, "content": content}
+
+            self.loguru_logger.info(f"Attempting to save note ID: {self.current_chat_note_id}, Version: {self.current_chat_note_version}")
+
+            success = self.notes_service.update_note(
+                user_id=self.notes_user_id,
+                note_id=self.current_chat_note_id,
+                update_data=update_data,
+                expected_version=self.current_chat_note_version
+            )
+
+            if success: # Should be true if no exception was raised by DB layer for non-Conflict errors
+                self.current_chat_note_version += 1
+                self.notify("Note saved successfully.", severity="information")
+                self.loguru_logger.info(f"Note {self.current_chat_note_id} saved. New version: {self.current_chat_note_version}")
+
+                # Update ListView item
+                try:
+                    notes_list_view = self.query_one("#chat-notes-listview", ListView)
+                    # Find the specific ListItem to update its Label
+                    # This requires iterating or querying if the ListItem's DOM ID is known
+                    item_dom_id = f"note-item-{self.current_chat_note_id}"
+                    for item in notes_list_view.children:
+                        if isinstance(item, ListItem) and item.id == item_dom_id:
+                            # Assuming the first child of ListItem is the Label we want to update
+                            label_to_update = item.query_one(Label)
+                            label_to_update.update(title) # Update with the new title
+                            self.loguru_logger.debug(f"Updated title in ListView for note ID {self.current_chat_note_id} to '{title}'")
+                            break
+                        else:
+                            self.loguru_logger.debug(f"ListItem with ID {item_dom_id} not found for title update after save (iterated item ID: {item.id}).")
+                except QueryError as e_lv_update:
+                    self.loguru_logger.error(f"Error querying Label within ListView item to update title: {e_lv_update}")
+                except Exception as e_item_update: # Catch other errors during list item update
+                    self.loguru_logger.error(f"Unexpected error updating list item title: {e_item_update}", exc_info=True)
+            else:
+                # This case might not be hit if service raises exceptions for all failures
+                self.notify("Failed to save note. Reason unknown.", severity="error")
+                self.loguru_logger.error(f"notes_service.update_note returned False for note {self.current_chat_note_id}")
+
+        except ConflictError:
+            self.loguru_logger.warning(f"Save conflict for note {self.current_chat_note_id}. Expected version: {self.current_chat_note_version}")
+            self.notify("Save conflict: Note was modified elsewhere. Please reload and reapply changes.", severity="error", timeout=10)
+        except CharactersRAGDBError as e_db:
+            self.loguru_logger.error(f"Database error saving note {self.current_chat_note_id}: {e_db}", exc_info=True)
+            self.notify(f"DB error saving note: {e_db}", severity="error")
+        except QueryError as e_query:
+            self.loguru_logger.error(f"UI element not found during note save: {e_query}", exc_info=True)
+            self.notify("UI error during note save.", severity="error")
+        except Exception as e:
+            self.loguru_logger.error(f"Unexpected error saving note {self.current_chat_note_id}: {e}", exc_info=True)
+            self.notify(f"Error saving note: {type(e).__name__}", severity="error")
+
+    @on(Collapsible.Toggled, "#chat-notes-collapsible")
+    async def on_chat_notes_collapsible_toggle(self, event: Collapsible.Toggled) -> None:
+        """Handles the expansion/collapse of the Notes collapsible section in the chat sidebar."""
+        if not event.collapsible.collapsed:  # If the collapsible was just expanded
+            self.loguru_logger.info(f"Notes collapsible opened in chat sidebar. User ID: {self.notes_user_id}. Refreshing list.")
+
+            if not self.notes_service:
+                self.notify("Notes service is not available.", severity="error")
+                self.loguru_logger.error("Notes service not available in on_chat_notes_collapsible_toggle.")
+                return
+
+            try:
+                # 1. Clear ListView
+                notes_list_view = self.query_one("#chat-notes-listview", ListView)
+                await notes_list_view.clear()
+
+                # 2. Call self.notes_service.list_notes
+                # Limit to a reasonable number, e.g., 50, most recent first if service supports sorting
+                listed_notes = self.notes_service.list_notes(user_id=self.notes_user_id, limit=50)
+
+                # 3. Populate ListView
+                if listed_notes:
+                    for note in listed_notes:
+                        note_title = note.get('title', 'Untitled Note')
+                        note_id = note.get('id')
+                        if not note_id:
+                            self.loguru_logger.warning(f"Note found without an ID: {note_title}. Skipping.")
+                            continue
+
+                        list_item_label = Label(note_title)
+                        new_list_item = ListItem(list_item_label)
+                        # Store the actual note_id on the ListItem for retrieval.
+                        # Using a unique DOM ID for the ListItem itself.
+                        new_list_item.id = f"note-item-{note_id}"
+                        # A custom attribute to store data:
+                        # setattr(new_list_item, "_note_data", note) # Store whole note or just id/version
+
+                        await notes_list_view.append(new_list_item)
+                    self.notify("Notes list refreshed.", severity="information")
+                    self.loguru_logger.info(f"Populated notes list with {len(listed_notes)} items.")
+                else:
+                    self.notify("No notes found.", severity="information")
+                    self.loguru_logger.info("No notes found for user after refresh.")
+
+            except CharactersRAGDBError as e: # Specific DB error
+                self.loguru_logger.error(f"Database error listing notes: {e}", exc_info=True)
+                self.notify(f"DB error listing notes: {e}", severity="error")
+            except QueryError as e_query: # If UI elements are not found
+                 self.loguru_logger.error(f"UI element not found in notes toggle: {e_query}", exc_info=True)
+                 self.notify("UI error while refreshing notes.", severity="error")
+            except Exception as e: # Catch-all for other unexpected errors
+                self.loguru_logger.error(f"Unexpected error listing notes: {e}", exc_info=True)
+                self.notify(f"Error listing notes: {type(e).__name__}", severity="error")
+        else:
+            self.loguru_logger.info("Notes collapsible closed in chat sidebar.")
+
     # --- MODIFIED EVENT DISPATCHERS ---
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses for tabs, sending messages, and message actions."""
@@ -1468,6 +1795,12 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             elif button_id == "chat-prompt-copy-system-button": await chat_handlers.handle_chat_copy_system_prompt_button_pressed(self)
             elif button_id == "chat-prompt-copy-user-button": await chat_handlers.handle_chat_copy_user_prompt_button_pressed(self)
             elif button_id == "chat-load-character-button": await chat_handlers.handle_chat_load_character_button_pressed(self, event) # Pass event if needed by handler
+            # --- Chat Tab Notes Sidebar Buttons ---
+            # These are handled by @on decorators, so we just acknowledge them here to prevent "unhandled" warnings.
+            elif button_id == "chat-notes-create-new-button": self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
+            elif button_id == "chat-notes-search-button": self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
+            elif button_id == "chat-notes-load-button": self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
+            elif button_id == "chat-notes-save-button": self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
             else: self.loguru_logger.warning(f"Unhandled button on CHAT tab -> ID: {button_id}, Label: '{button.label}'")
 
         elif current_active_tab == TAB_CCP:
