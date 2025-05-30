@@ -124,6 +124,12 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     margin-top: 0;
 }
 
+.stop-button {
+    width: 1;
+    height: 3;
+    margin-top: 0;
+}
+
 /* --- Conversations, Characters & Prompts Window specific layouts (previously Character Chat) --- */
 /* Main container for the three-pane layout */
 #conversations_characters_prompts-window {

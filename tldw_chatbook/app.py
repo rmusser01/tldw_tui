@@ -1029,30 +1029,22 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.loguru_logger.error("#ingest-content-pane not found. Cannot switch Ingest views.")
             return
 
-        # Hide all ingest view areas first
-        for child in content_pane.query(".ingest-view-area"):  # Query by common class
-            child_id = child.id or "Unknown ID"
-            self.loguru_logger.debug(f"Hiding child view: '{child_id}'")
-            child.styles.display = "none"
-            self.loguru_logger.debug(f"Child view '{child_id}' display style set to '{child.styles.display}'.")
+        found_new_view = False
+        # Iterate over all child elements of #ingest-content-pane that have the class .ingest-view-area
+        for child_view_container in content_pane.query(".ingest-view-area"):
+            child_id = child_view_container.id # Assuming child_view_container is a DOMNode with an 'id' attribute
+            if child_id == new_view:
+                child_view_container.styles.display = "block" # Or "flex" if that's the original display style
+                self.loguru_logger.info(f"Displaying Ingest view: {child_id}")
+                found_new_view = True
+            else:
+                child_view_container.styles.display = "none"
+                self.loguru_logger.debug(f"Hiding Ingest view: {child_id}")
 
-        # Show the selected view
-        if new_view:  # new_view here is the ID of the view container, e.g., "ingest-view-prompts"
-            try:
-                target_view_id_selector = f"#{new_view}"
-                view_to_show = content_pane.query_one(target_view_id_selector, Container)
-                view_to_show.styles.display = "block"  # or "flex" or whatever your default visible display is
-                self.loguru_logger.info(f"Switched Ingest view to: {new_view}")
-                # Optional: Focus an element within the newly shown view
-                # try:
-                #     view_to_show.query(Input, Button)[0].focus()
-                # except IndexError:
-                #     pass # No focusable element
-            except QueryError as e:
-                self.loguru_logger.error(f"UI component (view_to_show) with ID '{new_view}' not found in #ingest-content-pane: {e}",
-                                         exc_info=True)
-        else:
-            self.loguru_logger.debug("Ingest active view is None, all ingest sub-views are now hidden.")
+        if new_view and not found_new_view:
+            self.loguru_logger.error(f"Target Ingest view '{new_view}' was not found among .ingest-view-area children to display.")
+        elif not new_view: # This case occurs if ingest_active_view is set to None
+            self.loguru_logger.debug("Ingest active view is None, all ingest sub-views are now hidden (handled by loop).")
 
     def watch_tools_settings_active_view(self, old_view: Optional[str], new_view: Optional[str]) -> None:
         self.loguru_logger.debug(f"Tools & Settings active view changing from '{old_view}' to: '{new_view}'")
@@ -2123,6 +2115,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                         self.loguru_logger.warning(
                             "Failed to initialize characters list/preview for ingest-view-characters on nav click.")
                     return  # Nav button handled
+                return
 
             # ELSE, if not a nav button, it must be a button within an active sub-view
             else:
