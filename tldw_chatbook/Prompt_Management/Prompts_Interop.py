@@ -15,18 +15,39 @@ Usage:
 
 2. Call interop functions in your application code:
    `prompts = list_prompts(page=1, per_page=10)`
+   `import_results = import_prompts_from_files(["my_prompts.json", "more_prompts.md"])`
 
 3. (Optional) Clean up at application shutdown:
    `shutdown_interop()`
 """
 #
 # Imports
-import logging
-from typing import List, Tuple, Dict, Any, Optional, Union
+import logging # Retained for example, but loguru is preferred
+import json
+import re
+from typing import List, Tuple, Dict, Any, Optional, Union, Callable
 from pathlib import Path
+import tempfile # For example usage
+import os       # For example usage
+
 #
 # 3rd-party Libraries
 from loguru import logger
+
+# Conditional imports for new functionality
+try:
+    import yaml
+    YAML_AVAILABLE = True
+except ImportError:
+    YAML_AVAILABLE = False
+    logger.warning("PyYAML not installed. YAML import will not be available.")
+
+try:
+    import frontmatter # For Markdown
+    FRONTMATTER_AVAILABLE = True
+except ImportError:
+    FRONTMATTER_AVAILABLE = False
+    logger.warning("python-frontmatter not installed. Markdown import will not be available.")
 #
 # Local Imports
 from tldw_chatbook.DB.Prompts_DB import (
@@ -283,6 +304,333 @@ def export_prompts_formatted_interop(export_format: str = 'csv',
                                        include_author, include_associated_keywords,
                                        markdown_template_name)
 
+# --- Mass Import Functionality ---
+
+PROMPT_FIELDS = ["name", "author", "details", "system_prompt", "user_prompt", "keywords"]
+
+def _normalize_prompt_data(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Ensures prompt data has all expected fields, defaulting to None or empty list."""
+    normalized = {field: data.get(field) for field in PROMPT_FIELDS}
+    if normalized["keywords"] is None:
+        normalized["keywords"] = []
+    if not isinstance(normalized["keywords"], list):
+        logger.warning(f"Keywords for prompt '{normalized.get('name', 'Unknown')}' was not a list, converting. Value: {normalized['keywords']}")
+        if isinstance(normalized["keywords"], str):
+             normalized["keywords"] = [kw.strip() for kw in normalized["keywords"].split(',') if kw.strip()]
+        else: # Attempt to cast to list, or empty if fails
+            try:
+                normalized["keywords"] = list(normalized["keywords"])
+            except TypeError:
+                normalized["keywords"] = []
+
+
+    # Ensure specific string fields are strings or None
+    for field in ["name", "author", "details", "system_prompt", "user_prompt"]:
+        if normalized[field] is not None and not isinstance(normalized[field], str):
+            logger.warning(f"Field '{field}' for prompt '{normalized.get('name', 'Unknown')}' was not a string, converting. Value: {normalized[field]}")
+            try:
+                normalized[field] = str(normalized[field])
+            except Exception:
+                logger.error(f"Could not convert field '{field}' to string for prompt '{normalized.get('name', 'Unknown')}'")
+                normalized[field] = None # Or raise error
+    return normalized
+
+def _parse_json_prompts(content: str) -> List[Dict[str, Any]]:
+    """Parses JSON content into a list of prompt dictionaries."""
+    try:
+        data = json.loads(content)
+        if isinstance(data, dict): # Single prompt object
+            return [_normalize_prompt_data(data)]
+        elif isinstance(data, list): # Array of prompt objects
+            return [_normalize_prompt_data(item) for item in data if isinstance(item, dict)]
+        else:
+            raise ValueError("JSON content must be an object or an array of objects.")
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON format: {e}")
+    except Exception as e:
+        logger.error(f"Error processing JSON data: {e}")
+        raise ValueError(f"Could not process JSON data: {e}")
+
+
+def _parse_yaml_prompts(content: str) -> List[Dict[str, Any]]:
+    """Parses YAML content into a list of prompt dictionaries."""
+    if not YAML_AVAILABLE:
+        raise RuntimeError("YAML parsing is not available. Please install PyYAML.")
+    try:
+        data = list(yaml.safe_load_all(content)) # Handles multiple YAML documents in one file
+        prompts = []
+        if not data: # Handle empty yaml file
+            return []
+        if len(data) == 1 and isinstance(data[0], list): # A single document that is a list of prompts
+             for item in data[0]:
+                if isinstance(item, dict):
+                    prompts.append(_normalize_prompt_data(item))
+        else: # Multiple documents, or a single document that is a prompt object
+            for item in data:
+                if isinstance(item, dict):
+                    prompts.append(_normalize_prompt_data(item))
+        return prompts
+    except yaml.YAMLError as e:
+        raise ValueError(f"Invalid YAML format: {e}")
+    except Exception as e:
+        logger.error(f"Error processing YAML data: {e}")
+        raise ValueError(f"Could not process YAML data: {e}")
+
+def _parse_markdown_prompts(content: str) -> List[Dict[str, Any]]:
+    """Parses Markdown content into a list of prompt dictionaries."""
+    if not FRONTMATTER_AVAILABLE:
+        raise RuntimeError("Markdown parsing is not available. Please install python-frontmatter.")
+    prompts = []
+    # Split content by '---' on its own line, a common multi-document separator
+    # This regex handles optional surrounding whitespace and ensures '---' is the main content of the line.
+    md_documents = re.split(r"^\s*---\s*$", content, flags=re.MULTILINE)
+
+    for doc_content in md_documents:
+        doc_content = doc_content.strip()
+        if not doc_content:
+            continue
+        try:
+            post = frontmatter.loads(doc_content)
+            prompt_data = {"name": None, "author": None, "details": None, "system_prompt": None, "user_prompt": None, "keywords": []}
+            prompt_data.update(post.metadata)
+
+            # Extract system and user prompts from content using headings
+            # Case-insensitive matching for headings
+            system_prompt_match = re.search(r"^##\s*System Prompt\s*$(.*?)(?=^##|\Z)", post.content, re.MULTILINE | re.DOTALL | re.IGNORECASE)
+            if system_prompt_match:
+                prompt_data["system_prompt"] = system_prompt_match.group(1).strip()
+
+            user_prompt_match = re.search(r"^##\s*User Prompt\s*$(.*?)(?=^##|\Z)", post.content, re.MULTILINE | re.DOTALL | re.IGNORECASE)
+            if user_prompt_match:
+                prompt_data["user_prompt"] = user_prompt_match.group(1).strip()
+
+            prompts.append(_normalize_prompt_data(prompt_data))
+        except Exception as e: # Catch errors from frontmatter.loads or regex
+            logger.warning(f"Skipping invalid Markdown document segment: {e}. Content snippet: {doc_content[:100]}")
+            # Optionally, add an error result for this segment
+    return prompts
+
+
+def _parse_txt_prompts(content: str) -> List[Dict[str, Any]]:
+    """Parses TXT content into a list of prompt dictionaries."""
+    prompts_data = []
+    # Split by '---' on its own line to separate prompts
+    prompt_blocks = re.split(r"^\s*---\s*$", content, flags=re.MULTILINE)
+
+    for block in prompt_blocks:
+        block = block.strip()
+        if not block:
+            continue
+
+        current_prompt: Dict[str, Any] = {"name": None, "author": None, "details": None, "system_prompt": None, "user_prompt": None, "keywords": []}
+        metadata_lines = []
+        system_prompt_lines = []
+        user_prompt_lines = []
+
+        parsing_section = "metadata" # metadata, system, user
+
+        for line in block.splitlines():
+            line_strip = line.strip()
+            if line_strip.lower() == "---system---":
+                parsing_section = "system"
+                continue
+            elif line_strip.lower() == "---user---":
+                parsing_section = "user"
+                continue
+
+            if parsing_section == "metadata":
+                metadata_lines.append(line)
+            elif parsing_section == "system":
+                system_prompt_lines.append(line)
+            elif parsing_section == "user":
+                user_prompt_lines.append(line)
+
+        # Parse metadata
+        details_buffer = []
+        for line in metadata_lines:
+            if ":" in line:
+                key, value = line.split(":", 1)
+                key = key.strip().lower()
+                value = value.strip()
+                if key == "name":
+                    current_prompt["name"] = value
+                elif key == "author":
+                    current_prompt["author"] = value
+                elif key == "keywords":
+                    current_prompt["keywords"] = [kw.strip() for kw in value.split(",") if kw.strip()]
+                elif key == "details":
+                    details_buffer.append(value) # Start of details
+                # If details already started, append to it
+                elif details_buffer and key != "details": # Assuming details are contiguous after "Details:"
+                    details_buffer.append(line)
+
+            elif details_buffer: # Line doesn't have ':', part of multi-line details
+                 details_buffer.append(line.strip())
+
+
+        if details_buffer:
+            current_prompt["details"] = "\n".join(details_buffer)
+
+        if system_prompt_lines:
+            current_prompt["system_prompt"] = "\n".join(system_prompt_lines).strip()
+        if user_prompt_lines:
+            current_prompt["user_prompt"] = "\n".join(user_prompt_lines).strip()
+
+        prompts_data.append(_normalize_prompt_data(current_prompt))
+    return prompts_data
+
+def _get_file_type(file_path: Path) -> Optional[str]:
+    """Determines file type from extension."""
+    suffix = file_path.suffix.lower()
+    if suffix == ".json":
+        return "json"
+    elif suffix in [".yaml", ".yml"]:
+        return "yaml"
+    elif suffix == ".md":
+        return "markdown"
+    elif suffix == ".txt":
+        return "txt"
+    return None
+
+def import_prompts_from_files(
+    file_paths: Union[str, Path, List[Union[str, Path]]]
+) -> List[Dict[str, Any]]:
+    """
+    Imports prompts from one or more files (JSON, YAML, Markdown, TXT).
+
+    Each file can contain one or multiple prompts according to its format's conventions.
+    Prompts are added or updated in the database based on their 'name'.
+
+    Args:
+        file_paths: A single file path (str or Path) or a list of file paths.
+
+    Returns:
+        A list of dictionaries, where each dictionary represents the result of
+        an attempted import operation for a single prompt. Each dict contains:
+        - "file_path": str, the path of the source file.
+        - "prompt_name": Optional[str], name of the prompt if parsable.
+        - "status": str, "success" or "failure".
+        - "message": str, details about the operation (e.g., error message or success info).
+        - "prompt_id": Optional[int], ID of the prompt if successfully added/updated.
+        - "prompt_uuid": Optional[str], UUID of the prompt if successfully added/updated.
+    """
+    if not is_initialized():
+        msg = "Prompts Interop Library not initialized. Call initialize_interop() first."
+        logger.error(msg)
+        # Or raise RuntimeError(msg) if preferred to enforce initialization strictly before this call
+        return [{"file_path": str(fp), "status": "failure", "message": msg} for fp in ([file_paths] if isinstance(file_paths, (str, Path)) else file_paths)]
+
+
+    if isinstance(file_paths, (str, Path)):
+        file_paths = [Path(file_paths)]
+    else:
+        file_paths = [Path(fp) for fp in file_paths]
+
+    results: List[Dict[str, Any]] = []
+    parser_map: Dict[str, Callable[[str], List[Dict[str, Any]]]] = {
+        "json": _parse_json_prompts,
+        "yaml": _parse_yaml_prompts,
+        "markdown": _parse_markdown_prompts,
+        "txt": _parse_txt_prompts,
+    }
+
+    for file_path in file_paths:
+        file_path_str = str(file_path)
+        logger.info(f"Processing import file: {file_path_str}")
+        if not file_path.exists() or not file_path.is_file():
+            msg = f"File not found or is not a regular file: {file_path_str}"
+            logger.error(msg)
+            results.append({"file_path": file_path_str, "status": "failure", "message": msg})
+            continue
+
+        file_type = _get_file_type(file_path)
+        if not file_type:
+            msg = f"Unsupported file type or unknown extension: {file_path_str}"
+            logger.warning(msg)
+            results.append({"file_path": file_path_str, "status": "failure", "message": msg})
+            continue
+
+        parser = parser_map.get(file_type)
+        if not parser: # Should not happen if _get_file_type returns a valid key
+            msg = f"No parser available for file type '{file_type}': {file_path_str}"
+            logger.error(msg) # This would be an internal logic error
+            results.append({"file_path": file_path_str, "status": "failure", "message": msg})
+            continue
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            parsed_prompts = parser(content)
+        except RuntimeError as e: # For unavailable parsers (PyYAML/python-frontmatter not installed)
+             logger.error(f"Parser runtime error for {file_path_str}: {e}")
+             results.append({"file_path": file_path_str, "status": "failure", "message": str(e)})
+             continue
+        except ValueError as e: # For parsing errors (invalid format)
+            logger.error(f"Failed to parse {file_path_str}: {e}")
+            results.append({"file_path": file_path_str, "status": "failure", "message": f"Parsing error: {e}"})
+            continue
+        except Exception as e:
+            logger.error(f"Unexpected error reading or parsing {file_path_str}: {e}", exc_info=True)
+            results.append({"file_path": file_path_str, "status": "failure", "message": f"Read/Parse error: {e}"})
+            continue
+
+        if not parsed_prompts:
+            logger.info(f"No prompts found or parsed in file: {file_path_str}")
+            # Optionally add a result indicating no prompts found
+            # results.append({"file_path": file_path_str, "status": "skipped", "message": "No prompts found in file."})
+
+        for prompt_data in parsed_prompts:
+            prompt_name = prompt_data.get("name")
+            if not prompt_name or not isinstance(prompt_name, str) or not prompt_name.strip():
+                msg = "Prompt data is missing a valid 'name'."
+                logger.warning(f"{msg} File: {file_path_str}, Data: {str(prompt_data)[:100]}")
+                results.append({
+                    "file_path": file_path_str,
+                    "prompt_name": prompt_name,
+                    "status": "failure",
+                    "message": msg
+                })
+                continue
+
+            try:
+                # Ensure all expected fields are present, defaulting to None or []
+                # This is now handled by _normalize_prompt_data within each parser.
+                p_id, p_uuid, db_msg = add_or_update_prompt_interop(
+                    name=prompt_name,
+                    author=prompt_data.get("author"),
+                    details=prompt_data.get("details"),
+                    system_prompt=prompt_data.get("system_prompt"),
+                    user_prompt=prompt_data.get("user_prompt"),
+                    keywords=prompt_data.get("keywords")
+                )
+                logger.info(f"Imported prompt '{prompt_name}' from {file_path_str}: {db_msg}")
+                results.append({
+                    "file_path": file_path_str,
+                    "prompt_name": prompt_name,
+                    "status": "success",
+                    "message": db_msg,
+                    "prompt_id": p_id,
+                    "prompt_uuid": p_uuid
+                })
+            except (InputError, ConflictError, DatabaseError, SchemaError) as e:
+                logger.error(f"Failed to add/update prompt '{prompt_name}' from {file_path_str}: {e}")
+                results.append({
+                    "file_path": file_path_str,
+                    "prompt_name": prompt_name,
+                    "status": "failure",
+                    "message": f"Database error: {type(e).__name__} - {e}"
+                })
+            except Exception as e:
+                logger.error(f"Unexpected error importing prompt '{prompt_name}' from {file_path_str}: {e}", exc_info=True)
+                results.append({
+                    "file_path": file_path_str,
+                    "prompt_name": prompt_name,
+                    "status": "failure",
+                    "message": f"Unexpected error: {type(e).__name__} - {e}"
+                })
+    return results
+
+
 # --- Expose Exceptions for API layer ---
 # These are already imported at the top: DatabaseError, SchemaError, InputError, ConflictError
 # They can be caught by the calling code (e.g., your API endpoint) like:
@@ -308,8 +656,192 @@ if __name__ == '__main__':
     # Use an in-memory database for this example for easy cleanup
     # For a real application, this would be a file path.
     EXAMPLE_DB_PATH = ":memory:"
-    # EXAMPLE_DB_PATH = "test_interop_prompts.db" # For file-based testing
-    EXAMPLE_CLIENT_ID = "interop_example_client"
+    EXAMPLE_CLIENT_ID = "interop_example_client_v2"
+    temp_dir = tempfile.mkdtemp()
+    logger.info(f"Using temporary directory for import files: {temp_dir}")
+
+    # Sample prompt data
+    p_id1, p_uuid1, msg1 = add_prompt(
+        name="My First Prompt",
+        author="Interop Test",
+        details="This is a test prompt added via interop.",
+        system_prompt="You are a helpful assistant.",
+        user_prompt="Tell me a joke.",
+        keywords=["test", "funny"]  # "funny" will be newly created
+    )
+    sample_prompts_content = {
+        "json_single": """
+        {
+            "name": "JSON Single Prompt",
+            "author": "JSON Importer",
+            "details": "A single prompt from a JSON file.",
+            "system_prompt": "You are a JSON expert.",
+            "user_prompt": "Explain JSON structure.",
+            "keywords": ["json", "single"]
+        }
+        """,
+        "json_multi": """
+        [
+            {
+                "name": "JSON Multi Prompt 1",
+                "author": "JSON Importer",
+                "details": "First prompt in a JSON array.",
+                "system_prompt": "System 1",
+                "user_prompt": "User 1",
+                "keywords": ["json", "multi", "one"]
+            },
+            {
+                "name": "JSON Multi Prompt 2",
+                "author": "JSON Importer",
+                "details": "Second prompt in a JSON array.",
+                "system_prompt": "System 2",
+                "user_prompt": "User 2",
+                "keywords": ["json", "multi", "two"]
+            }
+        ]
+        """,
+        "yaml_single": """
+name: YAML Single Prompt
+author: YAML Importer
+details: A single prompt from a YAML file.
+system_prompt: You are a YAML guru.
+user_prompt: Explain YAML syntax.
+keywords: [yaml, single]
+        """,
+        "yaml_multi_doc": """
+name: YAML Multi-Doc Prompt 1
+author: YAML Importer
+details: First prompt in a multi-document YAML file.
+system_prompt: System YAML 1
+user_prompt: User YAML 1
+keywords: [yaml, multidoc, one]
+---
+name: YAML Multi-Doc Prompt 2
+author: YAML Importer
+details: Second prompt in a multi-document YAML file.
+system_prompt: System YAML 2
+user_prompt: User YAML 2
+keywords: [yaml, multidoc, two]
+        """,
+        "yaml_list_doc": """
+- name: YAML List-Doc Prompt 1
+  author: YAML Importer
+  details: First prompt in a list YAML document.
+  system_prompt: System YAML List 1
+  user_prompt: User YAML List 1
+  keywords: [yaml, listdoc, one]
+- name: YAML List-Doc Prompt 2
+  author: YAML Importer
+  details: Second prompt in a list YAML document.
+  system_prompt: System YAML List 2
+  user_prompt: User YAML List 2
+  keywords: [yaml, listdoc, two]
+        """,
+        "md_single": """
+---
+name: Markdown Single Prompt
+author: MD Importer
+details: A single prompt from a Markdown file.
+keywords: [markdown, single, frontmatter]
+---
+## System Prompt
+You are a Markdown professional.
+
+## User Prompt
+How to make a table in Markdown?
+        """,
+        "md_multi": """
+---
+name: Markdown Multi Prompt 1
+author: MD Importer
+details: First prompt in a multi-prompt MD file.
+keywords: [markdown, multi, one]
+---
+## System Prompt
+System MD 1
+
+## User Prompt
+User MD 1
+---
+---
+name: Markdown Multi Prompt 2
+author: MD Importer
+details: Second prompt in a multi-prompt MD file.
+keywords: [markdown, multi, two]
+---
+## System Prompt
+System MD 2. Case test for System prompt.
+## USER PROMPT
+User MD 2. Case test for User prompt.
+        """,
+        "txt_single": """
+Name: TXT Single Prompt
+Author: TXT Importer
+Keywords: txt, single, simple
+Details: A single prompt from a TXT file.
+This is more details.
+---SYSTEM---
+You are a TXT file reader.
+This is the system prompt for TXT.
+---USER---
+How to parse TXT files?
+This is the user prompt for TXT.
+        """,
+        "txt_multi": """
+Name: TXT Multi Prompt 1
+Author: TXT Importer
+Keywords: txt, multi, one
+Details: First prompt in a multi-prompt TXT.
+---SYSTEM---
+System TXT 1
+---USER---
+User TXT 1
+---
+Name: TXT Multi Prompt 2
+Author: TXT Importer
+Keywords: txt, multi, two
+Details: Second prompt in a multi-prompt TXT.
+---SYSTEM---
+System TXT 2
+---USER---
+User TXT 2
+        """,
+        "txt_no_name": """
+Author: TXT Importer
+Keywords: txt, error, no_name
+Details: This prompt is missing a name.
+---SYSTEM---
+System for no name.
+---USER---
+User for no name.
+        """
+    }
+
+    # Create temporary files
+    file_paths_to_import = []
+    for name_key, content in sample_prompts_content.items():
+        ext_map = {"json": ".json", "yaml": ".yaml", "md": ".md", "txt": ".txt"}
+        file_ext = ""
+        for k, v in ext_map.items():
+            if name_key.startswith(k):
+                file_ext = v
+                break
+        if not file_ext:
+            logger.warning(f"Could not determine extension for {name_key}, skipping temp file creation.")
+            continue
+
+        temp_file_path = Path(temp_dir) / f"{name_key}{file_ext}"
+        with open(temp_file_path, "w", encoding="utf-8") as f:
+            f.write(content.strip())
+        file_paths_to_import.append(temp_file_path)
+        logger.info(f"Created temp file: {temp_file_path}")
+
+    # Add a non-existent file and an unsupported file type for error testing
+    file_paths_to_import.append(Path(temp_dir) / "non_existent_file.json")
+    unsupported_file_path = Path(temp_dir) / "unsupported.doc"
+    with open(unsupported_file_path, "w") as f: f.write("This is a doc file.")
+    file_paths_to_import.append(unsupported_file_path)
+
 
     try:
         # 1. Initialize
@@ -317,7 +849,6 @@ if __name__ == '__main__':
         initialize_interop(db_path=EXAMPLE_DB_PATH, client_id=EXAMPLE_CLIENT_ID)
         logging.info(f"Interop initialized: {is_initialized()}")
         logging.info(f"DB instance client ID: {get_db_instance().client_id}")
-
         # 2. Add some data using interop functions
         logging.info("\n--- Adding Data ---")
         kw_id1, kw_uuid1 = add_keyword("test")
@@ -331,7 +862,7 @@ if __name__ == '__main__':
             details="This is a test prompt added via interop.",
             system_prompt="You are a helpful assistant.",
             user_prompt="Tell me a joke.",
-            keywords=["test", "funny"] # "funny" will be newly created
+            keywords=["test", "funny"]  # "funny" will be newly created
         )
         logging.info(f"Added prompt: {msg1} (ID: {p_id1}, UUID: {p_uuid1})")
 
@@ -345,7 +876,6 @@ if __name__ == '__main__':
         )
         logging.info(f"Added/Updated prompt via interop wrapper: {msg2} (ID: {p_id2}, UUID: {p_uuid2})")
 
-
         # 3. Read data
         logging.info("\n--- Reading Data ---")
         prompt1_details = fetch_prompt_details(p_id1)
@@ -355,6 +885,43 @@ if __name__ == '__main__':
             logging.info(f"  Keywords: {prompt1_details.get('keywords')}")
         else:
             logging.info(f"Could not fetch details for Prompt ID {p_id1}")
+
+        # --- Test Mass Import ---
+        logger.info("\n--- Testing Mass Import ---")
+        if not YAML_AVAILABLE:
+            logger.warning("YAML files will be skipped as PyYAML is not installed.")
+        if not FRONTMATTER_AVAILABLE:
+            logger.warning("Markdown files will be skipped as python-frontmatter is not installed.")
+
+        import_results = import_prompts_from_files(file_paths_to_import)
+
+        logger.info("\n--- Import Results ---")
+        successful_imports = 0
+        failed_imports = 0
+        for res in import_results:
+            logger.info(
+                f"File: {res['file_path']}, Prompt: '{res.get('prompt_name', 'N/A')}', "
+                f"Status: {res['status']}"
+            )
+            if res['status'] == 'success':
+                logger.info(f"  Msg: {res['message']}, ID: {res.get('prompt_id')}, UUID: {res.get('prompt_uuid')}")
+                successful_imports += 1
+            else:
+                logger.error(f"  Error: {res['message']}")
+                failed_imports += 1
+
+        logger.info(f"\nTotal Successful Imports: {successful_imports}")
+        logger.info(f"Total Failed Imports/Attempts: {failed_imports}")
+
+        # Verify some imported prompts
+        logger.info("\n--- Verifying Imported Prompts ---")
+        if is_initialized(): # Check again, in case init failed in a test setup
+            test_prompt_name = "JSON Single Prompt" # Should have been imported
+            details = fetch_prompt_details(test_prompt_name)
+            if details:
+                logger.info(f"Successfully fetched imported prompt '{test_prompt_name}': Author - {details.get('author')}, Keywords - {details.get('keywords')}")
+            else:
+                logger.error(f"Could not fetch imported prompt '{test_prompt_name}'.")
 
         all_prompts, total_pages, _, total_items = list_prompts()
         logging.info(f"List Prompts (Page 1): {len(all_prompts)} items. Total items: {total_items}, Total pages: {total_pages}")
@@ -412,20 +979,25 @@ if __name__ == '__main__':
     except Exception as e:
         logger.error(f"An unexpected error occurred: {type(e).__name__} - {e}", exc_info=True)
     finally:
-        # 8. Shutdown
-        logging.info("\n--- Shutting Down Interop Library ---")
+        logger.info("\n--- Shutting Down Interop Library ---")
         shutdown_interop()
-        logging.info(f"Interop initialized after shutdown: {is_initialized()}")
+        logger.info(f"Interop initialized after shutdown: {is_initialized()}")
 
-        # If using a file-based DB for testing, you might want to clean it up
-        # if EXAMPLE_DB_PATH != ":memory:":
-        #     import os
-        #     if os.path.exists(EXAMPLE_DB_PATH):
-        #         try:
-        #             os.remove(EXAMPLE_DB_PATH)
-        #             print(f"Cleaned up test database file: {EXAMPLE_DB_PATH}")
-        #         except OSError as e:
-        #             print(f"Error removing test database file {EXAMPLE_DB_PATH}: {e}")
+        # Clean up temporary files and directory
+        logger.info(f"Cleaning up temporary directory: {temp_dir}")
+        for fp_str in file_paths_to_import:
+            fp = Path(fp_str)
+            if fp.exists():
+                try:
+                    os.remove(fp)
+                except OSError as e:
+                    logger.error(f"Error removing temp file {fp}: {e}")
+        try:
+            os.rmdir(temp_dir)
+            logger.info(f"Successfully removed temporary directory: {temp_dir}")
+        except OSError as e:
+            logger.error(f"Error removing temporary directory {temp_dir}: {e}")
+
 
     logger.info("Prompts_interop.py example usage finished.")
 
