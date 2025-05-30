@@ -61,12 +61,12 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
         default_top_k = str(defaults.get("top_k", 50))
 
         # -------------------------------------------------------------------
-        # Sidebar title (always visible)
+        # Current Chat Settings Sidebar title (always visible)
         # -------------------------------------------------------------------
-        yield Static("Settings", classes="sidebar-title")
+        yield Static("Current Chat Settings", classes="sidebar-title")
 
         # ===================================================================
-        # 1. General & Chat Settings – existing controls
+        # 1. General & Chat Settings
         # ===================================================================
         with Collapsible(title="Current Chat Settings", collapsed=True):
             yield Static(
@@ -184,13 +184,53 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
                             classes="sidebar-input")
 
         # ===================================================================
-        # 3. Media Settings – placeholders
+        # 3. Search & Load Conversations
+        # ===================================================================
+        with Collapsible(title="Search & Load Conversations", collapsed=True):
+            yield Input(
+                id=f"{id_prefix}-conversation-search-bar",
+                placeholder="Search all chats...",
+                classes="sidebar-input"
+            )
+            yield Checkbox(
+                "Include Character Chats",
+                id=f"{id_prefix}-conversation-search-include-character-checkbox"
+                # value=False by default for Checkbox
+            )
+            yield Select(
+                [],  # Empty options initially
+                id=f"{id_prefix}-conversation-search-character-filter-select",
+                allow_blank=True,  # User can select nothing to clear filter
+                prompt="Filter by Character...",
+                classes="sidebar-select"  # Assuming a general class for selects or use default
+            )
+            yield Checkbox(
+                "All Characters",
+                id=f"{id_prefix}-conversation-search-all-characters-checkbox",
+                value=True  # Default to True
+            )
+            yield ListView(
+                id=f"{id_prefix}-conversation-search-results-list",
+                classes="sidebar-listview"  # Add specific styling if needed
+            )
+            # Set initial height for ListView via styles property if not handled by class
+            # Example: self.query_one(f"#{id_prefix}-conversation-search-results-list", ListView).styles.height = 10
+            yield Button(
+                "Load Selected Chat",
+                id=f"{id_prefix}-conversation-load-selected-button",
+                variant="default",  # Or "primary"
+                classes="sidebar-button"  # Use existing class or new one
+            )
+
+
+        # ===================================================================
+        # 4. Media Settings – placeholders
         # ===================================================================
         with Collapsible(title="Media Settings", collapsed=True):
             yield Static("Media settings will go here (placeholder)", classes="sidebar-placeholder")
 
         # ===================================================================
-        # 4. Search & Tools Settings – placeholders
+        # 5. Search & Tools Settings – placeholders
         # ===================================================================
         with Collapsible(title="Search & Tools Settings", collapsed=True):
             yield Static(

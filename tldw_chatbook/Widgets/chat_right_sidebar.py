@@ -200,46 +200,6 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
                     classes="sidebar-button"
                 )
 
-        # ===================================================================
-        # Saved Conversations (only for chat tab)
-        # ===================================================================
-        with Collapsible(title="Search & Load Conversations", collapsed=True):
-            yield Input(
-                id=f"{id_prefix}-conversation-search-bar",
-                placeholder="Search all chats...",
-                classes="sidebar-input"
-            )
-            yield Checkbox(
-                "Include Character Chats",
-                id=f"{id_prefix}-conversation-search-include-character-checkbox"
-                # value=False by default for Checkbox
-            )
-            yield Select(
-                [],  # Empty options initially
-                id=f"{id_prefix}-conversation-search-character-filter-select",
-                allow_blank=True,  # User can select nothing to clear filter
-                prompt="Filter by Character...",
-                classes="sidebar-select"  # Assuming a general class for selects or use default
-            )
-            yield Checkbox(
-                "All Characters",
-                id=f"{id_prefix}-conversation-search-all-characters-checkbox",
-                value=True  # Default to True
-            )
-            yield ListView(
-                id=f"{id_prefix}-conversation-search-results-list",
-                classes="sidebar-listview"  # Add specific styling if needed
-            )
-            # Set initial height for ListView via styles property if not handled by class
-            # Example: self.query_one(f"#{id_prefix}-conversation-search-results-list", ListView).styles.height = 10
-            yield Button(
-                "Load Selected Chat",
-                id=f"{id_prefix}-conversation-load-selected-button",
-                variant="default",  # Or "primary"
-                classes="sidebar-button"  # Use existing class or new one
-            )
-
-
         # Placeholder for actual character details (if a specific character is active beyond default)
         # This part would be more relevant if the chat tab directly supported switching active characters
         # for the ongoing conversation, rather than just for filtering searches.
