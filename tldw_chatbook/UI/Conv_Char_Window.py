@@ -75,7 +75,10 @@ class CCPWindow(Container):
                 yield Label("Scenario:")
                 yield TextArea(id="ccp-card-scenario-display", read_only=True, classes="ccp-card-textarea")
                 yield Label("First Message:")
-                yield TextArea(id="ccp-card-first-message-display", read_only=True, classes="ccp-card-textarea")
+                yield TextArea(id="ccp-card-first-message-display", classes="ccp-card-textarea")
+                with Horizontal(classes="ccp-card-action-buttons"): # Added a class for potential styling
+                    yield Button("Save Changes", id="ccp-card-save-button", variant="success") # Added variant
+                    yield Button("Clone Character", id="ccp-card-clone-button", variant="primary") # Added variant
 
             # Container for character editing UI (initially hidden by CSS)
             with Container(id="ccp-character-editor-view", classes="ccp-view-area"):
