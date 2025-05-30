@@ -32,8 +32,8 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
         with Collapsible(title="Current Chat Details", collapsed=False, id=f"{id_prefix}-chat-details-collapsible"):
             # NEW "New Chat" Button
             yield Button(
-                "New Ephemeral Chat",  # More explicit
-                id=f"{id_prefix}-new-ephemeral-chat-button",  # New ID
+                "New Temp Chat",
+                id=f"{id_prefix}-new-temp-chat-button",  # New ID
                 classes="sidebar-button",
                 variant="primary"  # Optional: different styling
             )
@@ -46,7 +46,7 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
             yield Label("Conversation ID:", classes="sidebar-label", id=f"{id_prefix}-uuid-label-displayonly")
             yield Input(
                 id=f"{id_prefix}-conversation-uuid-display", # Matches app.py query
-                value="Ephemeral Chat" if initial_ephemeral_state else "N/A",
+                value="Temp Chat" if initial_ephemeral_state else "N/A",
                 disabled=True, # Always disabled display
                 classes="sidebar-input"
             )
@@ -65,14 +65,6 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
                 classes="sidebar-textarea chat-keywords-textarea",
                 disabled=initial_ephemeral_state
             )
-            # Button to make an EPHEMERAL chat PERSISTENT (Save Chat to DB)
-            yield Button(
-                "Save Invis Chat",
-                id=f"{id_prefix}-save-current-chat-button", # Matches app.py's expected ID
-                classes="sidebar-button save-chat-button",
-                variant="success",
-                disabled=not initial_ephemeral_state # Enabled if ephemeral, disabled if already saved
-            )
             # Button to save METADATA (title/keywords) of a PERSISTENT/ALREADY EXISTING chat
             yield Button(
                 "Save Details",
@@ -80,6 +72,14 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
                 classes="sidebar-button save-details-button", # Specific class
                 variant="primary", # Or "default"
                 disabled=initial_ephemeral_state # Disabled if ephemeral, enabled if persistent
+            )
+            # Button to make an EPHEMERAL chat PERSISTENT (Save Chat to DB)
+            yield Button(
+                "Save Temp Chat",
+                id=f"{id_prefix}-save-current-chat-button", # Matches app.py's expected ID
+                classes="sidebar-button save-chat-button",
+                variant="success",
+                disabled=not initial_ephemeral_state # Enabled if ephemeral, disabled if already saved
             )
         # ===================================================================
         # Prompts (only for chat tab)
@@ -258,6 +258,12 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
                 yield Button(
                     "Load Character",
                     id="chat-load-character-button"
+                )
+                yield Button(
+                    "Clear Active Character",
+                    id="chat-clear-active-character-button", # New ID
+                    classes="sidebar-button",
+                    variant="warning" # Optional: different styling
                 )
                 yield Input(
                     id="chat-character-name-edit",
