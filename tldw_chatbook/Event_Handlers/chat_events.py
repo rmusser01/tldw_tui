@@ -30,7 +30,7 @@ from ..Utils.Emoji_Handling import (
 )
 from ..Character_Chat import Character_Chat_Lib as ccl
 from ..Character_Chat.Character_Chat_Lib import load_character_and_image # Added for character data loading
-from ..DB.ChaChaNotes_DB import ConflictError, CharactersRAGDBError # Import specific DB errors
+from ..DB.ChaChaNotes_DB import ConflictError, CharactersRAGDBError, InputError  # Import specific DB errors
 from ..Prompt_Management import Prompts_Interop as prompts_interop
 #
 if TYPE_CHECKING:
@@ -138,9 +138,9 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
         loguru_logger.info(
             f"Active character data found: {active_char_data.get('name', 'Unnamed')}. Checking for system prompt override.")
         # Prioritize system_prompt from active_char_data.
-        system_prompt_override = active_char_data.get('system_prompt')  # This comes from the editable fields
-        if system_prompt_override is not None and system_prompt_override.strip():  # Check if not None AND not empty/whitespace
-            final_system_prompt_for_api = system_prompt_override
+        char_specific_system_prompt = active_char_data.get('system_prompt')  # This comes from the editable fields
+        if char_specific_system_prompt is not None and char_specific_system_prompt.strip():  # Check if not None AND not empty/whitespace
+            final_system_prompt_for_api = char_specific_system_prompt
             loguru_logger.debug(
                 f"System prompt overridden by active character's system prompt: '{final_system_prompt_for_api[:100]}...'")
         else:
@@ -187,7 +187,7 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
 
     # --- 3. Basic Validation ---
     if not selected_provider:
-        await chat_container.mount(ChatMessage(Text.from_markup("Please select an API Provider."), role="System", classes="-error")); return
+        await chat_container.mount(ChatMessage(message="Please select an API Provider.", role="System")); return
     if not selected_model:
         await chat_container.mount(ChatMessage(Text.from_markup("Please select a Model."), role="System", classes="-error")); return
     if not app.API_IMPORTS_SUCCESSFUL: # Access as app attribute
@@ -198,7 +198,7 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
     # --- 4. Build Chat History for API ---
     # History should contain messages *before* the current user's input.
     # The current user's input (`message_text_from_input`) will be passed as the `message` param to `app.chat_wrapper`.
-    chat_history_for_api: List[Dict[str, str]] = []
+    chat_history_for_api: List[Dict[str, Any]] = []
     try:
         # Iterate through all messages currently in the UI
         all_ui_messages = list(chat_container.query(ChatMessage))
@@ -236,10 +236,22 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
 
 
         for msg_widget in messages_to_process_for_history:
-            if msg_widget.role in ("User", "AI") and msg_widget.generation_complete:
-                role_for_api = "assistant" if msg_widget.role == "AI" else "user"
-                chat_history_for_api.append({"role": role_for_api, "content": msg_widget.message_text})
+            if msg_widget.role in ("User", "AI") or (app.current_chat_active_character_data and msg_widget.role == app.current_chat_active_character_data.get('name')):
+                 if msg_widget.generation_complete: # Only send completed messages
+                    # Map UI role to API role (user/assistant)
+                    api_role = "user"
+                    if msg_widget.role != "User": # Anything not "User" is treated as assistant for API history
+                        api_role = "assistant"
 
+                    # Prepare content part(s) - for now, assuming text only
+                    content_for_api = msg_widget.message_text
+                    # if msg_widget.image_data and msg_widget.image_mime_type: # Future multimodal
+                    #     image_url = f"data:{msg_widget.image_mime_type};base64,{base64.b64encode(msg_widget.image_data).decode()}"
+                    #     content_for_api = [
+                    #         {"type": "text", "text": msg_widget.message_text},
+                    #         {"type": "image_url", "image_url": {"url": image_url}}
+                    #     ]
+                    chat_history_for_api.append({"role": api_role, "content": content_for_api})
         loguru_logger.debug(f"Built chat history for API with {len(chat_history_for_api)} messages.")
 
     except Exception as e:
@@ -249,8 +261,8 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
 
     # --- 5. DB and Conversation ID Setup ---
     active_conversation_id = app.current_chat_conversation_id
-    db = app.notes_service._get_db(app.notes_user_id) if app.notes_service else None
-    user_msg_widget_instance: Optional[ChatMessage] = None # To hold the instance of the user message widget
+    db = app.chachanotes_db # Use the correct instance from app
+    user_msg_widget_instance: Optional[ChatMessage] = None
 
     # --- 6. Mount User Message to UI ---
     if not reuse_last_user_bubble:
@@ -260,21 +272,31 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
 
     # --- 7. Save User Message to DB (IF CHAT IS ALREADY PERSISTENT) ---
     if not app.current_chat_is_ephemeral and active_conversation_id and db:
-        if not reuse_last_user_bubble and user_msg_widget_instance: # Only save if it's a newly added UI message
+        if not reuse_last_user_bubble and user_msg_widget_instance:
             try:
                 loguru_logger.debug(f"Chat is persistent (ID: {active_conversation_id}). Saving user message to DB.")
-                # Assuming no image for user messages sent via text input for now
-                user_message_db_id = ccl.add_message_to_conversation(
+                user_message_db_id_version_tuple = ccl.add_message_to_conversation(
                     db, conversation_id=active_conversation_id, sender="User", content=message_text_from_input,
-                    image_data=None, image_mime_type=None # Placeholder for potential future image uploads
+                    image_data=None, image_mime_type=None
                 )
-                if user_message_db_id:
-                    user_msg_widget_instance.message_id_internal = user_message_db_id
-                    loguru_logger.debug(f"User message saved to DB with ID: {user_message_db_id}")
+                # add_message_to_conversation in ccl returns message_id (str). Version is handled by DB.
+                # We need to fetch the message to get its version.
+                if user_message_db_id_version_tuple: # This is just the ID
+                    user_msg_db_id = user_message_db_id_version_tuple
+                    saved_user_msg_details = db.get_message_by_id(user_msg_db_id)
+                    if saved_user_msg_details:
+                        user_msg_widget_instance.message_id_internal = saved_user_msg_details.get('id')
+                        user_msg_widget_instance.message_version_internal = saved_user_msg_details.get('version')
+                        loguru_logger.debug(f"User message saved to DB. ID: {saved_user_msg_details.get('id')}, Version: {saved_user_msg_details.get('version')}")
+                    else:
+                        loguru_logger.error(f"Failed to retrieve saved user message details from DB for ID {user_msg_db_id}.")
                 else:
                     loguru_logger.error(f"Failed to save user message to DB for conversation {active_conversation_id}.")
-            except Exception as e_add_msg:
+            except (CharactersRAGDBError, InputError) as e_add_msg: # Catch specific errors from ccl
                 loguru_logger.error(f"Error saving user message to DB: {e_add_msg}", exc_info=True)
+            except Exception as e_add_msg_generic:
+                 loguru_logger.error(f"Generic error saving user message to DB: {e_add_msg_generic}", exc_info=True)
+
     elif app.current_chat_is_ephemeral:
         loguru_logger.debug("Chat is ephemeral. User message not saved to DB at this stage.")
 
@@ -286,14 +308,14 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
 
     # --- 9. API Key Fetching ---
     api_key_for_call = None
-    if selected_provider: # Should always be true due to earlier check
-        provider_settings_key = selected_provider.lower()
+    if selected_provider:
+        provider_settings_key = selected_provider.lower().replace(" ", "_")
         provider_config_settings = app.app_config.get("api_settings", {}).get(provider_settings_key, {})
 
         if "api_key" in provider_config_settings:
             direct_config_key_checked = True
             config_api_key = provider_config_settings.get("api_key", "").strip()
-            if config_api_key:
+            if config_api_key and config_api_key != "<API_KEY_HERE>":
                 api_key_for_call = config_api_key
                 loguru_logger.debug(f"Using API key for '{selected_provider}' from config file field.")
 
@@ -315,12 +337,11 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
         error_message_markup = (
             f"API Key for {selected_provider} is missing.\n\n"
             "Please add it to your config file under:\n"
-            f"\\[api_settings.{selected_provider.lower()}\\]\n" # Ensure key matches config
+            f"\\[api_settings.{selected_provider.lower().replace(' ', '_')}\\]\n" 
             "api_key = \"YOUR_KEY\"\n\n"
             "Or set the environment variable specified by 'api_key_env_var' in the config for this provider."
         )
-        await chat_container.mount(ChatMessage(Text.from_markup(error_message_markup), role="System", classes="-error"))
-        # Clean up placeholder if one was accidentally about to be made or if logic changes
+        await chat_container.mount(ChatMessage(message=error_message_markup, role="System"))
         if app.current_ai_message_widget and app.current_ai_message_widget.is_mounted:
             await app.current_ai_message_widget.remove()
             app.current_ai_message_widget = None
@@ -344,7 +365,7 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
         api_key=api_key_for_call,
         custom_prompt=custom_prompt,
         temperature=temperature,
-        system_message=system_prompt,
+        system_message=final_system_prompt_for_api,
         streaming=should_stream,
         minp=min_p,
         model=selected_model,
@@ -415,16 +436,42 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
                 loguru_logger.debug("Editing finished. New length: %d", len(new_text))
 
                 # Persist edit to DB if message has an ID
-                if db and hasattr(action_widget, 'message_id_internal') and action_widget.message_id_internal:
+                if db and action_widget.message_id_internal and action_widget.message_version_internal is not None:
                     try:
-                        db.update_message_content(action_widget.message_id_internal, new_text)
-                        loguru_logger.info(f"Message ID {action_widget.message_id_internal} content updated in DB.")
-                        app.notify("Message edit saved to DB.", severity="information", timeout=2)
-                    except Exception as e_db_update:
+                        # CORRECTED: Use ccl.edit_message_content
+                        success = ccl.edit_message_content(
+                            db,
+                            action_widget.message_id_internal,
+                            new_text,
+                            action_widget.message_version_internal  # Pass the expected version
+                        )
+                        if success:
+                            action_widget.message_version_internal += 1  # Increment version on successful update
+                            loguru_logger.info(
+                                f"Message ID {action_widget.message_id_internal} content updated in DB. New version: {action_widget.message_version_internal}")
+                            app.notify("Message edit saved to DB.", severity="information", timeout=2)
+                        else:
+                            # This path should ideally be covered by exceptions from ccl.edit_message_content
+                            loguru_logger.error(
+                                f"ccl.edit_message_content returned False for {action_widget.message_id_internal} without raising an exception.")
+                            app.notify("Failed to save edit to DB (update operation returned false).", severity="error")
+                    except ConflictError as e_conflict:
                         loguru_logger.error(
-                            f"Failed to update message {action_widget.message_id_internal} in DB: {e_db_update}",
+                            f"Conflict updating message {action_widget.message_id_internal} in DB: {e_conflict}",
                             exc_info=True)
-                        app.notify("Failed to save edit to DB.", severity="error")
+                        app.notify(f"Save conflict: {e_conflict}. Please reload the chat or message.", severity="error",
+                                   timeout=7)
+                    except (CharactersRAGDBError, InputError) as e_db_update:
+                        loguru_logger.error(
+                            f"DB/Input error updating message {action_widget.message_id_internal} in DB: {e_db_update}",
+                            exc_info=True)
+                        app.notify(f"Failed to save edit to DB: {e_db_update}", severity="error")
+                    except Exception as e_generic_update:  # Catch any other unexpected error
+                        loguru_logger.error(
+                            f"Unexpected error updating message {action_widget.message_id_internal} in DB: {e_generic_update}",
+                            exc_info=True)
+                        app.notify(f"An unexpected error occurred while saving the edit: {e_generic_update}",
+                                   severity="error")
 
             except QueryError:
                 loguru_logger.error("Edit TextArea not found when stopping edit. Restoring original.")
@@ -720,12 +767,12 @@ async def handle_chat_save_current_chat_button_pressed(app: 'TldwCli') -> None:
         app.notify("This chat is already saved or cannot be saved in its current state.", severity="warning")
         return
 
-    if not app.notes_service:
+    if not app.chachanotes_db: # Use correct DB instance name
         app.notify("Database service not available.", severity="error")
-        loguru_logger.error("Notes service not available for saving chat.")
+        loguru_logger.error("chachanotes_db not available for saving chat.")
         return
 
-    db = app.notes_service._get_db(app.notes_user_id)
+    db = app.chachanotes_db
     try:
         chat_log_widget = app.query_one("#chat-log", VerticalScroll)
     except QueryError:
@@ -738,26 +785,57 @@ async def handle_chat_save_current_chat_button_pressed(app: 'TldwCli') -> None:
         app.notify("Nothing to save in an empty chat.", severity="warning")
         return
 
+    character_id_for_saving = ccl.DEFAULT_CHARACTER_ID
+    char_name_for_sender = "AI" # Default sender name for AI messages if no specific character
+
+    if app.current_chat_active_character_data and 'id' in app.current_chat_active_character_data:
+        character_id_for_saving = app.current_chat_active_character_data['id']
+        char_name_for_sender = app.current_chat_active_character_data.get('name', 'AI') # Use actual char name for sender
+        loguru_logger.info(f"Saving chat with active character: {char_name_for_sender} (ID: {character_id_for_saving})")
+    else:
+        loguru_logger.info(f"Saving chat with default character association (ID: {character_id_for_saving})")
+
+
     ui_messages_to_save: List[Dict[str, Any]] = []
     for msg_widget in messages_in_log:
-        if msg_widget.generation_complete:
+        sender_for_db_initial_msg = "User" if msg_widget.role == "User" else char_name_for_sender
+
+        if msg_widget.generation_complete :
             ui_messages_to_save.append({
-                'sender': msg_widget.role,
+                'sender': sender_for_db_initial_msg,
                 'content': msg_widget.message_text,
-                'image_data': getattr(msg_widget, 'image_data', None),
-                'image_mime_type': getattr(msg_widget, 'image_mime_type', None),
-                'timestamp': getattr(msg_widget, 'timestamp', datetime.now().isoformat())  # Add timestamp if available
+                'image_data': msg_widget.image_data,
+                'image_mime_type': msg_widget.image_mime_type,
             })
 
-    default_title = f"Saved Chat - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-    if ui_messages_to_save and ui_messages_to_save[0]['sender'] == "User":
-        content_preview = ui_messages_to_save[0]['content'][:30].strip()
-        if content_preview: default_title = f"Chat: {content_preview}..."
+    new_conv_title_from_ui = app.query_one("#chat-conversation-title-input", Input).value.strip()
+    final_title_for_db = new_conv_title_from_ui
+
+    if not final_title_for_db:
+        # Use character's name for title generation if a specific character is active
+        title_char_name_part = char_name_for_sender if character_id_for_saving != ccl.DEFAULT_CHARACTER_ID else "Assistant"
+        if ui_messages_to_save and ui_messages_to_save[0]['sender'] == "User":
+            content_preview = ui_messages_to_save[0]['content'][:30].strip()
+            if content_preview:
+                final_title_for_db = f"Chat: {content_preview}..."
+            else:
+                final_title_for_db = f"Chat with {title_char_name_part}"
+        else:
+            final_title_for_db = f"Chat with {title_char_name_part} - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+
+
+    keywords_str_from_ui = app.query_one("#chat-conversation-keywords-input", TextArea).text.strip()
+    keywords_list_for_db = [kw.strip() for kw in keywords_str_from_ui.split(',') if kw.strip() and not kw.strip().startswith("__")]
+
 
     try:
         new_conv_id = ccl.create_conversation(
-            db, title=default_title, character_id=ccl.DEFAULT_CHARACTER_ID,  # For regular chats
-            initial_messages=ui_messages_to_save, system_keywords=["__regular_chat", "__saved_ephemeral"]
+            db,
+            title=final_title_for_db,
+            character_id=character_id_for_saving,
+            initial_messages=ui_messages_to_save,
+            system_keywords=keywords_list_for_db,
+            user_name_for_placeholders=app.app_config.get("USERS_NAME", "User")
         )
 
         if new_conv_id:
@@ -765,28 +843,17 @@ async def handle_chat_save_current_chat_button_pressed(app: 'TldwCli') -> None:
             app.current_chat_is_ephemeral = False  # Now it's saved, triggers watcher
             app.notify("Chat saved successfully!", severity="information")
 
-            # Watcher for current_chat_is_ephemeral will enable/disable buttons.
-            # We need to populate the fields for the newly saved chat.
-            try:
-                app.query_one("#chat-conversation-title-input", Input).value = default_title
-                app.query_one("#chat-conversation-uuid-display", Input).value = new_conv_id
-                # Keywords are not set automatically on first save, user can add them.
-                app.query_one("#chat-conversation-keywords-input", TextArea).text = ""
-                app.query_one(TitleBar).update_title(f"Chat - {default_title}")
+            # After saving, reload the conversation to get all messages with their DB IDs and versions
+            await display_conversation_in_chat_tab_ui(app, new_conv_id)
 
-                # Update message_id_internal for all messages in the chat log from the DB
-                # This is important if the user wants to edit/delete them later from this session.
-                # This requires create_conversation to return message IDs or a way to fetch them.
-                # Assuming ccl.create_conversation handles setting message IDs if it saves them.
-                # If not, a follow-up fetch would be needed. For now, we assume it's handled or IDs are set upon message creation.
+            # The display_conversation_in_chat_tab_ui will populate title, uuid, keywords.
+            # It will also set the title bar.
 
-            except QueryError as e:
-                loguru_logger.error(f"Error updating UI after saving chat: {e}")
         else:
             app.notify("Failed to save chat (no ID returned).", severity="error")
     except Exception as e_save_chat:
         loguru_logger.error(f"Exception while saving chat: {e_save_chat}", exc_info=True)
-        app.notify(f"Error saving chat: {e_save_chat}", severity="error")
+        app.notify(f"Error saving chat: {str(e_save_chat)[:100]}", severity="error")
 
 
 async def handle_chat_save_details_button_pressed(app: 'TldwCli') -> None:
@@ -1059,18 +1126,17 @@ async def handle_chat_search_checkbox_changed(app: 'TldwCli', checkbox_id: str, 
 
 
 async def display_conversation_in_chat_tab_ui(app: 'TldwCli', conversation_id: str):
-    if not app.notes_service:
-        logging.error("Notes service unavailable, cannot display conversation in chat tab.")
-        # Potentially update UI to show an error
+    if not app.chachanotes_db: # Use correct DB instance name
+        loguru_logger.error("chachanotes_db unavailable, cannot display conversation in chat tab.")
         return
 
-    db = app.notes_service._get_db(app.notes_user_id)
-    conv_details_disp = db.get_conversation_by_id(conversation_id)
+    db = app.chachanotes_db
 
-    if not conv_details_disp:
-        logging.error(f"Cannot display conversation: Details for ID {conversation_id} not found.")
+    full_conv_data = ccl.get_conversation_details_and_messages(db, conversation_id)
+
+    if not full_conv_data or not full_conv_data.get('metadata'):
+        loguru_logger.error(f"Cannot display conversation: Details for ID {conversation_id} not found or incomplete.")
         app.notify(f"Error: Could not load chat {conversation_id}.", severity="error")
-        # Update UI to reflect error state
         try:
             app.query_one("#chat-conversation-title-input", Input).value = "Error: Not Found"
             app.query_one("#chat-conversation-keywords-input", TextArea).text = ""
@@ -1078,83 +1144,96 @@ async def display_conversation_in_chat_tab_ui(app: 'TldwCli', conversation_id: s
             app.query_one(TitleBar).update_title(f"Chat - Error Loading")
             chat_log_err = app.query_one("#chat-log", VerticalScroll)
             await chat_log_err.remove_children()
-            await chat_log_err.mount(ChatMessage(Text.from_markup("[bold red]Failed to load conversation details.[/]"), role="System", classes="-error"))
-        except QueryError as qe_err_disp: logging.error(f"UI component missing during error display for conv {conversation_id}: {qe_err_disp}")
+            app.current_ai_message_widget = None
+            await chat_log_err.mount(ChatMessage(message="Failed to load conversation details.", role="System"))
+        except QueryError as qe_err_disp: loguru_logger.error(f"UI component missing during error display for conv {conversation_id}: {qe_err_disp}")
         return
 
-    app.current_chat_conversation_id = conversation_id # Ensure reactive is set for context
-    app.current_chat_is_ephemeral = False # Loaded chats are not ephemeral
+    conv_metadata = full_conv_data['metadata']
+    db_messages = full_conv_data['messages']
+    character_name_from_conv_load = full_conv_data.get('character_name', 'AI')
+
+    app.current_chat_conversation_id = conversation_id
+    app.current_chat_is_ephemeral = False
 
     try:
-        # --- Populate current_chat_active_character_data ---
-        character_id_from_conv = conv_details_disp.get('character_id')
-        loaded_char_data_for_ui_fields: Optional[Dict[str, Any]] = None  # To store data for UI fields
+        character_id_from_conv = conv_metadata.get('character_id')
+        loaded_char_data_for_ui_fields: Optional[Dict[str, Any]] = None
+        current_user_name = app.app_config.get("USERS_NAME", "User")
 
-        if character_id_from_conv:
-            loguru_logger.debug(
-                f"Conversation {conversation_id} is associated with character_id: {character_id_from_conv}")
-            try:
-                char_data_conv, _, _ = load_character_and_image(db, character_id_from_conv, app.notes_user_id)
-                if char_data_conv:
-                    app.current_chat_active_character_data = char_data_conv
-                    loaded_char_data_for_ui_fields = char_data_conv  # Store for populating fields
-                    loguru_logger.info(
-                        f"Loaded character data for '{char_data_conv.get('name', 'Unknown')}' into app.current_chat_active_character_data.")
-                else:
-                    app.current_chat_active_character_data = None
-                    loguru_logger.warning(f"Could not load character data for character_id: {character_id_from_conv}")
-            except Exception as e_char_load:
+        if character_id_from_conv and character_id_from_conv != ccl.DEFAULT_CHARACTER_ID:
+            loguru_logger.debug(f"Conversation {conversation_id} is associated with char_id: {character_id_from_conv}")
+            char_data_for_ui, _, _ = load_character_and_image(db, character_id_from_conv, current_user_name)
+            if char_data_for_ui:
+                app.current_chat_active_character_data = char_data_for_ui
+                loaded_char_data_for_ui_fields = char_data_for_ui
+                loguru_logger.info(f"Loaded char data for '{char_data_for_ui.get('name', 'Unknown')}' into app.current_chat_active_character_data.")
+                app.query_one("#chat-system-prompt", TextArea).text = char_data_for_ui.get('system_prompt', '')
+            else:
                 app.current_chat_active_character_data = None
-                loguru_logger.error(f"Error loading character data for {character_id_from_conv}: {e_char_load}",
-                                    exc_info=True)
+                loguru_logger.warning(f"Could not load char data for char_id: {character_id_from_conv}. Active char set to None.")
+                app.query_one("#chat-system-prompt", TextArea).text = app.app_config.get("chat_defaults", {}).get("system_prompt", "You are a helpful AI assistant.")
         else:
             app.current_chat_active_character_data = None
-            loguru_logger.debug(
-                f"Conversation {conversation_id} has no associated character_id. Setting active character data to None.")
-        # --- End character data population ---
-        # --- Populate the character editing fields if a character was loaded ---
+            loguru_logger.debug(f"Conversation {conversation_id} uses default/no character. Active char set to None.")
+            app.query_one("#chat-system-prompt", TextArea).text = app.app_config.get("chat_defaults", {}).get("system_prompt", "You are a helpful AI assistant.")
+
+        right_sidebar_chat_tab = app.query_one("#chat-right-sidebar")
         if loaded_char_data_for_ui_fields:
-            app.query_one("#chat-character-name-edit", Input).value = loaded_char_data_for_ui_fields.get('name', '')
-            app.query_one("#chat-character-description-edit", TextArea).text = loaded_char_data_for_ui_fields.get(
-                'description', '')
-            app.query_one("#chat-character-personality-edit", TextArea).text = loaded_char_data_for_ui_fields.get(
-                'personality', '')
-            app.query_one("#chat-character-scenario-edit", TextArea).text = loaded_char_data_for_ui_fields.get(
-                'scenario', '')
-            app.query_one("#chat-character-system-prompt-edit", TextArea).text = loaded_char_data_for_ui_fields.get(
-                'system_prompt', '')
-            app.query_one("#chat-character-first-message-edit", TextArea).text = loaded_char_data_for_ui_fields.get(
-                'first_message', '')
-        else:  # No character associated or failed to load, clear fields
-            app.query_one("#chat-character-name-edit", Input).value = ""
-            app.query_one("#chat-character-description-edit", TextArea).text = ""
-            app.query_one("#chat-character-personality-edit", TextArea).text = ""
-            app.query_one("#chat-character-scenario-edit", TextArea).text = ""
-            app.query_one("#chat-character-system-prompt-edit", TextArea).text = ""
-            app.query_one("#chat-character-first-message-edit", TextArea).text = ""
-            # --- End populating/clearing character editing fields ---
-        app.query_one("#chat-conversation-title-input", Input).value = conv_details_disp.get('title', '')
+            right_sidebar_chat_tab.query_one("#chat-character-name-edit", Input).value = loaded_char_data_for_ui_fields.get('name', '')
+            right_sidebar_chat_tab.query_one("#chat-character-description-edit", TextArea).text = loaded_char_data_for_ui_fields.get('description', '')
+            right_sidebar_chat_tab.query_one("#chat-character-personality-edit", TextArea).text = loaded_char_data_for_ui_fields.get('personality', '')
+            right_sidebar_chat_tab.query_one("#chat-character-scenario-edit", TextArea).text = loaded_char_data_for_ui_fields.get('scenario', '')
+            right_sidebar_chat_tab.query_one("#chat-character-system-prompt-edit", TextArea).text = loaded_char_data_for_ui_fields.get('system_prompt', '')
+            right_sidebar_chat_tab.query_one("#chat-character-first-message-edit", TextArea).text = loaded_char_data_for_ui_fields.get('first_message', '')
+        else:
+            right_sidebar_chat_tab.query_one("#chat-character-name-edit", Input).value = ""
+            right_sidebar_chat_tab.query_one("#chat-character-description-edit", TextArea).text = ""
+            right_sidebar_chat_tab.query_one("#chat-character-personality-edit", TextArea).text = ""
+            right_sidebar_chat_tab.query_one("#chat-character-scenario-edit", TextArea).text = ""
+            right_sidebar_chat_tab.query_one("#chat-character-system-prompt-edit", TextArea).text = ""
+            right_sidebar_chat_tab.query_one("#chat-character-first-message-edit", TextArea).text = ""
+
+        app.query_one("#chat-conversation-title-input", Input).value = conv_metadata.get('title', '')
         app.query_one("#chat-conversation-uuid-display", Input).value = conversation_id
-
         keywords_input_disp = app.query_one("#chat-conversation-keywords-input", TextArea)
-        all_keywords_list_disp = db.get_keywords_for_conversation(conversation_id)
-        visible_keywords_disp = [kw['keyword'] for kw in all_keywords_list_disp if not kw['keyword'].startswith("__")]
-        keywords_input_disp.text = ", ".join(visible_keywords_disp)
+        keywords_input_disp.text = conv_metadata.get('keywords_display', "")
 
-        app.query_one(TitleBar).update_title(f"Chat - {conv_details_disp.get('title', 'Untitled Conversation')}")
+        app.query_one(TitleBar).update_title(f"Chat - {conv_metadata.get('title', 'Untitled Conversation')}")
 
         chat_log_widget_disp = app.query_one("#chat-log", VerticalScroll)
-        await app._load_branched_conversation_history(conversation_id, chat_log_widget_disp)
+        await chat_log_widget_disp.remove_children()
+        app.current_ai_message_widget = None
+
+        for msg_data in db_messages:
+            content_to_display = ccl.replace_placeholders(
+                msg_data.get('content', ''),
+                character_name_from_conv_load, # Character name for this specific conversation
+                current_user_name
+            )
+
+            chat_msg_widget_for_display = ChatMessage(
+                message=content_to_display,
+                role=msg_data.get('sender', 'Unknown'),
+                generation_complete=True,
+                message_id=msg_data.get('id'),
+                message_version=msg_data.get('version'),
+                timestamp=msg_data.get('timestamp'),
+                image_data=msg_data.get('image_data'),
+                image_mime_type=msg_data.get('image_mime_type')
+            )
+            # Styling class already handled by ChatMessage constructor based on role "User" or other
+            await chat_log_widget_disp.mount(chat_msg_widget_for_display)
+
+        if chat_log_widget_disp.is_mounted:
+            chat_log_widget_disp.scroll_end(animate=False)
 
         app.query_one("#chat-input", TextArea).focus()
-        app.notify(f"Chat '{conv_details_disp.get('title', 'Untitled')}' loaded.", severity="information", timeout=3)
+        app.notify(f"Chat '{conv_metadata.get('title', 'Untitled')}' loaded.", severity="information", timeout=3)
     except QueryError as qe_disp_main:
-        logging.error(f"UI component missing during display_conversation for {conversation_id}: {qe_disp_main}")
+        loguru_logger.error(f"UI component missing during display_conversation for {conversation_id}: {qe_disp_main}")
         app.notify("Error updating UI for loaded chat.", severity="error")
-    logging.info(f"Displayed conversation '{conv_details_disp.get('title', 'Untitled')}' (ID: {conversation_id}) in chat tab.")
-
-    logging.info(
-        f"Displayed conversation '{conv_details_disp.get('title', 'Untitled')}' (ID: {conversation_id}) in chat tab.")
+    loguru_logger.info(f"Displayed conversation '{conv_metadata.get('title', 'Untitled')}' (ID: {conversation_id}) in chat tab.")
 
 
 async def load_branched_conversation_history_ui(app: 'TldwCli', target_conversation_id: str, chat_log_widget: VerticalScroll):
@@ -1324,13 +1403,15 @@ async def handle_chat_load_character_button_pressed(app: 'TldwCli', event: Butto
         app.notify("Unexpected error during character load.", severity="error")
 
 
+
 async def handle_chat_character_attribute_changed(app: 'TldwCli', event: Union[Input.Changed, TextArea.Changed]) -> None:
     if app.current_chat_active_character_data is None:
         # loguru_logger.warning("Attribute changed but no character loaded in current_chat_active_character_data.")
         return
 
     control_id = event.control.id
-    new_value = event.value if isinstance(event, Input.Changed) else event.control.text
+    # Correctly and simply get the new value using event.value, which works for both
+    new_value = event.value
 
     field_map = {
         "chat-character-name-edit": "name",
@@ -1347,8 +1428,20 @@ async def handle_chat_character_attribute_changed(app: 'TldwCli', event: Union[I
         if app.current_chat_active_character_data is not None:
             updated_data = app.current_chat_active_character_data.copy()
             updated_data[attribute_key] = new_value
-            app.current_chat_active_character_data = updated_data
+            app.current_chat_active_character_data = updated_data # This updates the reactive variable
             loguru_logger.debug(f"Temporarily updated active character attribute '{attribute_key}' to: '{str(new_value)[:50]}...'")
+
+            # If the character's system_prompt is edited in the right sidebar,
+            # also update the main system_prompt in the left sidebar.
+            if attribute_key == "system_prompt":
+                try:
+                    # Ensure querying within the correct sidebar if necessary,
+                    # but #chat-system-prompt should be unique.
+                    main_system_prompt_ta = app.query_one("#chat-system-prompt", TextArea)
+                    main_system_prompt_ta.text = new_value
+                    loguru_logger.debug("Updated main system prompt in left sidebar from character edit.")
+                except QueryError:
+                    loguru_logger.error("Could not find #chat-system-prompt to update from character edit.")
     else:
         loguru_logger.warning(f"Attribute change event from unmapped control_id: {control_id}")
 
