@@ -1008,6 +1008,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         # Show the selected view
         if new_view:  # new_view here is the ID of the view container, e.g., "ingest-view-prompts"
+            target_view_id_selector = f"#{new_view}"
+            # self.loguru_logger.debug(f"Target view selector to show: '{target_view_id_selector}'") # Removed diagnostic
             try:
                 target_view_id_selector = f"#{new_view}"
                 view_to_show = content_pane.query_one(target_view_id_selector, Container)
@@ -1342,7 +1344,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.call_later(ccp_handlers.perform_ccp_conversation_search, self) # Initial search/list for conversations
         elif new_tab == TAB_NOTES:
             self.call_later(notes_handlers.load_and_display_notes_handler, self)
-        if new_tab == TAB_SEARCH:
+        elif new_tab == TAB_SEARCH:
             if not self.search_active_sub_tab: # If no sub-tab is active yet for Search tab
                 self.loguru_logger.debug(f"Switched to Search tab, activating initial sub-tab view: {self._initial_search_sub_tab_view}")
                 # Use call_later to ensure the UI for SearchWindow is fully composed and ready
@@ -1350,12 +1352,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         elif new_tab == TAB_INGEST:
             if not self.ingest_active_view:
                 self.loguru_logger.debug(
-                    f"Switched to Ingest tab, activating initial view: {self._initial_ingest_view}")
-                self.call_later(setattr, self, 'ingest_active_view', self._initial_ingest_view)
-        elif new_tab == TAB_INGEST:  # New elif block for Ingest tab
-            if not self.ingest_active_view:  # If no view is active yet for this tab
-                self.loguru_logger.debug(
-                    f"Switched to Ingest tab, activating initial view: {self._initial_ingest_view}")
+                    f"Switched to Ingest tab, activating initial view: {self._initial_ingest_view}") # Reverted to original debug log
                 # Use call_later to ensure the UI has settled after tab switch before changing sub-view
                 self.call_later(setattr, self, 'ingest_active_view', self._initial_ingest_view)
         elif new_tab == TAB_TOOLS_SETTINGS:

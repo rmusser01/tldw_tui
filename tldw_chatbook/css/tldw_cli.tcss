@@ -118,7 +118,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 }
 /* Send button styling (shared) */
 .send-button { /* Targets Button */
-    width: 5;
+    width: 3;
     height: 3; /* Fixed height for consistency */
     /* align-self: stretch; REMOVED */
     margin-top: 0;

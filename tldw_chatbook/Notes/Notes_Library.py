@@ -14,7 +14,9 @@ from typing import List, Dict, Optional, Any, Union
 from tldw_chatbook.DB.ChaChaNotes_DB import (
     CharactersRAGDB,
     CharactersRAGDBError,
-    SchemaError
+    SchemaError,
+    InputError,
+    ConflictError
 )
 from tldw_chatbook.config import chachanotes_db as global_db_from_config
 #
@@ -207,6 +209,36 @@ class NotesInteropService:
     def search_keywords(self, user_id: str, search_term: str, limit: int = 10) -> List[Dict[str, Any]]:
         db = self._get_db(user_id)
         return db.search_keywords(search_term=search_term, limit=limit)
+
+    # --- Character Card Methods ---
+
+    def add_character_card(self, user_id: str, character_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Adds a new character card for the specified user.
+        Assumes user_id is used by the underlying DB method if it needs it for multi-user contexts,
+        or is ignored if the DB is single-user context for characters.
+        """
+        # The _get_db method might not be appropriate if self.unified_db is always used.
+        # Directly use self.unified_db if character operations are always on the global DB.
+        if not self.unified_db:
+            logger.error("Unified database not available in add_character_card.")
+            raise CharactersRAGDBError("Unified database not available.")
+        logger.debug(f"Service: Adding character for user '{user_id}' with data: {character_data.get('name')}")
+        # ChaChaNotes_DB.add_character_card expects user_id as a named argument.
+        return self.unified_db.add_character_card(character_data=character_data, user_id=user_id)
+
+    def update_character_card(self, character_id: str, user_id: str, update_data: Dict[str, Any], expected_version: Optional[int]) -> Optional[Dict[str, Any]]:
+        """Updates an existing character card for the specified user with optimistic locking."""
+        if not self.unified_db:
+            logger.error("Unified database not available in update_character_card.")
+            raise CharactersRAGDBError("Unified database not available.")
+        logger.debug(f"Service: Updating character ID '{character_id}' for user '{user_id}'. Version: {expected_version}")
+        # ChaChaNotes_DB.update_character_card expects user_id.
+        return self.unified_db.update_character_card(
+            character_id=character_id,
+            user_id=user_id,
+            update_data=update_data,
+            expected_version=expected_version
+        )
 
     # --- Resource Management ---
 
