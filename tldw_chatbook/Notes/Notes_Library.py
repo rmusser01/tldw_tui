@@ -29,17 +29,16 @@ logger = logging.getLogger(__name__)
 
 class NotesInteropService:
     def __init__(self,
-                 base_db_directory: Union[str, Path], # Still useful to ensure parent dir exists
-                 api_client_id: str,
-                 # ADD this parameter to accept the pre-initialized global DB
+                 base_db_directory: Union[str, Path],
+                 api_client_id: str, # This api_client_id might be a fallback or general app id
                  global_db_to_use: Optional[CharactersRAGDB] = None):
 
         self.base_db_directory = Path(base_db_directory).resolve()
-        self.api_client_id = api_client_id # May or may not be used by unified DB directly
+        # self.api_client_id is not directly used if _get_db uses user_id as client_id
+        # It's good to have it for context or if some methods need a generic app client_id.
+        self.api_client_id = api_client_id
 
-        # self._db_instances is no longer the primary way to get the DB if using a global one.
-        # You might keep it for some other reason, or remove it if truly unused.
-        self._db_instances: Dict[str, CharactersRAGDB] = {} # Could be removed if not used
+        self._db_instances: Dict[str, CharactersRAGDB] = {} # Cache instances per user_id (as client_id)
         self._db_lock = threading.Lock()
 
         try:
@@ -51,335 +50,192 @@ class NotesInteropService:
 
         # Store the global DB instance
         if global_db_to_use:
-            self.unified_db = global_db_to_use
-            logger.info(f"NotesInteropService will use provided unified DB: {self.unified_db.db_path}")
-        elif global_db_from_config: # Fallback to imported global if not passed
-            self.unified_db = global_db_from_config
-            logger.info(f"NotesInteropService will use imported global config DB: {self.unified_db.db_path}")
+            self.unified_db_template = global_db_to_use # Store the template instance
+            logger.info(f"NotesInteropService initialized with unified DB template: {self.unified_db_template.db_path_str}")
+        elif global_db_from_config:
+            self.unified_db_template = global_db_from_config
+            logger.info(f"NotesInteropService using imported global config DB template: {self.unified_db_template.db_path_str}")
         else:
-            self.unified_db = None
+            self.unified_db_template = None
 
-        if not self.unified_db:
-            logger.error("NotesInteropService CRITICAL: No unified database instance available!")
-            raise CharactersRAGDBError("No unified database instance for NotesInteropService.")
+        if not self.unified_db_template:
+            logger.critical("NotesInteropService CRITICAL: No unified database template instance available!")
+            raise CharactersRAGDBError("No unified database template for NotesInteropService.")
 
     def _get_db(self, user_id: str) -> CharactersRAGDB:
         """
-        Retrieves or creates a CharactersRAGDB instance for a given user_id.
-        Instances are cached for efficiency. This method is thread-safe.
+        Retrieves or creates a CharactersRAGDB instance for a given user_id,
+        always pointing to the single, unified database file.
+        The `user_id` is used as the `client_id` for the returned DB instance.
+        Instances are cached per `user_id`. This method is thread-safe.
 
         Args:
-            user_id: The unique identifier for the user.
+            user_id: The unique identifier for the user, used as client_id for DB operations.
 
         Returns:
-            A CharactersRAGDB instance for the specified user.
+            A CharactersRAGDB instance configured for the specified user_id
+            but operating on the global database file.
 
         Raises:
-            ValueError: If user_id is empty.
-            CharactersRAGDBError: If the database initialization fails.
+            ValueError: If user_id is empty or invalid.
+            CharactersRAGDBError: If the unified database template is not available or
+                                  if database initialization for the user context fails.
         """
         if not isinstance(user_id, str) or not user_id.strip():
-            raise ValueError("user_id must be a non-empty string.")
+            raise ValueError("user_id must be a non-empty string for DB operations.")
         user_id = user_id.strip()
-        # Fast path: check if instance already exists without lock
+
+        # Fast path: check if instance already exists for this user_id (as client_id)
         if user_id in self._db_instances:
+            # The cached instance already uses user_id as its client_id
+            # and points to the correct global DB file.
             return self._db_instances[user_id]
 
-        # Slow path: acquire lock and double-check
+        # Slow path: acquire lock and double-check cache
         with self._db_lock:
-            if user_id not in self._db_instances:
-                db_path = self.base_db_directory / f"user_{user_id}.sqlite"
-                logger.info(f"Creating or loading DB for user_id '{user_id}' at path: {db_path}")
-                try:
-                    db_instance = CharactersRAGDB(db_path=db_path, client_id=self.api_client_id)
-                    self._db_instances[user_id] = db_instance
-                    logger.info(f"Successfully initialized DB for user_id '{user_id}'.")
-                except (CharactersRAGDBError, SchemaError, sqlite3.Error) as e:
-                    logger.error(f"Failed to initialize DB for user_id '{user_id}' at {db_path}: {e}", exc_info=True)
-                    raise
-                except Exception as e:
-                    logger.error(f"Unexpected error initializing DB for user_id '{user_id}' at {db_path}: {e}",
-                                 exc_info=True)
-                    raise CharactersRAGDBError(f"Unexpected error initializing DB for user {user_id}: {e}") from e
+            if user_id in self._db_instances: # Double-check
+                return self._db_instances[user_id]
 
-            return self._db_instances[user_id]
+            if not self.unified_db_template:
+                logger.critical("NotesInteropService: Unified database template (self.unified_db_template) is not initialized!")
+                raise CharactersRAGDBError("Unified database template is not available in NotesInteropService.")
+
+            # Create a new CharactersRAGDB instance for this user_id,
+            # ensuring it points to the *global unified database file path*
+            # and uses the current `user_id` as its `client_id`.
+            try:
+                unified_db_file_path = self.unified_db_template.db_path_str
+                logger.info(f"Creating new CharactersRAGDB instance for context of user '{user_id}'. "
+                            f"DB File: {unified_db_file_path}, Client ID for ops: '{user_id}'.")
+
+                db_instance = CharactersRAGDB(
+                    db_path=unified_db_file_path, # Use the path from the unified DB template
+                    client_id=user_id             # Use the passed user_id as the client_id for this instance
+                )
+                self._db_instances[user_id] = db_instance # Cache it
+                logger.info(f"Successfully initialized dynamic CharactersRAGDB instance for user context '{user_id}'.")
+                return db_instance
+            except (CharactersRAGDBError, SchemaError, sqlite3.Error) as e:
+                logger.error(f"Failed to initialize dynamic CharactersRAGDB instance for user '{user_id}': {e}", exc_info=True)
+                raise
+            except Exception as e: # Catch any other unexpected Python error
+                logger.error(f"Unexpected error initializing dynamic CharactersRAGDB for user '{user_id}': {e}", exc_info=True)
+                raise CharactersRAGDBError(f"Unexpected error initializing DB instance for user {user_id}: {e}") from e
 
     # --- Note Methods ---
 
     def add_note(self, user_id: str, title: str, content: str, note_id: Optional[str] = None) -> str:
         """
-        Adds a new note for the specified user.
-
-        Args:
-            user_id: The ID of the user.
-            title: The title of the note.
-            content: The content of the note.
-            note_id: Optional UUID for the note. If None, one will be generated.
-
-        Returns:
-            The ID of the newly created note.
-
-        Raises:
-            InputError, ConflictError, CharactersRAGDBError: From ChaChaDB.
-            ValueError: If user_id is invalid.
+        Adds a new note for the specified user. The user_id will be used as the client_id.
         """
         db = self._get_db(user_id)
-        # ChaChaDB's add_note returns `str | None` in its type hint.
-        # Current implementation of ChaChaDB.add_note returns `str` on success or raises.
         created_note_id = db.add_note(title=title, content=content, note_id=note_id)
         if created_note_id is None:
-            # This path suggests an issue if add_note could return None without raising.
-            logger.error(f"add_note for user {user_id} returned None unexpectedly for title '{title}'.")
+            logger.error(f"add_note for user_id '{user_id}' (as client_id) returned None unexpectedly for title '{title}'.")
             raise CharactersRAGDBError("Failed to create note, received None ID unexpectedly.")
         return created_note_id
 
     def get_note_by_id(self, user_id: str, note_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieves a specific note by its ID for the given user."""
-        db = self._get_db(user_id)
-        return db.get_note_by_id(note_id=note_id)
+        db = self._get_db(user_id) # user_id here is mainly for consistency or if _get_db has other uses
+        return db.get_note_by_id(note_id=note_id) # The actual filtering by user would be in SQL if notes were user-specific
 
     def list_notes(self, user_id: str, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
-        """Lists notes for the given user."""
         db = self._get_db(user_id)
+        # If notes are truly global and not per-user within the DB, then user_id here doesn't filter.
+        # If notes *are* associated with a client_id in the DB table, then CharactersRAGDB.list_notes
+        # would need to be modified to filter by its self.client_id (which is user_id here).
+        # Assuming current list_notes in ChaChaNotes_DB lists all non-deleted notes.
         return db.list_notes(limit=limit, offset=offset)
 
     def update_note(self, user_id: str, note_id: str, update_data: Dict[str, Any], expected_version: int) -> bool:
-        """Updates a note for the given user with optimistic locking."""
-        db = self._get_db(user_id)
+        db = self._get_db(user_id) # The db instance will have user_id as its client_id for the update
         return db.update_note(note_id=note_id, update_data=update_data, expected_version=expected_version)
 
     def soft_delete_note(self, user_id: str, note_id: str, expected_version: int) -> bool:
-        """Soft-deletes a note for the given user with optimistic locking."""
-        db = self._get_db(user_id)
+        db = self._get_db(user_id) # client_id for operation comes from db instance
         return db.soft_delete_note(note_id=note_id, expected_version=expected_version)
 
     def search_notes(self, user_id: str, search_term: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Searches notes for the given user."""
         db = self._get_db(user_id)
+        # Similar to list_notes, if search should be user-specific, CharactersRAGDB.search_notes needs adjustment.
         return db.search_notes(search_term=search_term, limit=limit)
 
     # --- Note-Keyword Linking Methods ---
+    # These methods operate on global keywords but link them to notes.
+    # The user_id context from _get_db() isn't directly used for filtering these links currently
+    # by ChaChaNotes_DB itself, but it sets the client_id if the link operations were to log to sync_log via self.client_id.
 
     def link_note_to_keyword(self, user_id: str, note_id: str, keyword_id: int) -> bool:
-        """Links a note to a keyword for the given user."""
         db = self._get_db(user_id)
         return db.link_note_to_keyword(note_id=note_id, keyword_id=keyword_id)
 
     def unlink_note_from_keyword(self, user_id: str, note_id: str, keyword_id: int) -> bool:
-        """Unlinks a note from a keyword for the given user."""
         db = self._get_db(user_id)
         return db.unlink_note_from_keyword(note_id=note_id, keyword_id=keyword_id)
 
     def get_keywords_for_note(self, user_id: str, note_id: str) -> List[Dict[str, Any]]:
-        """Retrieves all keywords linked to a specific note for the given user."""
         db = self._get_db(user_id)
         return db.get_keywords_for_note(note_id=note_id)
 
     def get_notes_for_keyword(self, user_id: str, keyword_id: int, limit: int = 50, offset: int = 0) -> List[
         Dict[str, Any]]:
-        """Retrieves all notes linked to a specific keyword for the given user."""
         db = self._get_db(user_id)
         return db.get_notes_for_keyword(keyword_id=keyword_id, limit=limit, offset=offset)
 
-    # --- Keyword Methods (as they relate to notes functionality) ---
+    # --- Keyword Methods (Keywords are global in ChaChaNotes_DB) ---
+    # The user_id is passed to _get_db to maintain consistency, but keywords are global.
+    # The client_id set by _get_db() when adding/deleting keywords will be the user_id.
 
     def add_keyword(self, user_id: str, keyword_text: str) -> Optional[int]:
-        """Adds a new keyword for the specified user. Returns keyword ID."""
         db = self._get_db(user_id)
         return db.add_keyword(keyword_text=keyword_text)
 
     def get_keyword_by_id(self, user_id: str, keyword_id: int) -> Optional[Dict[str, Any]]:
-        """Retrieves a keyword by its ID for the given user."""
         db = self._get_db(user_id)
         return db.get_keyword_by_id(keyword_id=keyword_id)
 
     def get_keyword_by_text(self, user_id: str, keyword_text: str) -> Optional[Dict[str, Any]]:
-        """Retrieves a keyword by its text for the given user."""
         db = self._get_db(user_id)
         return db.get_keyword_by_text(keyword_text=keyword_text)
 
     def list_keywords(self, user_id: str, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
-        """Lists keywords for the given user."""
         db = self._get_db(user_id)
         return db.list_keywords(limit=limit, offset=offset)
 
     def soft_delete_keyword(self, user_id: str, keyword_id: int, expected_version: int) -> bool:
-        """Soft-deletes a keyword for the given user with optimistic locking."""
         db = self._get_db(user_id)
         return db.soft_delete_keyword(keyword_id=keyword_id, expected_version=expected_version)
 
     def search_keywords(self, user_id: str, search_term: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Searches keywords for the given user."""
         db = self._get_db(user_id)
         return db.search_keywords(search_term=search_term, limit=limit)
 
     # --- Resource Management ---
 
     def close_all_user_connections(self):
-        """
-        Closes all cached database connections.
-        Useful for application shutdown.
-        """
         with self._db_lock:
-            logger.info(f"Closing all {len(self._db_instances)} cached user DB connections.")
+            logger.info(f"Closing all {len(self._db_instances)} cached user-context DB instances.")
             for user_id, db_instance in self._db_instances.items():
                 try:
+                    # Each db_instance is a CharactersRAGDB, call its close_connection
                     db_instance.close_connection()
-                    logger.debug(f"Closed DB connection for user_id '{user_id}'.")
+                    logger.debug(f"Closed DB instance for user context '{user_id}'.")
                 except Exception as e:
-                    logger.error(f"Error closing DB connection for user_id '{user_id}': {e}", exc_info=True)
+                    logger.error(f"Error closing DB instance for user context '{user_id}': {e}", exc_info=True)
             self._db_instances.clear()
-        logger.info("All cached user DB connections have been processed for closure.")
+        logger.info("All cached user-context DB instances have been processed for closure.")
 
     def close_user_connection(self, user_id: str):
-        """
-        Closes and removes a specific user's database connection from the cache.
-        Useful if a user session ends and resources should be freed.
-        """
         with self._db_lock:
             if user_id in self._db_instances:
-                db_instance = self._db_instances.pop(user_id)  # Remove from cache
+                db_instance = self._db_instances.pop(user_id)
                 try:
                     db_instance.close_connection()
-                    logger.info(f"Closed and removed DB connection for user_id '{user_id}'.")
+                    logger.info(f"Closed and removed DB instance for user context '{user_id}'.")
                 except Exception as e:
-                    logger.error(f"Error closing DB connection for user_id '{user_id}': {e}", exc_info=True)
-                    # Even if close fails, it's removed from cache.
+                    logger.error(f"Error closing DB instance for user context '{user_id}': {e}", exc_info=True)
             else:
-                logger.debug(f"No active DB connection found in cache for user_id '{user_id}' to close.")
-
-#
-# # Example Usage (Conceptual - typically this would be in your API layer)
-# if __name__ == "__main__":
-#     # Basic logging setup for the example
-#     logging.basicConfig(
-#         level=logging.DEBUG,  # Set to INFO for less verbosity from ChaChaDB
-#         format='%(asctime)s - %(levelname)s - %(name)s - %(threadName)s - %(message)s'
-#     )
-#
-#     # Create a temporary directory for DBs for this example run
-#     import tempfile
-#     import shutil
-#
-#     temp_db_dir_obj = tempfile.TemporaryDirectory(prefix="chachadb_interop_test_")
-#     temp_db_dir = temp_db_dir_obj.name
-#     print(f"Temporary DB directory: {temp_db_dir}")
-#
-#     notes_service_instance = None  # Define for finally block
-#
-#     try:
-#         # Initialize the service
-#         notes_service_instance = NotesInteropService(
-#             base_db_directory=temp_db_dir,
-#             api_client_id="example_api_v1.0"
-#         )
-#
-#         user1_id = "user123"
-#         user2_id = "user456"
-#
-#         # --- User 1 operations ---
-#         print(f"\n--- Operations for {user1_id} ---")
-#         try:
-#             note1_title = "User1's First Note"
-#             note1_content = "This is the first note for user1."
-#             u1_note1_id = notes_service_instance.add_note(user_id=user1_id, title=note1_title, content=note1_content)
-#             print(f"Added note for {user1_id}: ID={u1_note1_id}, Title='{note1_title}'")
-#
-#             retrieved_note = notes_service_instance.get_note_by_id(user_id=user1_id, note_id=u1_note1_id)
-#             print(f"Retrieved note for {user1_id}: {retrieved_note}")
-#             assert retrieved_note is not None and retrieved_note['title'] == note1_title
-#
-#             kw1_text = "important"
-#             u1_kw1_id = notes_service_instance.add_keyword(user_id=user1_id, keyword_text=kw1_text)
-#             print(f"Added keyword for {user1_id}: ID={u1_kw1_id}, Text='{kw1_text}'")
-#             assert u1_kw1_id is not None
-#
-#             if u1_note1_id and u1_kw1_id:
-#                 link_success = notes_service_instance.link_note_to_keyword(user_id=user1_id, note_id=u1_note1_id,
-#                                                                            keyword_id=u1_kw1_id)
-#                 print(f"Link note to keyword success: {link_success}")
-#                 assert link_success
-#                 keywords_for_note = notes_service_instance.get_keywords_for_note(user_id=user1_id, note_id=u1_note1_id)
-#                 print(f"Keywords for note {u1_note1_id}: {keywords_for_note}")
-#                 assert len(keywords_for_note) == 1 and keywords_for_note[0]['id'] == u1_kw1_id
-#
-#             user1_notes = notes_service_instance.list_notes(user_id=user1_id)
-#             print(f"Notes for {user1_id}: {user1_notes}")
-#             assert len(user1_notes) == 1
-#
-#             update_success = notes_service_instance.update_note(
-#                 user_id=user1_id, note_id=u1_note1_id,
-#                 update_data={"content": "Updated content for user1's first note."}, expected_version=1
-#             )
-#             print(f"Update note success: {update_success}")
-#             assert update_success
-#             updated_note = notes_service_instance.get_note_by_id(user_id=user1_id, note_id=u1_note1_id)
-#             print(f"Updated note: {updated_note}")
-#             assert updated_note['content'] == "Updated content for user1's first note." and updated_note['version'] == 2
-#
-#             try:
-#                 notes_service_instance.update_note(
-#                     user_id=user1_id, note_id=u1_note1_id,
-#                     update_data={"content": "Another update attempt."}, expected_version=1  # Wrong version
-#                 )
-#             except ConflictError as ce:
-#                 print(f"Caught expected ConflictError for optimistic lock: {ce}")
-#
-#         except (InputError, ConflictError, CharactersRAGDBError, ValueError) as e:
-#             print(f"Error during {user1_id} operations: {e}")
-#
-#         # --- User 2 operations (to show DB separation) ---
-#         print(f"\n--- Operations for {user2_id} ---")
-#         try:
-#             note2_title = "User2's Special Note"
-#             u2_note1_id = notes_service_instance.add_note(user_id=user2_id, title=note2_title,
-#                                                           content="Content for user2.")
-#             print(f"Added note for {user2_id}: ID={u2_note1_id}, Title='{note2_title}'")
-#
-#             user2_notes = notes_service_instance.list_notes(user_id=user2_id)
-#             print(f"Notes for {user2_id}: {user2_notes}")
-#             assert len(user2_notes) == 1 and user2_notes[0]['id'] == u2_note1_id
-#
-#             user1_notes_recheck = notes_service_instance.list_notes(user_id=user1_id)
-#             print(f"Notes for {user1_id} (recheck): {user1_notes_recheck}")
-#             assert len(user1_notes_recheck) == 1 and user1_notes_recheck[0]['id'] == u1_note1_id
-#
-#         except (InputError, ConflictError, CharactersRAGDBError, ValueError) as e:
-#             print(f"Error during {user2_id} operations: {e}")
-#
-#         # --- Search example ---
-#         print(f"\n--- Search for {user1_id} ---")
-#         search_results_u1 = notes_service_instance.search_notes(user_id=user1_id, search_term="User1")
-#         print(f"Search for 'User1' in {user1_id}'s notes: {search_results_u1}")
-#         assert len(search_results_u1) > 0 and search_results_u1[0]['id'] == u1_note1_id
-#
-#         # --- Soft delete example ---
-#         print(f"\n--- Soft delete for {user1_id} ---")
-#         note_to_delete = notes_service_instance.get_note_by_id(user_id=user1_id, note_id=u1_note1_id)
-#         if note_to_delete:
-#             delete_success = notes_service_instance.soft_delete_note(user_id=user1_id, note_id=u1_note1_id,
-#                                                                      expected_version=note_to_delete['version'])
-#             print(f"Soft delete success: {delete_success}")
-#             assert delete_success
-#             deleted_note_check = notes_service_instance.get_note_by_id(user_id=user1_id, note_id=u1_note1_id)
-#             print(f"Check after delete (should be None): {deleted_note_check}")
-#             assert deleted_note_check is None
-#             user1_notes_after_delete = notes_service_instance.list_notes(user_id=user1_id)
-#             print(f"Notes for {user1_id} after delete: {user1_notes_after_delete}")
-#             assert len(user1_notes_after_delete) == 0
-#         else:
-#             print(f"Note {u1_note1_id} not found for deletion, skipping delete test.")
-#
-#
-#     finally:
-#         if notes_service_instance:
-#             notes_service_instance.close_all_user_connections()
-#
-#         temp_db_dir_obj.cleanup()  # Safely removes the temporary directory
-#         print(f"\nCleaned up temporary DB directory: {temp_db_dir}")
-#
-#     print("\nExample script finished.")
-
+                logger.debug(f"No active DB instance found in cache for user context '{user_id}' to close.")
 
 #
 # End of Notes_Library.py
