@@ -1823,6 +1823,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             elif button_id == "chat-prompt-copy-system-button": await chat_handlers.handle_chat_copy_system_prompt_button_pressed(self)
             elif button_id == "chat-prompt-copy-user-button": await chat_handlers.handle_chat_copy_user_prompt_button_pressed(self)
             elif button_id == "chat-load-character-button": await chat_handlers.handle_chat_load_character_button_pressed(self, event) # Pass event if needed by handler
+            elif button_id == "chat-clear-active-character-button": # Ensure this exact line exists
+                await chat_handlers.handle_chat_clear_active_character_button_pressed(self)
             # --- Chat Tab Notes Sidebar Buttons ---
             # These are handled by @on decorators, so we just acknowledge them here to prevent "unhandled" warnings.
             elif button_id == "chat-notes-create-new-button": self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")

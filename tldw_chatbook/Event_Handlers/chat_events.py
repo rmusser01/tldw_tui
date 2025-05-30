@@ -1353,6 +1353,48 @@ async def handle_chat_character_attribute_changed(app: 'TldwCli', event: Union[I
         loguru_logger.warning(f"Attribute change event from unmapped control_id: {control_id}")
 
 
+async def handle_chat_clear_active_character_button_pressed(app: 'TldwCli') -> None:
+    """Clears the currently active character data and resets related UI fields."""
+    loguru_logger.info("Clear Active Character button pressed.")
+
+    app.current_chat_active_character_data = None  # Clear the reactive variable
+
+    try:
+        # Get a reference to the chat tab's right sidebar
+        # This sidebar has the ID "chat-right-sidebar"
+        right_sidebar = app.query_one("#chat-right-sidebar")
+
+        # Now query within the right_sidebar for the specific character editing fields
+        right_sidebar.query_one("#chat-character-name-edit", Input).value = ""
+        right_sidebar.query_one("#chat-character-description-edit", TextArea).text = ""
+        right_sidebar.query_one("#chat-character-personality-edit", TextArea).text = ""
+        right_sidebar.query_one("#chat-character-scenario-edit", TextArea).text = ""
+        right_sidebar.query_one("#chat-character-system-prompt-edit", TextArea).text = ""
+        right_sidebar.query_one("#chat-character-first-message-edit", TextArea).text = ""
+
+        # Optional: Clear the character search input and list within the right sidebar
+        # search_input_char = right_sidebar.query_one("#chat-character-search-input", Input)
+        # search_input_char.value = ""
+        # results_list_char = right_sidebar.query_one("#chat-character-search-results-list", ListView)
+        # await results_list_char.clear()
+        # If you clear the list, you might want to repopulate it with the default characters:
+        # await _populate_chat_character_search_list(app) # Assuming _populate_chat_character_search_list is defined in this file or imported
+
+        app.notify("Active character cleared. Chat will use default settings.", severity="information")
+        loguru_logger.debug("Cleared active character data and UI fields from within #chat-right-sidebar.")
+
+    except QueryError as e:
+        loguru_logger.error(
+            f"UI component not found when clearing character fields within #chat-right-sidebar. "
+            f"Widget ID/Selector: {getattr(e, 'widget_id', getattr(e, 'selector', 'N/A'))}",
+            exc_info=True
+        )
+        app.notify("Error clearing character fields (UI component not found).", severity="error")
+    except Exception as e_unexp:
+        loguru_logger.error(f"Unexpected error clearing active character: {e_unexp}", exc_info=True)
+        app.notify("Error clearing active character.", severity="error")
+
+
 async def handle_chat_prompt_search_input_changed(app: 'TldwCli', event_value: str) -> None:
     logger = getattr(app, 'loguru_logger', logging)
     search_term = event_value.strip()
