@@ -13,7 +13,9 @@ from textual.widgets import Button, TextArea
 from ..Widgets.settings_sidebar import create_settings_sidebar
 from ..Widgets.chat_right_sidebar import create_chat_right_sidebar
 from ..Constants import TAB_CHAT
-from ..Utils.Emoji_Handling import get_char, EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE, EMOJI_SEND, FALLBACK_SEND, EMOJI_CHARACTER_ICON, FALLBACK_CHARACTER_ICON
+from ..Utils.Emoji_Handling import get_char, EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE, EMOJI_SEND, FALLBACK_SEND, \
+    EMOJI_CHARACTER_ICON, FALLBACK_CHARACTER_ICON, EMOJI_STOP, FALLBACK_STOP
+
 #
 if TYPE_CHECKING:
     from ..app import TldwCli
@@ -42,6 +44,8 @@ class ChatWindow(Container):
                              classes="sidebar-toggle")
                 yield TextArea(id="chat-input", classes="chat-input")
                 yield Button(get_char(EMOJI_SEND, FALLBACK_SEND), id="send-chat", classes="send-button")
+                yield Button(get_char(EMOJI_STOP, FALLBACK_STOP), id="stop-chat-generation", classes="stop-button",
+                             disabled=True)
                 yield Button(get_char(EMOJI_CHARACTER_ICON, FALLBACK_CHARACTER_ICON), id="toggle-chat-right-sidebar",
                              classes="sidebar-toggle")
 

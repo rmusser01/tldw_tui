@@ -95,6 +95,11 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
             loguru_logger.error(f"Send Button: Critical - could not even find chat container #{prefix}-log to display error.")
         return
 
+    if app.active_chat_api_worker and app.active_chat_api_worker.is_running:
+        app.notify("An AI response is already being generated.", severity="warning")
+        loguru_logger.warning("Send button pressed while a chat API worker is already running.")
+        return
+
     # --- 2. Get Message and Parameters from UI ---
     message_text_from_input = text_area.text.strip()
     reuse_last_user_bubble = False
@@ -851,6 +856,7 @@ async def handle_chat_save_current_chat_button_pressed(app: 'TldwCli') -> None:
 
         else:
             app.notify("Failed to save chat (no ID returned).", severity="error")
+
     except Exception as e_save_chat:
         loguru_logger.error(f"Exception while saving chat: {e_save_chat}", exc_info=True)
         app.notify(f"Error saving chat: {str(e_save_chat)[:100]}", severity="error")
