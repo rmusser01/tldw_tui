@@ -22,7 +22,7 @@ from tldw_chatbook.DB.Prompts_DB import PromptsDatabase, DatabaseError as Prompt
 #
 # Functions:
 
-logger.critical("CRITICAL DEBUG: config.py module is being imported/executed NOW.")
+logger.debug("CRITICAL DEBUG: config.py module is being imported/executed NOW.")
 # --- Constants ---
 # Client ID used by the Server API itself when writing to sync logs
 SERVER_CLIENT_ID = "SERVER_API_V1"
@@ -1348,7 +1348,7 @@ media_db: Optional[MediaDatabase] = None
 # --- Database Initialization Function (remains largely the same) ---
 def initialize_all_databases():
     global chachanotes_db, prompts_db, media_db
-    logger.critical("CRITICAL DEBUG: INSIDE initialize_all_databases() NOW.")
+    logger.debug("CRITICAL DEBUG: INSIDE initialize_all_databases() NOW.")
     logger.info("Initializing CLI databases...")
     # ChaChaNotes DB
     chachanotes_path = get_chachanotes_db_path()
@@ -1432,7 +1432,7 @@ RAG_SEARCH_CONFIG = settings.get("APP_RAG_SEARCH_CONFIG", DEFAULT_RAG_SEARCH_CON
 
 # --- Load CLI Config and Initialize Databases on module import ---
 # The `settings` global variable is now the result of the unified load_settings()
-logger.critical("CRITICAL DEBUG: CALLING initialize_all_databases() from config.py module level.") # Add this
+logger.debug("CRITICAL DEBUG: CALLING initialize_all_databases() from config.py module level.") # Add this
 initialize_all_databases()
 
 # Make APP_CONFIG available globally if needed by other modules that import from config.py

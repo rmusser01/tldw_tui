@@ -361,6 +361,33 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         # else: it will default to "conversation_details_view" anyway
         self._ui_ready = False  # Track if UI is fully composed
 
+        # --- Assign DB instances for event handlers ---
+        if self.prompts_service_initialized:
+            # Assuming prompts_interop holds the db instance after initialization
+            # This might need adjustment based on how PromptsDatabase is exposed by prompts_interop
+            if hasattr(prompts_interop, 'db_instance') and prompts_interop.db_instance:
+                self.prompts_db = prompts_interop.db_instance
+                logging.info("Assigned prompts_interop.db_instance to self.prompts_db")
+            elif hasattr(prompts_interop, 'db') and prompts_interop.db: # Alternative common name
+                self.prompts_db = prompts_interop.db
+                logging.info("Assigned prompts_interop.db to self.prompts_db")
+            else:
+                logging.error("prompts_interop initialized, but prompts_db instance (db_instance or db) not found/assigned in app.__init__.")
+                self.prompts_db = None # Explicitly set to None
+        else:
+            self.prompts_db = None # Ensure it's None if service failed
+            logging.warning("Prompts service not initialized, self.prompts_db set to None.")
+
+        if self.notes_service and hasattr(self.notes_service, 'db') and self.notes_service.db:
+            self.chachanotes_db = self.notes_service.db # ChaChaNotesDB is used by NotesInteropService
+            logging.info("Assigned self.notes_service.db to self.chachanotes_db")
+        elif global_db_instance: # Fallback to global if notes_service didn't set it up as expected on itself
+            self.chachanotes_db = global_db_instance
+            logging.info("Assigned global_db_instance to self.chachanotes_db as fallback.")
+        else:
+            logging.error("ChaChaNotesDB (CharactersRAGDB) instance not found/assigned in app.__init__.")
+            self.chachanotes_db = None # Explicitly set to None
+
 
     def _setup_logging(self):
         """Sets up all logging handlers, including Loguru integration."""
@@ -1788,6 +1815,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 return
             if button_id == "send-chat": await chat_handlers.handle_chat_send_button_pressed(self, TAB_CHAT)
             elif button_id == "chat-new-conversation-button": await chat_handlers.handle_chat_new_conversation_button_pressed(self)
+            elif button_id == "chat-new-ephemeral-chat-button": await chat_handlers.handle_chat_new_conversation_button_pressed(self) # Reuses existing handler
             elif button_id == "chat-save-current-chat-button": await chat_handlers.handle_chat_save_current_chat_button_pressed(self)
             elif button_id == "chat-save-conversation-details-button": await chat_handlers.handle_chat_save_details_button_pressed(self)
             elif button_id == "chat-conversation-load-selected-button": await chat_handlers.handle_chat_load_selected_button_pressed(self)

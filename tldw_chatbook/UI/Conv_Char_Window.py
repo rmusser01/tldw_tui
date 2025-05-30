@@ -60,6 +60,11 @@ class CCPWindow(Container):
                 yield Static("Conversation History", classes="pane-title", id="ccp-center-pane-title-conv")
                 # Messages will be mounted dynamically here
 
+            # Container for character card display (initially hidden by CSS)
+            with Container(id="ccp-character-card-view", classes="ccp-view-area"):
+                yield Static("Character Card Details", classes="pane-title", id="ccp-center-pane-title-char-card")
+                # Character card details will be displayed here
+
             # Container for prompt editing UI (initially hidden by CSS)
             with Container(id="ccp-prompt-editor-view", classes="ccp-view-area"):
                 yield Static("Prompt Editor", classes="pane-title", id="ccp-center-pane-title-prompt")
@@ -110,6 +115,11 @@ class CCPWindow(Container):
                 yield Static("Export Options", classes="sidebar-label export-label")
                 yield Button("Export as Text", id="conv-char-export-text-button", classes="sidebar-button")
                 yield Button("Export as JSON", id="conv-char-export-json-button", classes="sidebar-button")
+
+            # Characters Collapsible
+            with Collapsible(title="Characters", id="ccp-characters-collapsible", collapsed=True):
+                yield Select([], prompt="Select Character...", allow_blank=True, id="ccp-right-pane-character-select")
+                # Add other character related widgets here if needed in the future
 
             # Prompt Details Collapsible (for the right-pane prompt editor)
             with Collapsible(title="Prompt Details", id="ccp-prompt-details-collapsible", collapsed=True):

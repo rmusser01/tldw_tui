@@ -173,7 +173,13 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     margin-bottom: 1;
     border: round $surface;
 }
-.cc-left-pane Button, .cc-right_pane Button { /* Typo Fixed */
+.cc-left-pane Button, .cc-right-pane Button { /* Typo in original was .cc-right_pane */
+    width: 100%;
+    margin-bottom: 1;
+}
+
+/* Ensure Select widgets in left and right panes also get full width */
+.cc-left-pane Select, .cc-right-pane Select {
     width: 100%;
     margin-bottom: 1;
 }
@@ -549,6 +555,10 @@ MetricsScreen Label.-info-message {
 }
 #ccp-prompt-editor-view {
     display: none; /* Initially hidden by CSS */
+}
+
+#ccp-character-card-view {
+    display: none; /* Initially hidden, to be shown by Python logic */
 }
 
 /* Ensure the right pane sections also respect hidden class */

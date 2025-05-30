@@ -32,6 +32,12 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
         with Collapsible(title="Current Chat Details", collapsed=False, id=f"{id_prefix}-chat-details-collapsible"):
             # NEW "New Chat" Button
             yield Button(
+                "New Ephemeral Chat",  # More explicit
+                id=f"{id_prefix}-new-ephemeral-chat-button",  # New ID
+                classes="sidebar-button",
+                variant="primary"  # Optional: different styling
+            )
+            yield Button(
                 "New Chat",
                 id=f"{id_prefix}-new-conversation-button", # Matches app.py query
                 classes="sidebar-button"

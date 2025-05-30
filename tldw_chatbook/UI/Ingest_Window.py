@@ -208,26 +208,32 @@ class IngestWindow(Container):
                          classes="ingest-nav-button")  # Changed ID slightly
 
         with Container(id="ingest-content-pane", classes="ingest-content-pane"):
-            yield Container(
-                Static("Prompt Ingestion Area - Content Coming Soon!"),
-                id="ingest-view-prompts",
-                classes="ingest-view-area",
-            )
-            yield Container(
-                Static("Character Ingestion Area - Content Coming Soon!"),
-                id="ingest-view-characters",
-                classes="ingest-view-area",
-            )
+            with Container(id="ingest-view-prompts", classes="ingest-view-area"):
+                yield Button("Select Prompt File", id="select-prompt-file-button")
+                yield Label("Selected file: None", id="prompt-file-path-label")
+                yield TextArea(
+                    id="prompt-import-status-area",
+                    read_only=True
+                )
+            with Container(id="ingest-view-characters", classes="ingest-view-area"):
+                yield Button("Select Character File", id="select-character-file-button")
+                yield Label("Selected file: None", id="character-file-path-label")
+                yield TextArea(
+                    id="character-import-status-area",
+                    read_only=True
+                )
             yield Container(
                 Static("Local Media Ingestion Area - Content Coming Soon!"),  # For direct local processing
                 id="ingest-view-media",
                 classes="ingest-view-area",
             )
-            yield Container(
-                Static("Note Ingestion Area - Content Coming Soon!"),
-                id="ingest-view-notes",
-                classes="ingest-view-area",
-            )
+            with Container(id="ingest-view-notes", classes="ingest-view-area"):
+                yield Button("Select Notes File", id="select-notes-file-button")
+                yield Label("Selected file: None", id="notes-file-path-label")
+                yield TextArea(
+                    id="notes-import-status-area",
+                    read_only=True
+                )
             # New container for tldw API form
             with Container(id="ingest-view-tldw-api", classes="ingest-view-area"):
                 yield from self.compose_tldw_api_form()
