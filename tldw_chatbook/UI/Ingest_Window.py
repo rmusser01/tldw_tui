@@ -237,10 +237,13 @@ class IngestWindow(Container):
                     yield Button("Clear Selection", id="ingest-characters-clear-files-button")
                 yield Label("Selected Files for Import:", classes="ingest-label")
                 yield ListView(id="ingest-characters-selected-files-list", classes="ingest-selected-files-list")
-                yield Label("Preview of Parsed Characters (Max 10 shown):", classes="ingest-label")
+
+                yield Label("Preview of Parsed Characters (Max 5 shown):", classes="ingest-label")
                 with VerticalScroll(id="ingest-characters-preview-area", classes="ingest-preview-area"):
                     yield Static("Select files to see a preview.", id="ingest-characters-preview-placeholder")
-                yield Button("Import Selected Characters Now", id="ingest-characters-import-now-button", variant="primary")
+
+                yield Button("Import Selected Characters Now", id="ingest-characters-import-now-button",
+                             variant="primary")
                 yield Label("Import Status:", classes="ingest-label")
                 yield TextArea(id="ingest-character-import-status-area", read_only=True, classes="ingest-status-area")
 

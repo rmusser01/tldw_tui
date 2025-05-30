@@ -2582,3 +2582,5 @@ def find_messages_in_conversation(
 #
 # End of File
 ########################################################################################################################
+def load_character_card_from_file(param):
+    return None
