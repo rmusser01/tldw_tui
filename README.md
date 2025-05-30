@@ -19,7 +19,7 @@ Current status: Working/In-Progress
 
 ## Current Features
   - Connect to multiple LLM providers (Local: Llama.cpp, Ollama, Kobold.cpp, vLLM, Aphrodite, Custom-OpenAI API endpoint ; Commercial: OpenAI, Anthropic, Cohere, Deepseek, Google, Groq, Mistral, OpenRouter)
-  - Character Card functionality (WIP)
+  - Character Card functionality (Persona/Character/Chatbot support + ingestion of character cards into the DB)
   - Conversation history management
   - Notes and keyword management
   - Textual TUI interface
