@@ -479,12 +479,33 @@ MetricsScreen Label.-info-message {
     margin-top: 1; /* Ensure it has some space if it's after keywords */
     /* width: 100%; */
 }
+
+/* Chat Sidebar - Prompts Section */
+#chat-prompts-collapsible Input,
+#chat-prompts-collapsible ListView,
+#chat-prompts-collapsible Button {
+    margin-bottom: 1; /* Consistent spacing */
+}
+#chat-prompt-list-view { /* ID for the prompt list in chat sidebar */
+    height: 8; /* Adjust as needed */
+    border: round $surface;
+    margin-bottom: 1;
+}
+.loaded-prompt-area { /* Container for loaded prompt details in chat sidebar */
+    margin-top: 1;
+    padding: 0 1;        /* Padding for content inside */
+    background: $surface; /* Slightly different background to group elements */
+    /* To get rounded corners for the area itself, apply a border style */
+    border: round $primary-background-lighten-1; /* Example: round border with a light color */
+                                               /* Or use 'round $surface' if you want it less distinct */
+                                               /* Or 'none' if you only want background and no explicit border */
+}
 /* End of Character Sidebar Specific Styles */
 
 
 /* --- Prompts Sidebar Vertical --- */
 .ccp-prompt-textarea { /* Specific class for prompt textareas if needed */
-    height: 5; /* Example height */
+    height: 10; /* Example height */
     /* width: 100%; (from .sidebar-textarea) */
     /* margin-bottom: 1; (from .sidebar-textarea) */
 }
@@ -495,9 +516,16 @@ MetricsScreen Label.-info-message {
     margin-bottom: 1;
 }
 
+.ccp-prompt-action-buttons {
+    margin-top: 1; /* Add space above the button bar */
+    height: auto; /* Allow container height to fit buttons */
+    padding-bottom: 1; /* Add space below buttons before parent's padding */
+}
+
 .ccp-prompt-action-buttons Button {
     width: 1fr; /* Make buttons share space */
-    margin: 0 1 0 0; /* Small right margin, no top/bottom if already in Horizontal */
+    margin: 0 1 0 0; /* Small right margin for all but last */
+    height: auto; /* Let button height fit its content (typically 1 line) */
 }
 .ccp-prompt-action-buttons Button:last-of-type { /* Corrected pseudo-class */
     margin-right: 0;
@@ -539,7 +567,7 @@ MetricsScreen Label.-info-message {
 /* Styles for the dynamic view areas within the CCP center pane */
 .ccp-view-area {
     width: 100%;
-    height: 100%;
+    height: auto; /* Allow height to be determined by content */
     /* overflow: auto; /* If content within might overflow */
 }
 
@@ -558,6 +586,10 @@ MetricsScreen Label.-info-message {
 }
 
 #ccp-character-card-view {
+    display: none; /* Initially hidden, to be shown by Python logic */
+}
+
+#ccp-character-editor-view {
     display: none; /* Initially hidden, to be shown by Python logic */
 }
 
@@ -665,64 +697,48 @@ MetricsScreen Label.-info-message {
     layout: horizontal;
 }
 
-.ingest-nav-pane {
+.ingest-nav-pane { /* Style for the left navigation pane */
     dock: left;
     width: 25%;
     min-width: 25;
     max-width: 60;
     height: 100%;
-    background: $boost;
+    background: $boost; /* Or a slightly different shade */
     padding: 1;
     border-right: thick $background-darken-1;
     overflow-y: auto;
     overflow-x: hidden;
 }
 
-.ingest-nav-pane .ingest-nav-button {
+.ingest-nav-pane .ingest-nav-button { /* Style for navigation buttons */
     width: 100%;
     margin-bottom: 1;
     border: none;
     height: 3;
 }
 .ingest-nav-pane .ingest-nav-button:hover {
-    background: $accent 60%;
+    background: $accent 60%; /* Slightly different hover potentially */
 }
-.ingest-nav-pane .ingest-nav-button.-active-ingest-view { /* For active nav button */
-    background: $accent;
+/* Active state for selected ingest nav button (optional) */
+/* .ingest-nav-pane .ingest-nav-button.-active-view {
+    background: $accent-darken-1;
     color: $text;
-    text-style: bold;
-}
+} */
 
-
-.ingest-content-pane {
+.ingest-content-pane { /* Style for the right content display area */
     width: 1fr;
     height: 100%;
     padding: 1 2;
-    overflow-y: auto; /* Important if content within views scrolls */
+    overflow-y: auto;
 }
 
 .ingest-view-area { /* Common class for individual content areas */
     width: 100%;
-    height: 100%;
-    /* By default, these views will be hidden by Python adding a '.hidden' class */
-    /* Or, if you prefer CSS to hide them initially: */
-    /* display: none; */ /* Python will toggle this */
-}
-
-/* Universal hidden class */
-.hidden {
-    display: none !important;
-}
-
-
-/* Styles for components within the Ingest Content tab or general ingest features */
-/* These were from your "BEGINNING OF INTEGRATED NEW CSS" section and seem fine */
-.ingest-controls-row {
-    height: auto;
-    margin-bottom: 1;
-}
-.ingest-controls-row > Button {
-    margin-right: 1;
+    height: 100%; /* Or auto */
+    /* Example content styling */
+    /* align: center middle; */
+    /* border: round $primary; */
+    /* padding: 2; */
 }
 .ingest-label {
     margin-top: 1;
@@ -826,6 +842,38 @@ MetricsScreen Label.-info-message {
 .llm-view-area { /* Common class for individual content areas */
     width: 100%;
     height: 100%; /* Or auto */
+}
+
+/* Chat Sidebar Prompts Section Specific Styles */
+#chat-sidebar-prompts-collapsible { /* The collapsible container itself */
+    /* Add any specific styling for the collapsible if needed */
+}
+
+#chat-sidebar-prompt-search-input,
+#chat-sidebar-prompt-keyword-filter-input {
+    margin-bottom: 1; /* Add some space below these inputs */
+}
+
+#chat-sidebar-prompts-listview {
+    height: 8; /* Adjust as needed, or use 1fr if it's the main expanding element */
+    border: round $surface;
+    margin-bottom: 1;
+}
+
+#chat-sidebar-prompt-system-display,
+#chat-sidebar-prompt-user-display {
+    height: 5; /* Adjust height for prompt display textareas */
+    width: 100%; /* Ensure they take full width */
+    margin-bottom: 1;
+    border: round $surface; /* Standard border like other textareas */
+    /* read_only is set in Python, CSS cannot enforce it but can style */
+}
+
+#chat-sidebar-copy-system-prompt-button,
+#chat-sidebar-copy-user-prompt-button {
+    width: 100%; /* Make copy buttons full width */
+    margin-top: 0; /* Remove top margin if directly after TextArea */
+    margin-bottom: 1; /* Space after copy buttons */
 }
 
 /* --- Media Tab --- */

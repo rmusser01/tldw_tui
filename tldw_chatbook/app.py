@@ -36,7 +36,8 @@ from tldw_chatbook.config import chachanotes_db as global_chachanotes_db_instanc
 from tldw_chatbook.Logging_Config import RichLogHandler
 from tldw_chatbook.Prompt_Management import Prompts_Interop as prompts_interop
 from tldw_chatbook.Utils.Emoji_Handling import get_char, EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN, EMOJI_TITLE_NOTE, \
-    FALLBACK_TITLE_NOTE, EMOJI_TITLE_SEARCH, FALLBACK_TITLE_SEARCH, supports_emoji
+    FALLBACK_TITLE_NOTE, EMOJI_TITLE_SEARCH, FALLBACK_TITLE_SEARCH, EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE, \
+    EMOJI_SEND, FALLBACK_SEND, EMOJI_CHARACTER_ICON, FALLBACK_CHARACTER_ICON, supports_emoji
 from tldw_chatbook.Utils.Utils import safe_float, safe_int
 from .config import (
     CONFIG_TOML_CONTENT,
@@ -48,9 +49,11 @@ from .config import (
     API_MODELS_BY_PROVIDER,
     LOCAL_PROVIDERS, get_chachanotes_db_path, settings
 )
+from .Screens.Stats_screen import StatsScreen
 from .Event_Handlers import (
     app_lifecycle as app_lifecycle_handlers,
     tab_events as tab_handlers,
+    sidebar_events as sidebar_handlers,
     chat_events as chat_handlers,
     conv_char_events as ccp_handlers,
     media_events as media_handlers,
@@ -60,6 +63,7 @@ from .Event_Handlers import (
 from .Notes.Notes_Library import NotesInteropService
 from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
 from .Widgets.chat_message import ChatMessage
+from .Widgets.settings_sidebar import create_settings_sidebar
 from .Widgets.notes_sidebar_left import NotesSidebarLeft
 from .Widgets.notes_sidebar_right import NotesSidebarRight
 from .Widgets.titlebar import TitleBar
@@ -203,6 +207,11 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     current_selected_note_title: reactive[Optional[str]] = reactive(None)
     current_selected_note_content: reactive[Optional[str]] = reactive("")
 
+    # --- Reactives for chat sidebar prompt display ---
+    chat_sidebar_selected_prompt_id: reactive[Optional[int]] = reactive(None)
+    chat_sidebar_selected_prompt_system: reactive[Optional[str]] = reactive(None)
+    chat_sidebar_selected_prompt_user: reactive[Optional[str]] = reactive(None)
+
     # Chats
     current_chat_is_ephemeral: reactive[bool] = reactive(True)  # Start new chats as ephemeral
     # Reactive variable for current chat conversation ID
@@ -210,6 +219,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # Reactive variable for current conversation loaded in the Conversations, Characters & Prompts tab
     current_conv_char_tab_conversation_id: reactive[Optional[str]] = reactive(None)
     current_chat_active_character_data: reactive[Optional[Dict[str, Any]]] = reactive(None)
+
+    # For Chat Sidebar Prompts section
+    chat_sidebar_loaded_prompt_id: reactive[Optional[Union[int, str]]] = reactive(None)
+    chat_sidebar_loaded_prompt_title_text: reactive[str] = reactive("")
+    chat_sidebar_loaded_prompt_system_text: reactive[str] = reactive("")
+    chat_sidebar_loaded_prompt_user_text: reactive[str] = reactive("")
+    chat_sidebar_loaded_prompt_keywords_text: reactive[str] = reactive("")
+    chat_sidebar_prompt_display_visible: reactive[bool] = reactive(False, layout=True)
 
     # Prompts
     current_prompt_id: reactive[Optional[int]] = reactive(None)
@@ -327,8 +344,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         logger.info(f"Base directory to be passed to NotesInteropService: {actual_base_directory_for_service}")
 
         try:
-            # 4. Instantiate NotesInteropService, passing the PARENT directory
-            #    AND the pre-initialized global DB instance.
             self.notes_service = NotesInteropService(
                 base_db_directory=actual_base_directory_for_service,
                 api_client_id="tldw_tui_client_v1",  # Consistent client ID
@@ -617,6 +632,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     def compose(self) -> ComposeResult:
         logging.debug("App composing UI...")
         yield Header()
+        # Set up the main title bar with a static title
         yield TitleBar()
 
         # Use new TabBar widget
@@ -729,6 +745,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         try:
             conversation_messages_view = self.query_one("#ccp-conversation-messages-view")
             prompt_editor_view = self.query_one("#ccp-prompt-editor-view")
+            character_card_view = self.query_one("#ccp-character-card-view")
+            character_editor_view = self.query_one("#ccp-character-editor-view")
+
 
             # REMOVE or COMMENT OUT the query for llm_settings_container_right:
             # llm_settings_container_right = self.query_one("#ccp-right-pane-llm-settings-container")
@@ -738,6 +757,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 # Center Pane: Show Prompt Editor, Hide Conversation Messages
                 conversation_messages_view.display = False
                 prompt_editor_view.display = True
+                character_card_view.display = False
+                character_editor_view.display = False
                 # LLM settings container is gone, no need to hide it.
                 # llm_settings_container_right.display = False
 
@@ -751,10 +772,33 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 except QueryError:
                     loguru_logger.warning("Could not focus prompt name input in editor view.")
 
+            elif new_view == "character_editor_view":
+                conversation_messages_view.display = False
+                prompt_editor_view.display = False
+                character_card_view.display = False
+                character_editor_view.display = True
+                # Optionally manage right-pane collapsibles
+                self.query_one("#ccp-conversation-details-collapsible", Collapsible).collapsed = True
+                self.query_one("#ccp-prompt-details-collapsible", Collapsible).collapsed = True
+                loguru_logger.info("Character editor view activated. Focus pending specific input fields.")
+
+            elif new_view == "character_card_view":
+                conversation_messages_view.display = False
+                prompt_editor_view.display = False
+                character_card_view.display = True
+                character_editor_view.display = False
+                # Optionally manage right-pane collapsibles
+                self.query_one("#ccp-conversation-details-collapsible", Collapsible).collapsed = True
+                self.query_one("#ccp-prompt-details-collapsible", Collapsible).collapsed = True
+                loguru_logger.info("Character card display view activated.")
+                # Add focus logic if needed for this view
+
             elif new_view == "conversation_details_view":
                 # Center Pane: Show Conversation Messages, Hide Prompt Editor
                 conversation_messages_view.display = True
                 prompt_editor_view.display = False
+                character_card_view.display = False
+                character_editor_view.display = False
                 # LLM settings container is gone, no need to show it.
                 # llm_settings_container_right.display = True
                 self.query_one("#ccp-conversation-details-collapsible", Collapsible).collapsed = False
@@ -771,12 +815,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             else:  # Default or unknown view (treat as conversation_details_view)
                 conversation_messages_view.display = True
                 prompt_editor_view.display = False
+                character_card_view.display = False
+                character_editor_view.display = False
                 # llm_settings_container_right.display = True # Default if unknown
                 loguru_logger.warning(
                     f"Unknown ccp_active_view: {new_view}, defaulting to conversation_details_view.")
 
         except QueryError as e:
-            # This might now catch if #ccp-right-pane-llm-settings-container is queried when it doesn't exist
             loguru_logger.exception(f"UI component not found during CCP view switch: {e}")
         except Exception as e_watch:
             loguru_logger.exception(f"Unexpected error in watch_ccp_active_view: {e_watch}")
@@ -948,9 +993,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         if not self._ui_ready:
             self.loguru_logger.debug("watch_ingest_active_view: UI not ready.")
             return
+        self.loguru_logger.debug(f"Ingest active view changing from '{old_view}' to: '{new_view}'")
 
-        self.loguru_logger.info(f"Ingest active view WATCHER: Old='{old_view}', New='{new_view}'")
-
+        # Get the content pane for the Ingest tab
         try:
             content_pane = self.query_one("#ingest-content-pane")
         except QueryError:
@@ -958,57 +1003,26 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             return
 
         # Hide all ingest view areas first
-        # Using self.ALL_INGEST_VIEW_IDS is more robust than querying children
-        for view_id_to_hide in self.ALL_INGEST_VIEW_IDS:
-            if view_id_to_hide == new_view:  # Don't hide the view we are about to show
-                continue
-            try:
-                # Query within the content_pane for each known view ID
-                view_widget = content_pane.query_one(f"#{view_id_to_hide}")
-                if view_widget.styles.display != "none":
-                    view_widget.styles.display = "none"
-                    self.loguru_logger.debug(f"  Hiding view: #{view_id_to_hide}")
-            except QueryError:
-                # This is okay if a view_id from ALL_INGEST_VIEW_IDS is not currently a child,
-                # though in this setup they all should be.
-                self.loguru_logger.warning(f"  View #{view_id_to_hide} not found in content_pane to hide.")
+        for child in content_pane.query(".ingest-view-area"):  # Query by common class
+            child.styles.display = "none"
 
-        # Show the selected new view
-        if new_view:
+        # Show the selected view
+        if new_view:  # new_view here is the ID of the view container, e.g., "ingest-view-prompts"
             try:
                 target_view_id_selector = f"#{new_view}"
-                view_to_show = content_pane.query_one(target_view_id_selector)  # REMOVED , Container
-                view_to_show.styles.display = "block"
-                self.loguru_logger.info(f"  Showing view: #{new_view}")
-
-                # Update active class on nav buttons
-                try:
-                    nav_pane = self.query_one("#ingest-nav-pane")
-                    for button in nav_pane.query(".ingest-nav-button"):
-                        button.remove_class("-active-ingest-view")
-
-                    # Construct the ID of the nav button corresponding to the new_view
-                    # e.g., "ingest-view-prompts" -> "ingest-nav-prompts"
-                    nav_button_id = new_view.replace("-view-", "-nav-")
-                    active_nav_button = nav_pane.query_one(f"#{nav_button_id}")
-                    active_nav_button.add_class("-active-ingest-view")
-                    self.loguru_logger.debug(f"  Activated nav button: #{nav_button_id}")
-
-                except QueryError as e_nav:
-                    self.loguru_logger.error(f"  Error updating nav button active class: {e_nav}")
-
-                # Specific focus logic if needed for the new view
-                if new_view == "ingest-view-prompts":
-                    try:
-                        self.query_one("#ingest-prompts-select-file-button", Button).focus()
-                    except QueryError:
-                        self.loguru_logger.warning("Could not focus select file button in ingest-view-prompts.")
-                # Add other focus logic for other ingest views if necessary
-
-            except QueryError:
-                self.loguru_logger.error(f"  ERROR: Target view '#{new_view}' not found in #ingest-content-pane.")
+                view_to_show = content_pane.query_one(target_view_id_selector, Container)
+                view_to_show.styles.display = "block"  # or "flex" or whatever your default visible display is
+                self.loguru_logger.info(f"Switched Ingest view to: {new_view}")
+                # Optional: Focus an element within the newly shown view
+                # try:
+                #     view_to_show.query(Input, Button)[0].focus()
+                # except IndexError:
+                #     pass # No focusable element
+            except QueryError as e:
+                self.loguru_logger.error(f"UI component '{new_view}' not found in #ingest-content-pane: {e}",
+                                         exc_info=True)
         else:
-            self.loguru_logger.info("  New ingest view is None, all ingest views should be hidden.")
+            self.loguru_logger.debug("Ingest active view is None, all ingest views hidden.")
 
     def watch_tools_settings_active_view(self, old_view: Optional[str], new_view: Optional[str]) -> None:
         self.loguru_logger.debug(f"Tools & Settings active view changing from '{old_view}' to: '{new_view}'")
@@ -2181,9 +2195,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     async def on_input_changed(self, event: Input.Changed) -> None:
         input_id = event.input.id
         current_active_tab = self.current_tab
-
-        if input_id == "notes-search-input" and current_active_tab == TAB_NOTES:
+        # --- Chat Sidebar Prompt Search ---
+        if input_id == "chat-prompt-search-input" and current_active_tab == TAB_CHAT:
+            await chat_handlers.handle_chat_sidebar_prompt_search_input_changed(self, event.value)
+        # --- Notes Search ---
+        elif input_id == "notes-search-input" and current_active_tab == TAB_NOTES:
             await notes_handlers.handle_notes_search_input_changed(self, event.value)
+        # --- Chat Sidebar Conversation Search ---
         elif input_id == "chat-conversation-search-bar" and current_active_tab == TAB_CHAT:
             await chat_handlers.handle_chat_conversation_search_bar_changed(self, event.value)
         elif input_id == "conv-char-search-input" and current_active_tab == TAB_CCP:
@@ -2207,13 +2225,25 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
         list_view_id = event.list_view.id
         current_active_tab = self.current_tab
+        item_details = f"Item prompt_id: {getattr(event.item, 'prompt_id', 'N/A')}, Item prompt_uuid: {getattr(event.item, 'prompt_uuid', 'N/A')}"
+        self.loguru_logger.info(
+            f"ListView.Selected: list_view_id='{list_view_id}', current_tab='{current_active_tab}', {item_details}"
+        )
 
         if list_view_id == "notes-list-view" and current_active_tab == TAB_NOTES:
+            self.loguru_logger.debug("Dispatching to notes_handlers.handle_notes_list_view_selected")
             await notes_handlers.handle_notes_list_view_selected(self, list_view_id, event.item)
         elif list_view_id == "ccp-prompts-listview" and current_active_tab == TAB_CCP:
+            self.loguru_logger.debug("Dispatching to ccp_handlers.handle_ccp_prompts_list_view_selected")
+            await ccp_handlers.handle_ccp_prompts_list_view_selected(self, list_view_id, event.item)
+        elif list_view_id == "chat-sidebar-prompts-listview" and current_active_tab == TAB_CHAT:
+            self.loguru_logger.debug("Dispatching to chat_handlers.handle_chat_sidebar_prompts_list_view_selected")
             await ccp_handlers.handle_ccp_prompts_list_view_selected(self, list_view_id, event.item)
         # Note: chat-conversation-search-results-list and conv-char-search-results-list selections
         # are typically handled by their respective "Load Selected" buttons rather than direct on_list_view_selected.
+        else:
+            self.loguru_logger.warning(
+            f"No specific handler for ListView.Selected from list_view_id='{list_view_id}' on tab='{current_active_tab}'")
 
     async def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         checkbox_id = event.checkbox.id
@@ -2261,6 +2291,31 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             if url: return url
             else: logging.warning(f"URL key '{endpoint_key}' for provider '{provider}' missing in config [api_endpoints].")
         return None
+
+    # --- Watchers for chat sidebar prompt display ---
+    def watch_chat_sidebar_selected_prompt_system(self, new_system_prompt: Optional[str]) -> None:
+        try:
+            self.query_one("#chat-sidebar-prompt-system-display", TextArea).load_text(new_system_prompt or "")
+        except QueryError:
+            self.loguru_logger.error("Chat sidebar system prompt display area not found.")
+
+    def watch_chat_sidebar_selected_prompt_user(self, new_user_prompt: Optional[str]) -> None:
+        try:
+            self.query_one("#chat-sidebar-prompt-user-display", TextArea).load_text(new_user_prompt or "")
+        except QueryError:
+            self.loguru_logger.error("Chat sidebar user prompt display area not found.")
+
+    def _clear_chat_sidebar_prompt_display(self) -> None:
+        """Clears the prompt display TextAreas in the chat sidebar."""
+        self.loguru_logger.debug("Clearing chat sidebar prompt display areas.")
+        self.chat_sidebar_selected_prompt_id = None
+        self.chat_sidebar_selected_prompt_system = None # Triggers watcher to clear TextArea
+        self.chat_sidebar_selected_prompt_user = None   # Triggers watcher to clear TextArea
+        # Also clear the list and search inputs if desired when clearing display
+        try:
+            self.query_one("#chat-sidebar-prompts-listview", ListView).clear()
+        except QueryError:
+            pass # If not found, it's fine
 
 
     def watch_chat_api_provider_value(self, new_value: Optional[str]) -> None:

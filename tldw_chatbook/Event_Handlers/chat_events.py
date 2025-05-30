@@ -95,11 +95,6 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
             loguru_logger.error(f"Send Button: Critical - could not even find chat container #{prefix}-log to display error.")
         return
 
-    if app.active_chat_api_worker and app.active_chat_api_worker.is_running:
-        app.notify("An AI response is already being generated.", severity="warning")
-        loguru_logger.warning("Send button pressed while a chat API worker is already running.")
-        return
-
     # --- 2. Get Message and Parameters from UI ---
     message_text_from_input = text_area.text.strip()
     reuse_last_user_bubble = False
@@ -192,7 +187,7 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
 
     # --- 3. Basic Validation ---
     if not selected_provider:
-        await chat_container.mount(ChatMessage(message="Please select an API Provider.", role="System")); return
+        await chat_container.mount(ChatMessage(Text.from_markup("Please select an API Provider."), role="System", classes="-error")); return
     if not selected_model:
         await chat_container.mount(ChatMessage(Text.from_markup("Please select a Model."), role="System", classes="-error")); return
     if not app.API_IMPORTS_SUCCESSFUL: # Access as app attribute
@@ -741,6 +736,12 @@ async def handle_chat_new_conversation_button_pressed(app: 'TldwCli') -> None:
     app.current_chat_is_ephemeral = True  # This triggers watcher to update UI elements
     app.current_chat_active_character_data = None
     try:
+        default_system_prompt = app.app_config.get("chat_defaults", {}).get("system_prompt", "You are a helpful AI assistant.")
+        app.query_one("#chat-system-prompt", TextArea).text = default_system_prompt
+        loguru_logger.debug("Reset main system prompt to default on new chat.")
+    except QueryError:
+        loguru_logger.error("Could not find #chat-system-prompt to reset on new chat.")
+    try:
         app.query_one("#chat-character-name-edit", Input).value = ""
         app.query_one("#chat-character-description-edit", TextArea).text = ""
         app.query_one("#chat-character-personality-edit", TextArea).text = ""
@@ -1143,6 +1144,7 @@ async def display_conversation_in_chat_tab_ui(app: 'TldwCli', conversation_id: s
     if not full_conv_data or not full_conv_data.get('metadata'):
         loguru_logger.error(f"Cannot display conversation: Details for ID {conversation_id} not found or incomplete.")
         app.notify(f"Error: Could not load chat {conversation_id}.", severity="error")
+        # Update UI to reflect error state
         try:
             app.query_one("#chat-conversation-title-input", Input).value = "Error: Not Found"
             app.query_one("#chat-conversation-keywords-input", TextArea).text = ""
@@ -1150,8 +1152,7 @@ async def display_conversation_in_chat_tab_ui(app: 'TldwCli', conversation_id: s
             app.query_one(TitleBar).update_title(f"Chat - Error Loading")
             chat_log_err = app.query_one("#chat-log", VerticalScroll)
             await chat_log_err.remove_children()
-            app.current_ai_message_widget = None
-            await chat_log_err.mount(ChatMessage(message="Failed to load conversation details.", role="System"))
+            await chat_log_err.mount(ChatMessage(Text.from_markup("[bold red]Failed to load conversation details.[/]"), role="System", classes="-error"))
         except QueryError as qe_err_disp: loguru_logger.error(f"UI component missing during error display for conv {conversation_id}: {qe_err_disp}")
         return
 
@@ -1186,12 +1187,12 @@ async def display_conversation_in_chat_tab_ui(app: 'TldwCli', conversation_id: s
 
         right_sidebar_chat_tab = app.query_one("#chat-right-sidebar")
         if loaded_char_data_for_ui_fields:
-            right_sidebar_chat_tab.query_one("#chat-character-name-edit", Input).value = loaded_char_data_for_ui_fields.get('name', '')
-            right_sidebar_chat_tab.query_one("#chat-character-description-edit", TextArea).text = loaded_char_data_for_ui_fields.get('description', '')
-            right_sidebar_chat_tab.query_one("#chat-character-personality-edit", TextArea).text = loaded_char_data_for_ui_fields.get('personality', '')
-            right_sidebar_chat_tab.query_one("#chat-character-scenario-edit", TextArea).text = loaded_char_data_for_ui_fields.get('scenario', '')
-            right_sidebar_chat_tab.query_one("#chat-character-system-prompt-edit", TextArea).text = loaded_char_data_for_ui_fields.get('system_prompt', '')
-            right_sidebar_chat_tab.query_one("#chat-character-first-message-edit", TextArea).text = loaded_char_data_for_ui_fields.get('first_message', '')
+            right_sidebar_chat_tab.query_one("#chat-character-name-edit", Input).value = loaded_char_data_for_ui_fields.get('name') or ''
+            right_sidebar_chat_tab.query_one("#chat-character-description-edit", TextArea).text = loaded_char_data_for_ui_fields.get('description') or ''
+            right_sidebar_chat_tab.query_one("#chat-character-personality-edit", TextArea).text = loaded_char_data_for_ui_fields.get('personality') or ''
+            right_sidebar_chat_tab.query_one("#chat-character-scenario-edit", TextArea).text = loaded_char_data_for_ui_fields.get('scenario') or ''
+            right_sidebar_chat_tab.query_one("#chat-character-system-prompt-edit", TextArea).text = loaded_char_data_for_ui_fields.get('system_prompt') or ''
+            right_sidebar_chat_tab.query_one("#chat-character-first-message-edit", TextArea).text = loaded_char_data_for_ui_fields.get('first_message') or ''
         else:
             right_sidebar_chat_tab.query_one("#chat-character-name-edit", Input).value = ""
             right_sidebar_chat_tab.query_one("#chat-character-description-edit", TextArea).text = ""
@@ -1202,6 +1203,7 @@ async def display_conversation_in_chat_tab_ui(app: 'TldwCli', conversation_id: s
 
         app.query_one("#chat-conversation-title-input", Input).value = conv_metadata.get('title', '')
         app.query_one("#chat-conversation-uuid-display", Input).value = conversation_id
+
         keywords_input_disp = app.query_one("#chat-conversation-keywords-input", TextArea)
         keywords_input_disp.text = conv_metadata.get('keywords_display', "")
 
@@ -1391,14 +1393,58 @@ async def handle_chat_load_character_button_pressed(app: 'TldwCli', event: Butto
             app.current_chat_active_character_data = character_data_full # Update reactive state
 
             # Populate the editing fields
-            app.query_one("#chat-character-name-edit", Input).value = character_data_full.get('name', '')
-            app.query_one("#chat-character-description-edit", TextArea).text = character_data_full.get('description', '')
-            app.query_one("#chat-character-personality-edit", TextArea).text = character_data_full.get('personality', '')
-            app.query_one("#chat-character-scenario-edit", TextArea).text = character_data_full.get('scenario', '')
-            app.query_one("#chat-character-system-prompt-edit", TextArea).text = character_data_full.get('system_prompt', '')
-            app.query_one("#chat-character-first-message-edit", TextArea).text = character_data_full.get('first_message', '')
+            app.query_one("#chat-character-name-edit", Input).value = character_data_full.get('name') or ''
+            app.query_one("#chat-character-description-edit", TextArea).text = character_data_full.get('description') or ''
+            app.query_one("#chat-character-personality-edit", TextArea).text = character_data_full.get('personality') or ''
+            app.query_one("#chat-character-scenario-edit", TextArea).text = character_data_full.get('scenario') or ''
+            app.query_one("#chat-character-system-prompt-edit", TextArea).text = character_data_full.get('system_prompt') or ''
+            app.query_one("#chat-character-first-message-edit", TextArea).text = character_data_full.get('first_message') or ''
 
             app.notify(f"Character '{character_data_full.get('name', 'Unknown')}' loaded.", severity="information")
+
+            # <<< START OF ADDED CODE >>>
+            if app.current_chat_is_ephemeral:
+                loguru_logger.debug("Chat is ephemeral, checking if greeting is appropriate.")
+                try:
+                    chat_log_widget = app.query_one("#chat-log", VerticalScroll)
+                    messages_in_log = list(chat_log_widget.query(ChatMessage))
+
+                    character_has_spoken = False
+                    if not messages_in_log:
+                        loguru_logger.debug("Chat log is empty. Greeting is appropriate.")
+                    else:
+                        for msg_widget in messages_in_log:
+                            # Check if the message role is not "User". This includes "AI" or the character's name.
+                            if msg_widget.role != "User":
+                                character_has_spoken = True
+                                loguru_logger.debug(f"Found message from role '{msg_widget.role}'. Greeting not appropriate.")
+                                break
+                        if not character_has_spoken:
+                            loguru_logger.debug("No non-User messages found in log. Greeting is appropriate.")
+
+                    if not messages_in_log or not character_has_spoken:
+                        first_message_content = app.current_chat_active_character_data.get('first_message')
+                        character_name = app.current_chat_active_character_data.get('name')
+
+                        if first_message_content and character_name:
+                            loguru_logger.info(f"Displaying first_message for {character_name}.")
+                            greeting_message_widget = ChatMessage(
+                                message=first_message_content,
+                                role=character_name, # Use character's name as role for their greeting
+                                generation_complete=True
+                            )
+                            await chat_log_widget.mount(greeting_message_widget)
+                            chat_log_widget.scroll_end(animate=True)
+                        elif not first_message_content:
+                            loguru_logger.debug(f"Character {character_name} has no first_message defined.")
+                        elif not character_name:
+                            loguru_logger.debug("Character name not found, cannot display first_message effectively.")
+                except QueryError as e_chat_log:
+                    loguru_logger.error(f"Could not find #chat-log to check for messages or mount greeting: {e_chat_log}")
+                except Exception as e_greeting:
+                    loguru_logger.error(f"Error displaying character greeting: {e_greeting}", exc_info=True)
+            # <<< END OF ADDED CODE >>>
+
             loguru_logger.info(f"Character ID {selected_char_id} loaded and fields populated.")
 
     except QueryError as e_query:
@@ -1416,8 +1462,17 @@ async def handle_chat_character_attribute_changed(app: 'TldwCli', event: Union[I
         return
 
     control_id = event.control.id
-    # Correctly and simply get the new value using event.value, which works for both
-    new_value = event.value
+    new_value: str = "" # Initialize new_value
+
+    if isinstance(event, Input.Changed):
+        new_value = event.value
+    elif isinstance(event, TextArea.Changed):
+        # For TextArea, the changed text is directly on the control itself
+        new_value = event.control.text # Use event.control.text for TextAreas
+    else:
+        # Fallback or error for unexpected event types, though the handler is specific
+        loguru_logger.warning(f"Unhandled event type in handle_chat_character_attribute_changed: {type(event)}")
+        return # Or handle error appropriately
 
     field_map = {
         "chat-character-name-edit": "name",
@@ -1457,6 +1512,12 @@ async def handle_chat_clear_active_character_button_pressed(app: 'TldwCli') -> N
     loguru_logger.info("Clear Active Character button pressed.")
 
     app.current_chat_active_character_data = None  # Clear the reactive variable
+    try:
+        default_system_prompt = app.app_config.get("chat_defaults", {}).get("system_prompt", "You are a helpful AI assistant.")
+        app.query_one("#chat-system-prompt", TextArea).text = default_system_prompt
+        loguru_logger.debug("Reset main system prompt to default on clear active character.")
+    except QueryError:
+        loguru_logger.error("Could not find #chat-system-prompt to reset on clear active character.")
 
     try:
         # Get a reference to the chat tab's right sidebar
