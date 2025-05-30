@@ -16,7 +16,8 @@ from textual.css.query import QueryError
 from textual.containers import Container, VerticalScroll
 #
 # Local Imports
-import conv_char_events as ccp_handlers
+import tldw_chatbook.Event_Handlers.conv_char_events as ccp_handlers
+from . import chat_events as chat_handlers
 from ..tldw_api import (
     TLDWAPIClient, ProcessVideoRequest, ProcessAudioRequest,
     APIConnectionError, APIRequestError, APIResponseError, AuthenticationError,
@@ -202,7 +203,7 @@ async def _handle_character_file_selected_callback(app: 'TldwCli', selected_path
     """Callback for character file selection."""
     if selected_path:
         logger.info(f"Character file selected via dialog: {selected_path}")
-        if selected_path in app.selected_character_files_for_import:  # Use new list
+        if selected_path in app.selected_character_files_for_import:
             app.notify(f"File '{selected_path.name}' is already in the character selection.", severity="warning")
             return
 
@@ -211,16 +212,33 @@ async def _handle_character_file_selected_callback(app: 'TldwCli', selected_path
 
         try:
             list_view = app.query_one("#ingest-characters-selected-files-list", ListView)
-            if list_view.children and isinstance(list_view.children[0], ListItem) and \
-                    isinstance(list_view.children[0].children[0], Label) and \
-                    list_view.children[0].children[0].renderable == "No files selected.":
+
+            # Check if the list view contains only the "No files selected." placeholder
+            # This is safer than assuming it's always the first child.
+            placeholder_exists = False
+            if list_view.children:  # Check if there are any children
+                first_child = list_view.children[0]
+                if isinstance(first_child, ListItem) and first_child.children:
+                    first_label_of_first_item = first_child.children[0]
+                    if isinstance(first_label_of_first_item, Label):
+                        # Convert Label's renderable (Rich Text) to plain string for comparison
+                        if str(first_label_of_first_item.renderable).strip() == "No files selected.":
+                            placeholder_exists = True
+
+            if placeholder_exists:
                 await list_view.clear()
+                logger.debug("Cleared 'No files selected.' placeholder from character list.")
+
             await list_view.append(ListItem(Label(str(selected_path))))
+            logger.debug(f"Appended '{selected_path}' to character list view.")
+
         except QueryError:
             logger.error("Could not find #ingest-characters-selected-files-list ListView to update.")
+        except Exception as e_lv:
+            logger.error(f"Error updating character list view: {e_lv}", exc_info=True)
 
         parsed_chars_from_file = _parse_single_character_file_for_preview(selected_path, app)
-        app.parsed_characters_for_preview.extend(parsed_chars_from_file)  # Use new list
+        app.parsed_characters_for_preview.extend(parsed_chars_from_file)
 
         await _update_character_preview_display(app)
     else:
@@ -418,8 +436,6 @@ async def handle_ingest_characters_import_now_button_pressed(app: 'TldwCli') -> 
 
     app.run_worker(
         import_worker_char,
-        on_success=on_import_success_char,
-        on_failure=on_import_failure_char,
         name="character_import_worker",
         group="file_operations",
         description="Importing selected character files."
@@ -530,7 +546,6 @@ def _parse_single_prompt_file_for_preview(file_path: Path, app_ref: 'TldwCli') -
 async def _handle_prompt_file_selected_callback(app: 'TldwCli', selected_path: Optional[Path]) -> None:
     """
     Callback function executed after the FileOpen dialog for prompt selection returns.
-    This function is wrapped by app.call_after_refresh in the calling code.
     """
     if selected_path:
         logger.info(f"Prompt file selected via dialog: {selected_path}")
@@ -539,19 +554,33 @@ async def _handle_prompt_file_selected_callback(app: 'TldwCli', selected_path: O
             return
 
         app.selected_prompt_files_for_import.append(selected_path)
-        app.last_prompt_import_dir = selected_path.parent  # Remember this directory
+        app.last_prompt_import_dir = selected_path.parent
 
-        # Update selected files list UI
         try:
             list_view = app.query_one("#ingest-prompts-selected-files-list", ListView)
-            # Clear "No files selected" placeholder if it's the only item
-            if list_view._nodes and isinstance(list_view._nodes[0], ListItem) and \
-                    isinstance(list_view._nodes[0].children[0], Label) and \
-                    list_view._nodes[0].children[0].renderable == "No files selected.":
+
+            placeholder_exists = False
+            if list_view.children:  # Check if there are any children
+                first_child = list_view.children[0]
+                # Ensure the first child is a ListItem and it has children (the Label)
+                if isinstance(first_child, ListItem) and first_child.children:
+                    first_label_of_first_item = first_child.children[0]
+                    if isinstance(first_label_of_first_item, Label):
+                        # Convert Label's renderable (Rich Text) to plain string for comparison
+                        if str(first_label_of_first_item.renderable).strip() == "No files selected.":
+                            placeholder_exists = True
+
+            if placeholder_exists:
                 await list_view.clear()
+                logger.debug("Cleared 'No files selected.' placeholder from prompt list.")
+
             await list_view.append(ListItem(Label(str(selected_path))))
+            logger.debug(f"Appended '{selected_path}' to prompt list view.")
+
         except QueryError:
             logger.error("Could not find #ingest-prompts-selected-files-list ListView to update.")
+        except Exception as e_lv:
+            logger.error(f"Error updating prompt list view: {e_lv}", exc_info=True)
 
         # Parse this file and add to overall preview list
         parsed_prompts_from_file = _parse_single_prompt_file_for_preview(selected_path, app)
@@ -562,33 +591,6 @@ async def _handle_prompt_file_selected_callback(app: 'TldwCli', selected_path: O
         logger.info("Prompt file selection cancelled by user.")
         app.notify("File selection cancelled.")
 
-
-##################################################################################
-# THIS IS THE FUNCTION YOU WERE ASKING ABOUT - ITS DEFINITION
-##################################################################################
-async def handle_ingest_prompts_select_file_button_pressed(app: 'TldwCli') -> None:
-    """Handles the 'Select Prompt File(s)' button press."""
-    logger.debug("Select Prompt File(s) button pressed. Opening file dialog.")
-    current_dir = app.last_prompt_import_dir or Path(".")  # Start in last used dir or current dir
-
-    # The FileOpen dialog handles one file selection.
-    # The callback _handle_prompt_file_selected_callback will be called after the dialog closes.
-    # We use app.call_after_refresh to ensure the callback runs safely after screen changes.
-    app.push_screen(
-        FileOpen(
-            location=str(current_dir),
-            title="Select Prompt File (.md, .json, .yaml, .txt)",
-            filters=PROMPT_FILE_FILTERS
-        ),
-        # The callback to FileOpen's push_screen receives the path.
-        # We then schedule _handle_prompt_file_selected_callback to run.
-        lambda path: app.call_after_refresh(lambda: _handle_prompt_file_selected_callback(app, path))
-    )
-
-
-##################################################################################
-# END OF THE FUNCTION DEFINITION
-##################################################################################
 
 async def handle_ingest_prompts_clear_files_button_pressed(app: 'TldwCli') -> None:
     """Handles the 'Clear Selection' button press for prompt import."""
@@ -621,24 +623,30 @@ async def handle_ingest_prompts_import_now_button_pressed(app: 'TldwCli') -> Non
         app.notify("No prompt files selected to import.", severity="warning")
         return
 
-    if not is_initialized():
+    if not prompts_db_initialized():  # Use the renamed alias
         msg = "Prompts database is not initialized. Cannot import."
         app.notify(msg, severity="error", timeout=7)
         logger.error(msg + " Aborting import.")
         return
 
-    status_area = app.query_one("#prompt-import-status-area", TextArea)
-    status_area.clear()
-    status_area.write("Starting import process...\n")
+    try:
+        status_area = app.query_one("#prompt-import-status-area", TextArea)
+        status_area.clear()
+        status_area.text = "Starting import process...\n"  # Use .text to set initial content
+        # Or if you prefer to append and ensure it's on a new line if already something there (though clear() was called):
+        # status_area.insert("Starting import process...\n")
+    except QueryError:
+        logger.error("Could not find #prompt-import-status-area TextArea.")
+        app.notify("Status display area not found.", severity="error")
+        return
+
     app.notify("Importing prompts... This may take a moment.")
 
-    # --- Worker for actual import ---
     async def import_worker():
-        # Pass the list of Path objects
         return import_prompts_from_files(app.selected_prompt_files_for_import)
 
     def on_import_success(results: List[Dict[str, Any]]):
-        log_text = ["Import process finished.\n\nResults:\n"]
+        log_text_parts = ["Import process finished.\n\nResults:\n"]
         successful_imports = 0
         failed_imports = 0
         for res in results:
@@ -647,13 +655,13 @@ async def handle_ingest_prompts_import_now_button_pressed(app: 'TldwCli') -> Non
             prompt_name = res.get("prompt_name", "N/A")
             message = res.get("message", "")
 
-            log_text.append(f"File: {Path(file_path_str).name}\n")  # Use Path().name for just filename
+            log_text_parts.append(f"File: {Path(file_path_str).name}\n")
             if prompt_name and prompt_name != "N/A":
-                log_text.append(f"  Prompt: '{prompt_name}'\n")
-            log_text.append(f"  Status: {status.upper()}\n")
+                log_text_parts.append(f"  Prompt: '{prompt_name}'\n")
+            log_text_parts.append(f"  Status: {status.upper()}\n")
             if message:
-                log_text.append(f"  Message: {message}\n")
-            log_text.append("-" * 30 + "\n")
+                log_text_parts.append(f"  Message: {message}\n")
+            log_text_parts.append("-" * 30 + "\n")
 
             if status == "success":
                 successful_imports += 1
@@ -661,24 +669,43 @@ async def handle_ingest_prompts_import_now_button_pressed(app: 'TldwCli') -> Non
                 failed_imports += 1
 
         summary = f"\nSummary: {successful_imports} prompts imported successfully, {failed_imports} failed."
-        log_text.append(summary)
+        log_text_parts.append(summary)
 
-        status_area.load_text("".join(log_text))  # Use load_text for full replacement
+        try:
+            # Query status_area again inside the callback, as the widget might have been
+            # unmounted/remounted or its reference might not be valid across async boundaries/worker completion.
+            # However, for this simple case, the original status_area reference is likely fine
+            # if the view remains active. If issues arise, re-querying here is safer.
+            status_area_cb = app.query_one("#prompt-import-status-area", TextArea)
+            status_area_cb.load_text("".join(log_text_parts))
+        except QueryError:
+            logger.error("Failed to find #prompt-import-status-area in on_import_success to display results.")
+
         app.notify(f"Prompt import finished. Success: {successful_imports}, Failed: {failed_imports}", timeout=8)
         logger.info(summary)
 
-        # Optionally, you might want to call the clear files function here:
-        # app.call_later(handle_ingest_prompts_clear_files_button_pressed, app) # Or run it directly if safe
+        # Refresh the main prompts list in the CCP tab
+        app.call_later(ccp_handlers.populate_ccp_prompts_list_view, app)
+        # Refresh the prompts list in the Chat tab's sidebar
+        app.call_later(chat_handlers.handle_chat_sidebar_prompt_search_changed, app,
+                       "")  # Pass app and empty search term
 
     def on_import_failure(error: Exception):
         logger.error(f"Prompt import worker failed: {error}", exc_info=True)
-        status_area.write(f"\nImport process failed critically: {error}\nCheck logs for details.\n")
+        try:
+            status_area_cb_fail = app.query_one("#prompt-import-status-area", TextArea)
+            # Append to existing text or replace, depending on desired behavior
+            current_text = status_area_cb_fail.text
+            status_area_cb_fail.load_text(
+                current_text + f"\nImport process failed critically: {error}\nCheck logs for details.\n")
+        except QueryError:
+            logger.error("Failed to find #prompt-import-status-area in on_import_failure.")
+
         app.notify(f"Prompt import failed: {error}", severity="error", timeout=10)
 
+    # Ensure the worker callbacks are passed correctly
     app.run_worker(
         import_worker,
-        on_success=on_import_success,
-        on_failure=on_import_failure,
         name="prompt_import_worker",
         group="file_operations",
         description="Importing selected prompt files."
@@ -747,78 +774,137 @@ async def handle_tldw_api_media_type_changed(app: 'TldwCli', event_value: str) -
 def _collect_common_form_data(app: 'TldwCli') -> Dict[str, Any]:
     """Collects common data fields from the TLDW API form."""
     data = {}
+    current_field_id_for_error = "Unknown Field" # Keep track of which field was being processed
     try:
+        current_field_id_for_error = "#tldw-api-urls"
         data["urls"] = [url.strip() for url in app.query_one("#tldw-api-urls", TextArea).text.splitlines() if url.strip()]
-        data["local_files"] = [fp.strip() for fp in app.query_one("#tldw-api-local-files", TextArea).text.splitlines() if fp.strip()] # New field for local paths
-        data["title"] = app.query_one("#tldw-api-title", Input).value or None
-        data["author"] = app.query_one("#tldw-api-author", Input).value or None
-        data["keywords_str"] = app.query_one("#tldw-api-keywords", TextArea).text # API client schema expects list, will be parsed there
-        data["custom_prompt"] = app.query_one("#tldw-api-custom-prompt", TextArea).text or None
-        data["system_prompt"] = app.query_one("#tldw-api-system-prompt", TextArea).text or None
-        data["perform_analysis"] = app.query_one("#tldw-api-perform-analysis", Checkbox).value
-        data["overwrite_existing_db"] = app.query_one("#tldw-api-overwrite-db", Checkbox).value # For local DB
 
-        # Chunking Options (Common)
+        current_field_id_for_error = "#tldw-api-local-files"
+        data["local_files"] = [fp.strip() for fp in app.query_one("#tldw-api-local-files", TextArea).text.splitlines() if fp.strip()]
+
+        current_field_id_for_error = "#tldw-api-title"
+        data["title"] = app.query_one("#tldw-api-title", Input).value or None
+
+        current_field_id_for_error = "#tldw-api-author"
+        data["author"] = app.query_one("#tldw-api-author", Input).value or None
+
+        current_field_id_for_error = "#tldw-api-keywords"
+        data["keywords_str"] = app.query_one("#tldw-api-keywords", TextArea).text
+
+        current_field_id_for_error = "#tldw-api-custom-prompt"
+        data["custom_prompt"] = app.query_one("#tldw-api-custom-prompt", TextArea).text or None
+
+        current_field_id_for_error = "#tldw-api-system-prompt"
+        data["system_prompt"] = app.query_one("#tldw-api-system-prompt", TextArea).text or None
+
+        current_field_id_for_error = "#tldw-api-perform-analysis"
+        data["perform_analysis"] = app.query_one("#tldw-api-perform-analysis", Checkbox).value
+
+        current_field_id_for_error = "#tldw-api-overwrite-db"
+        data["overwrite_existing_db"] = app.query_one("#tldw-api-overwrite-db", Checkbox).value
+
+        current_field_id_for_error = "#tldw-api-perform-chunking"
         data["perform_chunking"] = app.query_one("#tldw-api-perform-chunking", Checkbox).value
+
+        current_field_id_for_error = "#tldw-api-chunk-method"
         chunk_method_select = app.query_one("#tldw-api-chunk-method", Select)
         data["chunk_method"] = chunk_method_select.value if chunk_method_select.value != Select.BLANK else None
+
+        current_field_id_for_error = "#tldw-api-chunk-size"
         data["chunk_size"] = int(app.query_one("#tldw-api-chunk-size", Input).value or "500")
+
+        current_field_id_for_error = "#tldw-api-chunk-overlap"
         data["chunk_overlap"] = int(app.query_one("#tldw-api-chunk-overlap", Input).value or "200")
+
+        current_field_id_for_error = "#tldw-api-chunk-lang"
         data["chunk_language"] = app.query_one("#tldw-api-chunk-lang", Input).value or None
+
+        current_field_id_for_error = "#tldw-api-adaptive-chunking"
         data["use_adaptive_chunking"] = app.query_one("#tldw-api-adaptive-chunking", Checkbox).value
+
+        current_field_id_for_error = "#tldw-api-multi-level-chunking"
         data["use_multi_level_chunking"] = app.query_one("#tldw-api-multi-level-chunking", Checkbox).value
+
+        current_field_id_for_error = "#tldw-api-custom-chapter-pattern"
         data["custom_chapter_pattern"] = app.query_one("#tldw-api-custom-chapter-pattern", Input).value or None
 
-        # Analysis Options
+        current_field_id_for_error = "#tldw-api-analysis-api-name"
         analysis_api_select = app.query_one("#tldw-api-analysis-api-name", Select)
         data["api_name"] = analysis_api_select.value if analysis_api_select.value != Select.BLANK else None
-        # data["api_key"] will be handled separately by auth logic
+
+        current_field_id_for_error = "#tldw-api-summarize-recursively"
         data["summarize_recursively"] = app.query_one("#tldw-api-summarize-recursively", Checkbox).value
+
+        current_field_id_for_error = "#tldw-api-perform-rolling-summarization"
         data["perform_rolling_summarization"] = app.query_one("#tldw-api-perform-rolling-summarization", Checkbox).value
 
-
     except QueryError as e:
-        logger.error(f"Error querying common TLDW API form field: {e}")
-        app.notify(f"Error: Missing common form field: {e.widget.id if e.widget else 'Unknown'}", severity="error")
-        raise
-    except ValueError as e:
-        logger.error(f"Error converting TLDW API form field value: {e}")
-        app.notify(f"Error: Invalid value in common form field. Check numbers.", severity="error")
-        raise
+        # Log the specific query that failed if possible, or the last attempted field ID
+        logger.error(f"Error querying TLDW API form field (around {current_field_id_for_error}): {e}")
+        # The QueryError 'e' itself will contain the selector string that failed.
+        app.notify(f"Error: Missing form field. Details: {e}", severity="error")
+        raise # Re-raise to stop further processing
+    except ValueError as e: # For int() conversion errors
+        logger.error(f"Error converting TLDW API form field value (around {current_field_id_for_error}): {e}")
+        app.notify(f"Error: Invalid value in form field (around {current_field_id_for_error}). Check numbers.", severity="error")
+        raise # Re-raise
     return data
 
+
 def _collect_video_specific_data(app: 'TldwCli', common_data: Dict[str, Any]) -> ProcessVideoRequest:
+    current_field_id_for_error = "Unknown Video Field"
     try:
-        common_data["transcription_model"] = app.query_one("#tldw-api-video-transcription-model", Input).value or "deepdml/faster-whisper-large-v3-turbo-ct2"
-        common_data["transcription_language"] = app.query_one("#tldw-api-video-transcription-language", Input).value or "en"
+        current_field_id_for_error = "#tldw-api-video-transcription-model"
+        common_data["transcription_model"] = app.query_one("#tldw-api-video-transcription-model",
+                                                           Input).value or "deepdml/faster-whisper-large-v3-turbo-ct2"
+
+        current_field_id_for_error = "#tldw-api-video-transcription-language"
+        common_data["transcription_language"] = app.query_one("#tldw-api-video-transcription-language",
+                                                              Input).value or "en"
+
+        current_field_id_for_error = "#tldw-api-video-diarize"
         common_data["diarize"] = app.query_one("#tldw-api-video-diarize", Checkbox).value
+
+        current_field_id_for_error = "#tldw-api-video-timestamp"
         common_data["timestamp_option"] = app.query_one("#tldw-api-video-timestamp", Checkbox).value
+
+        current_field_id_for_error = "#tldw-api-video-vad"
         common_data["vad_use"] = app.query_one("#tldw-api-video-vad", Checkbox).value
-        common_data["perform_confabulation_check_of_analysis"] = app.query_one("#tldw-api-video-confab-check", Checkbox).value
+
+        current_field_id_for_error = "#tldw-api-video-confab-check"
+        common_data["perform_confabulation_check_of_analysis"] = app.query_one("#tldw-api-video-confab-check",
+                                                                               Checkbox).value
+
+        current_field_id_for_error = "#tldw-api-video-start-time"
         common_data["start_time"] = app.query_one("#tldw-api-video-start-time", Input).value or None
+
+        current_field_id_for_error = "#tldw-api-video-end-time"
         common_data["end_time"] = app.query_one("#tldw-api-video-end-time", Input).value or None
-        # Convert keywords_str to list of strings for Pydantic model
+
         common_data["keywords"] = [k.strip() for k in common_data.pop("keywords_str", "").split(',') if k.strip()]
 
         return ProcessVideoRequest(**common_data)
     except QueryError as e:
-        logger.error(f"Error querying video-specific TLDW API form field: {e}")
-        app.notify(f"Error: Missing video form field: {e.widget.id if e.widget else 'Unknown'}", severity="error")
+        logger.error(f"Error querying video-specific TLDW API form field (around {current_field_id_for_error}): {e}")
+        app.notify(f"Error: Missing video form field. Details: {e}", severity="error")
         raise
-    except ValueError as e: # For int/float conversions if any added later
-        logger.error(f"Error converting video-specific TLDW API form field value: {e}")
-        app.notify(f"Error: Invalid value in video form field.", severity="error")
+    except ValueError as e:
+        logger.error(
+            f"Error converting video-specific TLDW API form field value (around {current_field_id_for_error}): {e}")
+        app.notify(f"Error: Invalid value in video form field (around {current_field_id_for_error}).", severity="error")
         raise
 
 def _collect_audio_specific_data(app: 'TldwCli', common_data: Dict[str, Any]) -> ProcessAudioRequest:
+    current_field_id_for_error = "Unknown Audio Field"
     try:
+        current_field_id_for_error = "#tldw-api-audio-transcription-model"
         common_data["transcription_model"] = app.query_one("#tldw-api-audio-transcription-model", Input).value or "deepdml/faster-distil-whisper-large-v3.5"
         # other audio specific fields...
         common_data["keywords"] = [k.strip() for k in common_data.pop("keywords_str", "").split(',') if k.strip()]
         return ProcessAudioRequest(**common_data)
     except QueryError as e:
-        logger.error(f"Error querying audio-specific TLDW API form field: {e}")
-        app.notify(f"Error: Missing audio form field: {e.widget.id if e.widget else 'Unknown'}", severity="error")
+        logger.error(f"Error querying audio-specific TLDW API form field (around {current_field_id_for_error}): {e}")
+        app.notify(f"Error: Missing audio form field. Details: {e}", severity="error")
         raise
 
 
@@ -1049,8 +1135,6 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
 
     app.run_worker(
         process_media_worker,
-        on_success=on_worker_success,
-        on_failure=on_worker_failure,
         name="tldw_api_media_processing",
         group="api_calls",
         description="Processing media via TLDW API"
