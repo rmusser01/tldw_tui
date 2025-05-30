@@ -7,7 +7,7 @@ import logging.handlers
 import sys
 from pathlib import Path
 import traceback
-from typing import Union, Optional, Any, Dict, List
+from typing import Union, Optional, Any, Dict, List, Callable
 #
 # 3rd-Party Libraries
 # --- Textual Imports ---
@@ -253,7 +253,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     selected_note_files_for_import: List[Path] = []
     parsed_notes_for_preview: List[Dict[str, Any]] = []
     last_note_import_dir: Optional[Path] = None
-
+    # Add attributes to hold the handlers (optional, but can be useful)
+    prompt_import_success_handler: Optional[Callable] = None
+    prompt_import_failure_handler: Optional[Callable] = None
+    character_import_success_handler: Optional[Callable] = None
+    character_import_failure_handler: Optional[Callable] = None
+    note_import_success_handler: Optional[Callable] = None
+    note_import_failure_handler: Optional[Callable] = None
 
     # Tools Tab
     tools_settings_active_view: reactive[Optional[str]] = reactive(None)  # Or a default view ID

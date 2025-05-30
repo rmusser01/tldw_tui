@@ -378,103 +378,87 @@ def parse_yaml_prompts_from_content(content: str) -> List[Dict[str, Any]]:
 
 
 def parse_markdown_prompts_from_content(content: str) -> List[Dict[str, Any]]:
-    """Parses Markdown content into a list of prompt dictionaries."""
-    if not FRONTMATTER_AVAILABLE:
-        raise RuntimeError("Markdown parsing is not available. Please install python-frontmatter.")
-    prompts = []
-    # Split content by '---' on its own line, a common multi-document separator
-    md_documents = re.split(r"^\s*---\s*$", content, flags=re.MULTILINE)
+    """
+    Parses Markdown content with custom '### SECTION_NAME ###' headers
+    into a list of prompt dictionaries.
+    """
+    prompts_data = []
+    parsed_data: Dict[str, Any] = {
+        "name": None, "author": None, "details": None,
+        "system_prompt": None, "user_prompt": None, "keywords": [],
+    }
+    section_map = {
+        "TITLE": "name", "AUTHOR": "author", "SYSTEM": "system_prompt",
+        "USER": "user_prompt", "KEYWORDS": "keywords_str",
+    }
 
-    for doc_content in md_documents:
-        doc_content = doc_content.strip()
-        if not doc_content:
+    # Attempt to parse TITLE and DETAILS block first
+    # This assumes details are between TITLE and AUTHOR sections, or after TITLE if AUTHOR isn't next.
+    # Regex: ^\s*###\s*TITLE\s*###\s*\n(.*?)(\n\s*###\s*AUTHOR\s*###|\Z)
+    # Group 1: Content after ### TITLE ### (name + details)
+    # Group 2: The ### AUTHOR ### section or end of string (used as a delimiter)
+    title_block_match = re.search(
+        r"^\s*###\s*TITLE\s*###\s*\n(.*?)(?=(\n\s*###\s*AUTHOR\s*###|\Z))",
+        content, re.MULTILINE | re.DOTALL | re.IGNORECASE
+    )
+
+    if title_block_match:
+        title_and_details_content = title_block_match.group(1).strip()
+        lines = title_and_details_content.split('\n', 1)
+        parsed_data["name"] = lines[0].strip()
+        if len(lines) > 1:
+            parsed_data["details"] = lines[1].strip()
+        else:
+            parsed_data["details"] = ""  # No separate details lines
+    else:  # Fallback if the specific TITLE...AUTHOR structure isn't found
+        # Try to get just the TITLE content if available
+        simple_title_match = re.search(
+            r"^\s*###\s*TITLE\s*###\s*\n(.*?)(?=(\n\s*###|$))",
+            content, re.MULTILINE | re.DOTALL | re.IGNORECASE
+        )
+        if simple_title_match:
+            parsed_data["name"] = simple_title_match.group(1).strip()
+            # In this fallback, details might be harder to reliably extract without more rules
+            # For now, if we only find a TITLE section, details will be None or empty.
+
+    # If no name was found, we can't proceed for this prompt format
+    if not parsed_data.get("name"):
+        logger.warning(
+            f"Custom MD/TXT Parser: No 'TITLE' section found or it was empty. Content snippet: {content[:200]}")
+        return []  # Return empty list if no title, as a valid prompt needs a name
+
+    # Extract other sections
+    for section_header, dict_key in section_map.items():
+        if section_header == "TITLE":  # Already handled
             continue
-        try:
-            post = frontmatter.loads(doc_content)
-            prompt_data = {"name": None, "author": None, "details": None, "system_prompt": None, "user_prompt": None, "keywords": []}
-            prompt_data.update(post.metadata)
 
-            system_prompt_match = re.search(r"^##\s*System Prompt\s*$(.*?)(?=^##|\Z)", post.content, re.MULTILINE | re.DOTALL | re.IGNORECASE)
-            if system_prompt_match:
-                prompt_data["system_prompt"] = system_prompt_match.group(1).strip()
+        pattern = rf"^\s*###\s*{section_header}\s*###\s*\n(.*?)(?=(?:\n\s*###|$))"
+        match = re.search(pattern, content, re.MULTILINE | re.DOTALL | re.IGNORECASE)
+        if match:
+            section_text = match.group(1).strip()
+            if section_text:  # Only assign if there's actual content
+                parsed_data[dict_key] = section_text
 
-            user_prompt_match = re.search(r"^##\s*User Prompt\s*$(.*?)(?=^##|\Z)", post.content, re.MULTILINE | re.DOTALL | re.IGNORECASE)
-            if user_prompt_match:
-                prompt_data["user_prompt"] = user_prompt_match.group(1).strip()
+    # Post-process keywords
+    if "keywords_str" in parsed_data and parsed_data["keywords_str"]:
+        parsed_data["keywords"] = [kw.strip() for kw in parsed_data["keywords_str"].split(',') if kw.strip()]
+    if "keywords_str" in parsed_data:  # Clean up temporary key
+        del parsed_data["keywords_str"]
 
-            prompts.append(_normalize_prompt_data(prompt_data))
-        except Exception as e:
-            logger.warning(f"Skipping invalid Markdown document segment: {e}. Content snippet: {doc_content[:100]}")
-    return prompts
+    prompts_data.append(_normalize_prompt_data(parsed_data))
+    logger.debug(f"Parsed custom MD/TXT prompt: {parsed_data.get('name')}")
+
+    return prompts_data
 
 
 def parse_txt_prompts_from_content(content: str) -> List[Dict[str, Any]]:
-    """Parses TXT content into a list of prompt dictionaries."""
-    prompts_data = []
-    # Split by '---' on its own line to separate prompts
-    prompt_blocks = re.split(r"^\s*---\s*$", content, flags=re.MULTILINE)
-
-    for block in prompt_blocks:
-        block = block.strip()
-        if not block:
-            continue
-
-        current_prompt: Dict[str, Any] = {"name": None, "author": None, "details": None, "system_prompt": None, "user_prompt": None, "keywords": []}
-        metadata_lines = []
-        system_prompt_lines = []
-        user_prompt_lines = []
-
-        parsing_section = "metadata" # metadata, system, user
-
-        for line in block.splitlines():
-            line_strip = line.strip()
-            if line_strip.lower() == "---system---":
-                parsing_section = "system"
-                continue
-            elif line_strip.lower() == "---user---":
-                parsing_section = "user"
-                continue
-
-            if parsing_section == "metadata":
-                metadata_lines.append(line)
-            elif parsing_section == "system":
-                system_prompt_lines.append(line)
-            elif parsing_section == "user":
-                user_prompt_lines.append(line)
-
-        # Parse metadata
-        details_buffer = []
-        for line in metadata_lines:
-            if ":" in line:
-                key, value = line.split(":", 1)
-                key = key.strip().lower()
-                value = value.strip()
-                if key == "name":
-                    current_prompt["name"] = value
-                elif key == "author":
-                    current_prompt["author"] = value
-                elif key == "keywords":
-                    current_prompt["keywords"] = [kw.strip() for kw in value.split(",") if kw.strip()]
-                elif key == "details":
-                    details_buffer.append(value) # Start of details
-                # If details already started, append to it
-                elif details_buffer and key != "details": # Assuming details are contiguous after "Details:"
-                    details_buffer.append(line)
-
-            elif details_buffer: # Line doesn't have ':', part of multi-line details
-                 details_buffer.append(line.strip())
-
-
-        if details_buffer:
-            current_prompt["details"] = "\n".join(details_buffer)
-
-        if system_prompt_lines:
-            current_prompt["system_prompt"] = "\n".join(system_prompt_lines).strip()
-        if user_prompt_lines:
-            current_prompt["user_prompt"] = "\n".join(user_prompt_lines).strip()
-
-        prompts_data.append(_normalize_prompt_data(current_prompt))
-    return prompts_data
+    """
+    Parses TXT content into a list of prompt dictionaries,
+    assuming the same '### SECTION_NAME ###' format as Markdown.
+    """
+    logger.debug("Parsing TXT file using custom Markdown section logic.")
+    # Simply call the markdown parser which now handles the ### SECTION ### format
+    return parse_markdown_prompts_from_content(content)
 
 def _get_file_type(file_path: Path) -> Optional[str]:
     """Determines file type from extension."""

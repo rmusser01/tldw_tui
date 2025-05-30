@@ -268,8 +268,6 @@ async def handle_ingest_prompts_select_file_button_pressed(app: 'TldwCli') -> No
     )
 
 
-# ... (handle_ingest_prompts_clear_files_button_pressed, handle_ingest_prompts_import_now_button_pressed remain largely the same,
-#      just ensure they operate on app.selected_prompt_files_for_import and app.parsed_prompts_for_preview)
 
 # --- Character Ingest Handlers (NEW) ---
 async def handle_ingest_characters_select_file_button_pressed(app: 'TldwCli') -> None:
@@ -630,7 +628,7 @@ async def handle_ingest_prompts_import_now_button_pressed(app: 'TldwCli') -> Non
         app.notify("No prompt files selected to import.", severity="warning")
         return
 
-    if not prompts_db_initialized():  # Use the renamed alias
+    if not prompts_db_initialized():
         msg = "Prompts database is not initialized. Cannot import."
         app.notify(msg, severity="error", timeout=7)
         logger.error(msg + " Aborting import.")
@@ -638,10 +636,8 @@ async def handle_ingest_prompts_import_now_button_pressed(app: 'TldwCli') -> Non
 
     try:
         status_area = app.query_one("#prompt-import-status-area", TextArea)
-        status_area.clear()
-        status_area.text = "Starting import process...\n"  # Use .text to set initial content
-        # Or if you prefer to append and ensure it's on a new line if already something there (though clear() was called):
-        # status_area.insert("Starting import process...\n")
+        status_area.text = ""
+        status_area.text = "Starting import process...\n"
     except QueryError:
         logger.error("Could not find #prompt-import-status-area TextArea.")
         app.notify("Status display area not found.", severity="error")
@@ -649,73 +645,111 @@ async def handle_ingest_prompts_import_now_button_pressed(app: 'TldwCli') -> Non
 
     app.notify("Importing prompts... This may take a moment.")
 
-    async def import_worker():
-        return import_prompts_from_files(app.selected_prompt_files_for_import)
+    # The worker function itself remains the same
+    async def import_worker_target():  # Renamed to avoid confusion with Worker class
+        logger.info("--- import_worker_target (Prompts) RUNNING ---")
+        try:
+            results = import_prompts_from_files(app.selected_prompt_files_for_import)
+            logger.info(f"--- import_worker_target (Prompts) FINISHED, results count: {len(results)} ---")
+            return results  # Return the results
+        except Exception as e_worker:
+            logger.error(f"Exception inside import_worker_target (Prompts): {e_worker}", exc_info=True)
+            # To signal an error to the worker system, you should re-raise the exception
+            # or return a specific error indicator if you want to handle it differently
+            # in on_worker_state_changed. For now, re-raising is simpler.
+            raise e_worker
 
-    def on_import_success(results: List[Dict[str, Any]]):
+    # Define the functions that will handle success and failure,
+    # these will be called by your app's on_worker_state_changed handler.
+    # We pass the worker_name to identify which worker completed.
+
+    def process_prompt_import_success(results: List[Dict[str, Any]], worker_name: str):
+        if worker_name != "prompt_import_worker":  # Ensure this is for the correct worker
+            return
+
+        logger.info(f"--- process_prompt_import_success CALLED for worker: {worker_name} ---")
+        logger.debug(f"Import results received: {results}")
+
         log_text_parts = ["Import process finished.\n\nResults:\n"]
         successful_imports = 0
         failed_imports = 0
-        for res in results:
-            status = res.get("status", "unknown")
-            file_path_str = res.get("file_path", "N/A")
-            prompt_name = res.get("prompt_name", "N/A")
-            message = res.get("message", "")
 
-            log_text_parts.append(f"File: {Path(file_path_str).name}\n")
-            if prompt_name and prompt_name != "N/A":
-                log_text_parts.append(f"  Prompt: '{prompt_name}'\n")
-            log_text_parts.append(f"  Status: {status.upper()}\n")
-            if message:
-                log_text_parts.append(f"  Message: {message}\n")
-            log_text_parts.append("-" * 30 + "\n")
+        if not results:
+            log_text_parts.append("No results returned from import worker.\n")
+            logger.warning("process_prompt_import_success: Received empty results list.")
+        else:
+            for res_idx, res in enumerate(results):
+                logger.debug(f"Processing result item {res_idx}: {res}")
+                status = res.get("status", "unknown")
+                file_path_str = res.get("file_path", "N/A")
+                prompt_name = res.get("prompt_name", "N/A")
+                message = res.get("message", "")
 
-            if status == "success":
-                successful_imports += 1
-            else:
-                failed_imports += 1
+                log_text_parts.append(f"File: {Path(file_path_str).name}\n")
+                if prompt_name and prompt_name != "N/A":
+                    log_text_parts.append(f"  Prompt: '{prompt_name}'\n")
+                log_text_parts.append(f"  Status: {status.upper()}\n")
+                if message:
+                    log_text_parts.append(f"  Message: {message}\n")
+                log_text_parts.append("-" * 30 + "\n")
+
+                if status == "success":
+                    successful_imports += 1
+                else:
+                    failed_imports += 1
 
         summary = f"\nSummary: {successful_imports} prompts imported successfully, {failed_imports} failed."
         log_text_parts.append(summary)
+        final_log_text_to_display = "".join(log_text_parts)
+        logger.debug(f"Final text for status_area:\n{final_log_text_to_display}")
 
         try:
-            # Query status_area again inside the callback, as the widget might have been
-            # unmounted/remounted or its reference might not be valid across async boundaries/worker completion.
-            # However, for this simple case, the original status_area reference is likely fine
-            # if the view remains active. If issues arise, re-querying here is safer.
             status_area_cb = app.query_one("#prompt-import-status-area", TextArea)
-            status_area_cb.load_text("".join(log_text_parts))
+            logger.info("Successfully queried #prompt-import-status-area in process_prompt_import_success.")
+            status_area_cb.load_text(final_log_text_to_display)
+            logger.info("Called load_text on #prompt-import-status-area.")
+            status_area_cb.refresh(layout=True)
+            logger.info("Called refresh() on status_area_cb.")
         except QueryError:
-            logger.error("Failed to find #prompt-import-status-area in on_import_success to display results.")
+            logger.error("Failed to find #prompt-import-status-area in process_prompt_import_success.")
+        except Exception as e_load_text:
+            logger.error(f"Error during status_area_cb.load_text in process_prompt_import_success: {e_load_text}",
+                         exc_info=True)
 
         app.notify(f"Prompt import finished. Success: {successful_imports}, Failed: {failed_imports}", timeout=8)
-        logger.info(summary)
+        logger.info(f"Prompt import summary: {summary.strip()}")
 
-        # Refresh the main prompts list in the CCP tab
         app.call_later(ccp_handlers.populate_ccp_prompts_list_view, app)
-        # Refresh the prompts list in the Chat tab's sidebar
-        app.call_later(chat_handlers.handle_chat_sidebar_prompt_search_changed, app,
-                       "")  # Pass app and empty search term
+        app.call_later(chat_handlers.handle_chat_sidebar_prompt_search_changed, app, "")
+        logger.info("--- process_prompt_import_success FINISHED ---")
 
-    def on_import_failure(error: Exception):
-        logger.error(f"Prompt import worker failed: {error}", exc_info=True)
+    def process_prompt_import_failure(error: Exception, worker_name: str):
+        if worker_name != "prompt_import_worker":
+            return
+
+        logger.error(f"--- process_prompt_import_failure CALLED for worker {worker_name}: {error} ---", exc_info=True)
         try:
             status_area_cb_fail = app.query_one("#prompt-import-status-area", TextArea)
-            # Append to existing text or replace, depending on desired behavior
             current_text = status_area_cb_fail.text
             status_area_cb_fail.load_text(
                 current_text + f"\nImport process failed critically: {error}\nCheck logs for details.\n")
         except QueryError:
-            logger.error("Failed to find #prompt-import-status-area in on_import_failure.")
+            logger.error("Failed to find #prompt-import-status-area in process_prompt_import_failure.")
+        app.notify(f"Prompt import failed: {str(error)[:100]}", severity="error", timeout=10)
 
-        app.notify(f"Prompt import failed: {error}", severity="error", timeout=10)
+    # Store these handlers on the app instance temporarily or pass them via a different mechanism
+    # For simplicity here, we'll assume app.py's on_worker_state_changed will call them.
+    # A more robust way is to make these methods of a class or use a dispatch dictionary in app.py.
+    app.prompt_import_success_handler = process_prompt_import_success
+    app.prompt_import_failure_handler = process_prompt_import_failure
 
-    # Ensure the worker callbacks are passed correctly
+    # Run the worker
     app.run_worker(
-        import_worker,
-        name="prompt_import_worker",
+        import_worker_target,  # The async callable
+        name="prompt_import_worker",  # Crucial for identifying the worker later
         group="file_operations",
         description="Importing selected prompt files."
+        # No on_success or on_failure here
     )
 
 
