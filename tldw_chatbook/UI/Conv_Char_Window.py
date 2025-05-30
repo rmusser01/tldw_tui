@@ -65,6 +65,17 @@ class CCPWindow(Container):
             with Container(id="ccp-character-card-view", classes="ccp-view-area"):
                 yield Static("Character Card Details", classes="pane-title", id="ccp-center-pane-title-char-card")
                 # Character card details will be displayed here
+                yield Static(id="ccp-card-image-placeholder") # Placeholder for character image
+                yield Label("Name:")
+                yield Static(id="ccp-card-name-display")
+                yield Label("Description:")
+                yield TextArea(id="ccp-card-description-display", read_only=True, classes="ccp-card-textarea")
+                yield Label("Personality:")
+                yield TextArea(id="ccp-card-personality-display", read_only=True, classes="ccp-card-textarea")
+                yield Label("Scenario:")
+                yield TextArea(id="ccp-card-scenario-display", read_only=True, classes="ccp-card-textarea")
+                yield Label("First Message:")
+                yield TextArea(id="ccp-card-first-message-display", read_only=True, classes="ccp-card-textarea")
 
             # Container for character editing UI (initially hidden by CSS)
             with Container(id="ccp-character-editor-view", classes="ccp-view-area"):

@@ -10,6 +10,7 @@ import traceback
 from typing import Union, Optional, Any, Dict, List, Callable
 #
 # 3rd-Party Libraries
+from PIL import Image
 # --- Textual Imports ---
 from loguru import logger as loguru_logger, logger  # Keep if app.py uses it directly, or pass app.loguru_logger
 from textual import on
@@ -219,6 +220,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # Reactive variable for current conversation loaded in the Conversations, Characters & Prompts tab
     current_conv_char_tab_conversation_id: reactive[Optional[str]] = reactive(None)
     current_chat_active_character_data: reactive[Optional[Dict[str, Any]]] = reactive(None)
+    current_ccp_character_details: reactive[Optional[Dict[str, Any]]] = reactive(None)
+    current_ccp_character_image: Optional[Image.Image] = None
 
     # For Chat Sidebar Prompts section
     chat_sidebar_loaded_prompt_id: reactive[Optional[Union[int, str]]] = reactive(None)
@@ -748,17 +751,19 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             character_card_view = self.query_one("#ccp-character-card-view")
             character_editor_view = self.query_one("#ccp-character-editor-view")
 
+            # Default all to hidden, then enable the correct one
+            conversation_messages_view.display = False
+            prompt_editor_view.display = False
+            character_card_view.display = False
+            character_editor_view.display = False
 
             # REMOVE or COMMENT OUT the query for llm_settings_container_right:
             # llm_settings_container_right = self.query_one("#ccp-right-pane-llm-settings-container")
             # conv_details_collapsible_right = self.query_one("#ccp-conversation-details-collapsible", Collapsible) # Keep if you manipulate its collapsed state
 
             if new_view == "prompt_editor_view":
-                # Center Pane: Show Prompt Editor, Hide Conversation Messages
-                conversation_messages_view.display = False
+                # Center Pane: Show Prompt Editor
                 prompt_editor_view.display = True
-                character_card_view.display = False
-                character_editor_view.display = False
                 # LLM settings container is gone, no need to hide it.
                 # llm_settings_container_right.display = False
 
@@ -773,9 +778,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     loguru_logger.warning("Could not focus prompt name input in editor view.")
 
             elif new_view == "character_editor_view":
-                conversation_messages_view.display = False
-                prompt_editor_view.display = False
-                character_card_view.display = False
+                # Center Pane: Show Character Editor
                 character_editor_view.display = True
                 # Optionally manage right-pane collapsibles
                 self.query_one("#ccp-conversation-details-collapsible", Collapsible).collapsed = True
@@ -783,22 +786,48 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 loguru_logger.info("Character editor view activated. Focus pending specific input fields.")
 
             elif new_view == "character_card_view":
-                conversation_messages_view.display = False
-                prompt_editor_view.display = False
+                # Center Pane: Show Character Card Display
                 character_card_view.display = True
                 character_editor_view.display = False
                 # Optionally manage right-pane collapsibles
                 self.query_one("#ccp-conversation-details-collapsible", Collapsible).collapsed = True
                 self.query_one("#ccp-prompt-details-collapsible", Collapsible).collapsed = True
                 loguru_logger.info("Character card display view activated.")
-                # Add focus logic if needed for this view
+
+                if self.current_ccp_character_details:
+                    details = self.current_ccp_character_details
+                    loguru_logger.info(f"Populating character card with details for: {details.get('name', 'Unknown')}")
+                    try:
+                        self.query_one("#ccp-card-name-display", Static).update(details.get("name", "N/A"))
+                        self.query_one("#ccp-card-description-display", TextArea).text = details.get("description", "")
+                        self.query_one("#ccp-card-personality-display", TextArea).text = details.get("personality", "")
+                        self.query_one("#ccp-card-scenario-display", TextArea).text = details.get("scenario", "")
+                        self.query_one("#ccp-card-first-message-display", TextArea).text = details.get("first_mes", "")
+
+                        image_placeholder = self.query_one("#ccp-card-image-placeholder", Static)
+                        if self.current_ccp_character_image:
+                            image_placeholder.update("Character image loaded (display not implemented)")
+                        else:
+                            image_placeholder.update("No image available")
+                        loguru_logger.debug("Character card widgets populated.")
+                    except QueryError as qe:
+                        loguru_logger.error(f"QueryError populating character card: {qe}", exc_info=True)
+                else:
+                    loguru_logger.info("No character details available to populate card view.")
+                    try:
+                        self.query_one("#ccp-card-name-display", Static).update("N/A")
+                        self.query_one("#ccp-card-description-display", TextArea).text = ""
+                        self.query_one("#ccp-card-personality-display", TextArea).text = ""
+                        self.query_one("#ccp-card-scenario-display", TextArea).text = ""
+                        self.query_one("#ccp-card-first-message-display", TextArea).text = ""
+                        self.query_one("#ccp-card-image-placeholder", Static).update("No character loaded")
+                        loguru_logger.debug("Character card widgets cleared.")
+                    except QueryError as qe:
+                        loguru_logger.error(f"QueryError clearing character card: {qe}", exc_info=True)
 
             elif new_view == "conversation_details_view":
-                # Center Pane: Show Conversation Messages, Hide Prompt Editor
+                # Center Pane: Show Conversation Messages
                 conversation_messages_view.display = True
-                prompt_editor_view.display = False
-                character_card_view.display = False
-                character_editor_view.display = False
                 # LLM settings container is gone, no need to show it.
                 # llm_settings_container_right.display = True
                 self.query_one("#ccp-conversation-details-collapsible", Collapsible).collapsed = False
@@ -813,11 +842,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 except QueryError:
                     loguru_logger.warning("Could not focus default element in conversation details view.")
             else:  # Default or unknown view (treat as conversation_details_view)
+                # Center Pane: Show Conversation Messages (default)
                 conversation_messages_view.display = True
-                prompt_editor_view.display = False
-                character_card_view.display = False
-                character_editor_view.display = False
-                # llm_settings_container_right.display = True # Default if unknown
                 loguru_logger.warning(
                     f"Unknown ccp_active_view: {new_view}, defaulting to conversation_details_view.")
 
@@ -987,6 +1013,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # --- Ingest Tab Watcher ---
     # ############################################
     def watch_ingest_active_view(self, old_view: Optional[str], new_view: Optional[str]) -> None:
+        self.loguru_logger.info(f"watch_ingest_active_view called. Old view: '{old_view}', New view: '{new_view}'")
         if not hasattr(self, "app") or not self.app:
             self.loguru_logger.debug("watch_ingest_active_view: App not fully ready.")
             return
@@ -1004,12 +1031,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         # Hide all ingest view areas first
         for child in content_pane.query(".ingest-view-area"):  # Query by common class
+            child_id = child.id or "Unknown ID"
+            self.loguru_logger.debug(f"Hiding child view: '{child_id}'")
             child.styles.display = "none"
+            self.loguru_logger.debug(f"Child view '{child_id}' display style set to '{child.styles.display}'.")
 
         # Show the selected view
         if new_view:  # new_view here is the ID of the view container, e.g., "ingest-view-prompts"
-            target_view_id_selector = f"#{new_view}"
-            # self.loguru_logger.debug(f"Target view selector to show: '{target_view_id_selector}'") # Removed diagnostic
             try:
                 target_view_id_selector = f"#{new_view}"
                 view_to_show = content_pane.query_one(target_view_id_selector, Container)
@@ -1021,10 +1049,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 # except IndexError:
                 #     pass # No focusable element
             except QueryError as e:
-                self.loguru_logger.error(f"UI component '{new_view}' not found in #ingest-content-pane: {e}",
+                self.loguru_logger.error(f"UI component (view_to_show) with ID '{new_view}' not found in #ingest-content-pane: {e}",
                                          exc_info=True)
         else:
-            self.loguru_logger.debug("Ingest active view is None, all ingest views hidden.")
+            self.loguru_logger.debug("Ingest active view is None, all ingest sub-views are now hidden.")
 
     def watch_tools_settings_active_view(self, old_view: Optional[str], new_view: Optional[str]) -> None:
         self.loguru_logger.debug(f"Tools & Settings active view changing from '{old_view}' to: '{new_view}'")
@@ -1354,7 +1382,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 self.loguru_logger.debug(
                     f"Switched to Ingest tab, activating initial view: {self._initial_ingest_view}") # Reverted to original debug log
                 # Use call_later to ensure the UI has settled after tab switch before changing sub-view
-                self.call_later(setattr, self, 'ingest_active_view', self._initial_ingest_view)
+                self.call_later(self._activate_initial_ingest_view)
         elif new_tab == TAB_TOOLS_SETTINGS:
             if not self.tools_settings_active_view:
                 self.loguru_logger.debug(
@@ -1365,6 +1393,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 self.loguru_logger.debug(
                     f"Switched to LLM Management tab, activating initial view: {self._initial_llm_view}")
                 self.call_later(setattr, self, 'llm_active_view', self._initial_llm_view)
+
+    async def _activate_initial_ingest_view(self) -> None:
+        self.loguru_logger.info("Attempting to activate initial ingest view via _activate_initial_ingest_view.")
+        if not self.ingest_active_view: # Check if it hasn't been set by some other means already
+            self.loguru_logger.debug(f"Setting ingest_active_view to initial: {self._initial_ingest_view}")
+            self.ingest_active_view = self._initial_ingest_view
+        else:
+            self.loguru_logger.debug(f"Ingest active view already set to '{self.ingest_active_view}'. No change made by _activate_initial_ingest_view.")
 
 
     # Watchers for sidebar collapsed states (keep as is)
@@ -2015,7 +2051,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             elif button_id == "ccp-editor-prompt-clone-button": await ccp_handlers.handle_ccp_editor_prompt_clone_button_pressed(self)
             elif button_id == "ccp-editor-prompt-delete-button": await ccp_handlers.handle_ccp_editor_prompt_delete_button_pressed(self)
             elif button_id == "ccp-import-conversation-button": await ccp_handlers.handle_ccp_import_conversation_button_pressed(self)
-
+            elif button_id == "ccp-right-pane-load-character-button":
+                self.loguru_logger.info(f"CCP Right Pane Load Character button pressed: {button_id}")
+                await ccp_handlers.handle_ccp_left_load_character_button_pressed(self)
             else: self.loguru_logger.warning(f"Unhandled button on CCP tab -> ID: {button_id}, Label: '{button.label}'")
 
         # --- Notes Tab ---

@@ -312,9 +312,48 @@ async def handle_ccp_left_load_character_button_pressed(app: 'TldwCli') -> None:
             logger.warning("Load Character (left pane): No character selected.")
             return
 
-        logger.info(f"Calling app._load_character_for_editing for character ID: {selected_character_id}")
-        await app._load_character_for_editing(selected_character_id)
-        # The app._load_character_for_editing method will handle notifications and setting ccp_active_view.
+        logger.info(f"Attempting to load character ID: {selected_character_id} into center editor view.")
+
+        # Store the selected character ID (optional, but good for state tracking if needed later)
+        # app.current_editing_character_id = selected_character_id
+
+        # Switch the center pane view to the character editor
+        app.ccp_active_view = "character_editor_view"
+        # This will trigger the watcher in app.py to make #ccp-character-editor-view visible.
+        # Population of fields will be handled in a later phase.
+
+        # app.notify(f"Character (ID: {selected_character_id}) view activated. Editor population pending.", severity="information")
+
+        if not app.notes_service:
+            app.notify("Database service not available.", severity="error")
+            logger.error("Notes service not available for loading character.")
+            return
+
+        db = app.notes_service._get_db(app.notes_user_id)
+
+        try:
+            # Load character data and image
+            char_data, initial_ui_history, img = ccl.load_character_and_image(db, selected_character_id, app.notes_user_id)
+
+            if char_data:
+                app.current_ccp_character_details = char_data
+                app.current_ccp_character_image = img  # Store the PIL Image object
+
+                # Switch the center pane view to the character card display
+                app.ccp_active_view = "character_card_view"
+
+                app.notify(f"Displaying character: {char_data.get('name', 'Unknown')}", severity="information")
+                logger.info(f"Character card for '{char_data.get('name', 'Unknown')}' loaded and view switched to card display.")
+            else:
+                app.notify("Failed to load character details.", severity="error")
+                logger.warning(f"Failed to load character details for ID: {selected_character_id}")
+
+        except CharactersRAGDBError as e_db_rag:
+            logger.error(f"Database error loading character {selected_character_id}: {e_db_rag}", exc_info=True)
+            app.notify(f"Database error loading character: {e_db_rag}", severity="error")
+        except Exception as e_load_char: # Catch other potential errors from ccl.load_character_and_image
+            logger.error(f"Error loading character data/image for ID {selected_character_id}: {e_load_char}", exc_info=True)
+            app.notify(f"Error loading character: {type(e_load_char).__name__}", severity="error")
 
     except QueryError as e_query:
         logger.error(f"UI component not found during load character (left pane): {e_query}", exc_info=True)
