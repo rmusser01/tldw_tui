@@ -247,7 +247,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # Ingest Tab
     ingest_active_view: reactive[Optional[str]] = reactive(None)
     _initial_ingest_view: Optional[str] = "ingest-view-prompts"
-
+    selected_prompt_files_for_import: List[Path] = []
+    parsed_prompts_for_preview: List[Dict[str, Any]] = []
+    last_prompt_import_dir: Optional[Path] = None
 
     # Tools Tab
     tools_settings_active_view: reactive[Optional[str]] = reactive(None)  # Or a default view ID
@@ -278,9 +280,23 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     def __init__(self):
         super().__init__()
         self.MediaDatabase = MediaDatabase
-        self.app_config = load_settings() # Already loading this
+        self.app_config = load_settings()
         self.loguru_logger = loguru_logger # Make loguru_logger an instance variable for handlers
         self.prompts_client_id = "tldw_tui_client_v1" # Store client ID for prompts service
+
+        self.parsed_prompts_for_preview = [] # <<< INITIALIZATION for prompts
+        self.last_prompt_import_dir = None
+
+        self.selected_character_files_for_import = []
+        self.parsed_characters_for_preview = [] # <<< INITIALIZATION for characters
+        self.last_character_import_dir = None
+        # Initialize Ingest Tab related attributes
+        self.selected_prompt_files_for_import = []
+        self.parsed_prompts_for_preview = []
+        self.last_prompt_import_dir = Path.home()  # Or Path(".")
+        self.selected_notes_files_for_import = []
+        self.parsed_notes_for_preview = [] # <<< INITIALIZATION for notes
+        self.last_notes_import_dir = None
 
         # 1. Get the user name from the loaded settings
         # The fallback here should match what you expect if settings doesn't have it,
@@ -908,13 +924,15 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # --- Ingest Tab Watcher ---
     # ############################################
     def watch_ingest_active_view(self, old_view: Optional[str], new_view: Optional[str]) -> None:
-        if not hasattr(self, "app") or not self.app:  # Check if app is ready
+        if not hasattr(self, "app") or not self.app:
+            self.loguru_logger.debug("watch_ingest_active_view: App not fully ready.")
             return
         if not self._ui_ready:
+            self.loguru_logger.debug("watch_ingest_active_view: UI not ready.")
             return
-        self.loguru_logger.debug(f"Ingest active view changing from '{old_view}' to: '{new_view}'")
 
-        # Get the content pane for the Ingest tab
+        self.loguru_logger.info(f"Ingest active view WATCHER: Old='{old_view}', New='{new_view}'")
+
         try:
             content_pane = self.query_one("#ingest-content-pane")
         except QueryError:
@@ -922,26 +940,57 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             return
 
         # Hide all ingest view areas first
-        for child in content_pane.query(".ingest-view-area"):  # Query by common class
-            child.styles.display = "none"
+        # Using self.ALL_INGEST_VIEW_IDS is more robust than querying children
+        for view_id_to_hide in self.ALL_INGEST_VIEW_IDS:
+            if view_id_to_hide == new_view:  # Don't hide the view we are about to show
+                continue
+            try:
+                # Query within the content_pane for each known view ID
+                view_widget = content_pane.query_one(f"#{view_id_to_hide}")
+                if view_widget.styles.display != "none":
+                    view_widget.styles.display = "none"
+                    self.loguru_logger.debug(f"  Hiding view: #{view_id_to_hide}")
+            except QueryError:
+                # This is okay if a view_id from ALL_INGEST_VIEW_IDS is not currently a child,
+                # though in this setup they all should be.
+                self.loguru_logger.warning(f"  View #{view_id_to_hide} not found in content_pane to hide.")
 
-        # Show the selected view
-        if new_view:  # new_view here is the ID of the view container, e.g., "ingest-view-prompts"
+        # Show the selected new view
+        if new_view:
             try:
                 target_view_id_selector = f"#{new_view}"
-                view_to_show = content_pane.query_one(target_view_id_selector, Container)
-                view_to_show.styles.display = "block"  # or "flex" or whatever your default visible display is
-                self.loguru_logger.info(f"Switched Ingest view to: {new_view}")
-                # Optional: Focus an element within the newly shown view
-                # try:
-                #     view_to_show.query(Input, Button)[0].focus()
-                # except IndexError:
-                #     pass # No focusable element
-            except QueryError as e:
-                self.loguru_logger.error(f"UI component '{new_view}' not found in #ingest-content-pane: {e}",
-                                         exc_info=True)
+                view_to_show = content_pane.query_one(target_view_id_selector)  # REMOVED , Container
+                view_to_show.styles.display = "block"
+                self.loguru_logger.info(f"  Showing view: #{new_view}")
+
+                # Update active class on nav buttons
+                try:
+                    nav_pane = self.query_one("#ingest-nav-pane")
+                    for button in nav_pane.query(".ingest-nav-button"):
+                        button.remove_class("-active-ingest-view")
+
+                    # Construct the ID of the nav button corresponding to the new_view
+                    # e.g., "ingest-view-prompts" -> "ingest-nav-prompts"
+                    nav_button_id = new_view.replace("-view-", "-nav-")
+                    active_nav_button = nav_pane.query_one(f"#{nav_button_id}")
+                    active_nav_button.add_class("-active-ingest-view")
+                    self.loguru_logger.debug(f"  Activated nav button: #{nav_button_id}")
+
+                except QueryError as e_nav:
+                    self.loguru_logger.error(f"  Error updating nav button active class: {e_nav}")
+
+                # Specific focus logic if needed for the new view
+                if new_view == "ingest-view-prompts":
+                    try:
+                        self.query_one("#ingest-prompts-select-file-button", Button).focus()
+                    except QueryError:
+                        self.loguru_logger.warning("Could not focus select file button in ingest-view-prompts.")
+                # Add other focus logic for other ingest views if necessary
+
+            except QueryError:
+                self.loguru_logger.error(f"  ERROR: Target view '#{new_view}' not found in #ingest-content-pane.")
         else:
-            self.loguru_logger.debug("Ingest active view is None, all ingest views hidden.")
+            self.loguru_logger.info("  New ingest view is None, all ingest views should be hidden.")
 
     def watch_tools_settings_active_view(self, old_view: Optional[str], new_view: Optional[str]) -> None:
         self.loguru_logger.debug(f"Tools & Settings active view changing from '{old_view}' to: '{new_view}'")
@@ -1187,7 +1236,11 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         logging.shutdown()
         self.loguru_logger.info("--- App Unmounted (Loguru) ---")
 
+    ########################################################################
+    #
     # WATCHER - Handles UI changes when current_tab's VALUE changes
+    #
+    # ######################################################################
     def watch_current_tab(self, old_tab: Optional[str], new_tab: str) -> None:
         """Shows/hides the relevant content window when the tab changes."""
         if not new_tab:  # Skip if empty
@@ -1772,7 +1825,11 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         else:
             self.loguru_logger.info("Notes collapsible closed in chat sidebar.")
 
-    # --- MODIFIED EVENT DISPATCHERS ---
+    ########################################################################
+    #
+    # --- EVENT DISPATCHERS ---
+    #
+    ########################################################################
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses for tabs, sending messages, and message actions."""
         button = event.button
@@ -1822,6 +1879,30 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 # --- Ingest Nav Pane Buttons (within Ingest Tab) ---
             elif self.current_tab == "ingest":  # Only process these if ingest tab is active
                 if button_id == "ingest-nav-prompts":
+                    if button_id and button_id.startswith("ingest-nav-"):
+                        view_to_activate = button_id.replace("ingest-nav-", "-view-")  # Corrected replacement
+                        self.loguru_logger.info(
+                            f"Ingest nav button '{button_id}' pressed. Activating view '{view_to_activate}'.")
+                        self.ingest_active_view = view_to_activate
+                        # Simplified and more careful initialization for the prompts view
+                        if view_to_activate == "ingest-view-prompts":
+                            try:
+                                selected_list_view = self.query_one("#ingest-prompts-selected-files-list", ListView)
+                                if not selected_list_view.children:  # Only if it's truly empty
+                                    await selected_list_view.clear()  # Clear just in case, then append
+                                    await selected_list_view.append(ListItem(Label("No files selected.")))
+
+                                preview_area = self.query_one("#ingest-prompts-preview-area", VerticalScroll)
+                                # Only add placeholder if preview is empty
+                                if not preview_area.children:
+                                   #await preview_area.clear()  # Clear just in case, then mount
+                                    await preview_area.mount(
+                                        Static("Select files to see a preview.",
+                                               id="ingest-prompts-preview-placeholder"))
+                            except QueryError:
+                                self.loguru_logger.warning(
+                                    "Failed to initialize prompts list/preview for ingest-view-prompts on nav click.")
+                        return  # Nav button handled
                     self.show_ingest_view("ingest-view-prompts")
                     try:
                         selected_list_view = self.query_one("#ingest-prompts-selected-files-list", ListView)
@@ -1947,6 +2028,41 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 self.loguru_logger.debug(
                     f"Ingest nav button '{button_id}' pressed. Activating view '{view_to_activate}'.")
                 self.ingest_active_view = view_to_activate  # This will trigger the watcher
+
+                # If navigating to the prompts view, ensure its list/preview are in a clean state
+                if view_to_activate == "ingest-view-prompts":
+                    try:
+                        selected_list_view = self.query_one("#ingest-prompts-selected-files-list", ListView)
+                        # Only add placeholder if list is truly empty
+                        if not selected_list_view.children:  # Check if it has any ListItem children
+                            await selected_list_view.append(ListItem(Label("No files selected.")))
+
+                        preview_area = self.query_one("#ingest-prompts-preview-area", VerticalScroll)
+                        # Clear preview only if it contains something other than the placeholder
+                        if preview_area.children and not (len(preview_area.children) == 1 and preview_area.children[
+                            0].id == "ingest-prompts-preview-placeholder"):
+                            await preview_area.remove_children()
+                        if not preview_area.children:  # If empty after clear or initially
+                            await preview_area.mount(
+                                Static("Select files to see a preview.", id="ingest-prompts-preview-placeholder"))
+                    except QueryError:
+                        self.loguru_logger.warning(
+                            "Failed to initialize prompts list/preview for ingest-view-prompts on nav click.")
+                return  # Nav button handled
+
+            # Buttons within the active ingest view (e.g., "ingest-view-prompts")
+            active_ingest_view = self.ingest_active_view
+            if active_ingest_view == "ingest-view-prompts":
+                if button_id == "ingest-prompts-select-file-button":
+                    await ingest_events.handle_ingest_prompts_select_file_button_pressed(self)
+                    return
+                elif button_id == "ingest-prompts-clear-files-button":
+                    await ingest_events.handle_ingest_prompts_clear_files_button_pressed(self)
+                    return
+                elif button_id == "ingest-prompts-import-now-button":
+                    await ingest_events.handle_ingest_prompts_import_now_button_pressed(self)
+                    return
+            # Add elif for buttons in other ingest views as needed
             else:
                 self.loguru_logger.warning(f"Unhandled button on INGEST tab: ID:{button_id}, Label:'{button.label}'")
 

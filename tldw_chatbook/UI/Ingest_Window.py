@@ -210,14 +210,12 @@ class IngestWindow(Container):
             yield Static("Ingestion Methods", classes="sidebar-title")
             yield Button("Ingest Prompts", id="ingest-nav-prompts", classes="ingest-nav-button")
             yield Button("Ingest Characters", id="ingest-nav-characters", classes="ingest-nav-button")
-            yield Button("Ingest Media (Local)", id="ingest-nav-media",
-                         classes="ingest-nav-button")  # Renamed for clarity
+            yield Button("Ingest Media (Local)", id="ingest-nav-media", classes="ingest-nav-button")
             yield Button("Ingest Notes", id="ingest-nav-notes", classes="ingest-nav-button")
-            yield Button("Ingest Media via tldw API", id="ingest-nav-tldw-api",
-                         classes="ingest-nav-button")  # Changed ID slightly
+            yield Button("Ingest Media via tldw API", id="ingest-nav-tldw-api", classes="ingest-nav-button")
 
         with Container(id="ingest-content-pane", classes="ingest-content-pane"):
-            # Updated Ingest Prompts View
+            # --- Prompts Ingest View ---
             with Vertical(id="ingest-view-prompts", classes="ingest-view-area"):
                 with Horizontal(classes="ingest-controls-row"):
                     yield Button("Select Prompt File(s)", id="ingest-prompts-select-file-button")
@@ -228,31 +226,45 @@ class IngestWindow(Container):
                 yield Label("Preview of Parsed Prompts (Max 10 shown):", classes="ingest-label")
                 with VerticalScroll(id="ingest-prompts-preview-area", classes="ingest-preview-area"):
                     yield Static("Select files to see a preview.", id="ingest-prompts-preview-placeholder")
-
-                yield Button("Import Selected Files Now", id="ingest-prompts-import-now-button", variant="primary")
+                yield Button("Import Selected Prompts Now", id="ingest-prompts-import-now-button", variant="primary")
                 yield Label("Import Status:", classes="ingest-label")
                 yield TextArea(id="prompt-import-status-area", read_only=True, classes="ingest-status-area")
 
-            # Other ingest views (characters, media, notes, tldw-api)
-            with Container(id="ingest-view-characters", classes="ingest-view-area"):
-                yield Button("Select Character File", id="select-character-file-button")
-                yield Label("Selected file: None", id="character-file-path-label")
-                yield TextArea(
-                    id="character-import-status-area",
-                    read_only=True
-                )
+            # --- Characters Ingest View ---
+            with Vertical(id="ingest-view-characters", classes="ingest-view-area"):
+                with Horizontal(classes="ingest-controls-row"):
+                    yield Button("Select Character File(s)", id="ingest-characters-select-file-button")
+                    yield Button("Clear Selection", id="ingest-characters-clear-files-button")
+                yield Label("Selected Files for Import:", classes="ingest-label")
+                yield ListView(id="ingest-characters-selected-files-list", classes="ingest-selected-files-list")
+                yield Label("Preview of Parsed Characters (Max 10 shown):", classes="ingest-label")
+                with VerticalScroll(id="ingest-characters-preview-area", classes="ingest-preview-area"):
+                    yield Static("Select files to see a preview.", id="ingest-characters-preview-placeholder")
+                yield Button("Import Selected Characters Now", id="ingest-characters-import-now-button", variant="primary")
+                yield Label("Import Status:", classes="ingest-label")
+                yield TextArea(id="ingest-character-import-status-area", read_only=True, classes="ingest-status-area")
+
+            # --- Notes Ingest View ---
+            with Vertical(id="ingest-view-notes", classes="ingest-view-area"):
+                with Horizontal(classes="ingest-controls-row"):
+                    yield Button("Select Notes File(s)", id="ingest-notes-select-file-button")
+                    yield Button("Clear Selection", id="ingest-notes-clear-files-button")
+                yield Label("Selected Files for Import:", classes="ingest-label")
+                yield ListView(id="ingest-notes-selected-files-list", classes="ingest-selected-files-list")
+                yield Label("Preview of Parsed Notes (Max 10 shown):", classes="ingest-label")
+                with VerticalScroll(id="ingest-notes-preview-area", classes="ingest-preview-area"):
+                    yield Static("Select files to see a preview.", id="ingest-notes-preview-placeholder")
+                yield Button("Import Selected Notes Now", id="ingest-notes-import-now-button", variant="primary")
+                yield Label("Import Status:", classes="ingest-label")
+                yield TextArea(id="ingest-notes-import-status-area", read_only=True, classes="ingest-status-area")
+
+            # --- Other Ingest Views ---
             yield Container(
                 Static("Local Media Ingestion Area - Content Coming Soon!"),  # For direct local processing
                 id="ingest-view-media",
                 classes="ingest-view-area",
             )
-            with Container(id="ingest-view-notes", classes="ingest-view-area"):
-                yield Button("Select Notes File", id="select-notes-file-button")
-                yield Label("Selected file: None", id="notes-file-path-label")
-                yield TextArea(
-                    id="notes-import-status-area",
-                    read_only=True
-                )
+
             # New container for tldw API form
             with Container(id="ingest-view-tldw-api", classes="ingest-view-area"):
                 yield from self.compose_tldw_api_form()
