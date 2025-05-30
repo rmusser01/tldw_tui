@@ -2022,49 +2022,76 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         # --- Ingestion Tab ---
         elif current_active_tab == TAB_INGEST:
+            # Navigation buttons within the Ingest tab's left pane
             if button_id and button_id.startswith("ingest-nav-"):
-                # e.g., "ingest-nav-prompts" -> "ingest-view-prompts"
-                view_to_activate = button_id.replace("ingest-nav-", "ingest-view-")
-                self.loguru_logger.debug(
-                    f"Ingest nav button '{button_id}' pressed. Activating view '{view_to_activate}'.")
-                self.ingest_active_view = view_to_activate  # This will trigger the watcher
+                view_to_activate_nav = button_id.replace("ingest-nav-", "ingest-view-")
+                self.loguru_logger.info(
+                    f"Ingest nav button '{button_id}' pressed. Activating view '{view_to_activate_nav}'.")
+                self.ingest_active_view = view_to_activate_nav
 
-                # If navigating to the prompts view, ensure its list/preview are in a clean state
-                if view_to_activate == "ingest-view-prompts":
+                if view_to_activate_nav == "ingest-view-prompts":
                     try:
                         selected_list_view = self.query_one("#ingest-prompts-selected-files-list", ListView)
-                        # Only add placeholder if list is truly empty
-                        if not selected_list_view.children:  # Check if it has any ListItem children
+                        if not selected_list_view.children:
+                            await selected_list_view.clear()
                             await selected_list_view.append(ListItem(Label("No files selected.")))
-
                         preview_area = self.query_one("#ingest-prompts-preview-area", VerticalScroll)
-                        # Clear preview only if it contains something other than the placeholder
-                        if preview_area.children and not (len(preview_area.children) == 1 and preview_area.children[
-                            0].id == "ingest-prompts-preview-placeholder"):
-                            await preview_area.remove_children()
-                        if not preview_area.children:  # If empty after clear or initially
+                        if not preview_area.children:
                             await preview_area.mount(
                                 Static("Select files to see a preview.", id="ingest-prompts-preview-placeholder"))
                     except QueryError:
                         self.loguru_logger.warning(
-                            "Failed to initialize prompts list/preview for ingest-view-prompts on nav click.")
-                return  # Nav button handled
+                            "Failed to initialize prompts list/preview elements on nav click to prompts.")
+                elif view_to_activate_nav == "ingest-view-characters":
+                    try:
+                        selected_list_view = self.query_one("#ingest-characters-selected-files-list", ListView)
+                        if not selected_list_view.children:
+                            await selected_list_view.clear()
+                            await selected_list_view.append(ListItem(Label("No files selected.")))
+                        preview_area = self.query_one("#ingest-characters-preview-area", VerticalScroll)
+                        if not preview_area.children:
+                            await preview_area.mount(
+                                Static("Select files to see a preview.", id="ingest-characters-preview-placeholder"))
+                    except QueryError:
+                        self.loguru_logger.warning(
+                            "Failed to initialize characters list/preview for ingest-view-characters on nav click.")
+                    return  # Nav button handled
 
-            # Buttons within the active ingest view (e.g., "ingest-view-prompts")
-            active_ingest_view = self.ingest_active_view
-            if active_ingest_view == "ingest-view-prompts":
-                if button_id == "ingest-prompts-select-file-button":
-                    await ingest_events.handle_ingest_prompts_select_file_button_pressed(self)
-                    return
-                elif button_id == "ingest-prompts-clear-files-button":
-                    await ingest_events.handle_ingest_prompts_clear_files_button_pressed(self)
-                    return
-                elif button_id == "ingest-prompts-import-now-button":
-                    await ingest_events.handle_ingest_prompts_import_now_button_pressed(self)
-                    return
-            # Add elif for buttons in other ingest views as needed
+            # ELSE, if not a nav button, it must be a button within an active sub-view
             else:
-                self.loguru_logger.warning(f"Unhandled button on INGEST tab: ID:{button_id}, Label:'{button.label}'")
+                active_ingest_sub_view = self.ingest_active_view
+
+                if active_ingest_sub_view == "ingest-view-prompts":
+                    if button_id == "ingest-prompts-select-file-button":
+                        await ingest_events.handle_ingest_prompts_select_file_button_pressed(self);
+                        return
+                    elif button_id == "ingest-prompts-clear-files-button":
+                        await ingest_events.handle_ingest_prompts_clear_files_button_pressed(self);
+                        return
+                    elif button_id == "ingest-prompts-import-now-button":
+                        await ingest_events.handle_ingest_prompts_import_now_button_pressed(self);
+                        return
+
+                elif active_ingest_sub_view == "ingest-view-characters":
+                    if button_id == "ingest-characters-select-file-button":
+                        await ingest_events.handle_ingest_characters_select_file_button_pressed(self);
+                        return
+                    elif button_id == "ingest-characters-clear-files-button":
+                        await ingest_events.handle_ingest_characters_clear_files_button_pressed(self);
+                        return
+                    elif button_id == "ingest-characters-import-now-button":
+                        await ingest_events.handle_ingest_characters_import_now_button_pressed(self);
+                        return
+
+                # Add other sub-views like ingest-view-notes here
+                # elif active_ingest_sub_view == "ingest-view-notes":
+                #     # ... handle buttons for notes ingest ...
+                #     pass # Remember to return if handled
+
+                # If no sub-view button matched after checking the active sub-view:
+                self.loguru_logger.warning(
+                    f"Unhandled button on INGEST tab: ID:{button_id}, Label:'{event.button.label}' (Active Ingest View: {active_ingest_sub_view})")
+                return  # Return after logging unhandled Ingest tab button
 
         # --- Tools & Settings Tab ---
         elif current_active_tab == TAB_TOOLS_SETTINGS:
