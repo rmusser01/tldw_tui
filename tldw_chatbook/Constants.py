@@ -22,7 +22,8 @@ TAB_TOOLS_SETTINGS = "tools_settings"
 TAB_LLM = "llm"
 TAB_STATS = "stats"
 TAB_LOGS = "logs"
-ALL_TABS = [TAB_CHAT, TAB_CCP, TAB_NOTES, TAB_MEDIA, TAB_SEARCH, TAB_INGEST, TAB_TOOLS_SETTINGS, TAB_LLM, TAB_LOGS, TAB_STATS]
+ALL_TABS = [TAB_CHAT, TAB_CCP, TAB_NOTES, TAB_MEDIA, TAB_SEARCH, TAB_INGEST,
+            TAB_TOOLS_SETTINGS, TAB_LLM, TAB_LOGS, TAB_STATS]
 
 
 # --- CSS definition ---
@@ -48,7 +49,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 .placeholder-window { align: center middle; background: $panel; }
 
 /* Sidebar Styling */
-/* Generic .sidebar (used by #chat-sidebar and potentially others) */
+/* Generic .sidebar (used by #chat-left-sidebar and potentially others) */
 .sidebar {
     dock: left;
     width: 25%; /* <-- CHANGE to percentage (adjust 20% to 35% as needed) */
@@ -71,8 +72,8 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     display: none; /* ensures it doesn’t grab focus */
 }
 
-/* Right sidebar (character-sidebar) */
-#character-sidebar {
+/* Right sidebar (chat-right-sidebar) */
+#chat-right-sidebar {
     dock: right;
     /* width: 70;   <-- REMOVE fixed width */
     width: 25%;  /* <-- CHANGE to percentage (match .sidebar or use a different one) */
@@ -87,7 +88,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 }
 
 /* Collapsed state for the new right sidebar */
-#character-sidebar.collapsed {
+#chat-right-sidebar.collapsed {
     width: 0 !important;
     min-width: 0 !important; /* Ensure min-width is also 0 */
     border-left: none !important;
@@ -102,6 +103,18 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 .sidebar-input { width: 100%; margin-bottom: 1; }
 .sidebar-textarea { width: 100%; border: round $surface; margin-bottom: 1; }
 .sidebar Select { width: 100%; margin-bottom: 1; }
+
+.prompt-display-textarea {
+    height: 7; /* Example height */
+    border: round $primary-lighten-2;
+    background: $primary-background;
+}
+
+.sidebar-listview {
+    height: 10; /* Example height for listviews in sidebars */
+    border: round $primary-lighten-2;
+    background: $primary-background;
+}
 
 /* --- Chat Window specific layouts --- */
 #chat-main-content {
@@ -336,11 +349,11 @@ ChatMessage.-ai .message-actions.-generating {
 .sidebar-toggle:hover { background: $surface; }
 
 /* Specific margins for sidebar toggles based on position */
-#toggle-chat-sidebar {
+#toggle-chat-left-sidebar {
     margin-right: 1; /* Original toggle on the left of input area */
 }
 
-#toggle-character-sidebar {
+#toggle-chat-right-sidebar {
     margin-left: 1; /* New toggle on the right of input area */
 }
 
@@ -468,12 +481,12 @@ MetricsScreen Label.-info-message {
 
 
 /* Character Sidebar Specific Styles */
-#character-sidebar #chat-conversation-title-input { /* Title input */
+#chat-right-sidebar #chat-conversation-title-input { /* Title input */
     /* width: 100%; (from .sidebar-input) */
     /* margin-bottom: 1; (from .sidebar-input) */
 }
 
-#character-sidebar .chat-keywords-textarea { /* Keywords TextArea specific class */
+#chat-right-sidebar .chat-keywords-textarea { /* Keywords TextArea specific class */
     height: 4;  /* Or 3 to 5, adjust as preferred */
     /* width: 100%; (from .sidebar-textarea) */
     /* border: round $surface; (from .sidebar-textarea) */
@@ -481,13 +494,13 @@ MetricsScreen Label.-info-message {
 }
 
 /* Styling for the new "Save Details" button */
-#character-sidebar .save-details-button {
+#chat-right-sidebar .save-details-button {
     margin-top: 1; /* Space above this button */
     /* width: 100%;    Make it full width */
 }
 
 /* Ensure the Save Current Chat button also has clear styling if needed */
-#character-sidebar .save-chat-button {
+#chat-right-sidebar .save-chat-button {
     margin-top: 1; /* Ensure it has some space if it's after keywords */
     /* width: 100%; */
 }
@@ -760,6 +773,46 @@ MetricsScreen Label.-info-message {
 .llm-view-area { /* Common class for individual content areas */
     width: 100%;
     height: 100%; /* Or auto */
+}
+
+/* --- Media Tab --- */
+#media-window { /* Matches TAB_MEDIA */
+    layout: horizontal; /* Main layout for this tab */
+}
+
+.media-nav-pane {
+    dock: left;
+    width: 25%; /* Adjust as needed */
+    min-width: 20; /* Example min-width */
+    max-width: 50; /* Example max-width */
+    height: 100%;
+    background: $boost; /* Or a different background */
+    padding: 1;
+    border-right: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.media-nav-pane .media-nav-button { /* Style for navigation buttons */
+    width: 100%;
+    margin-bottom: 1;
+    border: none;
+    height: 3;
+}
+.media-nav-pane .media-nav-button:hover {
+    background: $accent 75%; /* Example hover, distinct from other navs */
+}
+
+.media-content-pane {
+    width: 1fr; /* Takes remaining horizontal space */
+    height: 100%;
+    padding: 1 2; /* Padding for the content area */
+    overflow-y: auto; /* If content within sub-views might scroll */
+}
+
+.media-view-area { /* Class for individual content areas in Media tab */
+    width: 100%;
+    height: 100%; /* Or auto if content dictates height */
 }
     """
 

@@ -31,8 +31,12 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
         3. Media Settings          – placeholders for media configuration
         4. Search & Tools Settings – placeholders for search / tool options
     """
+    # The main container for this sidebar should have the ID that app.py is querying
+    # If you renamed it to "chat-left-sidebar", then the ID here must match.
+    # Assuming id_prefix will be "chat" when called from ChatWindow
+    sidebar_id = f"{id_prefix}-left-sidebar"  # Construct the ID
 
-    with VerticalScroll(id=f"{id_prefix}-sidebar", classes="sidebar"):
+    with VerticalScroll(id=sidebar_id, classes="sidebar"):
         # -------------------------------------------------------------------
         # Retrieve defaults / provider information (used in Collapsible #1)
         # -------------------------------------------------------------------

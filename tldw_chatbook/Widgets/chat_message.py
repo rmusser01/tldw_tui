@@ -4,6 +4,8 @@
 # Imports
 #
 # 3rd-party Libraries
+from typing import Optional
+
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widget import Widget
@@ -84,19 +86,53 @@ class ChatMessage(Widget):
     role = reactive("User", repaint=True) # "User" or "AI"
     generation_complete = reactive(True) # Used for AI messages to show actions
 
-    def __init__(self, message: str, role: str, generation_complete: bool = True, **kwargs):
+    # -- Internal state for message metadata ---
+    message_id_internal: reactive[Optional[str]] = reactive(None)
+    message_version_internal: reactive[Optional[int]] = reactive(None)
+    # Store timestamp if provided, e.g. when loading from DB
+    timestamp: reactive[Optional[str]] = reactive(None) # Store as ISO string
+    # Store image data if message has an image
+    image_data: reactive[Optional[bytes]] = reactive(None)
+    image_mime_type: reactive[Optional[str]] = reactive(None)
+
+    def __init__(self,
+                 message: str,
+                 role: str,
+                 generation_complete: bool = True,
+                 message_id: Optional[str] = None,
+                 message_version: Optional[int] = None,
+                 timestamp: Optional[str] = None,
+                 image_data: Optional[bytes] = None,
+                 image_mime_type: Optional[str] = None,
+                 **kwargs):
         super().__init__(**kwargs)
         self.message_text = message
         self.role = role
         self.generation_complete = generation_complete
-        self.add_class(f"-{role.lower()}") # Add role-specific class
+
+        self.message_id_internal = message_id
+        self.message_version_internal = message_version
+        self.timestamp = timestamp
+        self.image_data = image_data
+        self.image_mime_type = image_mime_type
+
+        #self.add_class(f"-{role.lower()}") # Add role-specific class
+        # For CSS styling, we use a generic class based on whether it's the user or not.
+        # The actual self.role (e.g., "Default Assistant") is used for display in the header.
+        if role.lower() == "user":
+            self.add_class("-user")
+        else: # Any role other than "user" (e.g., "AI", "Default Assistant", "Character Name") gets the -ai style
+            self.add_class("-ai")
 
     def compose(self) -> ComposeResult:
         with Vertical():
             yield Label(f"{self.role}", classes="message-header")
             yield Static(self.message_text, classes="message-text")
-            # Add '-generating' class if needed, removed later
-            actions_class = "message-actions" + (" -generating" if self.role == "AI" and not self.generation_complete else "")
+            actions_class = "message-actions"
+            # Logic for the '-generating' class on the actions container
+            # This should only apply if it's an AI message AND generation is not complete
+            if self.has_class("-ai") and not self.generation_complete:
+                actions_class += " -generating"
             with Horizontal(classes=actions_class):
                 # Common buttons
                 yield Button("Edit", classes="action-button edit-button")
@@ -104,7 +140,7 @@ class ChatMessage(Widget):
                 yield Button("🔊", classes="action-button speak-button", id="speak") # Emoji for speak
 
                 # AI-specific buttons
-                if self.role == "AI":
+                if self.role == "-ai":
                     yield Button("👍", classes="action-button thumb-up-button", id="thumb-up")
                     yield Button("👎", classes="action-button thumb-down-button", id="thumb-down")
                     yield Button("🔄", classes="action-button regenerate-button", id="regenerate") # Emoji for regenerate
@@ -113,18 +149,18 @@ class ChatMessage(Widget):
                 yield Button("🗑️", classes="action-button delete-button")  # Emoji for delete ; Label: Delete, Class: delete-button
 
     def update_message_chunk(self, chunk: str):
-        """Append a chunk of text to the message (for streaming)."""
-        if self.role == "AI":
+        if self.has_class("-ai"):
             self.query_one(".message-text", Static).update(self.message_text + chunk)
-            self.message_text += chunk # Update internal state too
+            self.message_text += chunk
 
     def mark_generation_complete(self):
-        """Marks generation as complete and shows AI action buttons."""
-        if self.role == "AI":
+        if self.has_class("-ai"):
             self.generation_complete = True
             actions_container = self.query_one(".message-actions")
-            actions_container.remove_class("-generating") # Make buttons visible
-            actions_container.display = True # Ensure it's displayed if CSS uses 'display: none'
+            actions_container.remove_class("-generating")
+            # Ensure it's displayed if CSS might still hide it via other means,
+            # though removing '-generating' should be enough if the CSS is specific.
+            actions_container.styles.display = "block" # or "flex" if it's a flex container
 
 #
 #

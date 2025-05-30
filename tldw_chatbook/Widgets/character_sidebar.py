@@ -7,7 +7,7 @@
 import logging
 
 from textual.app import ComposeResult
-from textual.containers import VerticalScroll, Vertical
+from textual.containers import VerticalScroll
 from textual.widgets import Static, Collapsible, Placeholder, Select, Input, Label, TextArea, Button, Checkbox, ListView
 
 
@@ -30,10 +30,12 @@ def create_character_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tru
 
         # Section for current chat session details (title, keywords, etc.)
         with Collapsible(title="Current Chat Details", collapsed=False, id=f"{id_prefix}-chat-details-collapsible"):
+            # NEW "New Chat" Button
             yield Button(
                 "New Chat",
                 id=f"{id_prefix}-new-conversation-button", # Matches app.py query
                 classes="sidebar-button"
+                # No variant, or choose one like "default"
             )
             yield Label("Conversation ID:", classes="sidebar-label", id=f"{id_prefix}-uuid-label-displayonly")
             yield Input(
@@ -76,93 +78,90 @@ def create_character_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tru
         # ===================================================================
         # Prompts (only for chat tab)
         # ===================================================================
-<<<<<<< Updated upstream
-        if id_prefix == "chat": # This is the outer condition for adding the Prompts section
-            with Collapsible(title="Prompts", collapsed=True, id=f"{id_prefix}-sidebar-prompts-collapsible"): # START OF COLLAPSIBLE
-                # ALL THE FOLLOWING YIELDS MUST BE INDENTED UNDER THIS 'with'
-                yield Label("Search Prompts:", classes="sidebar-label")
-                yield Input(
-                    id=f"{id_prefix}-sidebar-prompt-search-input", # e.g., chat-sidebar-prompt-search-input
-                    placeholder="Search name/details...",
-                    classes="sidebar-input"
-                )
-                yield Label("Filter by Keywords (comma-sep):", classes="sidebar-label")
-                yield Input(
-                    id=f"{id_prefix}-sidebar-prompt-keyword-filter-input", # e.g., chat-sidebar-prompt-keyword-filter-input
-                    placeholder="e.g., writing, technical",
-                    classes="sidebar-input"
-                )
-                yield ListView(id=f"{id_prefix}-sidebar-prompts-listview") # e.g., chat-sidebar-prompts-listview
+                if id_prefix == "chat":
+                    with Collapsible(title="Prompts", collapsed=True, id=f"{id_prefix}-prompts-collapsible"):
+                        yield Label("Search Prompts:", classes="sidebar-label")
+                        yield Input(
+                            id=f"{id_prefix}-prompt-search-input",
+                            placeholder="Title or keywords...",
+                            classes="sidebar-input"
+                        )
+                        yield ListView(
+                            id=f"{id_prefix}-prompt-list-view",
+                            classes="sidebar-listview"
+                        )
+                        yield Button(
+                            "Load Selected Prompt",
+                            id=f"{id_prefix}-prompt-load-selected-button",
+                            variant="default",
+                            classes="sidebar-button"
+                        )
 
-                yield Label("Selected Prompt - System:", classes="sidebar-label")
-                yield TextArea(
-                    id=f"{id_prefix}-sidebar-prompt-system-display", # e.g., chat-sidebar-prompt-system-display
-                    read_only=True, classes="sidebar-textarea ccp-prompt-textarea",
-                )
-                yield Button("Copy System", id=f"{id_prefix}-sidebar-copy-system-prompt-button", classes="sidebar-button") # e.g., chat-sidebar-copy-system-prompt-button
+                        # Display area for loaded prompt
+                        # Use a Vertical container instead of VerticalScroll if scrolling isn't desired for this small section
+                        with Vertical(id=f"{id_prefix}-loaded-prompt-display-area", classes="loaded-prompt-area hidden"):
+                            yield Label("Title:", classes="sidebar-label", id=f"{id_prefix}-loaded-prompt-title-label")
+                            yield Static("", id=f"{id_prefix}-loaded-prompt-title-static", classes="sidebar-static-display")
 
-                yield Label("Selected Prompt - User:", classes="sidebar-label")
-                yield TextArea(id=f"{id_prefix}-sidebar-prompt-user-display", read_only=True, classes="sidebar-textarea ccp-prompt-textarea") # e.g., chat-sidebar-prompt-user-display
-                yield Button("Copy User", id=f"{id_prefix}-sidebar-copy-user-prompt-button", classes="sidebar-button") # e.g., chat-sidebar-copy-user-prompt-button
-=======
-        if id_prefix == "chat":
-            with Collapsible(title="Prompts", collapsed=True, id=f"{id_prefix}-prompts-collapsible"):
-                yield Label("Search Prompts:", classes="sidebar-label")
-                yield Input(
-                    id=f"{id_prefix}-prompt-search-input",
-                    placeholder="Title or keywords...",
-                    classes="sidebar-input"
-                )
-                yield ListView(
-                    id=f"{id_prefix}-prompt-list-view",
-                    classes="sidebar-listview"
-                )
-                yield Button(
-                    "Load Selected Prompt",
-                    id=f"{id_prefix}-prompt-load-selected-button",
-                    variant="default",
-                    classes="sidebar-button"
-                )
+                            yield Label("System Prompt:", classes="sidebar-label", id=f"{id_prefix}-loaded-prompt-system-label")
+                            yield TextArea(
+                                "",
+                                id=f"{id_prefix}-loaded-prompt-system-text",
+                                read_only=True,
+                                classes="sidebar-textarea loaded-prompt-textarea"
+                            )
+                            yield Button(
+                                "Copy System Prompt",
+                                id=f"{id_prefix}-copy-system-prompt-button",
+                                variant="default",
+                                classes="sidebar-button copy-prompt-button",
+                                disabled=True
+                            )
 
-                # Display area for loaded prompt
-                # Use a Vertical container instead of VerticalScroll if scrolling isn't desired for this small section
-                with Vertical(id=f"{id_prefix}-loaded-prompt-display-area", classes="loaded-prompt-area hidden"):
-                    yield Label("Title:", classes="sidebar-label", id=f"{id_prefix}-loaded-prompt-title-label")
-                    yield Static("", id=f"{id_prefix}-loaded-prompt-title-static", classes="sidebar-static-display")
+                            yield Label("User Prompt:", classes="sidebar-label", id=f"{id_prefix}-loaded-prompt-user-label")
+                            yield TextArea(
+                                "",
+                                id=f"{id_prefix}-loaded-prompt-user-text",
+                                read_only=True,
+                                classes="sidebar-textarea loaded-prompt-textarea"
+                            )
+                            yield Button(
+                                "Copy User Prompt",
+                                id=f"{id_prefix}-copy-user-prompt-button",
+                                variant="default",
+                                classes="sidebar-button copy-prompt-button",
+                                disabled=True
+                            )
 
-                    yield Label("System Prompt:", classes="sidebar-label", id=f"{id_prefix}-loaded-prompt-system-label")
-                    yield TextArea(
-                        "",
-                        id=f"{id_prefix}-loaded-prompt-system-text",
-                        read_only=True,
-                        classes="sidebar-textarea loaded-prompt-textarea"
-                    )
-                    yield Button(
-                        "Copy System Prompt",
-                        id=f"{id_prefix}-copy-system-prompt-button",
-                        variant="default",
-                        classes="sidebar-button copy-prompt-button",
-                        disabled=True
-                    )
-
-                    yield Label("User Prompt:", classes="sidebar-label", id=f"{id_prefix}-loaded-prompt-user-label")
-                    yield TextArea(
-                        "",
-                        id=f"{id_prefix}-loaded-prompt-user-text",
-                        read_only=True,
-                        classes="sidebar-textarea loaded-prompt-textarea"
-                    )
-                    yield Button(
-                        "Copy User Prompt",
-                        id=f"{id_prefix}-copy-user-prompt-button",
-                        variant="default",
-                        classes="sidebar-button copy-prompt-button",
-                        disabled=True
-                    )
-
-                    yield Label("Keywords:", classes="sidebar-label", id=f"{id_prefix}-loaded-prompt-keywords-label")
-                    yield Static("", id=f"{id_prefix}-loaded-prompt-keywords-static", classes="sidebar-static-display")
->>>>>>> Stashed changes
+                            yield Label("Keywords:", classes="sidebar-label", id=f"{id_prefix}-loaded-prompt-keywords-label")
+                            yield Static("", id=f"{id_prefix}-loaded-prompt-keywords-static", classes="sidebar-static-display")
+        # if id_prefix == "chat": # This is the outer condition for adding the Prompts section
+        #     with Collapsible(title="Prompts", collapsed=True, id=f"{id_prefix}-sidebar-prompts-collapsible"): # START OF COLLAPSIBLE
+        #         # ALL THE FOLLOWING YIELDS MUST BE INDENTED UNDER THIS 'with'
+        #         yield Label("Search Prompts:", classes="sidebar-label")
+        #         yield Input(
+        #             id=f"{id_prefix}-sidebar-prompt-search-input", # e.g., chat-sidebar-prompt-search-input
+        #             placeholder="Search name/details...",
+        #             classes="sidebar-input"
+        #         )
+        #         yield Label("Filter by Keywords (comma-sep):", classes="sidebar-label")
+        #         yield Input(
+        #             id=f"{id_prefix}-sidebar-prompt-keyword-filter-input", # e.g., chat-sidebar-prompt-keyword-filter-input
+        #             placeholder="e.g., writing, technical",
+        #             classes="sidebar-input"
+        #         )
+        #         yield ListView(id=f"{id_prefix}-sidebar-prompts-listview") # e.g., chat-sidebar-prompts-listview
+        #
+        #         yield Label("Selected Prompt - System:", classes="sidebar-label")
+        #         yield TextArea(
+        #             id=f"{id_prefix}-sidebar-prompt-system-display", # e.g., chat-sidebar-prompt-system-display
+        #             read_only=True, classes="sidebar-textarea ccp-prompt-textarea",
+        #         )
+        #         yield Button("Copy System", id=f"{id_prefix}-sidebar-copy-system-prompt-button", classes="sidebar-button") # e.g., chat-sidebar-copy-system-prompt-button
+        #
+        #         yield Label("Selected Prompt - User:", classes="sidebar-label")
+        #         yield TextArea(id=f"{id_prefix}-sidebar-prompt-user-display", read_only=True, classes="sidebar-textarea ccp-prompt-textarea") # e.g., chat-sidebar-prompt-user-display
+        #         yield Button("Copy User", id=f"{id_prefix}-sidebar-copy-user-prompt-button", classes="sidebar-button") # e.g., chat-sidebar-copy-user-prompt-button
 
         # ===================================================================
         # Saved Conversations (only for chat tab)

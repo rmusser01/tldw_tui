@@ -17,6 +17,8 @@ from textual.widgets import (
 )
 from textual.containers import VerticalScroll
 from textual.css.query import QueryError
+
+from ..Utils.Utils import safe_float, safe_int
 #
 # Local Imports
 from ..DB.Prompts_DB import DatabaseError
@@ -25,12 +27,14 @@ from ..Utils.Utils import safe_float, safe_int
 from ..Utils.Utils import safe_float, safe_int
 from ..Widgets.chat_message import ChatMessage
 from ..Widgets.titlebar import TitleBar
+from ..Prompt_Management import Prompts_Interop as prompts_interop
 from ..Utils.Emoji_Handling import (
     get_char, EMOJI_THINKING, FALLBACK_THINKING, EMOJI_EDIT, FALLBACK_EDIT,
     EMOJI_SAVE_EDIT, FALLBACK_SAVE_EDIT, EMOJI_COPIED, FALLBACK_COPIED, EMOJI_COPY, FALLBACK_COPY
 )
 from ..Character_Chat import Character_Chat_Lib as ccl
-from ..DB.ChaChaNotes_DB import ConflictError, CharactersRAGDBError # Import specific DB errors
+from ..Character_Chat.Character_Chat_Lib import load_character_and_image # Added for character data loading
+from ..DB.ChaChaNotes_DB import ConflictError, CharactersRAGDBError, InputError  # Import specific DB errors
 from ..Prompt_Management import Prompts_Interop as prompts_interop
 #
 if TYPE_CHECKING:
@@ -41,6 +45,18 @@ if TYPE_CHECKING:
 ########################################################################################################################
 #
 # Functions:
+
+async def handle_chat_tab_sidebar_toggle(app: 'TldwCli', button_id: str) -> None:
+    """Handles sidebar toggles specific to the Chat tab."""
+    logger = getattr(app, 'loguru_logger', logging)
+    if button_id == "toggle-chat-left-sidebar":
+        app.chat_sidebar_collapsed = not app.chat_sidebar_collapsed
+        logger.debug("Chat tab settings sidebar (left) now %s", "collapsed" if app.chat_sidebar_collapsed else "expanded")
+    elif button_id == "toggle-chat-right-sidebar":
+        app.chat_right_sidebar_collapsed = not app.chat_right_sidebar_collapsed
+        logger.debug("Chat tab character sidebar (right) now %s", "collapsed" if app.chat_right_sidebar_collapsed else "expanded")
+    else:
+        logger.warning(f"Unhandled sidebar toggle button ID '{button_id}' in Chat tab handler.")
 
 async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
     """Handles the send button press for the main chat tab."""
@@ -83,6 +99,11 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
             loguru_logger.error(f"Send Button: Critical - could not even find chat container #{prefix}-log to display error.")
         return
 
+    if app.active_chat_api_worker and app.active_chat_api_worker.is_running:
+        app.notify("An AI response is already being generated.", severity="warning")
+        loguru_logger.warning("Send button pressed while a chat API worker is already running.")
+        return
+
     # --- 2. Get Message and Parameters from UI ---
     message_text_from_input = text_area.text.strip()
     reuse_last_user_bubble = False
@@ -116,6 +137,35 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
     top_k = safe_int(top_k_widget.value, 50, "top_k") # Use imported safe_int
     custom_prompt = ""  # Assuming this isn't used directly in chat send, but passed
     should_stream = False # Defaulting to False as per original logic
+
+    # --- Integration of Active Character Data ---
+    system_prompt_from_ui = system_prompt_widget.text # This is the system prompt from the LEFT sidebar
+    active_char_data = app.current_chat_active_character_data  # This is from the RIGHT sidebar's loaded char
+    final_system_prompt_for_api = system_prompt_from_ui  # Default to UI
+
+    if active_char_data:
+        loguru_logger.info(
+            f"Active character data found: {active_char_data.get('name', 'Unnamed')}. Checking for system prompt override.")
+        # Prioritize system_prompt from active_char_data.
+        char_specific_system_prompt = active_char_data.get('system_prompt')  # This comes from the editable fields
+        if char_specific_system_prompt is not None and char_specific_system_prompt.strip():  # Check if not None AND not empty/whitespace
+            final_system_prompt_for_api = char_specific_system_prompt
+            loguru_logger.debug(
+                f"System prompt overridden by active character's system prompt: '{final_system_prompt_for_api[:100]}...'")
+        else:
+            loguru_logger.debug(
+                f"Active character has no system_prompt or it's empty. Using system_prompt from left sidebar: '{final_system_prompt_for_api[:100]}...'")
+    else:
+        loguru_logger.info("No active character data. Using system prompt from left sidebar UI.")
+
+        # Optional: Further persona integration (example)
+        # if active_char_data.get('personality'):
+        #     system_prompt = f"Personality: {active_char_data['personality']}\n\n{system_prompt}"
+        # if active_char_data.get('scenario'):
+        #     system_prompt = f"Scenario: {active_char_data['scenario']}\n\n{system_prompt}"
+        # else:
+        #     loguru_logger.info("No active character data. Using system prompt from UI.")
+    # --- End of Integration ---
 
     llm_max_tokens_value = safe_int(llm_max_tokens_widget.value, 1024, "llm_max_tokens")
     llm_seed_value = safe_int(llm_seed_widget.value, None, "llm_seed") # None is a valid default
@@ -157,7 +207,7 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
     # --- 4. Build Chat History for API ---
     # History should contain messages *before* the current user's input.
     # The current user's input (`message_text_from_input`) will be passed as the `message` param to `app.chat_wrapper`.
-    chat_history_for_api: List[Dict[str, str]] = []
+    chat_history_for_api: List[Dict[str, Any]] = []
     try:
         # Iterate through all messages currently in the UI
         all_ui_messages = list(chat_container.query(ChatMessage))
@@ -195,10 +245,22 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
 
 
         for msg_widget in messages_to_process_for_history:
-            if msg_widget.role in ("User", "AI") and msg_widget.generation_complete:
-                role_for_api = "assistant" if msg_widget.role == "AI" else "user"
-                chat_history_for_api.append({"role": role_for_api, "content": msg_widget.message_text})
+            if msg_widget.role in ("User", "AI") or (app.current_chat_active_character_data and msg_widget.role == app.current_chat_active_character_data.get('name')):
+                 if msg_widget.generation_complete: # Only send completed messages
+                    # Map UI role to API role (user/assistant)
+                    api_role = "user"
+                    if msg_widget.role != "User": # Anything not "User" is treated as assistant for API history
+                        api_role = "assistant"
 
+                    # Prepare content part(s) - for now, assuming text only
+                    content_for_api = msg_widget.message_text
+                    # if msg_widget.image_data and msg_widget.image_mime_type: # Future multimodal
+                    #     image_url = f"data:{msg_widget.image_mime_type};base64,{base64.b64encode(msg_widget.image_data).decode()}"
+                    #     content_for_api = [
+                    #         {"type": "text", "text": msg_widget.message_text},
+                    #         {"type": "image_url", "image_url": {"url": image_url}}
+                    #     ]
+                    chat_history_for_api.append({"role": api_role, "content": content_for_api})
         loguru_logger.debug(f"Built chat history for API with {len(chat_history_for_api)} messages.")
 
     except Exception as e:
@@ -208,8 +270,8 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
 
     # --- 5. DB and Conversation ID Setup ---
     active_conversation_id = app.current_chat_conversation_id
-    db = app.notes_service._get_db(app.notes_user_id) if app.notes_service else None
-    user_msg_widget_instance: Optional[ChatMessage] = None # To hold the instance of the user message widget
+    db = app.chachanotes_db # Use the correct instance from app
+    user_msg_widget_instance: Optional[ChatMessage] = None
 
     # --- 6. Mount User Message to UI ---
     if not reuse_last_user_bubble:
@@ -219,21 +281,31 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
 
     # --- 7. Save User Message to DB (IF CHAT IS ALREADY PERSISTENT) ---
     if not app.current_chat_is_ephemeral and active_conversation_id and db:
-        if not reuse_last_user_bubble and user_msg_widget_instance: # Only save if it's a newly added UI message
+        if not reuse_last_user_bubble and user_msg_widget_instance:
             try:
                 loguru_logger.debug(f"Chat is persistent (ID: {active_conversation_id}). Saving user message to DB.")
-                # Assuming no image for user messages sent via text input for now
-                user_message_db_id = ccl.add_message_to_conversation(
+                user_message_db_id_version_tuple = ccl.add_message_to_conversation(
                     db, conversation_id=active_conversation_id, sender="User", content=message_text_from_input,
-                    image_data=None, image_mime_type=None # Placeholder for potential future image uploads
+                    image_data=None, image_mime_type=None
                 )
-                if user_message_db_id:
-                    user_msg_widget_instance.message_id_internal = user_message_db_id
-                    loguru_logger.debug(f"User message saved to DB with ID: {user_message_db_id}")
+                # add_message_to_conversation in ccl returns message_id (str). Version is handled by DB.
+                # We need to fetch the message to get its version.
+                if user_message_db_id_version_tuple: # This is just the ID
+                    user_msg_db_id = user_message_db_id_version_tuple
+                    saved_user_msg_details = db.get_message_by_id(user_msg_db_id)
+                    if saved_user_msg_details:
+                        user_msg_widget_instance.message_id_internal = saved_user_msg_details.get('id')
+                        user_msg_widget_instance.message_version_internal = saved_user_msg_details.get('version')
+                        loguru_logger.debug(f"User message saved to DB. ID: {saved_user_msg_details.get('id')}, Version: {saved_user_msg_details.get('version')}")
+                    else:
+                        loguru_logger.error(f"Failed to retrieve saved user message details from DB for ID {user_msg_db_id}.")
                 else:
                     loguru_logger.error(f"Failed to save user message to DB for conversation {active_conversation_id}.")
-            except Exception as e_add_msg:
+            except (CharactersRAGDBError, InputError) as e_add_msg: # Catch specific errors from ccl
                 loguru_logger.error(f"Error saving user message to DB: {e_add_msg}", exc_info=True)
+            except Exception as e_add_msg_generic:
+                 loguru_logger.error(f"Generic error saving user message to DB: {e_add_msg_generic}", exc_info=True)
+
     elif app.current_chat_is_ephemeral:
         loguru_logger.debug("Chat is ephemeral. User message not saved to DB at this stage.")
 
@@ -245,14 +317,14 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
 
     # --- 9. API Key Fetching ---
     api_key_for_call = None
-    if selected_provider: # Should always be true due to earlier check
-        provider_settings_key = selected_provider.lower()
+    if selected_provider:
+        provider_settings_key = selected_provider.lower().replace(" ", "_")
         provider_config_settings = app.app_config.get("api_settings", {}).get(provider_settings_key, {})
 
         if "api_key" in provider_config_settings:
             direct_config_key_checked = True
             config_api_key = provider_config_settings.get("api_key", "").strip()
-            if config_api_key:
+            if config_api_key and config_api_key != "<API_KEY_HERE>":
                 api_key_for_call = config_api_key
                 loguru_logger.debug(f"Using API key for '{selected_provider}' from config file field.")
 
@@ -274,12 +346,11 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
         error_message_markup = (
             f"API Key for {selected_provider} is missing.\n\n"
             "Please add it to your config file under:\n"
-            f"\\[api_settings.{selected_provider.lower()}\\]\n" # Ensure key matches config
+            f"\\[api_settings.{selected_provider.lower().replace(' ', '_')}\\]\n" 
             "api_key = \"YOUR_KEY\"\n\n"
             "Or set the environment variable specified by 'api_key_env_var' in the config for this provider."
         )
-        await chat_container.mount(ChatMessage(Text.from_markup(error_message_markup), role="System", classes="-error"))
-        # Clean up placeholder if one was accidentally about to be made or if logic changes
+        await chat_container.mount(ChatMessage(message=error_message_markup, role="System"))
         if app.current_ai_message_widget and app.current_ai_message_widget.is_mounted:
             await app.current_ai_message_widget.remove()
             app.current_ai_message_widget = None
@@ -303,7 +374,7 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
         api_key=api_key_for_call,
         custom_prompt=custom_prompt,
         temperature=temperature,
-        system_message=system_prompt,
+        system_message=final_system_prompt_for_api,
         streaming=should_stream,
         minp=min_p,
         model=selected_model,
@@ -374,16 +445,42 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
                 loguru_logger.debug("Editing finished. New length: %d", len(new_text))
 
                 # Persist edit to DB if message has an ID
-                if db and hasattr(action_widget, 'message_id_internal') and action_widget.message_id_internal:
+                if db and action_widget.message_id_internal and action_widget.message_version_internal is not None:
                     try:
-                        db.update_message_content(action_widget.message_id_internal, new_text)
-                        loguru_logger.info(f"Message ID {action_widget.message_id_internal} content updated in DB.")
-                        app.notify("Message edit saved to DB.", severity="information", timeout=2)
-                    except Exception as e_db_update:
+                        # CORRECTED: Use ccl.edit_message_content
+                        success = ccl.edit_message_content(
+                            db,
+                            action_widget.message_id_internal,
+                            new_text,
+                            action_widget.message_version_internal  # Pass the expected version
+                        )
+                        if success:
+                            action_widget.message_version_internal += 1  # Increment version on successful update
+                            loguru_logger.info(
+                                f"Message ID {action_widget.message_id_internal} content updated in DB. New version: {action_widget.message_version_internal}")
+                            app.notify("Message edit saved to DB.", severity="information", timeout=2)
+                        else:
+                            # This path should ideally be covered by exceptions from ccl.edit_message_content
+                            loguru_logger.error(
+                                f"ccl.edit_message_content returned False for {action_widget.message_id_internal} without raising an exception.")
+                            app.notify("Failed to save edit to DB (update operation returned false).", severity="error")
+                    except ConflictError as e_conflict:
                         loguru_logger.error(
-                            f"Failed to update message {action_widget.message_id_internal} in DB: {e_db_update}",
+                            f"Conflict updating message {action_widget.message_id_internal} in DB: {e_conflict}",
                             exc_info=True)
-                        app.notify("Failed to save edit to DB.", severity="error")
+                        app.notify(f"Save conflict: {e_conflict}. Please reload the chat or message.", severity="error",
+                                   timeout=7)
+                    except (CharactersRAGDBError, InputError) as e_db_update:
+                        loguru_logger.error(
+                            f"DB/Input error updating message {action_widget.message_id_internal} in DB: {e_db_update}",
+                            exc_info=True)
+                        app.notify(f"Failed to save edit to DB: {e_db_update}", severity="error")
+                    except Exception as e_generic_update:  # Catch any other unexpected error
+                        loguru_logger.error(
+                            f"Unexpected error updating message {action_widget.message_id_internal} in DB: {e_generic_update}",
+                            exc_info=True)
+                        app.notify(f"An unexpected error occurred while saving the edit: {e_generic_update}",
+                                   severity="error")
 
             except QueryError:
                 loguru_logger.error("Edit TextArea not found when stopping edit. Restoring original.")
@@ -537,6 +634,22 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
         min_p_regen = safe_float(min_p_widget_regen.value, 0.05, "min_p")
         top_k_regen = app._safe_int(top_k_widget_regen.value, 50, "top_k")
 
+        # --- Integration of Active Character Data for REGENERATION ---
+        active_char_data_regen = app.current_chat_active_character_data
+        original_system_prompt_from_ui_regen = system_prompt_regen # Keep a reference
+
+        if active_char_data_regen:
+            loguru_logger.info(f"Active character data found for REGENERATION: {active_char_data_regen.get('name', 'Unnamed')}. Overriding system prompt.")
+            system_prompt_override_regen = active_char_data_regen.get('system_prompt')
+            if system_prompt_override_regen is not None:
+                system_prompt_regen = system_prompt_override_regen
+                loguru_logger.debug(f"System prompt for REGENERATION overridden by active character: '{system_prompt_regen[:100]}...'")
+            else:
+                loguru_logger.debug(f"Active character data present for REGENERATION, but 'system_prompt' is None or missing. Using: '{system_prompt_regen[:100]}...' (might be from UI or empty).")
+        else:
+            loguru_logger.info("No active character data for REGENERATION. Using system prompt from UI.")
+        # --- End of Integration for REGENERATION ---
+
         llm_max_tokens_value_regen = app._safe_int(llm_max_tokens_widget_regen.value, 1024, "llm_max_tokens")
         llm_seed_value_regen = app._safe_int(llm_seed_widget_regen.value, None, "llm_seed")
         llm_stop_value_regen = [s.strip() for s in
@@ -630,6 +743,20 @@ async def handle_chat_new_conversation_button_pressed(app: 'TldwCli') -> None:
 
     app.current_chat_conversation_id = None
     app.current_chat_is_ephemeral = True  # This triggers watcher to update UI elements
+    app.current_chat_active_character_data = None
+    try:
+        app.query_one("#chat-character-name-edit", Input).value = ""
+        app.query_one("#chat-character-description-edit", TextArea).text = ""
+        app.query_one("#chat-character-personality-edit", TextArea).text = ""
+        app.query_one("#chat-character-scenario-edit", TextArea).text = ""
+        app.query_one("#chat-character-system-prompt-edit", TextArea).text = ""
+        app.query_one("#chat-character-first-message-edit", TextArea).text = ""
+        # Optionally clear the character search and list
+        # app.query_one("#chat-character-search-input", Input).value = ""
+        # await app.query_one("#chat-character-search-results-list", ListView).clear()
+        loguru_logger.debug("Cleared character editing fields on new chat.")
+    except QueryError as e:
+        loguru_logger.warning(f"Could not clear all character edit fields on new chat: {e}")
 
     try:
         # Watcher should handle most of this, but explicit clearing is safer
@@ -649,12 +776,12 @@ async def handle_chat_save_current_chat_button_pressed(app: 'TldwCli') -> None:
         app.notify("This chat is already saved or cannot be saved in its current state.", severity="warning")
         return
 
-    if not app.notes_service:
+    if not app.chachanotes_db: # Use correct DB instance name
         app.notify("Database service not available.", severity="error")
-        loguru_logger.error("Notes service not available for saving chat.")
+        loguru_logger.error("chachanotes_db not available for saving chat.")
         return
 
-    db = app.notes_service._get_db(app.notes_user_id)
+    db = app.chachanotes_db
     try:
         chat_log_widget = app.query_one("#chat-log", VerticalScroll)
     except QueryError:
@@ -667,26 +794,57 @@ async def handle_chat_save_current_chat_button_pressed(app: 'TldwCli') -> None:
         app.notify("Nothing to save in an empty chat.", severity="warning")
         return
 
+    character_id_for_saving = ccl.DEFAULT_CHARACTER_ID
+    char_name_for_sender = "AI" # Default sender name for AI messages if no specific character
+
+    if app.current_chat_active_character_data and 'id' in app.current_chat_active_character_data:
+        character_id_for_saving = app.current_chat_active_character_data['id']
+        char_name_for_sender = app.current_chat_active_character_data.get('name', 'AI') # Use actual char name for sender
+        loguru_logger.info(f"Saving chat with active character: {char_name_for_sender} (ID: {character_id_for_saving})")
+    else:
+        loguru_logger.info(f"Saving chat with default character association (ID: {character_id_for_saving})")
+
+
     ui_messages_to_save: List[Dict[str, Any]] = []
     for msg_widget in messages_in_log:
-        if msg_widget.generation_complete:
+        sender_for_db_initial_msg = "User" if msg_widget.role == "User" else char_name_for_sender
+
+        if msg_widget.generation_complete :
             ui_messages_to_save.append({
-                'sender': msg_widget.role,
+                'sender': sender_for_db_initial_msg,
                 'content': msg_widget.message_text,
-                'image_data': getattr(msg_widget, 'image_data', None),
-                'image_mime_type': getattr(msg_widget, 'image_mime_type', None),
-                'timestamp': getattr(msg_widget, 'timestamp', datetime.now().isoformat())  # Add timestamp if available
+                'image_data': msg_widget.image_data,
+                'image_mime_type': msg_widget.image_mime_type,
             })
 
-    default_title = f"Saved Chat - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-    if ui_messages_to_save and ui_messages_to_save[0]['sender'] == "User":
-        content_preview = ui_messages_to_save[0]['content'][:30].strip()
-        if content_preview: default_title = f"Chat: {content_preview}..."
+    new_conv_title_from_ui = app.query_one("#chat-conversation-title-input", Input).value.strip()
+    final_title_for_db = new_conv_title_from_ui
+
+    if not final_title_for_db:
+        # Use character's name for title generation if a specific character is active
+        title_char_name_part = char_name_for_sender if character_id_for_saving != ccl.DEFAULT_CHARACTER_ID else "Assistant"
+        if ui_messages_to_save and ui_messages_to_save[0]['sender'] == "User":
+            content_preview = ui_messages_to_save[0]['content'][:30].strip()
+            if content_preview:
+                final_title_for_db = f"Chat: {content_preview}..."
+            else:
+                final_title_for_db = f"Chat with {title_char_name_part}"
+        else:
+            final_title_for_db = f"Chat with {title_char_name_part} - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+
+
+    keywords_str_from_ui = app.query_one("#chat-conversation-keywords-input", TextArea).text.strip()
+    keywords_list_for_db = [kw.strip() for kw in keywords_str_from_ui.split(',') if kw.strip() and not kw.strip().startswith("__")]
+
 
     try:
         new_conv_id = ccl.create_conversation(
-            db, title=default_title, character_id=ccl.DEFAULT_CHARACTER_ID,  # For regular chats
-            initial_messages=ui_messages_to_save, system_keywords=["__regular_chat", "__saved_ephemeral"]
+            db,
+            title=final_title_for_db,
+            character_id=character_id_for_saving,
+            initial_messages=ui_messages_to_save,
+            system_keywords=keywords_list_for_db,
+            user_name_for_placeholders=app.app_config.get("USERS_NAME", "User")
         )
 
         if new_conv_id:
@@ -694,28 +852,18 @@ async def handle_chat_save_current_chat_button_pressed(app: 'TldwCli') -> None:
             app.current_chat_is_ephemeral = False  # Now it's saved, triggers watcher
             app.notify("Chat saved successfully!", severity="information")
 
-            # Watcher for current_chat_is_ephemeral will enable/disable buttons.
-            # We need to populate the fields for the newly saved chat.
-            try:
-                app.query_one("#chat-conversation-title-input", Input).value = default_title
-                app.query_one("#chat-conversation-uuid-display", Input).value = new_conv_id
-                # Keywords are not set automatically on first save, user can add them.
-                app.query_one("#chat-conversation-keywords-input", TextArea).text = ""
-                app.query_one(TitleBar).update_title(f"Chat - {default_title}")
+            # After saving, reload the conversation to get all messages with their DB IDs and versions
+            await display_conversation_in_chat_tab_ui(app, new_conv_id)
 
-                # Update message_id_internal for all messages in the chat log from the DB
-                # This is important if the user wants to edit/delete them later from this session.
-                # This requires create_conversation to return message IDs or a way to fetch them.
-                # Assuming ccl.create_conversation handles setting message IDs if it saves them.
-                # If not, a follow-up fetch would be needed. For now, we assume it's handled or IDs are set upon message creation.
+            # The display_conversation_in_chat_tab_ui will populate title, uuid, keywords.
+            # It will also set the title bar.
 
-            except QueryError as e:
-                loguru_logger.error(f"Error updating UI after saving chat: {e}")
         else:
             app.notify("Failed to save chat (no ID returned).", severity="error")
+
     except Exception as e_save_chat:
         loguru_logger.error(f"Exception while saving chat: {e_save_chat}", exc_info=True)
-        app.notify(f"Error saving chat: {e_save_chat}", severity="error")
+        app.notify(f"Error saving chat: {str(e_save_chat)[:100]}", severity="error")
 
 
 async def handle_chat_save_details_button_pressed(app: 'TldwCli') -> None:
@@ -988,16 +1136,16 @@ async def handle_chat_search_checkbox_changed(app: 'TldwCli', checkbox_id: str, 
 
 
 async def display_conversation_in_chat_tab_ui(app: 'TldwCli', conversation_id: str):
-    if not app.notes_service:
-        logging.error("Notes service unavailable, cannot display conversation in chat tab.")
-        # Potentially update UI to show an error
+    if not app.chachanotes_db: # Use correct DB instance name
+        loguru_logger.error("chachanotes_db unavailable, cannot display conversation in chat tab.")
         return
 
-    db = app.notes_service._get_db(app.notes_user_id)
-    conv_details_disp = db.get_conversation_by_id(conversation_id)
+    db = app.chachanotes_db
 
-    if not conv_details_disp:
-        logging.error(f"Cannot display conversation: Details for ID {conversation_id} not found.")
+    full_conv_data = ccl.get_conversation_details_and_messages(db, conversation_id)
+
+    if not full_conv_data or not full_conv_data.get('metadata'):
+        loguru_logger.error(f"Cannot display conversation: Details for ID {conversation_id} not found or incomplete.")
         app.notify(f"Error: Could not load chat {conversation_id}.", severity="error")
         # Update UI to reflect error state
         try:
@@ -1008,35 +1156,95 @@ async def display_conversation_in_chat_tab_ui(app: 'TldwCli', conversation_id: s
             chat_log_err = app.query_one("#chat-log", VerticalScroll)
             await chat_log_err.remove_children()
             await chat_log_err.mount(ChatMessage(Text.from_markup("[bold red]Failed to load conversation details.[/]"), role="System", classes="-error"))
-        except QueryError as qe_err_disp: logging.error(f"UI component missing during error display for conv {conversation_id}: {qe_err_disp}")
+        except QueryError as qe_err_disp: loguru_logger.error(f"UI component missing during error display for conv {conversation_id}: {qe_err_disp}")
         return
 
-    app.current_chat_conversation_id = conversation_id # Ensure reactive is set for context
-    app.current_chat_is_ephemeral = False # Loaded chats are not ephemeral
+    conv_metadata = full_conv_data['metadata']
+    db_messages = full_conv_data['messages']
+    character_name_from_conv_load = full_conv_data.get('character_name', 'AI')
+
+    app.current_chat_conversation_id = conversation_id
+    app.current_chat_is_ephemeral = False
 
     try:
-        app.query_one("#chat-conversation-title-input", Input).value = conv_details_disp.get('title', '')
+        character_id_from_conv = conv_metadata.get('character_id')
+        loaded_char_data_for_ui_fields: Optional[Dict[str, Any]] = None
+        current_user_name = app.app_config.get("USERS_NAME", "User")
+
+        if character_id_from_conv and character_id_from_conv != ccl.DEFAULT_CHARACTER_ID:
+            loguru_logger.debug(f"Conversation {conversation_id} is associated with char_id: {character_id_from_conv}")
+            char_data_for_ui, _, _ = load_character_and_image(db, character_id_from_conv, current_user_name)
+            if char_data_for_ui:
+                app.current_chat_active_character_data = char_data_for_ui
+                loaded_char_data_for_ui_fields = char_data_for_ui
+                loguru_logger.info(f"Loaded char data for '{char_data_for_ui.get('name', 'Unknown')}' into app.current_chat_active_character_data.")
+                app.query_one("#chat-system-prompt", TextArea).text = char_data_for_ui.get('system_prompt', '')
+            else:
+                app.current_chat_active_character_data = None
+                loguru_logger.warning(f"Could not load char data for char_id: {character_id_from_conv}. Active char set to None.")
+                app.query_one("#chat-system-prompt", TextArea).text = app.app_config.get("chat_defaults", {}).get("system_prompt", "You are a helpful AI assistant.")
+        else:
+            app.current_chat_active_character_data = None
+            loguru_logger.debug(f"Conversation {conversation_id} uses default/no character. Active char set to None.")
+            app.query_one("#chat-system-prompt", TextArea).text = app.app_config.get("chat_defaults", {}).get("system_prompt", "You are a helpful AI assistant.")
+
+        right_sidebar_chat_tab = app.query_one("#chat-right-sidebar")
+        if loaded_char_data_for_ui_fields:
+            right_sidebar_chat_tab.query_one("#chat-character-name-edit", Input).value = loaded_char_data_for_ui_fields.get('name', '')
+            right_sidebar_chat_tab.query_one("#chat-character-description-edit", TextArea).text = loaded_char_data_for_ui_fields.get('description', '')
+            right_sidebar_chat_tab.query_one("#chat-character-personality-edit", TextArea).text = loaded_char_data_for_ui_fields.get('personality', '')
+            right_sidebar_chat_tab.query_one("#chat-character-scenario-edit", TextArea).text = loaded_char_data_for_ui_fields.get('scenario', '')
+            right_sidebar_chat_tab.query_one("#chat-character-system-prompt-edit", TextArea).text = loaded_char_data_for_ui_fields.get('system_prompt', '')
+            right_sidebar_chat_tab.query_one("#chat-character-first-message-edit", TextArea).text = loaded_char_data_for_ui_fields.get('first_message', '')
+        else:
+            right_sidebar_chat_tab.query_one("#chat-character-name-edit", Input).value = ""
+            right_sidebar_chat_tab.query_one("#chat-character-description-edit", TextArea).text = ""
+            right_sidebar_chat_tab.query_one("#chat-character-personality-edit", TextArea).text = ""
+            right_sidebar_chat_tab.query_one("#chat-character-scenario-edit", TextArea).text = ""
+            right_sidebar_chat_tab.query_one("#chat-character-system-prompt-edit", TextArea).text = ""
+            right_sidebar_chat_tab.query_one("#chat-character-first-message-edit", TextArea).text = ""
+
+        app.query_one("#chat-conversation-title-input", Input).value = conv_metadata.get('title', '')
         app.query_one("#chat-conversation-uuid-display", Input).value = conversation_id
 
         keywords_input_disp = app.query_one("#chat-conversation-keywords-input", TextArea)
-        all_keywords_list_disp = db.get_keywords_for_conversation(conversation_id)
-        visible_keywords_disp = [kw['keyword'] for kw in all_keywords_list_disp if not kw['keyword'].startswith("__")]
-        keywords_input_disp.text = ", ".join(visible_keywords_disp)
+        keywords_input_disp.text = conv_metadata.get('keywords_display', "")
 
-        app.query_one(TitleBar).update_title(f"Chat - {conv_details_disp.get('title', 'Untitled Conversation')}")
+        app.query_one(TitleBar).update_title(f"Chat - {conv_metadata.get('title', 'Untitled Conversation')}")
 
         chat_log_widget_disp = app.query_one("#chat-log", VerticalScroll)
-        await app._load_branched_conversation_history(conversation_id, chat_log_widget_disp)
+        await chat_log_widget_disp.remove_children()
+        app.current_ai_message_widget = None
+
+        for msg_data in db_messages:
+            content_to_display = ccl.replace_placeholders(
+                msg_data.get('content', ''),
+                character_name_from_conv_load, # Character name for this specific conversation
+                current_user_name
+            )
+
+            chat_msg_widget_for_display = ChatMessage(
+                message=content_to_display,
+                role=msg_data.get('sender', 'Unknown'),
+                generation_complete=True,
+                message_id=msg_data.get('id'),
+                message_version=msg_data.get('version'),
+                timestamp=msg_data.get('timestamp'),
+                image_data=msg_data.get('image_data'),
+                image_mime_type=msg_data.get('image_mime_type')
+            )
+            # Styling class already handled by ChatMessage constructor based on role "User" or other
+            await chat_log_widget_disp.mount(chat_msg_widget_for_display)
+
+        if chat_log_widget_disp.is_mounted:
+            chat_log_widget_disp.scroll_end(animate=False)
 
         app.query_one("#chat-input", TextArea).focus()
-        app.notify(f"Chat '{conv_details_disp.get('title', 'Untitled')}' loaded.", severity="information", timeout=3)
+        app.notify(f"Chat '{conv_metadata.get('title', 'Untitled')}' loaded.", severity="information", timeout=3)
     except QueryError as qe_disp_main:
-        logging.error(f"UI component missing during display_conversation for {conversation_id}: {qe_disp_main}")
+        loguru_logger.error(f"UI component missing during display_conversation for {conversation_id}: {qe_disp_main}")
         app.notify("Error updating UI for loaded chat.", severity="error")
-    logging.info(f"Displayed conversation '{conv_details_disp.get('title', 'Untitled')}' (ID: {conversation_id}) in chat tab.")
-
-    logging.info(
-        f"Displayed conversation '{conv_details_disp.get('title', 'Untitled')}' (ID: {conversation_id}) in chat tab.")
+    loguru_logger.info(f"Displayed conversation '{conv_metadata.get('title', 'Untitled')}' (ID: {conversation_id}) in chat tab.")
 
 
 async def load_branched_conversation_history_ui(app: 'TldwCli', target_conversation_id: str, chat_log_widget: VerticalScroll):
@@ -1126,295 +1334,494 @@ async def load_branched_conversation_history_ui(app: 'TldwCli', target_conversat
         f"Loaded {len(all_messages_to_display)} messages for conversation {target_conversation_id} (including history).")
 
 
-<<<<<<< Updated upstream
-# --- Chat Sidebar Prompt Handlers ---
-
-async def populate_chat_sidebar_prompts_list_view(app: 'TldwCli', search_term: Optional[str] = None,
-                                                  keyword_filter_str: Optional[str] = None) -> None:
-    """Populates the prompts list view in the Chat tab's right sidebar."""
-    logger = getattr(app, 'loguru_logger', logging)
-    if not app.prompts_service_initialized:
-        try:
-            list_view_prompt_err = app.query_one("#chat-sidebar-prompts-listview", ListView)
-            await list_view_prompt_err.clear()
-            await list_view_prompt_err.append(ListItem(Label("Prompts service not available.")))
-        except QueryError:
-            logger.error("Failed to find #chat-sidebar-prompts-listview to show service error.")
-        return
-
+async def handle_chat_character_search_input_changed(app: 'TldwCli', event: Input.Changed) -> None:
+    search_term = event.value.strip()
     try:
-        list_view_prompt = app.query_one("#chat-sidebar-prompts-listview", ListView)
-        await list_view_prompt.clear()
+        results_list_view = app.query_one("#chat-character-search-results-list", ListView)
+        await results_list_view.clear()
 
-        # Prepare search query for prompts_interop
-        # If search_prompts handles keywords directly in its query, combine them.
-        # Otherwise, filter after fetching.
-        # Assuming search_prompts can take a combined query string.
-        query_parts = []
-        if search_term:
-            query_parts.append(search_term)
+        if not search_term:  # If search term is empty, call _populate_chat_character_search_list with no term to show default
+            await _populate_chat_character_search_list(app)  # Shows default list
+            return
 
-        final_search_query = " ".join(query_parts)
-
-        keywords_to_filter_by = []
-        if keyword_filter_str:
-            keywords_to_filter_by = [kw.strip().lower() for kw in keyword_filter_str.split(',') if kw.strip()]
-
-        logger.debug(
-            f"Chat Sidebar: Searching prompts. Query: '{final_search_query}', Keyword Filters: {keywords_to_filter_by}")
-
-        # Fetch prompts based on text search first
-        results_tuple = prompts_interop.search_prompts(
-            search_query=final_search_query if final_search_query else "",  # Pass empty if no text query
-            search_fields=["name", "details", "keywords"],  # Search in keywords field too
-            page=1, results_per_page=200,  # Fetch more to allow client-side keyword filtering if needed
-            include_deleted=False
-        )
-        results = results_tuple[0] if results_tuple else []
-
-        # Client-side filtering for keywords if provided
-        if keywords_to_filter_by:
-            filtered_results = []
-            for prompt_data in results:
-                prompt_keywords_lower = [kw.lower() for kw in prompt_data.get('keywords', [])]
-                if all(filter_kw in prompt_keywords_lower for filter_kw in keywords_to_filter_by):
-                    filtered_results.append(prompt_data)
-            results = filtered_results
-            logger.debug(f"Chat Sidebar: After keyword filtering, {len(results)} prompts remaining.")
-
-        if not results:
-            await list_view_prompt.append(ListItem(Label("No prompts found.")))
-=======
-async def populate_chat_sidebar_prompts_list(app: 'TldwCli', search_term: Optional[str] = None) -> None:
-    """Populates the prompts list view in the Chat tab's right sidebar."""
-    loguru_logger.info(f"Populating chat sidebar prompts list. Search: '{search_term}'")
-    if not app.prompts_service_initialized:
-        try:
-            list_view = app.query_one("#chat-prompt-list-view", ListView)
-            await list_view.clear()
-            await list_view.append(ListItem(Label("Prompts service unavailable.")))
-        except QueryError:
-            loguru_logger.error("Failed to find #chat-prompt-list-view to show service error.")
-        return
-
-    try:
-        list_view = app.query_one("#chat-prompt-list-view", ListView)
-        await list_view.clear()
-
-        # search_prompts can handle empty search_query by returning all (or use list_prompts for empty)
-        # Assuming search_prompts returns (results, total_count)
-        results_tuple = search_prompts(
-            search_query=search_term.strip() if search_term else None,
-            search_fields=["name", "details", "keywords"],  # Adjust fields as needed
-            page=1, results_per_page=50,  # Reasonable limit for a sidebar list
-            include_deleted=False
-        )
-        results: List[Dict[str, Any]] = results_tuple[0] if results_tuple else []
-
-        if not results:
-            await list_view.append(ListItem(Label("No prompts found.")))
->>>>>>> Stashed changes
-        else:
-            for prompt_data in results:
-                display_name = prompt_data.get('name', 'Unnamed Prompt')
-                item = ListItem(Label(display_name))
-<<<<<<< Updated upstream
-                item.prompt_id = prompt_data.get('id')  # Store ID for fetching details
-                item.prompt_uuid = prompt_data.get('uuid')
-                await list_view_prompt.append(item)
-        logger.info(
-            f"Populated chat sidebar prompts list. Search: '{final_search_query}', Keywords: '{keyword_filter_str}', Found: {len(results)}")
+        # If search term is present, call _populate_chat_character_search_list with the term
+        await _populate_chat_character_search_list(app, search_term)
 
     except QueryError as e_query:
-        logger.error(f"UI component error populating chat sidebar prompts list: {e_query}", exc_info=True)
-    except (prompts_interop.DatabaseError, RuntimeError) as e_prompt_service:
-        logger.error(f"Error populating chat sidebar prompts list: {e_prompt_service}", exc_info=True)
+        loguru_logger.error(f"UI component not found for character search: {e_query}", exc_info=True)
+        # Don't notify here as it's an input change, could be spammy. Log is enough.
     except Exception as e_unexp:
-        logger.error(f"Unexpected error populating chat sidebar prompts list: {e_unexp}", exc_info=True)
+        loguru_logger.error(f"Unexpected error in character search input change: {e_unexp}", exc_info=True)
+        # Don't notify here.
 
 
-async def handle_chat_sidebar_prompt_search_input_changed(app: 'TldwCli', event_value: str) -> None:
-    if app._chat_sidebar_prompt_search_timer:
-        app._chat_sidebar_prompt_search_timer.stop()
+async def handle_chat_load_character_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
+    loguru_logger.info("Load Character button pressed.")
+    try:
+        results_list_view = app.query_one("#chat-character-search-results-list", ListView)
+        highlighted_item = results_list_view.highlighted_child
 
-    async def do_search():
-        keyword_filter_input = app.query_one("#chat-sidebar-prompt-keyword-filter-input", Input)
-        await populate_chat_sidebar_prompts_list_view(app, search_term=event_value.strip(),
-                                                      keyword_filter_str=keyword_filter_input.value)
+        if not (highlighted_item and hasattr(highlighted_item, 'character_id') and highlighted_item.character_id is not None):
+            app.notify("No character selected to load.", severity="warning")
+            loguru_logger.info("No character selected in the list to load.")
+            return
 
-    app._chat_sidebar_prompt_search_timer = app.set_timer(0.5, do_search)
+        selected_char_id = highlighted_item.character_id
+        loguru_logger.info(f"Attempting to load character ID: {selected_char_id}")
 
+        if not app.notes_service:
+            app.notify("Database service not available.", severity="error")
+            loguru_logger.error("Notes service not available for loading character.")
+            return
 
-async def handle_chat_sidebar_prompt_keyword_filter_input_changed(app: 'TldwCli', event_value: str) -> None:
-    if app._chat_sidebar_prompt_keyword_filter_timer:
-        app._chat_sidebar_prompt_keyword_filter_timer.stop()
-
-    async def do_filter_search():
-        search_input = app.query_one("#chat-sidebar-prompt-search-input", Input)
-        await populate_chat_sidebar_prompts_list_view(app, search_term=search_input.value,
-                                                      keyword_filter_str=event_value.strip())
-
-    app._chat_sidebar_prompt_keyword_filter_timer = app.set_timer(0.5, do_filter_search)
+        db = app.notes_service._get_db(app.notes_user_id)
+        character_data_full, _, _ = load_character_and_image(db, selected_char_id,
+                                                             app.notes_user_id)  # Use your library function
 
 
-async def handle_chat_sidebar_prompts_list_view_selected(app: 'TldwCli', item: Any) -> None:
+        if character_data_full is None:
+            app.notify(f"Character with ID {selected_char_id} not found in database.", severity="error")
+            loguru_logger.error(f"Could not retrieve data for character ID {selected_char_id} from DB (returned None).")
+            # Optionally clear the fields if a previous character was loaded
+            app.query_one("#chat-character-name-edit", Input).value = ""
+            app.query_one("#chat-character-description-edit", TextArea).text = ""
+            app.query_one("#chat-character-personality-edit", TextArea).text = ""
+            app.query_one("#chat-character-scenario-edit", TextArea).text = ""
+            app.query_one("#chat-character-system-prompt-edit", TextArea).text = ""
+            app.query_one("#chat-character-first-message-edit", TextArea).text = ""
+            app.current_chat_active_character_data = None  # Clear reactive if it was set by a previous load
+            return
+
+        if character_data_full:
+            app.current_chat_active_character_data = character_data_full # Update reactive state
+
+            # Populate the editing fields
+            app.query_one("#chat-character-name-edit", Input).value = character_data_full.get('name', '')
+            app.query_one("#chat-character-description-edit", TextArea).text = character_data_full.get('description', '')
+            app.query_one("#chat-character-personality-edit", TextArea).text = character_data_full.get('personality', '')
+            app.query_one("#chat-character-scenario-edit", TextArea).text = character_data_full.get('scenario', '')
+            app.query_one("#chat-character-system-prompt-edit", TextArea).text = character_data_full.get('system_prompt', '')
+            app.query_one("#chat-character-first-message-edit", TextArea).text = character_data_full.get('first_message', '')
+
+            app.notify(f"Character '{character_data_full.get('name', 'Unknown')}' loaded.", severity="information")
+            loguru_logger.info(f"Character ID {selected_char_id} loaded and fields populated.")
+
+    except QueryError as e_query:
+        loguru_logger.error(f"UI component not found for loading character: {e_query}", exc_info=True)
+        app.notify("Error: Character load UI elements missing.", severity="error")
+    except Exception as e_unexp:
+        loguru_logger.error(f"Unexpected error loading character: {e_unexp}", exc_info=True)
+        app.notify("Unexpected error during character load.", severity="error")
+
+
+
+async def handle_chat_character_attribute_changed(app: 'TldwCli', event: Union[Input.Changed, TextArea.Changed]) -> None:
+    if app.current_chat_active_character_data is None:
+        # loguru_logger.warning("Attribute changed but no character loaded in current_chat_active_character_data.")
+        return
+
+    control_id = event.control.id
+    # Correctly and simply get the new value using event.value, which works for both
+    new_value = event.value
+
+    field_map = {
+        "chat-character-name-edit": "name",
+        "chat-character-description-edit": "description",
+        "chat-character-personality-edit": "personality",
+        "chat-character-scenario-edit": "scenario",
+        "chat-character-system-prompt-edit": "system_prompt",
+        "chat-character-first-message-edit": "first_message"
+    }
+
+    if control_id in field_map:
+        attribute_key = field_map[control_id]
+        # Ensure current_chat_active_character_data is not None again, just in case of race conditions (though less likely with async/await)
+        if app.current_chat_active_character_data is not None:
+            updated_data = app.current_chat_active_character_data.copy()
+            updated_data[attribute_key] = new_value
+            app.current_chat_active_character_data = updated_data # This updates the reactive variable
+            loguru_logger.debug(f"Temporarily updated active character attribute '{attribute_key}' to: '{str(new_value)[:50]}...'")
+
+            # If the character's system_prompt is edited in the right sidebar,
+            # also update the main system_prompt in the left sidebar.
+            if attribute_key == "system_prompt":
+                try:
+                    # Ensure querying within the correct sidebar if necessary,
+                    # but #chat-system-prompt should be unique.
+                    main_system_prompt_ta = app.query_one("#chat-system-prompt", TextArea)
+                    main_system_prompt_ta.text = new_value
+                    loguru_logger.debug("Updated main system prompt in left sidebar from character edit.")
+                except QueryError:
+                    loguru_logger.error("Could not find #chat-system-prompt to update from character edit.")
+    else:
+        loguru_logger.warning(f"Attribute change event from unmapped control_id: {control_id}")
+
+
+async def handle_chat_clear_active_character_button_pressed(app: 'TldwCli') -> None:
+    """Clears the currently active character data and resets related UI fields."""
+    loguru_logger.info("Clear Active Character button pressed.")
+
+    app.current_chat_active_character_data = None  # Clear the reactive variable
+
+    try:
+        # Get a reference to the chat tab's right sidebar
+        # This sidebar has the ID "chat-right-sidebar"
+        right_sidebar = app.query_one("#chat-right-sidebar")
+
+        # Now query within the right_sidebar for the specific character editing fields
+        right_sidebar.query_one("#chat-character-name-edit", Input).value = ""
+        right_sidebar.query_one("#chat-character-description-edit", TextArea).text = ""
+        right_sidebar.query_one("#chat-character-personality-edit", TextArea).text = ""
+        right_sidebar.query_one("#chat-character-scenario-edit", TextArea).text = ""
+        right_sidebar.query_one("#chat-character-system-prompt-edit", TextArea).text = ""
+        right_sidebar.query_one("#chat-character-first-message-edit", TextArea).text = ""
+
+        # Optional: Clear the character search input and list within the right sidebar
+        # search_input_char = right_sidebar.query_one("#chat-character-search-input", Input)
+        # search_input_char.value = ""
+        # results_list_char = right_sidebar.query_one("#chat-character-search-results-list", ListView)
+        # await results_list_char.clear()
+        # If you clear the list, you might want to repopulate it with the default characters:
+        # await _populate_chat_character_search_list(app) # Assuming _populate_chat_character_search_list is defined in this file or imported
+
+        app.notify("Active character cleared. Chat will use default settings.", severity="information")
+        loguru_logger.debug("Cleared active character data and UI fields from within #chat-right-sidebar.")
+
+    except QueryError as e:
+        loguru_logger.error(
+            f"UI component not found when clearing character fields within #chat-right-sidebar. "
+            f"Widget ID/Selector: {getattr(e, 'widget_id', getattr(e, 'selector', 'N/A'))}",
+            exc_info=True
+        )
+        app.notify("Error clearing character fields (UI component not found).", severity="error")
+    except Exception as e_unexp:
+        loguru_logger.error(f"Unexpected error clearing active character: {e_unexp}", exc_info=True)
+        app.notify("Error clearing active character.", severity="error")
+
+
+async def handle_chat_prompt_search_input_changed(app: 'TldwCli', event_value: str) -> None:
     logger = getattr(app, 'loguru_logger', logging)
-    if item and (hasattr(item, 'prompt_id') or hasattr(item, 'prompt_uuid')):
-        prompt_id_to_load = getattr(item, 'prompt_id', None)
-        prompt_uuid_to_load = getattr(item, 'prompt_uuid', None)
+    search_term = event_value.strip()
+    logger.debug(f"Chat Tab: Prompt search input changed to: '{search_term}'")
+
+    if not app.prompts_service_initialized:
+        logger.warning("Chat Tab: Prompts service not available for prompt search.")
+        # Optionally notify the user or clear list
+        try:
+            results_list_view = app.query_one("#chat-prompt-search-results-listview", ListView)
+            await results_list_view.clear()
+            await results_list_view.append(ListItem(Label("Prompts service unavailable.")))
+        except Exception as e_ui:
+            logger.error(f"Chat Tab: Error accessing prompt search listview: {e_ui}")
+        return
+
+    if not search_term:  # Clear list if search term is empty
+        try:
+            results_list_view = app.query_one("#chat-prompt-search-results-listview", ListView)
+            await results_list_view.clear()
+            logger.debug("Chat Tab: Cleared prompt search results as search term is empty.")
+        except Exception as e_ui_clear:
+            logger.error(f"Chat Tab: Error clearing prompt search listview: {e_ui_clear}")
+        return
+
+    try:
+        results_list_view = app.query_one("#chat-prompt-search-results-listview", ListView)
+        await results_list_view.clear()
+
+        # Assuming search_prompts returns a tuple: (results_list, total_matches)
+        prompt_results, total_matches = prompts_interop.search_prompts(
+            search_query=search_term,
+            search_fields=["name", "details", "keywords"],  # Or other relevant fields
+            page=1,
+            results_per_page=50,  # Adjust as needed
+            include_deleted=False
+        )
+
+        if prompt_results:
+            for prompt_data in prompt_results:
+                item_label = prompt_data.get('name', 'Unnamed Prompt')
+                list_item = ListItem(Label(item_label))
+                # Store necessary identifiers on the ListItem itself
+                list_item.prompt_id = prompt_data.get('id')
+                list_item.prompt_uuid = prompt_data.get('uuid')
+                await results_list_view.append(list_item)
+            logger.info(f"Chat Tab: Prompt search for '{search_term}' yielded {len(prompt_results)} results.")
+        else:
+            await results_list_view.append(ListItem(Label("No prompts found.")))
+            logger.info(f"Chat Tab: Prompt search for '{search_term}' found no results.")
+
+    except prompts_interop.DatabaseError as e_db:
+        logger.error(f"Chat Tab: Database error during prompt search: {e_db}", exc_info=True)
+        try:  # Attempt to update UI with error
+            results_list_view = app.query_one("#chat-prompt-search-results-listview", ListView)
+            await results_list_view.clear()
+            await results_list_view.append(ListItem(Label("DB error searching.")))
+        except Exception:
+            pass
+    except Exception as e:
+        logger.error(f"Chat Tab: Unexpected error during prompt search: {e}", exc_info=True)
+        try:  # Attempt to update UI with error
+            results_list_view = app.query_one("#chat-prompt-search-results-listview", ListView)
+            await results_list_view.clear()
+            await results_list_view.append(ListItem(Label("Search error.")))
+        except Exception:
+            pass
+
+
+async def perform_chat_prompt_search(app: 'TldwCli') -> None:
+    logger = getattr(app, 'loguru_logger', logging)
+    try:
+        search_input_widget = app.query_one("#chat-prompt-search-input",
+                                            Input)  # Ensure Input is imported where this is called
+        await handle_chat_prompt_search_input_changed(app, search_input_widget.value)
+    except Exception as e:
+        logger.error(f"Chat Tab: Error performing prompt search via perform_chat_prompt_search: {e}", exc_info=True)
+
+
+async def handle_chat_view_selected_prompt_button_pressed(app: 'TldwCli') -> None:
+    logger = getattr(app, 'loguru_logger', logging)
+    logger.debug("Chat Tab: View Selected Prompt button pressed.")
+
+    try:
+        results_list_view = app.query_one("#chat-prompts-listview", ListView)
+        selected_list_item = results_list_view.highlighted_child
+
+        if not selected_list_item:
+            app.notify("No prompt selected in the list.", severity="warning")
+            return
+
+        prompt_id_to_load = getattr(selected_list_item, 'prompt_id', None)
+        prompt_uuid_to_load = getattr(selected_list_item, 'prompt_uuid', None)
+
         identifier_to_fetch = prompt_id_to_load if prompt_id_to_load is not None else prompt_uuid_to_load
 
         if identifier_to_fetch is None:
-            logger.warning("Chat sidebar prompt selection: item has no ID or UUID.")
-        return
-        logger.info(f"Chat sidebar prompt selected: ID/UUID={identifier_to_fetch}")
-        if app.prompts_service_initialized:
-            details = prompts_interop.fetch_prompt_details(identifier_to_fetch)
-            logger.debug(f"Fetched prompt details for chat sidebar: {details}")
-            if details:
-                app.chat_sidebar_selected_prompt_id = details.get('id')
-                app.chat_sidebar_selected_prompt_system = details.get('system_prompt', '')
-                app.chat_sidebar_selected_prompt_user = details.get('user_prompt', '')
-                logger.debug(f"Set app reactives: system='{app.chat_sidebar_selected_prompt_system[:50]}...', user='{app.chat_sidebar_selected_prompt_user[:50]}...'")
-            else:
-                logger.warning(f"Prompt details not found for {identifier_to_fetch} for chat sidebar.")
-                app.chat_sidebar_selected_prompt_id = None
-                app.chat_sidebar_selected_prompt_system = "Error: Prompt not found."
-                app.chat_sidebar_selected_prompt_user = ""
-        else:
-            logger.warning("Prompts service not initialized, cannot display prompt details in chat sidebar.")
-            app.chat_sidebar_selected_prompt_id = None
-            app.chat_sidebar_selected_prompt_system = "Prompts service unavailable."
-            app.chat_sidebar_selected_prompt_user = ""
-
-
-async def handle_chat_sidebar_copy_system_prompt_button_pressed(app: 'TldwCli') -> None:
-    if app.chat_sidebar_selected_prompt_system is not None:
-        app.copy_to_clipboard(app.chat_sidebar_selected_prompt_system)
-        app.notify("System prompt copied to clipboard!", severity="information", timeout=2)
-    else:
-        app.notify("No system prompt selected or available to copy.", severity="warning")
-
-
-async def handle_chat_sidebar_copy_user_prompt_button_pressed(app: 'TldwCli') -> None:
-    if app.chat_sidebar_selected_prompt_user is not None:
-        app.copy_to_clipboard(app.chat_sidebar_selected_prompt_user)
-        app.notify("User prompt copied to clipboard!", severity="information", timeout=2)
-    else:
-        app.notify("No user prompt selected or available to copy.", severity="warning")
-=======
-                # Store both ID and UUID if available, prioritize ID for fetching
-                item.prompt_id = prompt_data.get('id')
-                item.prompt_uuid = prompt_data.get('uuid')
-                await list_view.append(item)
-        loguru_logger.debug(f"Chat sidebar prompts list populated with {len(results)} items.")
-    except QueryError as e_query:
-        loguru_logger.error(f"UI component error populating chat sidebar prompts list: {e_query}", exc_info=True)
-    except (DatabaseError, RuntimeError) as e_prompt_service:
-        loguru_logger.error(f"Error populating chat sidebar prompts list: {e_prompt_service}", exc_info=True)
-        try:
-            list_view_err = app.query_one("#chat-prompt-list-view", ListView)
-            await list_view_err.clear()
-            await list_view_err.append(ListItem(Label(f"Error: {type(e_prompt_service).__name__}")))
-        except QueryError:
-            pass  # Already logged
-    except Exception as e_unexp:
-        loguru_logger.error(f"Unexpected error populating chat sidebar prompts list: {e_unexp}", exc_info=True)
-
-
-async def handle_chat_sidebar_prompt_search_input_changed(app: 'TldwCli', search_value: str) -> None:
-    """Handles input changes in the chat sidebar prompt search bar with debouncing."""
-    loguru_logger.debug(f"Chat sidebar prompt search input changed: '{search_value}'")
-    if app._chat_sidebar_prompt_search_timer:
-        app._chat_sidebar_prompt_search_timer.stop()
-    app._chat_sidebar_prompt_search_timer = app.set_timer(
-        0.5,  # Debounce time
-        lambda: populate_chat_sidebar_prompts_list(app, search_value.strip())
-    )
-
-
-async def handle_chat_load_selected_sidebar_prompt_button_pressed(app: 'TldwCli') -> None:
-    """Handles loading a selected prompt in the Chat tab's sidebar."""
-    loguru_logger.info("Load selected prompt button (chat sidebar) pressed.")
-    if not app.prompts_service_initialized:
-        app.notify("Prompts service not available.", severity="error")
-        return
-
-    try:
-        list_view = app.query_one("#chat-prompt-list-view", ListView)
-        selected_item = list_view.highlighted_child
-
-        if not selected_item or not (hasattr(selected_item, 'prompt_id') or hasattr(selected_item, 'prompt_uuid')):
-            app.notify("No prompt selected to load.", severity="warning")
+            app.notify("Selected prompt item is invalid (missing ID/UUID).", severity="error")
+            logger.error("Chat Tab: Selected prompt item missing ID and UUID.")
             return
 
-        prompt_id_to_load = getattr(selected_item, 'prompt_id', None)
-        prompt_uuid_to_load = getattr(selected_item, 'prompt_uuid', None)
+        logger.debug(f"Chat Tab: Fetching details for prompt identifier: {identifier_to_fetch}")
+        prompt_details = prompts_interop.fetch_prompt_details(identifier_to_fetch)
 
-        identifier_to_fetch: Union[
-            int, str, None] = prompt_id_to_load if prompt_id_to_load is not None else prompt_uuid_to_load
-
-        if identifier_to_fetch is None:
-            app.notify("Selected prompt has no valid ID or UUID.", severity="error")
-            loguru_logger.error("Cannot load prompt from chat sidebar: identifier_to_fetch is None.")
-            # Reset display if needed
-            app.chat_sidebar_prompt_display_visible = False
-            app.chat_sidebar_loaded_prompt_id = None
-            app.chat_sidebar_loaded_prompt_title_text = ""
-            app.chat_sidebar_loaded_prompt_system_text = ""
-            app.chat_sidebar_loaded_prompt_user_text = ""
-            app.chat_sidebar_loaded_prompt_keywords_text = ""
-            return
-
-        loguru_logger.info(f"Attempting to load prompt (ID/UUID: {identifier_to_fetch}) into chat sidebar display.")
-        prompt_details = fetch_prompt_details(identifier_to_fetch)
+        system_display_widget = app.query_one("#chat-prompt-system-display", TextArea)
+        user_display_widget = app.query_one("#chat-prompt-user-display", TextArea)
+        copy_system_button = app.query_one("#chat-prompt-copy-system-button", Button)
+        copy_user_button = app.query_one("#chat-prompt-copy-user-button", Button)
 
         if prompt_details:
-            app.chat_sidebar_loaded_prompt_id = identifier_to_fetch
-            app.chat_sidebar_loaded_prompt_title_text = prompt_details.get('name', 'N/A')
-            app.chat_sidebar_loaded_prompt_system_text = prompt_details.get('system_prompt', '')
-            app.chat_sidebar_loaded_prompt_user_text = prompt_details.get('user_prompt', '')
-            keywords_list = prompt_details.get('keywords', [])
-            app.chat_sidebar_loaded_prompt_keywords_text = ", ".join(keywords_list) if keywords_list else "None"
+            system_prompt_content = prompt_details.get('system_prompt', '')
+            user_prompt_content = prompt_details.get('user_prompt', '')
 
-            app.chat_sidebar_prompt_display_visible = True  # This will trigger watchers to update UI
-            app.notify(f"Prompt '{app.chat_sidebar_loaded_prompt_title_text}' loaded into sidebar.", severity="info")
+            system_display_widget.text = system_prompt_content
+            user_display_widget.text = user_prompt_content
+
+            # Store the fetched content on the app or widgets for copy buttons
+            # If TextAreas are read-only, their .text property is the source of truth
+            # No need for app.current_loaded_system_prompt etc. unless used elsewhere
+
+            copy_system_button.disabled = not bool(system_prompt_content)
+            copy_user_button.disabled = not bool(user_prompt_content)
+
+            app.notify(f"Prompt '{prompt_details.get('name', 'Selected')}' loaded for viewing.", severity="information")
+            logger.info(f"Chat Tab: Displayed prompt '{prompt_details.get('name', 'Unknown')}' for viewing.")
         else:
-            app.notify(f"Failed to load details for prompt (ID/UUID: {identifier_to_fetch}).", severity="error")
-            app.chat_sidebar_prompt_display_visible = False  # Hide display if load fails
+            system_display_widget.text = "Failed to load prompt details."
+            user_display_widget.text = ""
+            copy_system_button.disabled = True
+            copy_user_button.disabled = True
+            app.notify("Failed to load details for the selected prompt.", severity="error")
+            logger.error(f"Chat Tab: Failed to fetch details for prompt identifier: {identifier_to_fetch}")
+
+    except prompts_interop.DatabaseError as e_db:
+        logger.error(f"Chat Tab: Database error viewing selected prompt: {e_db}", exc_info=True)
+        app.notify("Database error loading prompt.", severity="error")
+    except Exception as e:
+        logger.error(f"Chat Tab: Unexpected error viewing selected prompt: {e}", exc_info=True)
+        app.notify("Error loading prompt for viewing.", severity="error")
+        # Clear display areas on generic error too
+        try:
+            app.query_one("#chat-prompt-display-system", TextArea).text = ""
+            app.query_one("#chat-prompt-display-user", TextArea).text = ""
+            app.query_one("#chat-prompt-copy-system-button", Button).disabled = True
+            app.query_one("#chat-prompt-copy-user-button", Button).disabled = True
+        except Exception:
+            pass  # UI might not be fully available
+
+
+async def _populate_chat_character_search_list(app: 'TldwCli', search_term: Optional[str] = None) -> None:
+    try:
+        results_list_view = app.query_one("#chat-character-search-results-list", ListView)
+        await results_list_view.clear()
+
+        if not app.notes_service:
+            app.notify("Database service not available.", severity="error")
+            loguru_logger.error("Notes service not available for character list population.")
+            await results_list_view.append(ListItem(Label("Error: DB service unavailable.")))
+            return
+
+        db = app.notes_service._get_db(app.notes_user_id)
+        characters = []
+        operation_type = "list_character_cards"  # For logging
+
+        try:
+            if search_term:
+                operation_type = "search_character_cards"
+                loguru_logger.debug(f"Populating character list by searching for: '{search_term}'")
+                characters = db.search_character_cards(search_term=search_term, limit=50)
+            else:
+                loguru_logger.debug("Populating character list with default list (limit 40).")
+                characters = db.list_character_cards(limit=40)
+
+            if not characters:
+                await results_list_view.append(ListItem(Label("No characters found.")))
+            else:
+                for char_data in characters:
+                    item = ListItem(Label(char_data.get('name', 'Unnamed Character')))
+                    item.character_id = char_data.get('id')  # Store ID on the item
+                    await results_list_view.append(item)
+            loguru_logger.info(f"Character list populated using {operation_type}. Found {len(characters)} characters.")
+
+        except Exception as e_db_call:
+            loguru_logger.error(f"Error during DB call ({operation_type}): {e_db_call}", exc_info=True)
+            await results_list_view.append(ListItem(Label(f"Error during {operation_type}.")))
 
     except QueryError as e_query:
-        loguru_logger.error(f"UI component error loading prompt to chat sidebar: {e_query}", exc_info=True)
-        app.notify("UI Error: Could not find prompt list or display.", severity="error")
-    except (DatabaseError, RuntimeError) as e_db:
-        loguru_logger.error(f"Database error loading prompt to chat sidebar: {e_db}", exc_info=True)
-        app.notify("Database Error: Could not load prompt.", severity="error")
+        loguru_logger.error(f"UI component not found for character list population: {e_query}", exc_info=True)
+        # Avoid app.notify here as this function might be called when tab is not fully visible.
+        # Let the calling context (e.g., direct user action) handle user notifications if appropriate.
     except Exception as e_unexp:
-        loguru_logger.error(f"Unexpected error loading prompt to chat sidebar: {e_unexp}", exc_info=True)
-        app.notify("Unexpected Error: Could not load prompt.", severity="error")
+        loguru_logger.error(f"Unexpected error in _populate_chat_character_search_list: {e_unexp}", exc_info=True)
+        # Avoid app.notify here as well.
 
 
 async def handle_chat_copy_system_prompt_button_pressed(app: 'TldwCli') -> None:
-    """Copies the system prompt from the chat sidebar display to clipboard."""
-    loguru_logger.info("Copy System Prompt (chat sidebar) button pressed.")
-    prompt_text = app.chat_sidebar_loaded_prompt_system_text
-    if prompt_text:
-        app.copy_to_clipboard(prompt_text)
-        app.notify("System prompt copied to clipboard!", severity="info", timeout=2)
-    else:
-        app.notify("No system prompt text to copy.", severity="warning", timeout=2)
+    logger = getattr(app, 'loguru_logger', logging)
+    logger.debug("Chat Tab: Copy System Prompt button pressed.")
+    try:
+        system_display_widget = app.query_one("#chat-prompt-system-display", TextArea)
+        content_to_copy = system_display_widget.text
+        if content_to_copy:
+            app.copy_to_clipboard(content_to_copy)
+            app.notify("System prompt copied to clipboard!")
+            logger.info("Chat Tab: System prompt content copied to clipboard.")
+        else:
+            app.notify("No system prompt content to copy.", severity="warning")
+            logger.warning("Chat Tab: No system prompt content available to copy.")
+    except Exception as e:
+        logger.error(f"Chat Tab: Error copying system prompt: {e}", exc_info=True)
+        app.notify("Error copying system prompt.", severity="error")
 
 
 async def handle_chat_copy_user_prompt_button_pressed(app: 'TldwCli') -> None:
-    """Copies the user prompt from the chat sidebar display to clipboard."""
-    loguru_logger.info("Copy User Prompt (chat sidebar) button pressed.")
-    prompt_text = app.chat_sidebar_loaded_prompt_user_text
-    if prompt_text:
-        app.copy_to_clipboard(prompt_text)
-        app.notify("User prompt copied to clipboard!", severity="info", timeout=2)
+    logger = getattr(app, 'loguru_logger', logging)
+    logger.debug("Chat Tab: Copy User Prompt button pressed.")
+    try:
+        user_display_widget = app.query_one("#chat-prompt-user-display", TextArea)
+        content_to_copy = user_display_widget.text
+        if content_to_copy:
+            app.copy_to_clipboard(content_to_copy)
+            app.notify("User prompt copied to clipboard!")
+            logger.info("Chat Tab: User prompt content copied to clipboard.")
+        else:
+            app.notify("No user prompt content to copy.", severity="warning")
+            logger.warning("Chat Tab: No user prompt content available to copy.")
+    except Exception as e:
+        logger.error(f"Chat Tab: Error copying user prompt: {e}", exc_info=True)
+        app.notify("Error copying user prompt.", severity="error")
+
+
+async def handle_chat_sidebar_prompt_search_changed(
+    app: "TldwCli",
+    new_value: str,
+) -> None:
+    """
+    Populate / update the *Prompts* list that lives in the Chat-tab’s right sidebar.
+
+    Called
+
+        • each time the search-input (#chat-prompt-search-input) changes, and
+        • once when the Chat tab first becomes active (app.py calls with an empty string).
+
+    Parameters
+    ----------
+    app : TldwCli
+        The running application instance (passed by `call_later` / the watcher).
+    new_value : str
+        The raw text currently in the search-input.  Leading / trailing whitespace is ignored.
+    """
+    logger = getattr(app, "loguru_logger", logging)  # fall back to stdlib if unavailable
+    search_term = (new_value or "").strip()
+    logger.debug(f"Sidebar-Prompt-Search changed → '{search_term}'")
+
+    # Locate UI elements up-front so we can fail fast.
+    try:
+        search_input  : Input    = app.query_one("#chat-prompt-search-input", Input)
+        results_view  : ListView = app.query_one("#chat-prompts-listview", ListView)
+    except QueryError as q_err:
+        logger.error(f"[Prompts] UI element(s) missing: {q_err}")
+        return
+
+    # Keep the search-box in sync if we were called programmatically (e.g. with "").
+    if search_input.value != new_value:
+        search_input.value = new_value
+
+    # Always start with a clean slate.
+    await results_view.clear()
+
+    # Ensure the prompts subsystem is ready.
+    if not getattr(app, "prompts_service_initialized", False):
+        await results_view.append(ListItem(Label("Prompt service unavailable.")))
+        logger.warning("[Prompts] Service not initialised – cannot search.")
+        return
+
+    # === No term supplied → Show a convenient default list (first 100, alpha order). ===
+    if not search_term:
+        try:
+            prompts, _total = prompts_interop.search_prompts(
+                search_query   = "",                 # empty → match all
+                search_fields  = ["name"],           # cheap field only
+                page           = 1,
+                results_per_page = 100,
+                include_deleted = False,
+            )
+        except Exception as e:
+            logger.error(f"[Prompts] Default-list load failed: {e}", exc_info=True)
+            await results_view.append(ListItem(Label("Failed to load prompts.")))
+            return
+    # === A term is present → Run a full search. ===
     else:
-        app.notify("No user prompt text to copy.", severity="warning", timeout=2)
->>>>>>> Stashed changes
+        try:
+            prompts, _total = prompts_interop.search_prompts(
+                search_query     = search_term,
+                search_fields    = ["name", "details", "keywords"],
+                page             = 1,
+                results_per_page = 100,              # generous but safe
+                include_deleted  = False,
+            )
+        except prompts_interop.DatabaseError as dbe:
+            logger.error(f"[Prompts] DB error during search: {dbe}", exc_info=True)
+            await results_view.append(ListItem(Label("Database error while searching.")))
+            return
+        except Exception as ex:
+            logger.error(f"[Prompts] Unknown error during search: {ex}", exc_info=True)
+            await results_view.append(ListItem(Label("Error during search.")))
+            return
+
+    # ----- Render results -----
+    if not prompts:
+        await results_view.append(ListItem(Label("No prompts found.")))
+        logger.info(f"[Prompts] Search '{search_term}' → 0 results.")
+        return
+
+    for pr in prompts:
+        item = ListItem(Label(pr.get("name", "Unnamed Prompt")))
+        # Stash useful identifiers on the ListItem for later pick-up by the “Load Selected Prompt” button.
+        item.prompt_id   = pr.get("id")
+        item.prompt_uuid = pr.get("uuid")
+        await results_view.append(item)
+
+    logger.info(f"[Prompts] Search '{search_term}' → {len(prompts)} results.")
+
 
 #
 # End of chat_events.py

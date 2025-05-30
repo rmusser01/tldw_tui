@@ -11,11 +11,12 @@ log_max_bytes = 10485760 # 10 MB
 log_backup_count = 5
 
 [database]
-# Path to the main application data/history database.
-# Use ~ for home directory expansion.
-path = "~/.local/share/tldw_cli/tldw_cli_data.db"
-# Path to user config dir (derived from this in code if needed for other files)
-# user_config_dir = "~/.config/tldw_cli" # Example if needed explicitly
+# Path to the ChaChaNotes (Character, Chat, Notes) database.
+chachanotes_db_path = "~/.local/share/tldw_cli/tldw_chatbook_ChaChaNotes.db"
+# Path to the Prompts database.
+prompts_db_path = "~/.local/share/tldw_cli/tldw_cli_prompts.db"
+# Path to the Media V2 database.
+media_db_path = "~/.local/share/tldw_cli/tldw_cli_media_v2.db"
 
 [api_endpoints]
 # Optional: Specify URLs for local/custom endpoints if they differ from library defaults

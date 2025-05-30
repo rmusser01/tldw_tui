@@ -32,7 +32,7 @@ from urllib3.util.retry import Retry
 #
 # Import Local libraries
 from tldw_chatbook.Chat.Chat_Deps import ChatAPIError
-from tldw_chatbook.config import load_settings
+from tldw_chatbook.config import load_settings, settings
 from tldw_chatbook.Utils.Utils import logging
 from tldw_chatbook.Chat.Chat_Functions import ChatAuthenticationError, ChatRateLimitError, \
     ChatBadRequestError, ChatProviderError, ChatConfigurationError
@@ -578,8 +578,8 @@ def chat_with_cohere(
         custom_prompt_arg: Optional[str] = None # Kept for legacy, but focus on structured input
 ):
     logging.debug(f"Cohere Chat: Request process starting for model '{model}' (Streaming: {streaming})")
-    loaded_config_data = load_settings()
-    cohere_config = loaded_config_data.get('cohere_api', loaded_config_data.get('API', {}).get('cohere', {}))
+    cli_api_settings = settings.get('api_settings', {}) # Get the [api_settings] table
+    cohere_config = cli_api_settings.get('cohere', {})  # Get the [api_settings.cohere] sub-table
 
     final_api_key = api_key or cohere_config.get('api_key')
     if not final_api_key:
@@ -893,8 +893,8 @@ def chat_with_deepseek(
         logit_bias: Optional[Dict[str, float]] = None,  # If supported
         custom_prompt_arg: Optional[str] = None  # Legacy
 ):
-    loaded_config_data = load_settings()
-    deepseek_config = loaded_config_data.get('deepseek_api', {})
+    cli_api_settings = settings.get('api_settings', {}) # Get the [api_settings] table
+    deepseek_config = cli_api_settings.get('deepseek', {})  # Get the [api_settings.deepseek] sub-table
     final_api_key = api_key or deepseek_config.get('api_key')
     if not final_api_key:
         raise ChatConfigurationError(provider="deepseek", message="DeepSeek API Key required.")
@@ -994,13 +994,11 @@ def chat_with_google(
         tools: Optional[List[Dict[str, Any]]] = None,  # Gemini 'tools' config
         custom_prompt_arg: Optional[str] = None
 ):
-    loaded_config_data = load_settings()
+    loaded_config_data = settings.get('api_settings', {})  # Get the [api_settings] table
     google_config = loaded_config_data.get('google_api', {})
-    # ... (api key, model, temp, streaming, topP, topK setup) ...
     final_api_key = api_key or google_config.get('api_key')
     if not final_api_key: raise ChatConfigurationError(provider="google", message="Google API Key required.")
     current_model = model or google_config.get('model', 'gemini-1.5-flash-latest')
-    # ... other param resolutions ...
     current_streaming_cfg = google_config.get('streaming', False)
     current_streaming = streaming if streaming is not None else \
         (str(current_streaming_cfg).lower() == 'true' if isinstance(current_streaming_cfg, str) else bool(
@@ -1208,8 +1206,8 @@ def chat_with_groq(
         top_logprobs: Optional[int] = None,
         custom_prompt_arg: Optional[str] = None  # Legacy
 ):
-    loaded_config_data = load_settings()
-    groq_config = loaded_config_data.get('groq_api', {})
+    cli_api_settings = settings.get('api_settings', {}) # Get the [api_settings] table
+    groq_config = cli_api_settings.get('groq', {})  # Get the [api_settings.cohere] sub-table
     final_api_key = api_key or groq_config.get('api_key')
     if not final_api_key:
         raise ChatConfigurationError(provider="groq", message="Groq API Key required.")
@@ -1535,8 +1533,8 @@ def chat_with_mistral(
         response_format: Optional[Dict[str, str]] = None,
         custom_prompt_arg: Optional[str] = None
 ):
-    loaded_config_data = load_settings()
-    mistral_config = loaded_config_data.get('mistral_api', {})
+    cli_api_settings = settings.get('api_settings', {}) # Get the [api_settings] table
+    mistral_config = cli_api_settings.get('mistral', {})  # Get the [api_settings.mistral] sub-table
     final_api_key = api_key or mistral_config.get('api_key')
     if not final_api_key:
         raise ChatConfigurationError(provider="mistral", message="Mistral API Key required.")
@@ -1643,8 +1641,8 @@ def chat_with_openrouter(
         top_logprobs: Optional[int] = None,
         custom_prompt_arg: Optional[str] = None
 ):
-    loaded_config_data = load_settings()
-    openrouter_config = loaded_config_data.get('openrouter_api', {})
+    cli_api_settings = settings.get('api_settings', {}) # Get the [api_settings] table
+    openrouter_config = cli_api_settings.get('openrouter', {})  # Get the [api_settings.cohere] sub-table
     # ... (api key, model, temp, streaming setup) ...
     final_api_key = api_key or openrouter_config.get('api_key')
     if not final_api_key: raise ChatConfigurationError(provider='openrouter', message="OpenRouter API Key required.")

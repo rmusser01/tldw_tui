@@ -8,6 +8,8 @@ requests
 pillow
 loguru
 pydantic
+pyyaml
+httpx
 # Chunk Library
 #tqdm
 #langdetect

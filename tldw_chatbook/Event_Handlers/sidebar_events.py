@@ -18,12 +18,12 @@ if TYPE_CHECKING:
 async def handle_sidebar_toggle_button_pressed(app: 'TldwCli', button_id: str) -> None:
     """Handles all sidebar toggle button presses."""
     # --- Chat Sidebar ---
-    if button_id == "toggle-chat-sidebar":
+    if button_id == "toggle-chat-left-sidebar":
         app.chat_sidebar_collapsed = not app.chat_sidebar_collapsed
         logging.debug("Chat sidebar now %s", "collapsed" if app.chat_sidebar_collapsed else "expanded")
-    elif button_id == "toggle-character-sidebar":
-        app.character_sidebar_collapsed = not app.character_sidebar_collapsed
-        logging.debug("Character sidebar now %s", "collapsed" if app.character_sidebar_collapsed else "expanded")
+    elif button_id == "toggle-chat-right-sidebar":
+        app.chat_right_sidebar_collapsed = not app.chat_right_sidebar_collapsed
+        logging.debug("Character sidebar now %s", "collapsed" if app.chat_right_sidebar_collapsed else "expanded")
     # --- Notes Sidebars ---
     elif button_id == "toggle-notes-sidebar-left":
         app.notes_sidebar_left_collapsed = not app.notes_sidebar_left_collapsed

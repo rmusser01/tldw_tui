@@ -18,7 +18,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 .placeholder-window { align: center middle; background: $panel; }
 
 /* Sidebar Styling */
-/* Generic .sidebar (used by #chat-sidebar and potentially others) */
+/* Generic .sidebar (used by #chat-left-sidebar and potentially others) */
 .sidebar {
     dock: left;
     width: 25%; /* <-- CHANGE to percentage (adjust 20% to 35% as needed) */
@@ -41,8 +41,8 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     display: none; /* ensures it doesn’t grab focus */
 }
 
-/* Right sidebar (character-sidebar) */
-#character-sidebar {
+/* Right sidebar (chat-right-sidebar) */
+#chat-right-sidebar {
     dock: right;
     /* width: 70;   <-- REMOVE fixed width */
     width: 25%;  /* <-- CHANGE to percentage (match .sidebar or use a different one) */
@@ -57,7 +57,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 }
 
 /* Collapsed state for the new right sidebar */
-#character-sidebar.collapsed {
+#chat-right-sidebar.collapsed {
     width: 0 !important;
     min-width: 0 !important; /* Ensure min-width is also 0 */
     border-left: none !important;
@@ -72,6 +72,18 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 .sidebar-input { width: 100%; margin-bottom: 1; }
 .sidebar-textarea { width: 100%; border: round $surface; margin-bottom: 1; }
 .sidebar Select { width: 100%; margin-bottom: 1; }
+
+.prompt-display-textarea {
+    height: 7; /* Example height */
+    border: round $primary-lighten-2;
+    background: $primary-background;
+}
+
+.sidebar-listview {
+    height: 10; /* Example height for listviews in sidebars */
+    border: round $primary-lighten-2;
+    background: $primary-background;
+}
 
 /* --- Chat Window specific layouts --- */
 #chat-main-content {
@@ -161,7 +173,13 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     margin-bottom: 1;
     border: round $surface;
 }
-.cc-left-pane Button, .cc-right_pane Button { /* Typo Fixed */
+.cc-left-pane Button, .cc-right-pane Button { /* Typo in original was .cc-right_pane */
+    width: 100%;
+    margin-bottom: 1;
+}
+
+/* Ensure Select widgets in left and right panes also get full width */
+.cc-left-pane Select, .cc-right-pane Select {
     width: 100%;
     margin-bottom: 1;
 }
@@ -306,11 +324,11 @@ ChatMessage.-ai .message-actions.-generating {
 .sidebar-toggle:hover { background: $surface; }
 
 /* Specific margins for sidebar toggles based on position */
-#toggle-chat-sidebar {
+#toggle-chat-left-sidebar {
     margin-right: 1; /* Original toggle on the left of input area */
 }
 
-#toggle-character-sidebar {
+#toggle-chat-right-sidebar {
     margin-left: 1; /* New toggle on the right of input area */
 }
 
@@ -438,12 +456,12 @@ MetricsScreen Label.-info-message {
 
 
 /* Character Sidebar Specific Styles */
-#character-sidebar #chat-conversation-title-input { /* Title input */
+#chat-right-sidebar #chat-conversation-title-input { /* Title input */
     /* width: 100%; (from .sidebar-input) */
     /* margin-bottom: 1; (from .sidebar-input) */
 }
 
-#character-sidebar .chat-keywords-textarea { /* Keywords TextArea specific class */
+#chat-right-sidebar .chat-keywords-textarea { /* Keywords TextArea specific class */
     height: 4;  /* Or 3 to 5, adjust as preferred */
     /* width: 100%; (from .sidebar-textarea) */
     /* border: round $surface; (from .sidebar-textarea) */
@@ -451,13 +469,13 @@ MetricsScreen Label.-info-message {
 }
 
 /* Styling for the new "Save Details" button */
-#character-sidebar .save-details-button {
+#chat-right-sidebar .save-details-button {
     margin-top: 1; /* Space above this button */
     /* width: 100%;    Make it full width */
 }
 
 /* Ensure the Save Current Chat button also has clear styling if needed */
-#character-sidebar .save-chat-button {
+#chat-right-sidebar .save-chat-button {
     margin-top: 1; /* Ensure it has some space if it's after keywords */
     /* width: 100%; */
 }
@@ -484,32 +502,6 @@ MetricsScreen Label.-info-message {
 }
 /* End of Character Sidebar Specific Styles */
 
-.sidebar-static-display { /* For title and keywords static display in sidebars */
-    width: 100%;
-    padding: 1; /* Add internal padding */
-    margin-bottom: 1;
-    height: auto; /* Allow multiple lines for keywords */
-    border: round $surface-darken-1;
-    background: $panel; /* Background distinct from loaded-prompt-area */
-    color: $text;
-}
-.loaded-prompt-textarea { /* For system/user prompt display TextAreas in chat sidebar */
-    height: 7; /* Adjust as needed, or use auto with max-height */
-    width: 100%;
-    margin-bottom: 1;
-    /* border: round $surface; Re-apply if needed, but sidebar-textarea should cover */
-}
-
-.copy-prompt-button { /* For copy buttons in chat sidebar prompt display */
-    width: 100%;
-    /* margin-top: 0; Default margin-bottom is 1 from sidebar-button */
-}
-
-#chat-loaded-prompt-display-area.hidden { /* Class to hide the loaded prompt display area */
-    display: none !important;
-}
-
-/* --- Prompts Sidebar Vertical --- */
 
 /* --- Prompts Sidebar Vertical --- */
 .ccp-prompt-textarea { /* Specific class for prompt textareas if needed */
@@ -584,6 +576,10 @@ MetricsScreen Label.-info-message {
 }
 #ccp-prompt-editor-view {
     display: none; /* Initially hidden by CSS */
+}
+
+#ccp-character-card-view {
+    display: none; /* Initially hidden, to be shown by Python logic */
 }
 
 /* Ensure the right pane sections also respect hidden class */
@@ -733,6 +729,64 @@ MetricsScreen Label.-info-message {
     /* border: round $primary; */
     /* padding: 2; */
 }
+.ingest-label {
+    margin-top: 1;
+    margin-bottom: 0;
+}
+.ingest-selected-files-list {
+    height: 5;
+    border: round $primary;
+    margin-bottom: 1;
+    background: $surface;
+}
+.ingest-preview-area {
+    height: 1fr;
+    border: round $primary-lighten-2;
+    padding: 1;
+    margin-bottom: 1;
+    background: $surface;
+}
+.ingest-preview-area > Static#ingest-prompts-preview-placeholder {
+    color: $text-muted;
+    width: 100%;
+    text-align: center;
+    padding: 2 0;
+}
+.ingest-status-area {
+    height: 8;
+    margin-top: 1;
+}
+
+.prompt-preview-item {
+    border: panel $background-lighten-2;
+    padding: 1;
+    margin-bottom: 1;
+}
+.prompt-preview-item .prompt-title {
+    text-style: bold;
+}
+.prompt-preview-item .prompt-field-label {
+    text-style: italic;
+    color: $text-muted;
+}
+.prompt-preview-item Markdown {
+    background: $surface-darken-1;
+    padding: 0 1;
+    margin-top: 1;
+    margin-bottom: 1;
+    border: solid $primary-darken-1; /* Use 'solid' instead of 'narrow' */
+    max-height: 10;
+    overflow-y: auto;
+}
+.prompt-preview-item .prompt-details-text {
+    max-height: 5;
+    overflow-y: auto;
+    background: $surface;
+    padding: 0 1;
+    border: dashed $primary-darken-2; /* Use 'dashed' instead of 'dotted' */
+    margin-bottom: 1;
+}
+/* --- END OF INTEGRATED NEW CSS --- */
 
 /* --- LLM Management Tab --- */
 #llm_management-window { /* Matches TAB_LLM ("llm_management") */
@@ -779,7 +833,6 @@ MetricsScreen Label.-info-message {
     height: 100%; /* Or auto */
 }
 
-
 /* Chat Sidebar Prompts Section Specific Styles */
 #chat-sidebar-prompts-collapsible { /* The collapsible container itself */
     /* Add any specific styling for the collapsible if needed */
@@ -811,3 +864,147 @@ MetricsScreen Label.-info-message {
     margin-top: 0; /* Remove top margin if directly after TextArea */
     margin-bottom: 1; /* Space after copy buttons */
 }
+
+/* --- Media Tab --- */
+#media-window { /* Matches TAB_MEDIA */
+    layout: horizontal; /* Main layout for this tab */
+}
+
+.media-nav-pane {
+    dock: left;
+    width: 25%; /* Adjust as needed */
+    min-width: 20; /* Example min-width */
+    max-width: 50; /* Example max-width */
+    height: 100%;
+    background: $boost; /* Or a different background */
+    padding: 1;
+    border-right: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.media-nav-pane .media-nav-button { /* Style for navigation buttons */
+    width: 100%;
+    margin-bottom: 1;
+    border: none;
+    height: 3;
+}
+.media-nav-pane .media-nav-button:hover {
+    background: $accent 75%; /* Example hover, distinct from other navs */
+}
+
+.media-content-pane {
+    width: 1fr; /* Takes remaining horizontal space */
+    height: 100%;
+    padding: 1 2; /* Padding for the content area */
+    overflow-y: auto; /* If content within sub-views might scroll */
+}
+
+.media-view-area { /* Class for individual content areas in Media tab */
+    width: 100%;
+    height: 100%; /* Or auto if content dictates height */
+}
+
+/* --- Search Tab (RAG/Embeddings) --- */
+#search-window { /* Matches TAB_SEARCH, .window class provides layout: horizontal */
+    /* No explicit layout needed here if .window handles it */
+}
+
+.search-nav-pane { /* Style for the left navigation pane in Search Tab */
+    dock: left;
+    width: 25%;
+    min-width: 25;
+    max-width: 60;
+    height: 100%;
+    background: $boost;
+    padding: 1;
+    border-right: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.search-nav-pane .search-nav-button { /* Style for navigation buttons in Search Tab */
+    width: 100%;
+    margin-bottom: 1;
+    border: none;
+    height: 3;
+}
+.search-nav-pane .search-nav-button:hover {
+    background: $accent 80%; /* Example: accent color with 80% opacity */
+}
+/* Active state for selected search nav button */
+.search-nav-pane .search-nav-button.-active-search-sub-view {
+    background: $accent;
+    color: $text;
+    text-style: bold;
+}
+
+.search-content-pane { /* Style for the right content display area in Search Tab */
+    width: 1fr;
+    height: 100%;
+    padding: 1 2;
+    overflow-y: auto;
+}
+
+.search-view-area { /* Common class for individual content areas in Search Tab */
+    width: 100%;
+    height: 100%;
+    /* display: none; /* All initially hidden, watcher will show one */
+    /* align: center middle; /* Useful if content is just a Static placeholder */
+}
+
+/* Center placeholder text inside view areas if they are simple Statics for now */
+.search-view-area Static {
+    width: 100%;
+    height: 100%;
+    align: center middle;
+}
+
+
+
+/* --- Media Tab Specific Options --- */
+.ingest-form-scrollable {
+    height: 1fr; /* Allow scrolling within the form area */
+}
+
+.ingest-textarea-small {
+    height: 3;
+    margin-bottom: 1;
+}
+.ingest-textarea-medium {
+    height: 5;
+    margin-bottom: 1;
+}
+.ingest-form-row {
+    layout: horizontal;
+    width: 100%;
+    height: auto;
+    margin-bottom: 1;
+}
+.ingest-form-col {
+    width: 1fr;
+    padding: 0 1;
+}
+.ingest-form-col:first-of-type {
+    padding-left: 0;
+}
+.ingest-form-col:last-of-type {
+    padding-right: 0;
+}
+
+.ingest-submit-button {
+    width: 100%;
+    margin-top: 2;
+}
+
+.hidden {
+    display: none;
+}
+.tldw-api-media-specific-options { /* Common class for specific option blocks */
+    padding: 1;
+    border: round $surface;
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+/* --- End of Media Tab Specific Options --- */

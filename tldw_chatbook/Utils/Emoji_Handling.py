@@ -134,6 +134,9 @@ CROSS_FALLBACK = "[FAIL]"
 SPARKLES_EMOJI = "✨"
 SPARKLES_FALLBACK = "*"
 
+EMOJI_STOP = "⏹️"  # Or "🛑"
+FALLBACK_STOP = "Stop"
+
 
 def get_char(emoji_char: str, fallback_char: str) -> str:
     """Returns the emoji if supported, otherwise the fallback."""

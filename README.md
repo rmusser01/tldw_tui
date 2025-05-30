@@ -5,9 +5,21 @@ A Textual TUI for interacting with various LLM APIs, managing conversation histo
 Current status: Working/In-Progress
 
 ![Screenshot](https://github.com/rmusser01/tldw_chatbook/blob/main/static/PoC-Frontpage.PNG?raw=true)
+### Quick Start
+- **Via Manual Installation**
+  - Clone the repository: `git clone https://github.com/rmusser01/tldw_chatbook`
+  - Setup a virtual environment (optional but recommended): 
+    ```bash
+    python3 -m venv .venv
+    source .venv/bin/activate
+    ```
+  - Install the dependencies: `pip install -r requirements.txt`
+  - Run the application:
+    - If you are in the root directory of the repository: `python3 -m tldw_chatbook.app`
+
 ## Current Features
   - Connect to multiple LLM providers (Local: Llama.cpp, Ollama, Kobold.cpp, vLLM, Aphrodite, Custom-OpenAI API endpoint ; Commercial: OpenAI, Anthropic, Cohere, Deepseek, Google, Groq, Mistral, OpenRouter)
-  - Character Card functionality (WIP)
+  - Character Card functionality (Persona/Character/Chatbot support + ingestion of character cards into the DB)
   - Conversation history management
   - Notes and keyword management
   - Textual TUI interface
@@ -45,15 +57,20 @@ Current status: Working/In-Progress
   - Run the application from your terminal: `tldw_chatbook`
 - **Via Manual Installation**
   - Clone the repository: `git clone https://github.com/rmusser01/tldw_chatbook`
-  - Setup a virtual environment (optional but recommended): 
+  - Setup a virtual environment (optional but recommended) and run tldw_chatbook: 
     ```bash
     python3 -m venv .venv
-    source .venv/bin/activate
+    source .venv/bin/activate or .venv\Scripts\activate
     ```
-  - Install the dependencies: `pip install -r requirements.txt`
+  - Install the dependencies: `pip install -r requirements.txt` 
+    ```bash
+    pip install -r requirements.txt
+    ```
   - Run the application:
     - If you are in the root directory of the repository: `python3 -m tldw_chatbook.app`
-    - If you have installed it via pip, you can run it directly: `tldw_chatbook`
+    ```bash
+    python3 -m tldw_chatbook.app
+    ```
 - **Configuration**
   - The application uses a `config.toml` file located at `~/.config/tldw_cli/config.toml`.
   - On first run, a default configuration file will be created if one doesn't exist. You'll need to edit this file to add your API keys for the services you want to use.
@@ -61,15 +78,33 @@ Current status: Working/In-Progress
 - **User Database**
   - The application uses several user databases stored at `~/.share/tldw_cli/`.
   - The databases are: 
-    - `tldw_cli_data.db` - This sqlite DB stores your conversations, characters, and notes.
-    - `tldw_cli_media_v2.db` - This sqlite DB stores the user's ingested media files.
-    - `tldw_cli_prompts.db` - This sqlite DB stores the user's prompts.
+    - `tldw_chatbook_ChaChaNotes.db` - This sqlite DB stores your conversations, characters, and notes.
+    - `tldw_chatbook_media_v2.db` - This sqlite DB stores the user's ingested media files.
+    - `tldw_chatbook_prompts.db` - This sqlite DB stores the user's prompts.
   - Each database is created on first run if it doesn't already exist.
 
+### Project Structure
+
+Here's a brief overview of the main directories in the project:
+
+*   **`tldw_chatbook/`**: Contains the core source code of the application.
+    *   **`app.py`**: Main application entry point.
+    *   **`Screens/`**: Application screens (main views).
+    *   **`Widgets/`**: Reusable TUI components.
+    *   **`UI/`**: More complex UI structures and panels.
+    *   **`Chat/`**: Logic for chat functionalities and LLM interactions.
+    *   **`DB/`**: Database interaction modules.
+    *   **`LLM_Calls/`**: Modules for calling LLM APIs.
+    *   **`Notes/`**: Notes management logic.
+    *   **`Event_Handlers/`**: Application event handling.
+*   **`Docs/`**: Project documentation (WIP)
+*   **`Tests/`**: Contains all automated tests.
+*   **`css/`**: Stylesheets for the Textual TUI.
+*   **`static/`**: Static assets like images.
+*   **`Helper_Scripts/`**: Utility scripts for various tasks.
 
 ### Inspiration
-https://github.com/darrenburns/elia/tree/main/elia_chat/widgets
-
+https://github.com/darrenburns/elia
 
 ## Contributing
 - Contributions are welcome! Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file for details on how to contribute to this project.(WIP)
