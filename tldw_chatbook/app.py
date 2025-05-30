@@ -19,7 +19,7 @@ from textual.logging import TextualHandler
 from textual.widgets import (
     Static, Button, Input, Header, Footer, RichLog, TextArea, Select, ListView, Checkbox, Collapsible, ListItem, Label
 )
-from textual.containers import Horizontal, Container, HorizontalScroll
+from textual.containers import Horizontal, Container, HorizontalScroll, VerticalScroll
 from textual.reactive import reactive
 from textual.worker import Worker
 from textual.binding import Binding
@@ -156,6 +156,16 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # Use forward slashes for paths, works cross-platform
     CSS_PATH = str(Path(__file__).parent / "css/tldw_cli.tcss")
     BINDINGS = [Binding("ctrl+q", "quit", "Quit App", show=True)]
+
+    ALL_INGEST_VIEW_IDS = [
+        "ingest-view-prompts", "ingest-view-characters",
+        "ingest-view-media", "ingest-view-notes", "ingest-view-tldw-api"
+    ]
+    ALL_MAIN_WINDOW_IDS = [ # Assuming these are your main content window IDs
+        "chat-window", "conversations_characters_prompts-window",
+        "ingest-window", "tools_settings-window", "llm_management-window",
+        "media-window", "search-window", "logs-window"
+    ]
 
     # Define reactive at class level with a placeholder default and type hint
     current_tab: reactive[str] = reactive("")
@@ -1344,6 +1354,31 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         except Exception as e:
             logging.error(f"Error toggling Conversations, Characters & Prompts left sidebar pane: {e}", exc_info=True)
 
+    # --- Method DEFINITION for show_ingest_view ---
+    def show_ingest_view(self, view_id_to_show: Optional[str]):
+        """
+        Shows the specified ingest view within the ingest-content-pane and hides others.
+        If view_id_to_show is None, hides all ingest views.
+        """
+        self.log.debug(f"Attempting to show ingest view: {view_id_to_show}")
+        try:
+            ingest_content_pane = self.query_one("#ingest-content-pane")
+            if view_id_to_show:
+                ingest_content_pane.display = True
+        except QueryError:
+            self.log.error("#ingest-content-pane not found. Cannot manage ingest views.")
+            return
+
+        for view_id in self.ALL_INGEST_VIEW_IDS:
+            try:
+                view_container = self.query_one(f"#{view_id}")
+                is_target = (view_id == view_id_to_show)
+                view_container.display = is_target
+                if is_target:
+                    self.log.info(f"Displaying ingest view: #{view_id}")
+            except QueryError:
+                self.log.warning(f"Ingest view container '#{view_id}' not found during show_ingest_view.")
+
     async def save_current_note(self) -> bool:
         """Saves the currently selected note's title and content to the database."""
         if not self.notes_service or not self.current_selected_note_id or self.current_selected_note_version is None:
@@ -1784,25 +1819,39 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     self.loguru_logger.warning(
                         f"Unhandled button on SEARCH tab: ID:{button_id}, Label:'{event.button.label}'")
                 return  # Explicitly return after handling (or logging unhandled) buttons on Search tab.
-            elif current_active_tab == TAB_INGEST:
-                if button_id and button_id.startswith("ingest-nav-"):
-                    # Handle existing ingest nav buttons
-                    if button_id == "ingest-nav-tldw-api":  # Our new button
-                        view_to_activate = "ingest-view-tldw-api"
-                    else:  # Existing logic for other ingest views
-                        view_to_activate = button_id.replace("ingest-nav-", "ingest-view-")
+                # --- Ingest Nav Pane Buttons (within Ingest Tab) ---
+            elif self.current_tab == "ingest":  # Only process these if ingest tab is active
+                if button_id == "ingest-nav-prompts":
+                    self.show_ingest_view("ingest-view-prompts")
+                    try:
+                        selected_list_view = self.query_one("#ingest-prompts-selected-files-list", ListView)
+                        if not selected_list_view._nodes:
+                            await selected_list_view.append(ListItem(Label("No files selected.")))
+                        preview_area = self.query_one("#ingest-prompts-preview-area", VerticalScroll)
+                        await preview_area.remove_children()  # Clear old preview
+                        await preview_area.mount(
+                            Static("Select files to see a preview.", id="ingest-prompts-preview-placeholder"))
+                    except QueryError:
+                        self.log.warning("Failed to initialize prompts list view elements on nav click.")
+                elif button_id == "ingest-nav-characters":
+                    self.show_ingest_view("ingest-view-characters")
+                elif button_id == "ingest-nav-media":
+                    self.show_ingest_view("ingest-view-media")
+                elif button_id == "ingest-nav-notes":
+                    self.show_ingest_view("ingest-view-notes")
+                elif button_id == "ingest-nav-tldw-api":
+                    self.show_ingest_view("ingest-view-tldw-api")
 
-                    self.loguru_logger.debug(
-                        f"Ingest nav button '{button_id}' pressed. Activating view '{view_to_activate}'.")
-                    self.ingest_active_view = view_to_activate
-                elif button_id == "tldw-api-submit":  # The new submit button
-                    await ingest_events.handle_tldw_api_submit_button_pressed(self)
-                else:
-                    self.loguru_logger.warning(
-                        f"Unhandled button on INGEST tab: ID:{button_id}, Label:'{event.button.label}'")
-            # If it's a toggle button but not matched above for the current tab
-            self.loguru_logger.warning(f"Unhandled toggle button ID '{button_id}' for tab '{current_active_tab}' or button not applicable to this tab.")
-            return # Considered handled as a toggle attempt, even if no action for current tab
+                # --- Buttons within ingest-view-prompts ---
+                # Ensure these handlers are only called if the ingest-view-prompts is active
+                # or simply rely on the button_id being unique enough.
+                elif button_id == "ingest-prompts-select-file-button":
+                    # This is where ingest_events.handle_... is CALLED
+                    await ingest_events.handle_ingest_prompts_select_file_button_pressed(self)
+                elif button_id == "ingest-prompts-clear-files-button":
+                    await ingest_events.handle_ingest_prompts_clear_files_button_pressed(self)
+                elif button_id == "ingest-prompts-import-now-button":
+                    await ingest_events.handle_ingest_prompts_import_now_button_pressed(self)
 
 
         # --- Tab-Specific Button Actions ---

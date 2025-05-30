@@ -95,7 +95,7 @@ class CCPWindow(Container):
         yield Button(get_char(EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE),
                      id="toggle-conv-char-right-sidebar", classes="cc-sidebar-toggle-button")
 
-        # Right Pane - MODIFIED
+        # Right Pane
         with VerticalScroll(id="conv-char-right-pane", classes="cc-right-pane"):
             yield Static("Details & Settings", classes="sidebar-title") # This title is for the whole pane
 
@@ -118,7 +118,7 @@ class CCPWindow(Container):
 
             # Characters Collapsible
             with Collapsible(title="Characters", id="ccp-characters-collapsible", collapsed=True):
-                yield Select([], prompt="Select Character...", allow_blank=True, id="ccp-right-pane-character-select")
+                yield Button("Load Character", id="ccp-right-pane-load-character-button", classes="sidebar-button")
                 # Add other character related widgets here if needed in the future
 
             # Prompt Details Collapsible (for the right-pane prompt editor)

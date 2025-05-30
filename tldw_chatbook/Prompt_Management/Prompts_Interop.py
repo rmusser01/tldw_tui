@@ -335,7 +335,7 @@ def _normalize_prompt_data(data: Dict[str, Any]) -> Dict[str, Any]:
                 normalized[field] = None # Or raise error
     return normalized
 
-def _parse_json_prompts(content: str) -> List[Dict[str, Any]]:
+def parse_json_prompts_from_content(content: str) -> List[Dict[str, Any]]:
     """Parses JSON content into a list of prompt dictionaries."""
     try:
         data = json.loads(content)
@@ -352,7 +352,7 @@ def _parse_json_prompts(content: str) -> List[Dict[str, Any]]:
         raise ValueError(f"Could not process JSON data: {e}")
 
 
-def _parse_yaml_prompts(content: str) -> List[Dict[str, Any]]:
+def parse_yaml_prompts_from_content(content: str) -> List[Dict[str, Any]]:
     """Parses YAML content into a list of prompt dictionaries."""
     if not YAML_AVAILABLE:
         raise RuntimeError("YAML parsing is not available. Please install PyYAML.")
@@ -376,13 +376,13 @@ def _parse_yaml_prompts(content: str) -> List[Dict[str, Any]]:
         logger.error(f"Error processing YAML data: {e}")
         raise ValueError(f"Could not process YAML data: {e}")
 
-def _parse_markdown_prompts(content: str) -> List[Dict[str, Any]]:
+
+def parse_markdown_prompts_from_content(content: str) -> List[Dict[str, Any]]:
     """Parses Markdown content into a list of prompt dictionaries."""
     if not FRONTMATTER_AVAILABLE:
         raise RuntimeError("Markdown parsing is not available. Please install python-frontmatter.")
     prompts = []
     # Split content by '---' on its own line, a common multi-document separator
-    # This regex handles optional surrounding whitespace and ensures '---' is the main content of the line.
     md_documents = re.split(r"^\s*---\s*$", content, flags=re.MULTILINE)
 
     for doc_content in md_documents:
@@ -394,8 +394,6 @@ def _parse_markdown_prompts(content: str) -> List[Dict[str, Any]]:
             prompt_data = {"name": None, "author": None, "details": None, "system_prompt": None, "user_prompt": None, "keywords": []}
             prompt_data.update(post.metadata)
 
-            # Extract system and user prompts from content using headings
-            # Case-insensitive matching for headings
             system_prompt_match = re.search(r"^##\s*System Prompt\s*$(.*?)(?=^##|\Z)", post.content, re.MULTILINE | re.DOTALL | re.IGNORECASE)
             if system_prompt_match:
                 prompt_data["system_prompt"] = system_prompt_match.group(1).strip()
@@ -405,13 +403,12 @@ def _parse_markdown_prompts(content: str) -> List[Dict[str, Any]]:
                 prompt_data["user_prompt"] = user_prompt_match.group(1).strip()
 
             prompts.append(_normalize_prompt_data(prompt_data))
-        except Exception as e: # Catch errors from frontmatter.loads or regex
+        except Exception as e:
             logger.warning(f"Skipping invalid Markdown document segment: {e}. Content snippet: {doc_content[:100]}")
-            # Optionally, add an error result for this segment
     return prompts
 
 
-def _parse_txt_prompts(content: str) -> List[Dict[str, Any]]:
+def parse_txt_prompts_from_content(content: str) -> List[Dict[str, Any]]:
     """Parses TXT content into a list of prompt dictionaries."""
     prompts_data = []
     # Split by '---' on its own line to separate prompts
@@ -528,10 +525,10 @@ def import_prompts_from_files(
 
     results: List[Dict[str, Any]] = []
     parser_map: Dict[str, Callable[[str], List[Dict[str, Any]]]] = {
-        "json": _parse_json_prompts,
-        "yaml": _parse_yaml_prompts,
-        "markdown": _parse_markdown_prompts,
-        "txt": _parse_txt_prompts,
+        "json": parse_json_prompts_from_content,
+        "yaml": parse_yaml_prompts_from_content,
+        "markdown": parse_markdown_prompts_from_content,
+        "txt": parse_txt_prompts_from_content,
     }
 
     for file_path in file_paths:

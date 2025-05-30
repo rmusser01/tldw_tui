@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 # 3rd-Party Imports
 from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll, Horizontal, Vertical
-from textual.widgets import Static, Button, Input, Select, Checkbox, TextArea, Label, RadioSet, RadioButton, Collapsible
+from textual.widgets import Static, Button, Input, Select, Checkbox, TextArea, Label, RadioSet, RadioButton, Collapsible, ListView, ListItem, Markdown
 #
 # Local Imports
 from ..tldw_api.schemas import MediaType, ChunkMethod, PdfEngine  # Import Enums
@@ -23,6 +23,15 @@ if TYPE_CHECKING:
 #######################################################################################################################
 #
 # Functions:
+
+INGEST_VIEW_IDS = [
+    "ingest-view-prompts", "ingest-view-characters",
+    "ingest-view-media", "ingest-view-notes", "ingest-view-tldw-api"
+]
+INGEST_NAV_BUTTON_IDS = [
+    "ingest-nav-prompts", "ingest-nav-characters",
+    "ingest-nav-media", "ingest-nav-notes", "ingest-nav-tldw-api"
+]
 
 class IngestWindow(Container):
     def __init__(self, app_instance: 'TldwCli', **kwargs):
@@ -208,13 +217,23 @@ class IngestWindow(Container):
                          classes="ingest-nav-button")  # Changed ID slightly
 
         with Container(id="ingest-content-pane", classes="ingest-content-pane"):
-            with Container(id="ingest-view-prompts", classes="ingest-view-area"):
-                yield Button("Select Prompt File", id="select-prompt-file-button")
-                yield Label("Selected file: None", id="prompt-file-path-label")
-                yield TextArea(
-                    id="prompt-import-status-area",
-                    read_only=True
-                )
+            # Updated Ingest Prompts View
+            with Vertical(id="ingest-view-prompts", classes="ingest-view-area"):
+                with Horizontal(classes="ingest-controls-row"):
+                    yield Button("Select Prompt File(s)", id="ingest-prompts-select-file-button")
+                    yield Button("Clear Selection", id="ingest-prompts-clear-files-button")
+                yield Label("Selected Files for Import:", classes="ingest-label")
+                yield ListView(id="ingest-prompts-selected-files-list", classes="ingest-selected-files-list")
+
+                yield Label("Preview of Parsed Prompts (Max 10 shown):", classes="ingest-label")
+                with VerticalScroll(id="ingest-prompts-preview-area", classes="ingest-preview-area"):
+                    yield Static("Select files to see a preview.", id="ingest-prompts-preview-placeholder")
+
+                yield Button("Import Selected Files Now", id="ingest-prompts-import-now-button", variant="primary")
+                yield Label("Import Status:", classes="ingest-label")
+                yield TextArea(id="prompt-import-status-area", read_only=True, classes="ingest-status-area")
+
+            # Other ingest views (characters, media, notes, tldw-api)
             with Container(id="ingest-view-characters", classes="ingest-view-area"):
                 yield Button("Select Character File", id="select-character-file-button")
                 yield Label("Selected file: None", id="character-file-path-label")
@@ -237,6 +256,8 @@ class IngestWindow(Container):
             # New container for tldw API form
             with Container(id="ingest-view-tldw-api", classes="ingest-view-area"):
                 yield from self.compose_tldw_api_form()
+
+
 
 #
 # End of Logs_Window.py

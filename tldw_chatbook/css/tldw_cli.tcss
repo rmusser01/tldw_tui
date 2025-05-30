@@ -665,49 +665,123 @@ MetricsScreen Label.-info-message {
     layout: horizontal;
 }
 
-.ingest-nav-pane { /* Style for the left navigation pane */
+.ingest-nav-pane {
     dock: left;
     width: 25%;
     min-width: 25;
     max-width: 60;
     height: 100%;
-    background: $boost; /* Or a slightly different shade */
+    background: $boost;
     padding: 1;
     border-right: thick $background-darken-1;
     overflow-y: auto;
     overflow-x: hidden;
 }
 
-.ingest-nav-pane .ingest-nav-button { /* Style for navigation buttons */
+.ingest-nav-pane .ingest-nav-button {
     width: 100%;
     margin-bottom: 1;
     border: none;
     height: 3;
 }
 .ingest-nav-pane .ingest-nav-button:hover {
-    background: $accent 60%; /* Slightly different hover potentially */
+    background: $accent 60%;
 }
-/* Active state for selected ingest nav button (optional) */
-/* .ingest-nav-pane .ingest-nav-button.-active-view {
-    background: $accent-darken-1;
+.ingest-nav-pane .ingest-nav-button.-active-ingest-view { /* For active nav button */
+    background: $accent;
     color: $text;
-} */
+    text-style: bold;
+}
 
-.ingest-content-pane { /* Style for the right content display area */
+
+.ingest-content-pane {
     width: 1fr;
     height: 100%;
     padding: 1 2;
-    overflow-y: auto;
+    overflow-y: auto; /* Important if content within views scrolls */
 }
 
 .ingest-view-area { /* Common class for individual content areas */
     width: 100%;
-    height: 100%; /* Or auto */
-    /* Example content styling */
-    /* align: center middle; */
-    /* border: round $primary; */
-    /* padding: 2; */
+    height: 100%;
+    /* By default, these views will be hidden by Python adding a '.hidden' class */
+    /* Or, if you prefer CSS to hide them initially: */
+    /* display: none; */ /* Python will toggle this */
 }
+
+/* Universal hidden class */
+.hidden {
+    display: none !important;
+}
+
+
+/* Styles for components within the Ingest Content tab or general ingest features */
+/* These were from your "BEGINNING OF INTEGRATED NEW CSS" section and seem fine */
+.ingest-controls-row {
+    height: auto;
+    margin-bottom: 1;
+}
+.ingest-controls-row > Button {
+    margin-right: 1;
+}
+.ingest-label {
+    margin-top: 1;
+    margin-bottom: 0;
+}
+.ingest-selected-files-list {
+    height: 5;
+    border: round $primary;
+    margin-bottom: 1;
+    background: $surface;
+}
+.ingest-preview-area {
+    height: 1fr;
+    border: round $primary-lighten-2;
+    padding: 1;
+    margin-bottom: 1;
+    background: $surface;
+}
+.ingest-preview-area > Static#ingest-prompts-preview-placeholder {
+    color: $text-muted;
+    width: 100%;
+    text-align: center;
+    padding: 2 0;
+}
+.ingest-status-area {
+    height: 8;
+    margin-top: 1;
+}
+
+.prompt-preview-item {
+    border: panel $background-lighten-2;
+    padding: 1;
+    margin-bottom: 1;
+}
+.prompt-preview-item .prompt-title {
+    text-style: bold;
+}
+.prompt-preview-item .prompt-field-label {
+    text-style: italic;
+    color: $text-muted;
+}
+.prompt-preview-item Markdown {
+    background: $surface-darken-1;
+    padding: 0 1;
+    margin-top: 1;
+    margin-bottom: 1;
+    border: solid $primary-darken-1; /* Use 'solid' instead of 'narrow' */
+    max-height: 10;
+    overflow-y: auto;
+}
+.prompt-preview-item .prompt-details-text {
+    max-height: 5;
+    overflow-y: auto;
+    background: $surface;
+    padding: 0 1;
+    border: dashed $primary-darken-2; /* Use 'dashed' instead of 'dotted' */
+    margin-bottom: 1;
+}
+/* --- END OF INTEGRATED NEW CSS --- */
 
 /* --- LLM Management Tab --- */
 #llm_management-window { /* Matches TAB_LLM ("llm_management") */

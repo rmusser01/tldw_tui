@@ -5,14 +5,20 @@
 import logging
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, List, Any, Dict
+from typing import TYPE_CHECKING, Optional, List, Any, Dict, Callable
 
 from loguru import logger
 #
 # 3rd-party Libraries
-from textual.widgets import Select, Input, TextArea, Checkbox, RadioSet, RadioButton, Label
+from textual.widgets import Select, Input, TextArea, Checkbox, RadioSet, RadioButton, Label, Static, Markdown, ListItem, \
+    ListView
 from textual.css.query import QueryError
-from textual.containers import Container
+from textual.containers import Container, VerticalScroll
+
+from ..Prompt_Management.Prompts_Interop import parse_yaml_prompts_from_content, parse_json_prompts_from_content, \
+    parse_markdown_prompts_from_content, parse_txt_prompts_from_content, is_initialized, import_prompts_from_files, \
+    _get_file_type
+from ..Third_Party.textual_fspicker import Filters, FileOpen
 #
 # Local Imports
 from ..tldw_api import (
@@ -29,24 +35,293 @@ if TYPE_CHECKING:
 #
 # Functions:
 
-# --- TLDW API Form Specific Option Containers (IDs) ---
-TLDW_API_VIDEO_OPTIONS_ID = "tldw-api-video-options"
-TLDW_API_AUDIO_OPTIONS_ID = "tldw-api-audio-options"
-TLDW_API_PDF_OPTIONS_ID = "tldw-api-pdf-options"
-TLDW_API_EBOOK_OPTIONS_ID = "tldw-api-ebook-options"
-TLDW_API_DOCUMENT_OPTIONS_ID = "tldw-api-document-options"
-TLDW_API_XML_OPTIONS_ID = "tldw-api-xml-options"
-TLDW_API_MEDIAWIKI_OPTIONS_ID = "tldw-api-mediawiki-options"
 
-ALL_TLDW_API_OPTION_CONTAINERS = [
-    TLDW_API_VIDEO_OPTIONS_ID, TLDW_API_AUDIO_OPTIONS_ID, TLDW_API_PDF_OPTIONS_ID,
-    TLDW_API_EBOOK_OPTIONS_ID, TLDW_API_DOCUMENT_OPTIONS_ID, TLDW_API_XML_OPTIONS_ID,
-    TLDW_API_MEDIAWIKI_OPTIONS_ID
-]
+# --- Prompt Ingest Constants ---
+MAX_PROMPT_PREVIEWS = 10
+PROMPT_FILE_FILTERS = Filters(
+    ("Markdown", lambda p: p.suffix.lower() == ".md"),
+    ("JSON", lambda p: p.suffix.lower() == ".json"),
+    ("YAML", lambda p: p.suffix.lower() in (".yaml", ".yml")),
+    ("Text", lambda p: p.suffix.lower() == ".txt"),
+    ("All Supported", lambda p: p.suffix.lower() in (".md", ".json", ".yaml", ".yml", ".txt")),
+    ("All Files", lambda _: True),
+)
 
 
+def _truncate_text(text: Optional[str], max_len: int) -> str:
+    """
+    Truncates a string to a maximum length, adding ellipsis if truncated.
+    Returns 'N/A' if the input text is None or empty.
+    """
+    if not text: # Handles None or empty string
+        return "N/A"
+    if len(text) > max_len:
+        return text[:max_len - 3] + "..."
+    return text
+
+
+async def _update_prompt_preview_display(app: 'TldwCli') -> None:
+    """Updates the prompt preview area in the UI."""
+    try:
+        preview_area = app.query_one("#ingest-prompts-preview-area", VerticalScroll)
+        await preview_area.remove_children()
+
+        if not app.parsed_prompts_for_preview:
+            await preview_area.mount(
+                Static("Select files to see a preview, or no prompts found.", id="ingest-prompts-preview-placeholder"))
+            return
+
+        num_to_display = len(app.parsed_prompts_for_preview)
+        prompts_to_show = app.parsed_prompts_for_preview[:MAX_PROMPT_PREVIEWS]
+
+        for idx, prompt_data in enumerate(prompts_to_show):
+            name = prompt_data.get("name", f"Unnamed Prompt {idx + 1}")
+            author = prompt_data.get("author", "N/A")
+            details = _truncate_text(prompt_data.get("details"), 150)
+            system_prompt = _truncate_text(prompt_data.get("system_prompt"), 200)
+            user_prompt = _truncate_text(prompt_data.get("user_prompt"), 200)
+            keywords_list = prompt_data.get("keywords", [])
+            keywords = ", ".join(keywords_list) if keywords_list else "N/A"
+
+            md_content = f"""### {name}
+**Author:** {author}
+**Keywords:** {keywords}
+
+**Details:**
+```text
+{details}
+```
+
+**System Prompt:**
+```text
+{system_prompt}
+```
+
+**User Prompt:**
+```text
+{user_prompt}
+```
+---
+"""
+            await preview_area.mount(Markdown(md_content, classes="prompt-preview-item"))
+
+        if num_to_display > MAX_PROMPT_PREVIEWS:
+            await preview_area.mount(
+                Static(f"...and {num_to_display - MAX_PROMPT_PREVIEWS} more prompts loaded (not shown)."))
+
+    except QueryError as e:
+        logger.error(f"UI component not found for prompt preview update: {e}")
+        app.notify("Error updating prompt preview UI.", severity="error")
+    except Exception as e:
+        logger.error(f"Unexpected error updating prompt preview: {e}", exc_info=True)
+        app.notify("Unexpected error during preview update.", severity="error")
+
+
+def _parse_single_prompt_file_for_preview(file_path: Path, app_ref: 'TldwCli') -> List[Dict[str, Any]]:
+    """Parses a single prompt file and returns a list of prompt data dicts."""
+    file_type = _get_file_type(file_path)  # Use helper from interop
+    if not file_type:
+        logger.warning(f"Unsupported file type for preview: {file_path}")
+        return [{"name": f"Error: Unsupported type {file_path.name}",
+                 "details": "File type not recognized for prompt import."}]
+
+    parser_map: Dict[str, Callable[[str], List[Dict[str, Any]]]] = {
+        "json": parse_json_prompts_from_content,
+        "yaml": parse_yaml_prompts_from_content,
+        "markdown": parse_markdown_prompts_from_content,
+        "txt": parse_txt_prompts_from_content,
+    }
+    parser = parser_map.get(file_type)
+    if not parser:
+        logger.error(f"No parser found for file type {file_type} (preview)")
+        return [
+            {"name": f"Error: No parser for {file_path.name}", "details": f"File type '{file_type}' has no parser."}]
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        parsed = parser(content)
+        if not parsed:  # If parser returns empty list (e.g. empty file or no valid prompts)
+            logger.info(f"No prompts found in {file_path.name} by parser for preview.")
+            # Not necessarily an error, could be an empty file.
+            # Return an empty list, or a specific message if preferred.
+            return []
+        return parsed
+    except RuntimeError as e:
+        logger.error(f"Parser dependency missing for {file_path}: {e}")
+        app_ref.notify(f"Cannot preview {file_path.name}: Required library missing ({e}).", severity="error", timeout=7)
+        return [{"name": f"Error processing {file_path.name}", "details": str(e)}]
+    except ValueError as e:
+        logger.error(f"Failed to parse {file_path} for preview: {e}")
+        app_ref.notify(f"Error parsing {file_path.name}: Invalid format.", severity="warning", timeout=7)
+        return [{"name": f"Error parsing {file_path.name}", "details": str(e)}]
+    except Exception as e:
+        logger.error(f"Unexpected error reading/parsing {file_path} for preview: {e}", exc_info=True)
+        app_ref.notify(f"Error reading {file_path.name}.", severity="error", timeout=7)
+        return [{"name": f"Error reading {file_path.name}", "details": str(e)}]
+
+
+async def _handle_prompt_file_selected_callback(app: 'TldwCli', selected_path: Optional[Path]) -> None:
+    """
+    Callback function executed after the FileOpen dialog for prompt selection returns.
+    This function is wrapped by app.call_after_refresh in the calling code.
+    """
+    if selected_path:
+        logger.info(f"Prompt file selected via dialog: {selected_path}")
+        if selected_path in app.selected_prompt_files_for_import:
+            app.notify(f"File '{selected_path.name}' is already in the selection.", severity="warning")
+            return
+
+        app.selected_prompt_files_for_import.append(selected_path)
+        app.last_prompt_import_dir = selected_path.parent  # Remember this directory
+
+        # Update selected files list UI
+        try:
+            list_view = app.query_one("#ingest-prompts-selected-files-list", ListView)
+            # Clear "No files selected" placeholder if it's the only item
+            if list_view._nodes and isinstance(list_view._nodes[0], ListItem) and \
+                    isinstance(list_view._nodes[0].children[0], Label) and \
+                    list_view._nodes[0].children[0].renderable == "No files selected.":
+                await list_view.clear()
+            await list_view.append(ListItem(Label(str(selected_path))))
+        except QueryError:
+            logger.error("Could not find #ingest-prompts-selected-files-list ListView to update.")
+
+        # Parse this file and add to overall preview list
+        parsed_prompts_from_file = _parse_single_prompt_file_for_preview(selected_path, app)
+        app.parsed_prompts_for_preview.extend(parsed_prompts_from_file)
+
+        await _update_prompt_preview_display(app)  # Update the preview display
+    else:
+        logger.info("Prompt file selection cancelled by user.")
+        app.notify("File selection cancelled.")
+
+
+##################################################################################
+# THIS IS THE FUNCTION YOU WERE ASKING ABOUT - ITS DEFINITION
+##################################################################################
+async def handle_ingest_prompts_select_file_button_pressed(app: 'TldwCli') -> None:
+    """Handles the 'Select Prompt File(s)' button press."""
+    logger.debug("Select Prompt File(s) button pressed. Opening file dialog.")
+    current_dir = app.last_prompt_import_dir or Path(".")  # Start in last used dir or current dir
+
+    # The FileOpen dialog handles one file selection.
+    # The callback _handle_prompt_file_selected_callback will be called after the dialog closes.
+    # We use app.call_after_refresh to ensure the callback runs safely after screen changes.
+    app.push_screen(
+        FileOpen(
+            location=str(current_dir),
+            title="Select Prompt File (.md, .json, .yaml, .txt)",
+            filters=PROMPT_FILE_FILTERS
+        ),
+        # The callback to FileOpen's push_screen receives the path.
+        # We then schedule _handle_prompt_file_selected_callback to run.
+        lambda path: app.call_after_refresh(lambda: _handle_prompt_file_selected_callback(app, path))
+    )
+
+
+##################################################################################
+# END OF THE FUNCTION DEFINITION
+##################################################################################
+
+async def handle_ingest_prompts_clear_files_button_pressed(app: 'TldwCli') -> None:
+    """Handles the 'Clear Selection' button press for prompt import."""
+    logger.info("Clearing selected prompt files and preview.")
+    app.selected_prompt_files_for_import.clear()
+    app.parsed_prompts_for_preview.clear()
+
+    try:
+        selected_list_view = app.query_one("#ingest-prompts-selected-files-list", ListView)
+        await selected_list_view.clear()
+        await selected_list_view.append(ListItem(Label("No files selected.")))
+
+        preview_area = app.query_one("#ingest-prompts-preview-area", VerticalScroll)
+        await preview_area.remove_children()
+        await preview_area.mount(Static("Select files to see a preview.", id="ingest-prompts-preview-placeholder"))
+
+        status_area = app.query_one("#prompt-import-status-area", TextArea)
+        status_area.clear()
+        app.notify("Selection and preview cleared.")
+    except QueryError as e:
+        logger.error(f"UI component not found for clearing prompt selection: {e}")
+        app.notify("Error clearing UI.", severity="error")
+
+
+async def handle_ingest_prompts_import_now_button_pressed(app: 'TldwCli') -> None:
+    """Handles the 'Import Selected Files Now' button press."""
+    logger.info("Import Selected Prompt Files Now button pressed.")
+
+    if not app.selected_prompt_files_for_import:
+        app.notify("No prompt files selected to import.", severity="warning")
+        return
+
+    if not is_initialized():
+        msg = "Prompts database is not initialized. Cannot import."
+        app.notify(msg, severity="error", timeout=7)
+        logger.error(msg + " Aborting import.")
+        return
+
+    status_area = app.query_one("#prompt-import-status-area", TextArea)
+    status_area.clear()
+    status_area.write("Starting import process...\n")
+    app.notify("Importing prompts... This may take a moment.")
+
+    # --- Worker for actual import ---
+    async def import_worker():
+        # Pass the list of Path objects
+        return import_prompts_from_files(app.selected_prompt_files_for_import)
+
+    def on_import_success(results: List[Dict[str, Any]]):
+        log_text = ["Import process finished.\n\nResults:\n"]
+        successful_imports = 0
+        failed_imports = 0
+        for res in results:
+            status = res.get("status", "unknown")
+            file_path_str = res.get("file_path", "N/A")
+            prompt_name = res.get("prompt_name", "N/A")
+            message = res.get("message", "")
+
+            log_text.append(f"File: {Path(file_path_str).name}\n")  # Use Path().name for just filename
+            if prompt_name and prompt_name != "N/A":
+                log_text.append(f"  Prompt: '{prompt_name}'\n")
+            log_text.append(f"  Status: {status.upper()}\n")
+            if message:
+                log_text.append(f"  Message: {message}\n")
+            log_text.append("-" * 30 + "\n")
+
+            if status == "success":
+                successful_imports += 1
+            else:
+                failed_imports += 1
+
+        summary = f"\nSummary: {successful_imports} prompts imported successfully, {failed_imports} failed."
+        log_text.append(summary)
+
+        status_area.load_text("".join(log_text))  # Use load_text for full replacement
+        app.notify(f"Prompt import finished. Success: {successful_imports}, Failed: {failed_imports}", timeout=8)
+        logger.info(summary)
+
+        # Optionally, you might want to call the clear files function here:
+        # app.call_later(handle_ingest_prompts_clear_files_button_pressed, app) # Or run it directly if safe
+
+    def on_import_failure(error: Exception):
+        logger.error(f"Prompt import worker failed: {error}", exc_info=True)
+        status_area.write(f"\nImport process failed critically: {error}\nCheck logs for details.\n")
+        app.notify(f"Prompt import failed: {error}", severity="error", timeout=10)
+
+    app.run_worker(
+        import_worker,
+        on_success=on_import_success,
+        on_failure=on_import_failure,
+        name="prompt_import_worker",
+        group="file_operations",
+        description="Importing selected prompt files."
+    )
+
+
+# --- TLDW API Form Handlers ---
 async def handle_tldw_api_auth_method_changed(app: 'TldwCli', event_value: str) -> None:
-    """Shows/hides the custom token input based on auth method selection."""
+    # ... (implementation as you provided)
     logger.debug(f"TLDW API Auth method changed to: {event_value}")
     try:
         custom_token_input = app.query_one("#tldw-api-custom-token", Input)
@@ -61,6 +336,20 @@ async def handle_tldw_api_auth_method_changed(app: 'TldwCli', event_value: str) 
     except QueryError as e:
         logger.error(f"UI component not found for TLDW API auth method change: {e}")
 
+# --- TLDW API Form Specific Option Containers (IDs) ---
+TLDW_API_VIDEO_OPTIONS_ID = "tldw-api-video-options"
+TLDW_API_AUDIO_OPTIONS_ID = "tldw-api-audio-options"
+TLDW_API_PDF_OPTIONS_ID = "tldw-api-pdf-options"
+TLDW_API_EBOOK_OPTIONS_ID = "tldw-api-ebook-options"
+TLDW_API_DOCUMENT_OPTIONS_ID = "tldw-api-document-options"
+TLDW_API_XML_OPTIONS_ID = "tldw-api-xml-options"
+TLDW_API_MEDIAWIKI_OPTIONS_ID = "tldw-api-mediawiki-options"
+
+ALL_TLDW_API_OPTION_CONTAINERS = [
+    TLDW_API_VIDEO_OPTIONS_ID, TLDW_API_AUDIO_OPTIONS_ID, TLDW_API_PDF_OPTIONS_ID,
+    TLDW_API_EBOOK_OPTIONS_ID, TLDW_API_DOCUMENT_OPTIONS_ID, TLDW_API_XML_OPTIONS_ID,
+    TLDW_API_MEDIAWIKI_OPTIONS_ID
+]
 
 async def handle_tldw_api_media_type_changed(app: 'TldwCli', event_value: str) -> None:
     """Shows/hides media type specific option containers."""
@@ -400,6 +689,7 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
         group="api_calls",
         description="Processing media via TLDW API"
     )
+
 
 #
 # End of tldw_chatbook/Event_Handlers/ingest_events.py
