@@ -36,6 +36,7 @@ class CCPWindow(Container):
                 yield Button("Import Character Card", id="ccp-import-character-button",
                              classes="sidebar-button")
                 yield Select([], prompt="Select Character...", allow_blank=True, id="conv-char-character-select")
+                yield Button("Load Selected Character", id="ccp-left-load-character-button", classes="sidebar-button")
             with Collapsible(title="Conversations", id="conv-char-conversations-collapsible"):
                 yield Button("Import Conversation", id="ccp-import-conversation-button",
                              classes="sidebar-button")
@@ -65,6 +66,11 @@ class CCPWindow(Container):
                 yield Static("Character Card Details", classes="pane-title", id="ccp-center-pane-title-char-card")
                 # Character card details will be displayed here
 
+            # Container for character editing UI (initially hidden by CSS)
+            with Container(id="ccp-character-editor-view", classes="ccp-view-area"):
+                yield Static("Character Editor", classes="pane-title", id="ccp-center-pane-title-char-editor")
+                # Character editor fields will be mounted here
+
             # Container for prompt editing UI (initially hidden by CSS)
             with Container(id="ccp-prompt-editor-view", classes="ccp-view-area"):
                 yield Static("Prompt Editor", classes="pane-title", id="ccp-center-pane-title-prompt")
@@ -88,8 +94,6 @@ class CCPWindow(Container):
                     yield Button("Save Prompt", id="ccp-editor-prompt-save-button", variant="success",
                                  classes="sidebar-button")
                     yield Button("Clone Prompt", id="ccp-editor-prompt-clone-button", classes="sidebar-button")
-                    yield Button("Delete Prompt", id="ccp-editor-prompt-delete-button", variant="error",
-                                 classes="sidebar-button")
 
         # Button to toggle the right sidebar for CCP tab
         yield Button(get_char(EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE),
@@ -122,26 +126,11 @@ class CCPWindow(Container):
                 # Add other character related widgets here if needed in the future
 
             # Prompt Details Collapsible (for the right-pane prompt editor)
-            with Collapsible(title="Prompt Details", id="ccp-prompt-details-collapsible", collapsed=True):
-                yield Label("Prompt Name:", classes="sidebar-label")
-                yield Input(id="ccp-prompt-name-input", placeholder="Unique prompt name...",
-                            classes="sidebar-input")  # No -editor prefix for right pane
-                yield Label("Author:", classes="sidebar-label")
-                yield Input(id="ccp-prompt-author-input", placeholder="Author name...", classes="sidebar-input")
-                yield Label("Details/Description:", classes="sidebar-label")
-                yield TextArea("", id="ccp-prompt-description-textarea", classes="sidebar-textarea ccp-prompt-textarea")
-                yield Label("System Prompt:", classes="sidebar-label")
-                yield TextArea("", id="ccp-prompt-system-textarea", classes="sidebar-textarea ccp-prompt-textarea")
-                yield Label("User Prompt (Template):", classes="sidebar-label")
-                yield TextArea("", id="ccp-prompt-user-textarea", classes="sidebar-textarea ccp-prompt-textarea")
-                yield Label("Keywords (comma-separated):", classes="sidebar-label")
-                yield TextArea("", id="ccp-prompt-keywords-textarea", classes="sidebar-textarea ccp-prompt-textarea")
-                with Horizontal(classes="ccp-prompt-action-buttons"):
-                    yield Button("Save Prompt", id="ccp-prompt-save-button", variant="success",
-                                 classes="sidebar-button")
-                    yield Button("Clone Prompt", id="ccp-prompt-clone-button", classes="sidebar-button")
-                    yield Button("Delete Prompt", id="ccp-prompt-delete-button", variant="error",
-                                 classes="sidebar-button")
+            with Collapsible(title="Prompt Options", id="ccp-prompt-details-collapsible", collapsed=True):
+                yield Static("Prompt metadata or non-editor actions will appear here.", classes="sidebar-label")
+            with Collapsible(title="Prompt Deletion", id="ccp-prompt-details-collapsible-2", collapsed=True):
+                yield Button("Delete Prompt", id="ccp-editor-prompt-delete-button", variant="error",
+                             classes="sidebar-button")
 
 #
 # End of Conv_Char_Window.py

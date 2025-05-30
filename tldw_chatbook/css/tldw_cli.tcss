@@ -505,7 +505,7 @@ MetricsScreen Label.-info-message {
 
 /* --- Prompts Sidebar Vertical --- */
 .ccp-prompt-textarea { /* Specific class for prompt textareas if needed */
-    height: 5; /* Example height */
+    height: 10; /* Example height */
     /* width: 100%; (from .sidebar-textarea) */
     /* margin-bottom: 1; (from .sidebar-textarea) */
 }
@@ -516,9 +516,16 @@ MetricsScreen Label.-info-message {
     margin-bottom: 1;
 }
 
+.ccp-prompt-action-buttons {
+    margin-top: 1; /* Add space above the button bar */
+    height: auto; /* Allow container height to fit buttons */
+    padding-bottom: 1; /* Add space below buttons before parent's padding */
+}
+
 .ccp-prompt-action-buttons Button {
     width: 1fr; /* Make buttons share space */
-    margin: 0 1 0 0; /* Small right margin, no top/bottom if already in Horizontal */
+    margin: 0 1 0 0; /* Small right margin for all but last */
+    height: auto; /* Let button height fit its content (typically 1 line) */
 }
 .ccp-prompt-action-buttons Button:last-of-type { /* Corrected pseudo-class */
     margin-right: 0;
@@ -560,7 +567,7 @@ MetricsScreen Label.-info-message {
 /* Styles for the dynamic view areas within the CCP center pane */
 .ccp-view-area {
     width: 100%;
-    height: 100%;
+    height: auto; /* Allow height to be determined by content */
     /* overflow: auto; /* If content within might overflow */
 }
 
@@ -579,6 +586,10 @@ MetricsScreen Label.-info-message {
 }
 
 #ccp-character-card-view {
+    display: none; /* Initially hidden, to be shown by Python logic */
+}
+
+#ccp-character-editor-view {
     display: none; /* Initially hidden, to be shown by Python logic */
 }
 

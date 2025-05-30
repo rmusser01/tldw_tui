@@ -156,91 +156,92 @@ async def populate_ccp_prompts_list_view(app: 'TldwCli', search_term: Optional[s
 def clear_ccp_prompt_fields(app: 'TldwCli') -> None:
     """Clears prompt input fields in the CCP right pane."""
     logger = getattr(app, 'loguru_logger', logging)
-    try:
-        app.query_one("#ccp-prompt-name-input", Input).value = ""
-        app.query_one("#ccp-prompt-author-input", Input).value = ""
-        app.query_one("#ccp-prompt-description-textarea", TextArea).text = ""
-        app.query_one("#ccp-prompt-system-textarea", TextArea).text = ""
-        app.query_one("#ccp-prompt-user-textarea", TextArea).text = ""
-        app.query_one("#ccp-prompt-keywords-textarea", TextArea).text = ""
+    # try:
+    #     app.query_one("#ccp-prompt-name-input", Input).value = ""
+    #     app.query_one("#ccp-prompt-author-input", Input).value = ""
+    #     app.query_one("#ccp-prompt-description-textarea", TextArea).text = ""
+    #     app.query_one("#ccp-prompt-system-textarea", TextArea).text = ""
+    #     app.query_one("#ccp-prompt-user-textarea", TextArea).text = ""
+    #     app.query_one("#ccp-prompt-keywords-textarea", TextArea).text = ""
 
-        app.current_prompt_id = None
-        app.current_prompt_uuid = None
-        app.current_prompt_name = None  # Reactive will become None
-        app.current_prompt_author = None
-        app.current_prompt_details = None
-        app.current_prompt_system = None
-        app.current_prompt_user = None
-        app.current_prompt_keywords_str = ""  # Reactive will become empty string
-        app.current_prompt_version = None
-    except QueryError as e:
-        logger.error(f"Error clearing CCP prompt fields: {e}", exc_info=True)
+    #     app.current_prompt_id = None
+    #     app.current_prompt_uuid = None
+    #     app.current_prompt_name = None  # Reactive will become None
+    #     app.current_prompt_author = None
+    #     app.current_prompt_details = None
+    #     app.current_prompt_system = None
+    #     app.current_prompt_user = None
+    #     app.current_prompt_keywords_str = ""  # Reactive will become empty string
+    #     app.current_prompt_version = None
+    # except QueryError as e:
+    #     logger.error(f"Error clearing CCP prompt fields: {e}", exc_info=True)
+    app._clear_prompt_fields()
 
-
-async def load_ccp_prompt_for_editing(app: 'TldwCli', prompt_id: Optional[int] = None,
-                                      prompt_uuid: Optional[str] = None) -> None:
-    """Loads prompt details into the CCP right pane for editing."""
-    logger = getattr(app, 'loguru_logger', logging)
-    if not app.prompts_service_initialized:
-        app.notify("Prompts service not available.", severity="error")
-        return
-
-    identifier_to_fetch: Union[int, str, None] = None
-    if prompt_id is not None:
-        identifier_to_fetch = prompt_id
-    elif prompt_uuid is not None:
-        identifier_to_fetch = prompt_uuid
-    else:
-        logger.warning("load_ccp_prompt_for_editing called with no ID or UUID.")
-        clear_ccp_prompt_fields(app)
-        return
-
-    logger.debug(f"CCP Load Prompt: identifier_to_fetch is: {identifier_to_fetch}")
-    try:
-        prompt_details = prompts_interop.fetch_prompt_details(identifier_to_fetch)
-        logger.debug(f"CCP Load Prompt: Fetched prompt_details: {prompt_details}")
-
-        if prompt_details:
-            app.current_prompt_id = prompt_details.get('id')
-            app.current_prompt_uuid = prompt_details.get('uuid')
-            app.current_prompt_name = prompt_details.get('name', '')
-            app.current_prompt_author = prompt_details.get('author', '')
-            app.current_prompt_details = prompt_details.get('details', '')
-            app.current_prompt_system = prompt_details.get('system_prompt', '')
-            app.current_prompt_user = prompt_details.get('user_prompt', '')
-            # Ensure keywords is a list before joining, default to empty list if None or not found
-            keywords_list_from_db = prompt_details.get('keywords', [])
-            app.current_prompt_keywords_str = ", ".join(keywords_list_from_db if keywords_list_from_db else [])
-            app.current_prompt_version = prompt_details.get('version')
-
-            logger.debug("CCP Load Prompt: Attempting to populate UI fields.")
-            app.query_one("#ccp-prompt-name-input", Input).value = app.current_prompt_name or ""
-            logger.debug(f"CCP Load Prompt: Set name to: {app.current_prompt_name or ''}")
-            app.query_one("#ccp-prompt-author-input", Input).value = app.current_prompt_author or ""
-            logger.debug(f"CCP Load Prompt: Set author to: {app.current_prompt_author or ''}")
-            app.query_one("#ccp-prompt-description-textarea", TextArea).text = app.current_prompt_details or ""
-            logger.debug(f"CCP Load Prompt: Set description to: {app.current_prompt_details or ''}")
-            app.query_one("#ccp-prompt-system-textarea", TextArea).text = app.current_prompt_system or ""
-            logger.debug(f"CCP Load Prompt: Set system to: {app.current_prompt_system or ''}")
-            app.query_one("#ccp-prompt-user-textarea", TextArea).text = app.current_prompt_user or ""
-            logger.debug(f"CCP Load Prompt: Set user to: {app.current_prompt_user or ''}")
-            app.query_one("#ccp-prompt-keywords-textarea",
-                          TextArea).text = app.current_prompt_keywords_str  # Already a string
-            logger.debug(f"CCP Load Prompt: Set keywords to: {app.current_prompt_keywords_str}")
-
-            logger.debug("CCP Load Prompt: Finished populating UI fields.")
-            app.query_one("#ccp-prompt-details-collapsible", Collapsible).collapsed = False
-            app.query_one("#ccp-conversation-details-collapsible", Collapsible).collapsed = True
-            app.query_one("#ccp-prompt-name-input", Input).focus()
-            app.notify(f"Prompt '{app.current_prompt_name}' loaded.", severity="information")
-        else:
-            app.notify(f"Failed to load prompt (ID/UUID: {identifier_to_fetch}).", severity="error")
-            clear_ccp_prompt_fields(app)
-    except Exception as e:
-        logger.critical(f"CRITICAL ERROR in load_ccp_prompt_for_editing: {e}", exc_info=True)
-        app.notify(f"Error loading prompt: {type(e).__name__}", severity="error")
-        clear_ccp_prompt_fields(app)
-        logger.debug("CCP Load Prompt: Cleared prompt fields due to exception.")
+# This function is deprecated; app._load_prompt_for_editing in app.py is used instead.
+# async def load_ccp_prompt_for_editing(app: 'TldwCli', prompt_id: Optional[int] = None,
+#                                       prompt_uuid: Optional[str] = None) -> None:
+#     """Loads prompt details into the CCP right pane for editing."""
+#     logger = getattr(app, 'loguru_logger', logging)
+#     if not app.prompts_service_initialized:
+#         app.notify("Prompts service not available.", severity="error")
+#         return
+#
+#     identifier_to_fetch: Union[int, str, None] = None
+#     if prompt_id is not None:
+#         identifier_to_fetch = prompt_id
+#     elif prompt_uuid is not None:
+#         identifier_to_fetch = prompt_uuid
+#     else:
+#         logger.warning("load_ccp_prompt_for_editing called with no ID or UUID.")
+#         clear_ccp_prompt_fields(app)
+#         return
+#
+#     logger.debug(f"CCP Load Prompt: identifier_to_fetch is: {identifier_to_fetch}")
+#     try:
+#         prompt_details = prompts_interop.fetch_prompt_details(identifier_to_fetch)
+#         logger.debug(f"CCP Load Prompt: Fetched prompt_details: {prompt_details}")
+#
+#         if prompt_details:
+#             app.current_prompt_id = prompt_details.get('id')
+#             app.current_prompt_uuid = prompt_details.get('uuid')
+#             app.current_prompt_name = prompt_details.get('name', '')
+#             app.current_prompt_author = prompt_details.get('author', '')
+#             app.current_prompt_details = prompt_details.get('details', '')
+#             app.current_prompt_system = prompt_details.get('system_prompt', '')
+#             app.current_prompt_user = prompt_details.get('user_prompt', '')
+#             # Ensure keywords is a list before joining, default to empty list if None or not found
+#             keywords_list_from_db = prompt_details.get('keywords', [])
+#             app.current_prompt_keywords_str = ", ".join(keywords_list_from_db if keywords_list_from_db else [])
+#             app.current_prompt_version = prompt_details.get('version')
+#
+#             logger.debug("CCP Load Prompt: Attempting to populate UI fields.")
+#             app.query_one("#ccp-prompt-name-input", Input).value = app.current_prompt_name or ""
+#             logger.debug(f"CCP Load Prompt: Set name to: {app.current_prompt_name or ''}")
+#             app.query_one("#ccp-prompt-author-input", Input).value = app.current_prompt_author or ""
+#             logger.debug(f"CCP Load Prompt: Set author to: {app.current_prompt_author or ''}")
+#             app.query_one("#ccp-prompt-description-textarea", TextArea).text = app.current_prompt_details or ""
+#             logger.debug(f"CCP Load Prompt: Set description to: {app.current_prompt_details or ''}")
+#             app.query_one("#ccp-prompt-system-textarea", TextArea).text = app.current_prompt_system or ""
+#             logger.debug(f"CCP Load Prompt: Set system to: {app.current_prompt_system or ''}")
+#             app.query_one("#ccp-prompt-user-textarea", TextArea).text = app.current_prompt_user or ""
+#             logger.debug(f"CCP Load Prompt: Set user to: {app.current_prompt_user or ''}")
+#             app.query_one("#ccp-prompt-keywords-textarea",
+#                           TextArea).text = app.current_prompt_keywords_str  # Already a string
+#             logger.debug(f"CCP Load Prompt: Set keywords to: {app.current_prompt_keywords_str}")
+#
+#             logger.debug("CCP Load Prompt: Finished populating UI fields.")
+#             app.query_one("#ccp-prompt-details-collapsible", Collapsible).collapsed = False
+#             app.query_one("#ccp-conversation-details-collapsible", Collapsible).collapsed = True
+#             app.query_one("#ccp-prompt-name-input", Input).focus()
+#             app.notify(f"Prompt '{app.current_prompt_name}' loaded.", severity="information")
+#         else:
+#             app.notify(f"Failed to load prompt (ID/UUID: {identifier_to_fetch}).", severity="error")
+#             clear_ccp_prompt_fields(app)
+#     except Exception as e:
+#         logger.critical(f"CRITICAL ERROR in load_ccp_prompt_for_editing: {e}", exc_info=True)
+#         app.notify(f"Error loading prompt: {type(e).__name__}", severity="error")
+#         clear_ccp_prompt_fields(app)
+#         logger.debug("CCP Load Prompt: Cleared prompt fields due to exception.")
 
 ########################################################################################################################
 #
@@ -296,6 +297,40 @@ async def handle_ccp_import_character_button_pressed(app: 'TldwCli') -> None:
     await app.push_screen(FileOpen(location=str(Path.home()), title="Select Character Card", filters=defined_filters),
                           # Use a lambda to capture `app` for the callback
                           callback=lambda path: _character_import_callback(app, path))
+
+
+async def handle_ccp_left_load_character_button_pressed(app: 'TldwCli') -> None:
+    logger = getattr(app, 'loguru_logger', logging) # Or however logger is typically obtained
+    logger.info("CCP Load Selected Character button (left pane) pressed.")
+    try:
+        # Get the Select widget from the left pane
+        char_select_widget = app.query_one("#conv-char-character-select", Select)
+        selected_character_id = char_select_widget.value
+
+        if selected_character_id == Select.BLANK or selected_character_id is None:
+            app.notify("No character selected from the dropdown.", severity="warning")
+            logger.warning("Load Character (left pane): No character selected.")
+            return
+
+        logger.info(f"Attempting to load character ID: {selected_character_id} into center editor view.")
+
+        # Store the selected character ID (optional, but good for state tracking if needed later)
+        # app.current_editing_character_id = selected_character_id
+
+        # Switch the center pane view to the character editor
+        app.ccp_active_view = "character_editor_view"
+        # This will trigger the watcher in app.py to make #ccp-character-editor-view visible.
+        # Population of fields will be handled in a later phase.
+
+        app.notify(f"Character (ID: {selected_character_id}) view activated. Editor population pending.", severity="information")
+
+    except QueryError as e_query:
+        logger.error(f"UI component not found during load character (left pane): {e_query}", exc_info=True)
+        app.notify("Error: UI component missing for loading character.", severity="error")
+    except Exception as e_unexp:
+        logger.error(f"Unexpected error during load character (left pane): {e_unexp}", exc_info=True)
+        app.notify("An unexpected error occurred while trying to load character view.", severity="error")
+
 
 async def perform_ccp_conversation_search(app: 'TldwCli') -> None:
     """Performs conversation search for the CCP tab."""
@@ -590,7 +625,7 @@ async def handle_ccp_prompt_load_selected_button_pressed(app: 'TldwCli') -> None
             prompt_id_to_load = getattr(selected_item, 'prompt_id', None)
             prompt_uuid_to_load = getattr(selected_item, 'prompt_uuid', None)
             # load_ccp_prompt_for_editing populates the RIGHT PANE editor
-            await load_ccp_prompt_for_editing(app, prompt_id=prompt_id_to_load, prompt_uuid=prompt_uuid_to_load)
+            await app._load_prompt_for_editing(prompt_id=prompt_id_to_load, prompt_uuid=prompt_uuid_to_load)
         else:
             app.notify("No prompt selected in the list.", severity="warning")
     except QueryError:
@@ -654,7 +689,7 @@ async def handle_ccp_prompt_save_button_pressed(app: 'TldwCli') -> None:
             app.notify(message_from_save, severity="information")
             await populate_ccp_prompts_list_view(app) # Refresh list in left pane
             # Reload the saved/updated prompt back into the RIGHT PANE editor to confirm changes and get new version
-            await load_ccp_prompt_for_editing(app, prompt_id=saved_id, prompt_uuid=saved_uuid)
+            await app._load_prompt_for_editing(prompt_id=saved_id, prompt_uuid=saved_uuid)
         else:
             app.notify(f"Failed to save prompt: {message_from_save or 'Unknown error'}", severity="error")
 
@@ -697,7 +732,7 @@ async def handle_ccp_prompt_clone_button_pressed(app: 'TldwCli') -> None:
             app.notify(f"Prompt cloned as '{cloned_name}'. {msg_clone}", severity="information")
             await populate_ccp_prompts_list_view(app) # Refresh list in left pane
             # Load the newly cloned prompt into the RIGHT PANE editor
-            await load_ccp_prompt_for_editing(app, prompt_id=cloned_id, prompt_uuid=cloned_uuid)
+            await app._load_prompt_for_editing(prompt_id=cloned_id, prompt_uuid=cloned_uuid)
         else:
             app.notify(f"Failed to clone prompt: {msg_clone}", severity="error")
     except Exception as e_clone:
@@ -788,7 +823,7 @@ async def handle_ccp_prompts_list_view_selected(app: 'TldwCli', list_view_id: st
         prompt_uuid_to_load = getattr(item, 'prompt_uuid', None)
         logger.info(f"CCP Prompt selected from list: ID={prompt_id_to_load}, UUID={prompt_uuid_to_load}. Loading to right pane.")
         # load_ccp_prompt_for_editing loads into the RIGHT PANE editor
-        await load_ccp_prompt_for_editing(app, prompt_id=prompt_id_to_load, prompt_uuid=prompt_uuid_to_load)
+        await app._load_prompt_for_editing(prompt_id=prompt_id_to_load, prompt_uuid=prompt_uuid_to_load)
     else:
         logger.debug("CCP Prompts ListView selection was empty or item lacked ID/UUID.")
 

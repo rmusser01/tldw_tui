@@ -56,6 +56,7 @@ from .Event_Handlers import (
     sidebar_events as sidebar_handlers,
     chat_events as chat_handlers,
     conv_char_events as ccp_handlers,
+    media_events as media_handlers,
     notes_events as notes_handlers,
     worker_events as worker_handlers, worker_events, ingest_events,
 )
@@ -63,7 +64,6 @@ from .Notes.Notes_Library import NotesInteropService
 from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
 from .Widgets.chat_message import ChatMessage
 from .Widgets.settings_sidebar import create_settings_sidebar
-from .Widgets.character_sidebar import create_character_sidebar  # Import for character sidebar
 from .Widgets.notes_sidebar_left import NotesSidebarLeft
 from .Widgets.notes_sidebar_right import NotesSidebarRight
 from .Widgets.titlebar import TitleBar
@@ -677,193 +677,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         # This parent container is crucial
         with Container(id="content"):
             composed_window_ids = set()
-            #######################################
-            # --- Chat Window ---
-            ######################################
-            # Assign specific reactive variables to the Select widgets
-            chat_window = Container(id=f"{TAB_CHAT}-window", classes="window")
-            if self._initial_tab_value != TAB_CHAT:
-                chat_window.styles.display = "none"
-            with Container(id=f"{TAB_CHAT}-window", classes="window"):
-                # Pass self.current_chat_is_ephemeral to create_character_sidebar if it needs to adjust UI
-                yield from create_settings_sidebar(TAB_CHAT, self.app_config) # This is fine
-
-                with Container(id="chat-main-content"):
-                    yield VerticalScroll(id="chat-log")
-                    with Horizontal(id="chat-input-area"):
-                        #yield Button("☰", id="toggle-chat-sidebar", classes="sidebar-toggle")
-                        yield Button(get_char(EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE), id="toggle-chat-sidebar",
-                                     classes="sidebar-toggle")
-                        yield TextArea(id="chat-input", classes="chat-input") # Ensure prompt is used if needed
-                        #yield Button("Send ▶", id="send-chat", classes="send-button")
-                        yield Button(get_char(EMOJI_SEND, FALLBACK_SEND), id="send-chat", classes="send-button")
-                        #yield Button("👤", id="toggle-character-sidebar", classes="sidebar-toggle")
-                        yield Button(get_char(EMOJI_CHARACTER_ICON, FALLBACK_CHARACTER_ICON), id="toggle-character-sidebar",
-                                     classes="sidebar-toggle")
-
-                # Right sidebar (new character specific settings) for chat window
-                # The create_character_sidebar function will define a widget with id="character-sidebar"
-                # Pass a string prefix, for example, "chat" or "character_chat"
-                yield from create_character_sidebar("chat", initial_ephemeral_state=self.current_chat_is_ephemeral)
-            ######################################
-            # --- Conversations, Characters & Prompts Window ---
-            ######################################
-            with Container(id=f"{TAB_CCP}-window", classes="window"):
-                # Left Pane (remains the same)
-                with VerticalScroll(id="conv-char-left-pane", classes="cc-left-pane"):
-                    yield Static("CCP Menu", classes="sidebar-title cc-section-title-text")
-                    with Collapsible(title="Characters", id="conv-char-characters-collapsible"):
-                        yield Button("Import Character Card", id="ccp-import-character-button",
-                                     classes="sidebar-button")
-                        yield Select([], prompt="Select Character...", allow_blank=True,id="conv-char-character-select")
-                    with Collapsible(title="Conversations", id="conv-char-conversations-collapsible"):
-                        yield Button("Import Conversation", id="ccp-import-conversation-button",
-                                     classes="sidebar-button")
-                        yield Input(id="conv-char-search-input", placeholder="Search conversations...", classes="sidebar-input")
-                        yield Button("Search", id="conv-char-conversation-search-button", classes="sidebar-button")
-                        yield ListView(id="conv-char-search-results-list")
-                        yield Button("Load Selected", id="conv-char-load-button", classes="sidebar-button")
-                    with Collapsible(title="Prompts", id="ccp-prompts-collapsible"):
-                        yield Button("Import Prompt", id="ccp-import-prompt-button", classes="sidebar-button")
-                        yield Button("Create New Prompt", id="ccp-prompt-create-new-button", classes="sidebar-button")
-                        yield Input(id="ccp-prompt-search-input", placeholder="Search prompts...", classes="sidebar-input")
-                        yield ListView(id="ccp-prompts-listview", classes="sidebar-listview")
-                        yield Button("Load Selected Prompt", id="ccp-prompt-load-selected-button", classes="sidebar-button")
-                yield Button("☰", id="toggle-conv-char-left-sidebar", classes="cc-sidebar-toggle-button")
-
-                # Center Pane
-                with VerticalScroll(id="conv-char-center-pane", classes="cc-center-pane"):
-                    # Container for conversation messages - visible by default CSS
-                    with Container(id="ccp-conversation-messages-view", classes="ccp-view-area"):  # <<< ADD THIS BACK
-                        yield Static("Conversation History", classes="pane-title",
-                                     id="ccp-center-pane-title-conv")  # Keep your Static or original
-                        # Messages will be mounted dynamically here
-
-                    # Container for prompt editing UI (initially hidden)
-                    prompt_editor_container = Container(id="ccp-prompt-editor-view",
-                                                        classes="ccp-view-area")  # <<< ADD THIS BACK
-                    prompt_editor_container.styles.display = "none"  # Hide it initially
-
-                    with prompt_editor_container:  # Now compose its children (using original IDs)
-                        yield Static("Prompt Editor", classes="pane-title",
-                                     id="ccp-center-pane-title-prompt")  # Or your preferred title
-                        yield Label("Prompt Name:", classes="sidebar-label")
-                        yield Input(id="ccp-editor-prompt-name-input", placeholder="Unique prompt name...",
-                                    classes="sidebar-input")  # <<< USE "ccp-editor-" PREFIX
-                        yield Label("Author:", classes="sidebar-label")
-                        yield Input(id="ccp-editor-prompt-author-input", placeholder="Author name...",
-                                    classes="sidebar-input")  # <<< USE "ccp-editor-" PREFIX
-                        yield Label("Details/Description:", classes="sidebar-label")
-                        yield TextArea("", id="ccp-editor-prompt-description-textarea",
-                                       classes="sidebar-textarea ccp-prompt-textarea")  # <<< USE "ccp-editor-" PREFIX
-                        yield Label("System Prompt:", classes="sidebar-label")
-                        yield TextArea("", id="ccp-editor-prompt-system-textarea",
-                                       classes="sidebar-textarea ccp-prompt-textarea")  # <<< USE "ccp-editor-" PREFIX
-                        yield Label("User Prompt (Template):", classes="sidebar-label")
-                        yield TextArea("", id="ccp-editor-prompt-user-textarea",
-                                       classes="sidebar-textarea ccp-prompt-textarea")  # <<< USE "ccp-editor-" PREFIX
-                        yield Label("Keywords (comma-separated):", classes="sidebar-label")
-                        yield TextArea("", id="ccp-editor-prompt-keywords-textarea",
-                                       classes="sidebar-textarea ccp-prompt-textarea")  # <<< USE "ccp-editor-" PREFIX
-                        with Horizontal(classes="ccp-prompt-action-buttons"):
-                            yield Button("Save Prompt", id="ccp-editor-prompt-save-button", variant="success",
-                                         classes="sidebar-button")  # <<< USE "ccp-editor-" PREFIX
-                            yield Button("Clone Prompt", id="ccp-editor-prompt-clone-button",
-                                         classes="sidebar-button")  # <<< USE "ccp-editor-" PREFIX
-                            yield Button("Delete Prompt", id="ccp-editor-prompt-delete-button", variant="error",
-                                         classes="sidebar-button")  # <<< USE "ccp-editor-" PREFIX
-
-                # Button to toggle the right sidebar for CCP tab
-                yield Button(get_char(EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE),
-                             id="toggle-conv-char-right-sidebar", classes="cc-sidebar-toggle-button")
-                # --- Right Pane (Details & Settings) ---
-                with VerticalScroll(id="conv-char-right-pane", classes="cc-right-pane"):
-                    yield from create_settings_sidebar(TAB_CCP, self.app_config)
-                    with Collapsible(title="Conversation Details", id="ccp-conversation-details-collapsible", collapsed=True):
-                        yield Static("Title:", classes="sidebar-label")
-                        yield Input(id="conv-char-title-input", placeholder="Conversation title...", classes="sidebar-input")
-                        yield Static("Keywords:", classes="sidebar-label")
-                        yield TextArea("", id="conv-char-keywords-input", classes="conv-char-keywords-textarea")
-                        yield Button("Save Conversation Details", id="conv-char-save-details-button", classes="sidebar-button")
-                        yield Static("Export Options", classes="sidebar-label export-label")
-                        yield Button("Export as Text", id="conv-char-export-text-button", classes="sidebar-button")
-                        yield Button("Export as JSON", id="conv-char-export-json-button", classes="sidebar-button")
-                    with Collapsible(title="Prompt Details", id="ccp-prompt-details-collapsible", collapsed=True):
-                        yield Label("Prompt Name:", classes="sidebar-label")
-                        yield Input(id="ccp-prompt-name-input", placeholder="Unique prompt name...", classes="sidebar-input")
-                        yield Label("Author:", classes="sidebar-label")
-                        yield Input(id="ccp-prompt-author-input", placeholder="Author name...", classes="sidebar-input")
-                        yield Label("Details/Description:", classes="sidebar-label")
-                        yield TextArea("", id="ccp-prompt-description-textarea", classes="sidebar-textarea ccp-prompt-textarea")
-                        yield Label("System Prompt:", classes="sidebar-label")
-                        yield TextArea("", id="ccp-prompt-system-textarea", classes="sidebar-textarea ccp-prompt-textarea")
-                        yield Label("User Prompt (Template):", classes="sidebar-label")
-                        yield TextArea("", id="ccp-prompt-user-textarea", classes="sidebar-textarea ccp-prompt-textarea")
-                        yield Label("Keywords (comma-separated):", classes="sidebar-label")
-                        yield TextArea("", id="ccp-prompt-keywords-textarea", classes="sidebar-textarea ccp-prompt-textarea")
-                        with Horizontal(classes="ccp-prompt-action-buttons"):
-                            yield Button("Save Prompt", id="ccp-prompt-save-button", variant="success", classes="sidebar-button")
-                            yield Button("Clone Prompt", id="ccp-prompt-clone-button", classes="sidebar-button")
-                            yield Button("Delete Prompt", id="ccp-prompt-delete-button", variant="error", classes="sidebar-button")
-
-                # FIXME
-                # # Right Pane (dynamic content visibility)
-                # with VerticalScroll(id="conv-char-right-pane",
-                #                     classes="cc-right-pane"):  # Ensure this ID is unique if used elsewhere for styling
-                #     # Container for LLM settings (visibility toggled)
-                #     with Container(id="ccp-right-pane-llm-settings-container"):  # Initially visible by default CSS
-                #         yield from create_settings_sidebar(TAB_CCP, self.app_config)
-                #
-                #     # Conversation Details (always present, expanded/collapsed state might change by watcher)
-                #     with Collapsible(title="Conversation Details", id="ccp-conversation-details-collapsible",
-                #                      collapsed=False):  # Start expanded
-                #         yield Static("Title:", classes="sidebar-label")
-                #         yield Input(id="conv-char-title-input", placeholder="Conversation title...",
-                #                     classes="sidebar-input")
-                #         yield Static("Keywords:", classes="sidebar-label")
-                #         yield TextArea("", id="conv-char-keywords-input", classes="conv-char-keywords-textarea")
-                #         yield Button("Save Conversation Details", id="conv-char-save-details-button",
-                #                      classes="sidebar-button")
-                #         yield Static("Export Options", classes="sidebar-label export-label")
-                #         yield Button("Export as Text", id="conv-char-export-text-button", classes="sidebar-button")
-                #         yield Button("Export as JSON", id="conv-char-export-json-button", classes="sidebar-button")
-
-            #chat_window = Container(id=f"{TAB_CHAT}-window", classes="window")
-            # if self._initial_tab_value != TAB_CHAT:
-            #     chat_window.styles.display = False  # Hide if not the initial tab
-            ######################################
-            # --- Notes Tab Window ---
-            ######################################
-            # Ensure the initial display state is correct based on _initial_tab_value
-            notes_window = Container(id=f"{TAB_NOTES}-window", classes="window")
-            if self._initial_tab_value != TAB_NOTES:  # Use the stored initial value
-                notes_window.styles.display = "none"
-
-            with notes_window:  # This is the Container for the entire Notes Tab
-                # Instantiate the left sidebar
-                yield NotesSidebarLeft(id="notes-sidebar-left")
-
-                # Main content area for notes (editor and toggles)
-                with Container(id="notes-main-content"):
-                    yield TextArea(id="notes-editor-area", classes="notes-editor")
-                    # Container for toggle buttons and save button, similar to chat-input-area
-                    with Horizontal(id="notes-controls-area"):
-                        yield Button("☰ L", id="toggle-notes-sidebar-left", classes="sidebar-toggle")
-                        yield Static()  # Spacer
-                        yield Button("Save Note", id="notes-save-button", variant="primary")  # Main save button
-                        yield Static()  # Spacer
-                        yield Button("R ☰", id="toggle-notes-sidebar-right", classes="sidebar-toggle")
-
-                # Instantiate the right sidebar (ensure it has a unique ID for the watcher)
-                yield NotesSidebarRight(id="notes-sidebar-right")
-
-            ######################################
-            # --- Media Tab Goes Here
-            ######################################
-
-            ######################################
-            # ---- Search Tab ---
-            ######################################
 
             def _yield_and_track(window_instance, tab_constant_val, actual_window_id_val):
                 nonlocal composed_window_ids
@@ -874,12 +687,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 yield window_instance
                 composed_window_ids.add(actual_window_id_val)
                 self.loguru_logger.debug(f"Yielded {window_instance.__class__.__name__}, ID: {actual_window_id_val}, Display: {window_instance.styles.display}")
-            ######################################
-            # --- Ingest Content Window ---
-            ######################################
-            ingest_window = Container(id=f"{TAB_INGEST}-window", classes="window")
-            if self._initial_tab_value != TAB_INGEST:
-                ingest_window.styles.display = "none"
 
             self.loguru_logger.debug("Instantiating and yielding concrete tab windows...")
 
@@ -902,12 +709,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
             self.loguru_logger.info(f"Finished yielding concrete windows. Composed IDs: {composed_window_ids}")
 
-            ######################################
-            # --- LLM Management Window ---
-            ######################################
-            llm_window = Container(id=f"{TAB_LLM}-window", classes="window")
-            if self._initial_tab_value != TAB_LLM:
-                llm_window.styles.display = "none"
             self.loguru_logger.info(f"Starting placeholder loop. ALL_TABS: {ALL_TABS}")
             unique_tab_constants = set(ALL_TABS)
             self.loguru_logger.info(f"Unique tab constants for placeholder loop: {unique_tab_constants}")
@@ -934,72 +735,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self._ui_ready = True
             self.loguru_logger.info(f"--- FINISHED COMPOSE CONTENT AREA --- Final composed IDs: {composed_window_ids}")
             self.loguru_logger.info("UI composition completed - watchers enabled")
-            with llm_window:  # Main container for LLM tab, layout horizontal
-                # Left Navigation Pane for LLM
-                with VerticalScroll(id="llm-nav-pane", classes="llm-nav-pane"):  # New class
-                    yield Static("LLM Options", classes="sidebar-title")
-                    yield Button("Llama.cpp", id="llm-nav-llama-cpp", classes="llm-nav-button")
-                    yield Button("Llamafile", id="llm-nav-llamafile", classes="llm-nav-button")
-                    yield Button("vLLM", id="llm-nav-vllm", classes="llm-nav-button")
-                    yield Button("Transformers", id="llm-nav-transformers", classes="llm-nav-button")
-                    yield Button("Local Models", id="llm-nav-local-models", classes="llm-nav-button")
-                    yield Button("Download Models", id="llm-nav-download-models", classes="llm-nav-button")
-
-                # Right Content Pane for LLM
-                with Container(id="llm-content-pane", classes="llm-content-pane"):  # New class
-                    yield Container(
-                        Static("Llama.cpp Management Area - Content Coming Soon!"),
-                        id="llm-view-llama-cpp",  # Match button ID suffix
-                        classes="llm-view-area",  # Common class
-                    )
-                    yield Container(
-                        Static("Llamafile Management Area - Content Coming Soon!"),
-                        id="llm-view-llamafile",
-                        classes="llm-view-area",
-                    )
-                    yield Container(
-                        Static("vLLM Management Area - Content Coming Soon!"),
-                        id="llm-view-vllm",
-                        classes="llm-view-area",
-                    )
-                    yield Container(
-                        Static("Transformers Library Management Area - Content Coming Soon!"),
-                        id="llm-view-transformers",
-                        classes="llm-view-area",
-                    )
-                    yield Container(
-                        Static("Local Model Management Area - Content Coming Soon!"),
-                        id="llm-view-local-models",
-                        classes="llm-view-area",
-                    )
-                    yield Container(
-                        Static("Model Download Area - Content Coming Soon!"),
-                        id="llm-view-download-models",
-                        classes="llm-view-area",
-                    )
-
-            ######################################
-            # --- Logs Window ---
-            ######################################
-            with Container(id=f"{TAB_LOGS}-window", classes="window"):
-                yield RichLog(id="app-log-display", wrap=True, highlight=True, markup=True, auto_scroll=True)
-                yield Button("Copy All Logs to Clipboard", id="copy-logs-button", classes="logs-action-button")
-
-            ######################################
-            # --- Stats Window (Placeholder) ---
-            ######################################
-            with Container(id=f"{TAB_STATS}-window", classes="window"):
-                yield StatsScreen(
-                    id="stats_screen_content")  # You can give the StatsScreen instance an ID if needed, or omit it
-
-            ######################################
-            # --- Other Placeholder Windows ---
-            ######################################
-            for tab_id_placeholder in ALL_TABS:
-                if tab_id_placeholder not in [TAB_CHAT, TAB_CCP, TAB_NOTES, TAB_INGEST, TAB_TOOLS_SETTINGS, TAB_LLM, TAB_LOGS, TAB_STATS]:  # Updated to TAB_CCP
-                    with Container(id=f"{tab_id_placeholder}-window", classes="window placeholder-window"):
-                        yield Static(f"{tab_id_placeholder.replace('_', ' ').capitalize()} Window Placeholder")
-                        yield Button("Coming Soon", id=f"{tab_id_placeholder}-placeholder-button", disabled=True)
 
     # --- Watcher for CCP Active View ---
     def watch_ccp_active_view(self, old_view: Optional[str], new_view: str) -> None:
@@ -1010,29 +745,26 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         try:
             conversation_messages_view = self.query_one("#ccp-conversation-messages-view")
             prompt_editor_view = self.query_one("#ccp-prompt-editor-view")
+            character_card_view = self.query_one("#ccp-character-card-view")
+            character_editor_view = self.query_one("#ccp-character-editor-view")
+
 
             # REMOVE or COMMENT OUT the query for llm_settings_container_right:
             # llm_settings_container_right = self.query_one("#ccp-right-pane-llm-settings-container")
             # conv_details_collapsible_right = self.query_one("#ccp-conversation-details-collapsible", Collapsible) # Keep if you manipulate its collapsed state
-            # Right pane elements
-            conv_details_collapsible_right = self.query_one("#ccp-conversation-details-collapsible", Collapsible)
-            prompt_details_collapsible_right = self.query_one("#ccp-prompt-details-collapsible", Collapsible)
 
             if new_view == "prompt_editor_view":
                 # Center Pane: Show Prompt Editor, Hide Conversation Messages
                 conversation_messages_view.display = False
                 prompt_editor_view.display = True
+                character_card_view.display = False
+                character_editor_view.display = False
                 # LLM settings container is gone, no need to hide it.
                 # llm_settings_container_right.display = False
 
                 # Optionally, manage collapsed state of other sidebars
                 self.query_one("#ccp-conversation-details-collapsible", Collapsible).collapsed = True
                 self.query_one("#ccp-prompt-details-collapsible", Collapsible).collapsed = False
-                # Right Pane: Hide LLM Settings, Keep Conversation Details (can be collapsed)
-                conv_details_collapsible_right.display = True  # Ensure it's displayed
-
-                conv_details_collapsible_right.collapsed = True  # Collapse conversation details
-                prompt_details_collapsible_right.collapsed = False  # Expand prompt details
 
                 # Focus an element in prompt editor
                 try:
@@ -1040,10 +772,33 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 except QueryError:
                     loguru_logger.warning("Could not focus prompt name input in editor view.")
 
+            elif new_view == "character_editor_view":
+                conversation_messages_view.display = False
+                prompt_editor_view.display = False
+                character_card_view.display = False
+                character_editor_view.display = True
+                # Optionally manage right-pane collapsibles
+                self.query_one("#ccp-conversation-details-collapsible", Collapsible).collapsed = True
+                self.query_one("#ccp-prompt-details-collapsible", Collapsible).collapsed = True
+                loguru_logger.info("Character editor view activated. Focus pending specific input fields.")
+
+            elif new_view == "character_card_view":
+                conversation_messages_view.display = False
+                prompt_editor_view.display = False
+                character_card_view.display = True
+                character_editor_view.display = False
+                # Optionally manage right-pane collapsibles
+                self.query_one("#ccp-conversation-details-collapsible", Collapsible).collapsed = True
+                self.query_one("#ccp-prompt-details-collapsible", Collapsible).collapsed = True
+                loguru_logger.info("Character card display view activated.")
+                # Add focus logic if needed for this view
+
             elif new_view == "conversation_details_view":
                 # Center Pane: Show Conversation Messages, Hide Prompt Editor
                 conversation_messages_view.display = True
                 prompt_editor_view.display = False
+                character_card_view.display = False
+                character_editor_view.display = False
                 # LLM settings container is gone, no need to show it.
                 # llm_settings_container_right.display = True
                 self.query_one("#ccp-conversation-details-collapsible", Collapsible).collapsed = False
@@ -1060,6 +815,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             else:  # Default or unknown view (treat as conversation_details_view)
                 conversation_messages_view.display = True
                 prompt_editor_view.display = False
+                character_card_view.display = False
+                character_editor_view.display = False
                 # llm_settings_container_right.display = True # Default if unknown
                 loguru_logger.warning(
                     f"Unknown ccp_active_view: {new_view}, defaulting to conversation_details_view.")
@@ -1141,7 +898,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                                TextArea).text = self.current_prompt_keywords_str
 
                 self.query_one("#ccp-editor-prompt-name-input", Input).focus()  # Focus after loading
-                self.notify(f"Prompt '{self.current_prompt_name}' loaded for editing.", severity="info")
+                self.notify(f"Prompt '{self.current_prompt_name}' loaded for editing.", severity="information")
             else:
                 self.notify(f"Failed to load prompt (ID/UUID: {identifier_to_fetch}).", severity="error")
                 self._clear_prompt_fields()  # Clear editor if load fails
@@ -1236,9 +993,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         if not self._ui_ready:
             self.loguru_logger.debug("watch_ingest_active_view: UI not ready.")
             return
+        self.loguru_logger.debug(f"Ingest active view changing from '{old_view}' to: '{new_view}'")
 
-        self.loguru_logger.info(f"Ingest active view WATCHER: Old='{old_view}', New='{new_view}'")
-
+        # Get the content pane for the Ingest tab
         try:
             content_pane = self.query_one("#ingest-content-pane")
         except QueryError:
@@ -1246,57 +1003,26 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             return
 
         # Hide all ingest view areas first
-        # Using self.ALL_INGEST_VIEW_IDS is more robust than querying children
-        for view_id_to_hide in self.ALL_INGEST_VIEW_IDS:
-            if view_id_to_hide == new_view:  # Don't hide the view we are about to show
-                continue
-            try:
-                # Query within the content_pane for each known view ID
-                view_widget = content_pane.query_one(f"#{view_id_to_hide}")
-                if view_widget.styles.display != "none":
-                    view_widget.styles.display = "none"
-                    self.loguru_logger.debug(f"  Hiding view: #{view_id_to_hide}")
-            except QueryError:
-                # This is okay if a view_id from ALL_INGEST_VIEW_IDS is not currently a child,
-                # though in this setup they all should be.
-                self.loguru_logger.warning(f"  View #{view_id_to_hide} not found in content_pane to hide.")
+        for child in content_pane.query(".ingest-view-area"):  # Query by common class
+            child.styles.display = "none"
 
-        # Show the selected new view
-        if new_view:
+        # Show the selected view
+        if new_view:  # new_view here is the ID of the view container, e.g., "ingest-view-prompts"
             try:
                 target_view_id_selector = f"#{new_view}"
-                view_to_show = content_pane.query_one(target_view_id_selector)  # REMOVED , Container
-                view_to_show.styles.display = "block"
-                self.loguru_logger.info(f"  Showing view: #{new_view}")
-
-                # Update active class on nav buttons
-                try:
-                    nav_pane = self.query_one("#ingest-nav-pane")
-                    for button in nav_pane.query(".ingest-nav-button"):
-                        button.remove_class("-active-ingest-view")
-
-                    # Construct the ID of the nav button corresponding to the new_view
-                    # e.g., "ingest-view-prompts" -> "ingest-nav-prompts"
-                    nav_button_id = new_view.replace("-view-", "-nav-")
-                    active_nav_button = nav_pane.query_one(f"#{nav_button_id}")
-                    active_nav_button.add_class("-active-ingest-view")
-                    self.loguru_logger.debug(f"  Activated nav button: #{nav_button_id}")
-
-                except QueryError as e_nav:
-                    self.loguru_logger.error(f"  Error updating nav button active class: {e_nav}")
-
-                # Specific focus logic if needed for the new view
-                if new_view == "ingest-view-prompts":
-                    try:
-                        self.query_one("#ingest-prompts-select-file-button", Button).focus()
-                    except QueryError:
-                        self.loguru_logger.warning("Could not focus select file button in ingest-view-prompts.")
-                # Add other focus logic for other ingest views if necessary
-
-            except QueryError:
-                self.loguru_logger.error(f"  ERROR: Target view '#{new_view}' not found in #ingest-content-pane.")
+                view_to_show = content_pane.query_one(target_view_id_selector, Container)
+                view_to_show.styles.display = "block"  # or "flex" or whatever your default visible display is
+                self.loguru_logger.info(f"Switched Ingest view to: {new_view}")
+                # Optional: Focus an element within the newly shown view
+                # try:
+                #     view_to_show.query(Input, Button)[0].focus()
+                # except IndexError:
+                #     pass # No focusable element
+            except QueryError as e:
+                self.loguru_logger.error(f"UI component '{new_view}' not found in #ingest-content-pane: {e}",
+                                         exc_info=True)
         else:
-            self.loguru_logger.info("  New ingest view is None, all ingest views should be hidden.")
+            self.loguru_logger.debug("Ingest active view is None, all ingest views hidden.")
 
     def watch_tools_settings_active_view(self, old_view: Optional[str], new_view: Optional[str]) -> None:
         self.loguru_logger.debug(f"Tools & Settings active view changing from '{old_view}' to: '{new_view}'")
@@ -1343,6 +1069,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
     # --- LLM Tab Watcher ---
     def watch_llm_active_view(self, old_view: Optional[str], new_view: Optional[str]) -> None:
+        if not hasattr(self, "app") or not self.app:  # Check if app is ready
+            return
+        if not self._ui_ready:
+            return
         self.loguru_logger.debug(f"LLM Management active view changing from '{old_view}' to: '{new_view}'")
 
         try:
@@ -1403,6 +1133,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
     def watch_current_chat_is_ephemeral(self, is_ephemeral: bool) -> None:
         self.loguru_logger.debug(f"Chat ephemeral state changed to: {is_ephemeral}")
+        if not hasattr(self, "app") or not self.app:  # Check if app is ready
+            return
+        if not self._ui_ready:
+            return
         try:
             # --- Controls for EPHEMERAL chat actions ---
             save_current_chat_button = self.query_one("#chat-save-current-chat-button", Button)
@@ -1468,18 +1202,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         try:
             chat_select = self.query_one(f"#{TAB_CHAT}-api-provider", Select)
             self.watch(chat_select, "value", self.update_chat_provider_reactive, init=False)
-            logging.debug(f"Bound chat provider Select ({chat_select.id}) value to update_chat_provider_reactive")
-            loguru_logger.warning(f">>> DEBUG: Bound chat provider Select to reactive update method.")
-        except QueryError:
-            logging.error(f"on_mount: Failed to find chat provider select: #{TAB_CHAT}-api-provider")
-            loguru_logger.debug(f">>> DEBUG: ERROR - Failed to bind chat provider select.")
-        except Exception as e:
-            logging.error(f"on_mount: Error binding chat provider select: {e}", exc_info=True)
-            print(f">>> DEBUG: ERROR - Exception during chat provider select binding: {e}")
-
-        try:
-            ccp_select = self.query_one(f"#{TAB_CCP}-api-provider", Select)
-            self.watch(ccp_select, "value", self.update_ccp_provider_reactive, init=False) # Use renamed reactive updater
+            self.loguru_logger.debug(f"Bound chat provider Select ({chat_select.id})")
         except QueryError:
             self.loguru_logger.error(
                 f"_post_mount_setup: Failed to find chat provider select: #{TAB_CHAT}-api-provider")
@@ -2252,40 +1975,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     f"Button (ID: {button_id}, Label: '{button.label}') identified as part of ChatMessage. Delegating to chat_actions.")
                 await chat_handlers.handle_chat_action_button_pressed(self, button, action_widget)
                 return
-
-            # ---- If not part of a ChatMessage, check for other specific Chat tab buttons by ID ----
-            self.loguru_logger.debug(
-                f"Button (ID: {button_id}, Label: '{button.label}') not part of ChatMessage. Checking specific Chat tab button IDs.")
-            if button_id == "send-chat":
-                await chat_handlers.handle_chat_send_button_pressed(self, TAB_CHAT)
-            elif button_id == "chat-new-conversation-button":
-                await chat_handlers.handle_chat_new_conversation_button_pressed(self)
-            elif button_id == "chat-save-current-chat-button":
-                await chat_handlers.handle_chat_save_current_chat_button_pressed(self)
-            elif button_id == "chat-save-conversation-details-button":
-                await chat_handlers.handle_chat_save_details_button_pressed(self)
-            elif button_id == "chat-conversation-load-selected-button":
-                await chat_handlers.handle_chat_load_selected_button_pressed(self)
-                # --- Chat Sidebar Prompt Buttons ---
-            elif button_id == "chat-prompt-load-selected-button":
-                await chat_handlers.handle_chat_load_selected_sidebar_prompt_button_pressed(self)
-            elif button_id == "chat-copy-system-prompt-button":
-                await chat_handlers.handle_chat_copy_system_prompt_button_pressed(self)
-            elif button_id == "chat-copy-user-prompt-button":
-                await chat_handlers.handle_chat_copy_user_prompt_button_pressed(self)
-            else:
-                # This log now has more context if a button is truly unhandled
-                # New buttons for chat sidebar prompt copy
-                if button_id == "chat-sidebar-copy-system-prompt-button":
-                    await chat_handlers.handle_chat_sidebar_copy_system_prompt_button_pressed(self)
-                    return
-                elif button_id == "chat-sidebar-copy-user-prompt-button":
-                    await chat_handlers.handle_chat_sidebar_copy_user_prompt_button_pressed(self)
-                    return
-                self.loguru_logger.warning(
-                    f"Unhandled button on CHAT tab -> ID: {button_id}, "
-                    f"Label: '{button.label}', Classes: {button.classes}"
-                )
             if button_id == "send-chat": await chat_handlers.handle_chat_send_button_pressed(self, TAB_CHAT)
             elif button_id == "chat-new-conversation-button": await chat_handlers.handle_chat_new_conversation_button_pressed(self)
             elif button_id == "chat-new-temp-chat-button": await chat_handlers.handle_chat_new_conversation_button_pressed(self) # Reuses existing handler
@@ -2463,10 +2152,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         # --- Logging Tab ---
         elif current_active_tab == TAB_LOGS:
             if button_id == "copy-logs-button": await app_lifecycle_handlers.handle_copy_logs_button_pressed(self)
-            else:
-                logging.warning(f"Unhandled button on LOGS tab: {button_id}")
+            else: self.loguru_logger.warning(f"Unhandled button on LOGS tab: {button_id}")
+
         else:
-            self.loguru_logger.warning(f"Button '{button_id}' pressed on unhandled tab '{current_active_tab}' or unhandled button ID.")
+            self.loguru_logger.warning(f"Button '{button_id}' pressed on unhandled/unknown tab '{current_active_tab}' or unhandled button ID.")
 
     def _get_chat_message_widget_from_button(self, button: Button) -> Optional[ChatMessage]:
         """Helper to find the parent ChatMessage widget from an action button within it."""
