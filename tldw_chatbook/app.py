@@ -250,6 +250,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     selected_prompt_files_for_import: List[Path] = []
     parsed_prompts_for_preview: List[Dict[str, Any]] = []
     last_prompt_import_dir: Optional[Path] = None
+    selected_note_files_for_import: List[Path] = []
+    parsed_notes_for_preview: List[Dict[str, Any]] = []
+    last_note_import_dir: Optional[Path] = None
+
 
     # Tools Tab
     tools_settings_active_view: reactive[Optional[str]] = reactive(None)  # Or a default view ID
@@ -853,6 +857,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.notify(f"Error loading prompt: {type(e).__name__}", severity="error")
             self._clear_prompt_fields()
             self.current_prompt_id = None  # Reset reactives
+
+    async def refresh_notes_tab_after_ingest(self) -> None:
+        """Called after notes are ingested from the Ingest tab to refresh the Notes tab."""
+        self.loguru_logger.info("Refreshing Notes tab data after ingestion.")
+        if hasattr(notes_handlers, 'load_and_display_notes_handler'):
+            await notes_handlers.load_and_display_notes_handler(self)
+        else:
+            self.loguru_logger.error("notes_handlers.load_and_display_notes_handler not found for refresh.")
 
     # ##################################################
     # --- Watcher for Search Tab Active Sub-View ---

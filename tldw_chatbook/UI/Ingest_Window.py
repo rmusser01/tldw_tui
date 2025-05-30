@@ -254,9 +254,13 @@ class IngestWindow(Container):
                     yield Button("Clear Selection", id="ingest-notes-clear-files-button")
                 yield Label("Selected Files for Import:", classes="ingest-label")
                 yield ListView(id="ingest-notes-selected-files-list", classes="ingest-selected-files-list")
+
                 yield Label("Preview of Parsed Notes (Max 10 shown):", classes="ingest-label")
                 with VerticalScroll(id="ingest-notes-preview-area", classes="ingest-preview-area"):
                     yield Static("Select files to see a preview.", id="ingest-notes-preview-placeholder")
+
+                # ID used in ingest_events.py will be:
+                # ingest-notes-import-now-button
                 yield Button("Import Selected Notes Now", id="ingest-notes-import-now-button", variant="primary")
                 yield Label("Import Status:", classes="ingest-label")
                 yield TextArea(id="ingest-notes-import-status-area", read_only=True, classes="ingest-status-area")

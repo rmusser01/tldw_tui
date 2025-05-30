@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Optional, List, Any, Dict, Callable
 # 3rd-party Libraries
 from loguru import logger
 from textual.widgets import Select, Input, TextArea, Checkbox, RadioSet, RadioButton, Label, Static, Markdown, ListItem, \
-    ListView
+    ListView, Collapsible
 from textual.css.query import QueryError
 from textual.containers import Container, VerticalScroll
 #
@@ -32,6 +32,7 @@ from ..Prompt_Management.Prompts_Interop import (
     is_initialized as prompts_db_initialized,  # Renamed for clarity
     import_prompts_from_files, _get_file_type as _get_prompt_file_type  # Renamed for clarity
 )
+from ..DB.ChaChaNotes_DB import ConflictError as ChaChaConflictError, CharactersRAGDBError
 # Character Chat Lib for parsing and importing character cards
 from ..Character_Chat import Character_Chat_Lib as ccl
 from ..DB.ChaChaNotes_DB import ConflictError as ChaChaConflictError  # For character import conflict
@@ -67,7 +68,13 @@ CHARACTER_FILE_FILTERS = Filters(
     ("All Files", lambda _: True),
 )
 
-
+# --- Notes Ingest Constants ---
+MAX_NOTE_PREVIEWS = 10
+NOTE_FILE_FILTERS = Filters(
+    ("JSON Notes (*.json)", lambda p: p.suffix.lower() == ".json"),
+    # ("Markdown Notes (*.md)", lambda p: p.suffix.lower() == ".md"), # Example for future
+    ("All Files", lambda _: True),
+)
 
 def _truncate_text(text: Optional[str], max_len: int) -> str:
     """
@@ -1141,6 +1148,325 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
     )
 
 
+async def _update_note_preview_display(app: 'TldwCli') -> None:
+    """Updates the note preview area in the UI."""
+    try:
+        preview_area = app.query_one("#ingest-notes-preview-area", VerticalScroll)
+        await preview_area.remove_children()
+
+        if not app.parsed_notes_for_preview:
+            await preview_area.mount(
+                Static("Select files to see a preview, or no notes found.", id="ingest-notes-preview-placeholder"))
+            return
+
+        num_to_display = len(app.parsed_notes_for_preview)
+        notes_to_show = app.parsed_notes_for_preview[:MAX_NOTE_PREVIEWS]
+
+        for idx, note_data in enumerate(notes_to_show):
+            title = note_data.get("title", f"Untitled Note {idx + 1}")
+            content_preview = _truncate_text(note_data.get("content"), 200)
+
+            md_content = f"""### {title}
+{content_preview}
+IGNORE_WHEN_COPYING_START
+content_copy
+download
+Use code with caution.
+Python
+IGNORE_WHEN_COPYING_END
+
+"""
+            if "error" in note_data:
+                md_content = f"""### Error parsing {note_data.get("filename", "file")}
+                {note_data["error"]}
+                IGNORE_WHEN_COPYING_START
+                content_copy
+                download
+                Use code with caution.
+                Text
+                IGNORE_WHEN_COPYING_END                
+                """
+                await preview_area.mount(Markdown(md_content, classes="prompt-preview-item"))
+
+            if num_to_display > MAX_NOTE_PREVIEWS:
+                    await preview_area.mount(
+                        Static(f"...and {num_to_display - MAX_NOTE_PREVIEWS} more notes loaded (not shown)."))
+
+    except QueryError as e:
+        logger.error(f"UI component not found for note preview update: {e}")
+        app.notify("Error updating note preview UI.", severity="error")
+    except Exception as e:
+        logger.error(f"Unexpected error updating note preview: {e}", exc_info=True)
+        app.notify("Unexpected error during note preview update.", severity="error")
+
+
+def _parse_single_note_file_for_preview(file_path: Path, app_ref: 'TldwCli') -> List[Dict[str, Any]]:
+    """
+    Parses a single note file (JSON) for preview.
+    Returns a list of note data dicts.
+    """
+    logger.debug(f"Parsing note file for preview: {file_path}")
+    preview_notes = []
+    file_suffix = file_path.suffix.lower()
+
+    if file_suffix == ".json":
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            data = json.loads(content)
+
+            if isinstance(data, dict):  # Single note object
+                if "title" in data and "content" in data:
+                    preview_notes.append(
+                        {"filename": file_path.name, "title": data.get("title"), "content": data.get("content")})
+                else:
+                    preview_notes.append({"filename": file_path.name, "title": f"Error: {file_path.name}",
+                                          "error": "JSON object missing 'title' or 'content'."})
+            elif isinstance(data, list):  # Array of note objects
+                for item in data:
+                    if isinstance(item, dict) and "title" in item and "content" in item:
+                        preview_notes.append(
+                            {"filename": file_path.name, "title": item.get("title"), "content": item.get("content")})
+                    else:
+                        logger.warning(f"Skipping invalid note item in array from {file_path.name}: {item}")
+            else:
+                preview_notes.append({"filename": file_path.name, "title": f"Error: {file_path.name}",
+                                      "error": "JSON content is not a valid note object or array of note objects."})
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in {file_path.name}: {e}")
+            preview_notes.append(
+                {"filename": file_path.name, "title": f"Error: {file_path.name}", "error": f"Invalid JSON: {e}"})
+        except Exception as e:
+            logger.error(f"Error parsing note file {file_path} for preview: {e}", exc_info=True)
+            preview_notes.append({"filename": file_path.name, "title": f"Error: {file_path.name}", "error": str(e)})
+    else:
+        preview_notes.append({"filename": file_path.name, "title": f"Error: {file_path.name}",
+                              "error": f"Unsupported file type for note preview: {file_suffix}"})
+
+    if not preview_notes:  # If parsing yielded nothing (e.g. empty JSON array)
+        preview_notes.append({"filename": file_path.name, "title": file_path.name, "content": "No notes found in file."})
+
+    return preview_notes
+
+async def _handle_note_file_selected_callback(app: 'TldwCli', selected_path: Optional[Path]) -> None:
+    """Callback for note file selection."""
+    if selected_path:
+        logger.info(f"Note file selected via dialog: {selected_path}")
+        if selected_path in app.selected_note_files_for_import:
+            app.notify(f"File '{selected_path.name}' is already in the note selection.", severity="warning")
+            return
+
+        app.selected_note_files_for_import.append(selected_path)
+        app.last_note_import_dir = selected_path.parent
+
+        try:
+            list_view = app.query_one("#ingest-notes-selected-files-list", ListView)
+            placeholder_exists = False
+            if list_view.children:
+                first_child = list_view.children[0]
+                if isinstance(first_child, ListItem) and first_child.children:
+                    first_label = first_child.children[0]
+                    if isinstance(first_label, Label) and str(first_label.renderable).strip() == "No files selected.":
+                        placeholder_exists = True
+            if placeholder_exists:
+                await list_view.clear()
+            await list_view.append(ListItem(Label(str(selected_path))))
+        except QueryError:
+            logger.error("Could not find #ingest-notes-selected-files-list ListView to update.")
+
+        parsed_notes_from_file = _parse_single_note_file_for_preview(selected_path, app)
+        app.parsed_notes_for_preview.extend(parsed_notes_from_file)
+
+        await _update_note_preview_display(app)
+    else:
+        logger.info("Note file selection cancelled.")
+        app.notify("File selection cancelled.")
+
+
+# --- Notes Ingest Handlers (NEW) ---
+async def handle_ingest_notes_select_file_button_pressed(app: 'TldwCli') -> None:
+    logger.debug("Select Notes File(s) button pressed. Opening file dialog.")
+    current_dir = app.last_note_import_dir or Path(".")
+
+    def post_file_open_action(selected_file_path: Optional[Path]) -> None:
+        """This function matches the expected callback signature for push_screen more directly."""
+        # It's okay for this outer function to be synchronous if all it does
+        # is schedule an async task via call_after_refresh.
+        if selected_file_path is not None: # Or however you want to handle None path
+            # The lambda passed to call_after_refresh captures selected_file_path
+            app.call_after_refresh(lambda: _handle_note_file_selected_callback(app, selected_file_path))
+        else:
+            # Handle the case where selection was cancelled (path is None)
+            app.call_after_refresh(lambda: _handle_note_file_selected_callback(app, None))
+    # The screen you're pushing
+    file_open_screen = FileOpen(
+        location=str(current_dir),
+        title="Select Notes File (.json)",
+        filters=NOTE_FILE_FILTERS
+    )
+    # Push the screen with the defined callback
+    # await app.push_screen(file_open_screen, post_file_open_action) # This should work
+    # If you need to call an async method from a sync context (like a button press handler that isn't async itself)
+    # and push_screen itself needs to be awaited, then the button handler must be async.
+    # Your handle_ingest_notes_select_file_button_pressed is already async, so this is fine:
+    await app.push_screen(file_open_screen, post_file_open_action)
+
+
+async def handle_ingest_notes_clear_files_button_pressed(app: 'TldwCli') -> None:
+    """Handles 'Clear Selection' for note import."""
+    logger.info("Clearing selected note files and preview.")
+    app.selected_note_files_for_import.clear()
+    app.parsed_notes_for_preview.clear()
+
+    try:
+        selected_list_view = app.query_one("#ingest-notes-selected-files-list", ListView)
+        await selected_list_view.clear()
+        await selected_list_view.append(ListItem(Label("No files selected.")))
+
+        preview_area = app.query_one("#ingest-notes-preview-area", VerticalScroll)
+        await preview_area.remove_children()
+        await preview_area.mount(Static("Select files to see a preview.", id="ingest-notes-preview-placeholder"))
+
+        status_area = app.query_one("#ingest-notes-import-status-area", TextArea)
+        status_area.clear()
+        app.notify("Note selection and preview cleared.")
+    except QueryError as e:
+        logger.error(f"UI component not found for clearing note selection: {e}")
+        app.notify("Error clearing note UI.", severity="error")
+
+
+async def handle_ingest_notes_import_now_button_pressed(app: 'TldwCli') -> None:
+    """Handles 'Import Selected Notes Now' button press."""
+    logger.info("Import Selected Note Files Now button pressed.")
+
+    if not app.selected_note_files_for_import:
+        app.notify("No note files selected to import.", severity="warning")
+        return
+
+    if not app.notes_service:
+        msg = "Notes database service is not initialized. Cannot import notes."
+        app.notify(msg, severity="error", timeout=7)
+        logger.error(msg + " Aborting note import.")
+        return
+
+    try:
+        # Use query_one to get the widget directly or raise QueryError
+        status_area = app.query_one("#ingest-notes-import-status-area", TextArea)
+    except QueryError:
+        logger.error("Could not find #ingest-notes-import-status-area TextArea.")
+        app.notify("Status display area not found.", severity="error")
+        return
+
+    status_area.text = ""  # Clear the TextArea
+    status_area.text = "Starting note import process...\n"  # Set initial text
+    app.notify("Importing notes...")
+
+    user_id = app.notes_user_id
+
+    async def import_worker_notes():
+        results = []
+        for file_path in app.selected_note_files_for_import:
+            notes_in_file = _parse_single_note_file_for_preview(file_path, app)
+            for note_data in notes_in_file:
+                if "error" in note_data or not note_data.get("title") or not note_data.get("content"):
+                    results.append({
+                        "file_path": str(file_path),
+                        "note_title": note_data.get("title", file_path.stem),
+                        "status": "failure",
+                        "message": note_data.get("error", "Missing title or content.")
+                    })
+                    continue
+                try:
+                    note_id = app.notes_service.add_note(
+                        user_id=user_id,
+                        title=note_data["title"],
+                        content=note_data["content"]
+                    )
+                    results.append({
+                        "file_path": str(file_path),
+                        "note_title": note_data["title"],
+                        "status": "success",
+                        "message": f"Note imported successfully. ID: {note_id}",
+                        "note_id": note_id
+                    })
+                except (ChaChaConflictError, CharactersRAGDBError, ValueError) as e:
+                    logger.error(f"Error importing note '{note_data['title']}' from {file_path}: {e}", exc_info=True)
+                    results.append({
+                        "file_path": str(file_path),
+                        "note_title": note_data["title"],
+                        "status": "failure",
+                        "message": f"DB/Input error: {type(e).__name__} - {str(e)[:100]}"
+                    })
+                except Exception as e:
+                    logger.error(f"Unexpected error importing note '{note_data['title']}' from {file_path}: {e}",
+                                 exc_info=True)
+                    results.append({
+                        "file_path": str(file_path),
+                        "note_title": note_data["title"],
+                        "status": "failure",
+                        "message": f"Unexpected error: {type(e).__name__}"
+                    })
+        return results
+
+    def on_import_success_notes(results: List[Dict[str, Any]]):
+        log_text_parts = ["Note import process finished.\n\nResults:\n"]  # Renamed to avoid conflict
+        successful_imports = 0
+        failed_imports = 0
+        for res in results:
+            status = res.get("status", "unknown")
+            file_path_str = res.get("file_path", "N/A")
+            note_title = res.get("note_title", "N/A")
+            message = res.get("message", "")
+
+            log_text_parts.append(f"File: {Path(file_path_str).name} (Note: '{note_title}')\n")
+            log_text_parts.append(f"  Status: {status.upper()}\n")
+            if message:
+                log_text_parts.append(f"  Message: {message}\n")
+            log_text_parts.append("-" * 30 + "\n")
+
+            if status == "success":
+                successful_imports += 1
+            else:
+                failed_imports += 1
+
+        summary = f"\nSummary: {successful_imports} notes imported, {failed_imports} failed."
+        log_text_parts.append(summary)
+
+        try:
+            status_area_cb = app.query_one("#ingest-notes-import-status-area", TextArea)
+            status_area_cb.load_text("".join(log_text_parts))
+        except QueryError:
+            logger.error("Failed to find #ingest-notes-import-status-area in on_import_success_notes.")
+
+        app.notify(f"Note import finished. Success: {successful_imports}, Failed: {failed_imports}", timeout=8)
+        logger.info(summary)
+
+        #app.call_later(load_and_display_notes_handler, app)
+        app.call_later(app.refresh_notes_tab_after_ingest)
+        try:
+            # Make sure to query the collapsible before creating the Toggled event instance
+            chat_notes_collapsible_widget = app.query_one("#chat-notes-collapsible", Collapsible)
+            app.call_later(app.on_chat_notes_collapsible_toggle, Collapsible.Toggled(chat_notes_collapsible_widget))
+        except QueryError:
+            logger.error("Failed to find #chat-notes-collapsible widget for refresh after note import.")
+
+    def on_import_failure_notes(error: Exception):
+        logger.error(f"Note import worker failed critically: {error}", exc_info=True)
+        try:
+            status_area_cb_fail = app.query_one("#ingest-notes-import-status-area", TextArea)
+            current_text = status_area_cb_fail.text
+            status_area_cb_fail.load_text(
+                current_text + f"\nNote import process failed critically: {error}\nCheck logs.\n")
+        except QueryError:
+            logger.error("Failed to find #ingest-notes-import-status-area in on_import_failure_notes.")
+        app.notify(f"Note import CRITICALLY failed: {error}", severity="error", timeout=10)
+
+    app.run_worker(
+        import_worker_notes,
+        name="note_import_worker",
+        group="file_operations",
+        description="Importing selected note files."
+    )
 #
 # End of tldw_chatbook/Event_Handlers/ingest_events.py
 #######################################################################################################################
