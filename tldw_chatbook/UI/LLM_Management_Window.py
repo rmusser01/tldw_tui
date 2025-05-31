@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll
 from textual.css.query import QueryError
-from textual.widgets import Static, Button, Input, RichLog, Label
+from textual.widgets import Static, Button, Input, RichLog, Label, TextArea
 # Local Imports
 #
 if TYPE_CHECKING:
@@ -83,11 +83,25 @@ class LLMManagementWindow(Container):
                 id="llm-view-llamafile",
                 classes="llm-view-area",
             )
-            yield Container(
-                Static("vLLM Management Area - Content Coming Soon!"),
-                id="llm-view-vllm",
-                classes="llm-view-area",
-            )
+            with Container(id="llm-view-vllm", classes="llm-view-area"):
+                yield Label("Python Interpreter Path:", classes="label")
+                with Container(classes="input_container"):
+                    yield Input(id="vllm-python-path", placeholder="Default: python")
+                    yield Button("Browse", id="vllm-browse-python-button", classes="browse_button")
+                yield Label("Model Path or Hugging Face ID:", classes="label")
+                with Container(classes="input_container"):
+                    yield Input(id="vllm-model-path", placeholder="e.g., /path/to/model or HuggingFaceName/ModelName")
+                    yield Button("Browse", id="vllm-browse-model-button", classes="browse_button")
+                yield Label("Host:", classes="label")
+                yield Input(id="vllm-host", value="127.0.0.1")
+                yield Label("Port:", classes="label")
+                yield Input(id="vllm-port", value="8000")
+                yield Label("Additional Arguments:", classes="label")
+                yield TextArea(id="vllm-additional-args")
+                with Container(classes="button_container"):
+                    yield Button("Start Server", id="vllm-start-server-button", classes="action_button")
+                    yield Button("Stop Server", id="vllm-stop-server-button", classes="action_button")
+                yield RichLog(id="vllm-log-output", classes="log_output", wrap=True, highlight=True)
             yield Container(
                 Static("Transformers Library Management Area - Content Coming Soon!"),
                 id="llm-view-transformers",

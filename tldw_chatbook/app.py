@@ -4,6 +4,7 @@
 # Imports
 import logging
 import logging.handlers
+import subprocess
 import sys
 from pathlib import Path
 import traceback
@@ -299,6 +300,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # LLM Inference Tab
     llm_active_view: reactive[Optional[str]] = reactive(None)
     _initial_llm_view: Optional[str] = "llm-view-llama-cpp"
+    vllm_server_process: Optional[subprocess.Popen] = None
 
     # De-Bouncers
     _conv_char_search_timer: Optional[Timer] = None
@@ -2202,10 +2204,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         # --- LLM Inference Tab ---
         elif current_active_tab == TAB_LLM:
             if button_id and button_id.startswith("llm-nav-"):
-                # e.g., "llm-nav-llama-cpp" -> "llm-view-llama-cpp"
-                view_to_activate = button_id.replace("llm-nav-", "llm-view-")
-                self.loguru_logger.debug(f"LLM nav button '{button_id}' pressed. Activating view '{view_to_activate}'.")
-                self.llm_active_view = view_to_activate  # Triggers watcher
+                await llm_handlers.handle_llm_nav_button_pressed(self, button_id)
             else:
                 self.loguru_logger.warning(
                     f"Unhandled button on LLM MANAGEMENT tab: ID:{button_id}, Label:'{button.label}'")
