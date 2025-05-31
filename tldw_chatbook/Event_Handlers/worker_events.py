@@ -2,6 +2,7 @@
 # Description:
 #
 # Imports
+import asyncio
 import logging
 import json # Added for SSE JSON parsing
 from typing import TYPE_CHECKING, Generator, Any, Union
@@ -185,24 +186,29 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
                                     static_text_widget_in_ai_msg.update(escape_markup(ai_message_widget.message_text))
                                     if chat_container.is_mounted:
                                         chat_container.scroll_end(animate=False, duration=0.05)
+                                    await asyncio.sleep(0)  # Yield control to allow UI refresh
                                 elif finish_reason:
                                     logger.info(f"Stream chunk {chunk_idx}: Received finish_reason '{finish_reason}' for '{worker_name}' (no new text content in this chunk).")
                                     # If the finish reason implies the end, we could break, but [DONE] is the primary signal.
+                                    pass
                                 else:
                                     logger.trace(f"Stream chunk {chunk_idx}: No text content or finish_reason in choices for '{worker_name}'. Full choice: {choices[0] if choices else 'N/A'}")
 
                             except json.JSONDecodeError as e_json:
                                 logger.warning(
                                     f"Stream chunk {chunk_idx}: JSON parsing error for '{worker_name}': {e_json}. JSON string was: >>{json_str}<<")
+                                pass
                             except Exception as e_parse:
                                 logger.error(
                                     f"Stream chunk {chunk_idx}: Error processing JSON data for '{worker_name}' (JSON: >>{json_str}<<): {e_parse}", exc_info=True)
+                                pass
                         else:
                             # This path should ideally not be hit if all LLM_API_Calls.py streaming functions
                             # correctly yield SSE-formatted strings. If it is hit, it means a provider's
                             # streaming function is not yielding the expected "data: ..." lines.
                             logger.warning(
                                 f"Stream chunk {chunk_idx}: Received non-SSE chunk or unexpected format for '{worker_name}': >>{chunk[:200]}...<<")
+                            pass
                     # After stream loop finishes (either by [DONE] or generator exhaustion)
                     logger.debug(f"Finished stream iteration for worker '{worker_name}'.")
 
