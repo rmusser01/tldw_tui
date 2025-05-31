@@ -124,106 +124,18 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
                 logger.debug(f"Thinking placeholder not found or already cleared. Current text: '{current_message_text_strip}'")
 
 
-            if is_streaming_result:
+            if is_streaming_handled_by_events:
                 logger.info(
-                    f"API call ({prefix}) for worker '{worker_name}' returned a sync Generator – processing as stream.")
-                full_streamed_text_accumulator = "" # Initialize accumulator for the full text
-
-                if not ai_message_widget or not ai_message_widget.is_mounted:
-                    logger.warning(
-                        f"Stream processing for '{prefix}' (worker '{worker_name}') aborted before start: AI widget no longer mounted.")
-                    app.current_ai_message_widget = None
-                    return
-
-                try:  # Inner try for the loop itself
-                    logger.debug(f"Starting stream iteration for worker '{worker_name}'...")
-                    for chunk_idx, chunk_raw in enumerate(result):  # type: ignore[misc]
-                        if not ai_message_widget or not ai_message_widget.is_mounted:
-                            logger.warning(
-                                f"Stream processing for '{prefix}' (worker '{worker_name}') aborted mid-stream (chunk {chunk_idx}): AI widget became unmounted.")
-                            # Post StreamDone with whatever was accumulated so far, possibly with an error.
-                            app.post_message(StreamDone(full_text=full_streamed_text_accumulator, error="AI widget unmounted mid-stream"))
-                            break # Exit the loop
-
-                        chunk = str(chunk_raw)
-                        logger.trace(f"Stream chunk {chunk_idx} RAW from generator for '{worker_name}': >>{chunk}<<")
-
-                        if not chunk.strip():
-                            logger.trace(f"Stream chunk {chunk_idx} SKIPPED (empty or whitespace)")
-                            continue
-
-                        if chunk.startswith("data: "):
-                            json_str = chunk[len("data: "):].strip()
-                            logger.debug(f"Stream chunk {chunk_idx} JSON part for '{worker_name}': >>{json_str}<<")
-
-                            if json_str == "[DONE]":
-                                logger.info(f"Stream chunk {chunk_idx}: Received [DONE] signal for '{worker_name}'.")
-                                break # Exit the loop, StreamDone will be posted after the loop
-
-                            if not json_str:
-                                logger.trace(
-                                    f"Stream chunk {chunk_idx} SKIPPED (empty JSON part after 'data: ' stripping).")
-                                continue
-
-                            try:
-                                json_data = json.loads(json_str)
-                                logger.trace(f"Stream chunk {chunk_idx} PARSED JSON for '{worker_name}': {json_data}")
-
-                                extracted_text = None
-                                finish_reason = None
-                                choices = json_data.get("choices")
-                                if choices and isinstance(choices, list) and len(choices) > 0:
-                                    delta = choices[0].get("delta", {})
-                                    extracted_text = delta.get("content")
-                                    finish_reason = choices[0].get("finish_reason")
-                                    if "tool_calls" in delta:
-                                        logger.debug(f"Stream chunk {chunk_idx}: Delta contains tool_calls: {delta['tool_calls']}")
-
-                                if extracted_text is not None:
-                                    logger.debug(f"Stream chunk {chunk_idx}: Extracted text for '{worker_name}': >>{extracted_text}<<")
-                                    full_streamed_text_accumulator += extracted_text
-                                    # Post StreamingChunk instead of direct UI update
-                                    app.post_message(StreamingChunk(extracted_text))
-                                    # Removed: ai_message_widget.message_text += extracted_text
-                                    # Removed: static_text_widget_in_ai_msg.update(escape_markup(ai_message_widget.message_text))
-                                    # Removed: chat_container.scroll_end(...)
-                                elif finish_reason:
-                                    logger.info(f"Stream chunk {chunk_idx}: Received finish_reason '{finish_reason}' for '{worker_name}' (no new text content in this chunk).")
-                                else:
-                                    logger.trace(f"Stream chunk {chunk_idx}: No text content or finish_reason in choices for '{worker_name}'. Full choice: {choices[0] if choices else 'N/A'}")
-
-                            except json.JSONDecodeError as e_json:
-                                logger.warning(
-                                    f"Stream chunk {chunk_idx}: JSON parsing error for '{worker_name}': {e_json}. JSON string was: >>{json_str}<<")
-                                # Continue to next chunk, but log error. Consider if this should be fatal for the stream.
-                            except Exception as e_parse:
-                                logger.error(
-                                    f"Stream chunk {chunk_idx}: Error processing JSON data for '{worker_name}' (JSON: >>{json_str}<<): {e_parse}", exc_info=True)
-                                # Continue to next chunk, but log error.
-                        else:
-                            logger.warning(
-                                f"Stream chunk {chunk_idx}: Received non-SSE chunk or unexpected format for '{worker_name}': >>{chunk[:200]}...<<")
-                    # After stream loop finishes (either by [DONE], generator exhaustion, or break)
-                    logger.debug(f"Finished stream iteration for worker '{worker_name}'. Posting StreamDone.")
-                    app.post_message(StreamDone(full_text=full_streamed_text_accumulator))
-                    # Removed: ai_message_widget.mark_generation_complete()
-                    # Removed: DB saving logic (will be handled in on_stream_done)
-                    logger.info(
-                        f"Stream fully processed for '{prefix}' (worker '{worker_name}'). Final accumulated length: {len(full_streamed_text_accumulator)} chars. StreamDone posted.")
-
-                except Exception as exc_stream_outer:
-                    logger.exception(
-                        f"Outer error during stream processing for worker '{worker_name}': {exc_stream_outer}")
-                    # Post StreamDone with accumulated text and the error
-                    app.post_message(StreamDone(full_text=full_streamed_text_accumulator, error=str(exc_stream_outer)))
-                    # Removed: Direct UI update with error message. Relies on on_stream_done to handle error display.
-                    # Removed: ai_message_widget.mark_generation_complete()
-                finally:
-                    logger.debug(f"Stream processing 'finally' block reached for worker '{worker_name}'.")
-                    # app.current_ai_message_widget = None # Removed: This will be handled in on_stream_done
-                    # Focusing logic also moved to on_stream_done
-            else:  # Non-streaming result
-                worker_result_content = result
+                    f"API call ({prefix}) for worker '{worker_name}' SUCCESS was handled with streaming events. "
+                    f"The StreamDone message will finalize UI updates, DB saving, and clear current_ai_message_widget. "
+                    f"No further action for this worker result in this function.")
+                # Note: The placeholder thinking message was already cleared.
+                # The ai_message_widget.role and header were already updated.
+                # We intentionally do NOT set app.current_ai_message_widget = None here for streaming success.
+                # That's the responsibility of the StreamDone message handler (e.g., on_stream_done in app.py)
+                # after the full message is processed or if an error occurred during streaming.
+            else:  # Non-streaming result (result contains the actual data)
+                worker_result_content = result # This is the actual data, not "STREAMING_HANDLED_BY_EVENTS"
                 logger.debug(
                     f"NON-STREAMING RESULT for '{prefix}' (worker '{worker_name}'): {str(worker_result_content)[:200]}...")
 
@@ -357,33 +269,95 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
 def chat_wrapper_function(app_instance: 'TldwCli', **kwargs: Any) -> Any:
     """
     This function is the target for the worker. It calls the core_chat_function.
-    Since core_chat_function is synchronous, this wrapper is also synchronous.
-    If core_chat_function yields for streaming, this wrapper will return a sync Generator.
+    If core_chat_function returns a generator (for streaming), this function consumes it,
+    posts StreamingChunk and StreamDone messages, and returns a specific string value.
+    If core_chat_function returns a direct result (non-streaming), this function returns it as is.
     """
     logger = getattr(app_instance, 'loguru_logger', logging)
     api_endpoint = kwargs.get('api_endpoint')
     model_name = kwargs.get('model')
-    streaming_requested = kwargs.get('streaming', False)  # Get the streaming flag
+    # streaming_requested flag from kwargs is implicitly handled by core_chat_function's return type.
     logger.debug(
-        f"chat_wrapper_function (sync worker target) executing for endpoint '{api_endpoint}', model '{model_name}', streaming: {streaming_requested}")
+        f"chat_wrapper_function executing for endpoint '{api_endpoint}', model '{model_name}'")
 
     try:
         # core_chat_function is your synchronous `Chat.Chat_Functions.chat`
         result = core_chat_function(**kwargs)
 
-        if isinstance(result, Generator):  # Check if it returned a sync generator
-            logger.debug(
-                f"chat_wrapper_function for '{api_endpoint}' (model '{model_name}') is returning a sync Generator (streaming).")
-        else:
+        if isinstance(result, Generator):  # Streaming case
+            logger.info(f"Core chat function returned a generator for '{api_endpoint}' (model '{model_name}'). Processing stream in worker.")
+            accumulated_full_text = ""
+            error_message_if_any = None
+            try:
+                for chunk_raw in result:
+                    # Process each raw chunk from the generator (expected to be SSE lines)
+                    line = str(chunk_raw).strip()
+                    if not line:
+                        continue
+
+                    if line.startswith("data:"):
+                        json_str = line[len("data:"):].strip()
+                        if json_str == "[DONE]":
+                            logger.info(f"SSE Stream: Received [DONE] for '{api_endpoint}', model '{model_name}'.")
+                            break  # End of stream
+                        if not json_str:
+                            continue
+                        try:
+                            json_data = json.loads(json_str)
+                            actual_text_chunk = ""
+                            # Standard OpenAI SSE structure, adapt if providers differ or if pre-parsed objects are yielded
+                            choices = json_data.get("choices")
+                            if choices and isinstance(choices, list) and len(choices) > 0:
+                                delta = choices[0].get("delta", {})
+                                if "content" in delta and delta["content"] is not None:
+                                    actual_text_chunk = delta["content"]
+
+                            if actual_text_chunk:
+                                app_instance.post_message(StreamingChunk(actual_text_chunk))
+                                accumulated_full_text += actual_text_chunk
+                            # else:
+                            #     logger.trace(f"SSE Stream: No text content in data chunk: {json_str[:100]}")
+
+                        except json.JSONDecodeError as e_json:
+                            logger.warning(f"SSE Stream: JSON parsing error for chunk in '{api_endpoint}', model '{model_name}': {e_json}. Chunk: >>{json_str[:100]}<<")
+                        except Exception as e_parse:
+                            logger.error(f"SSE Stream: Error processing JSON data in '{api_endpoint}', model '{model_name}': {e_parse}. Data: >>{json_str[:100]}<<", exc_info=True)
+
+                    elif line.startswith("event:"):
+                        event_type = line[len("event:"):].strip()
+                        logger.debug(f"SSE Stream: Received event type '{event_type}' for '{api_endpoint}', model '{model_name}'.")
+                        # Handle specific events if necessary (e.g., error events from provider)
+                        if event_type == "error": # Example for a hypothetical provider error event
+                            logger.error(f"SSE Stream: Provider indicated an error event for '{api_endpoint}', model '{model_name}'. Line: {line}")
+                            error_message_if_any = f"Provider error event: {event_type}" # Potentially parse more details
+                            # Depending on severity, might want to break here.
+                    # else:
+                        # logger.trace(f"SSE Stream: Ignoring non-data/non-event line: {line[:100]}")
+
+            except Exception as e_stream_loop:
+                logger.exception(
+                    f"Error during stream processing loop for '{api_endpoint}', model '{model_name}': {e_stream_loop}")
+                error_message_if_any = f"Error during streaming: {str(e_stream_loop)}"
+            finally:
+                logger.info(f"SSE Stream: Loop finished for '{api_endpoint}', model '{model_name}'. Posting StreamDone. Total length: {len(accumulated_full_text)}. Error: {error_message_if_any}")
+                app_instance.post_message(StreamDone(full_text=accumulated_full_text, error=error_message_if_any))
+
+            return "STREAMING_HANDLED_BY_EVENTS"  # Signal that streaming was handled via events
+
+        else:  # Non-streaming case
             logger.debug(
                 f"chat_wrapper_function for '{api_endpoint}' (model '{model_name}') is returning a direct result (type: {type(result)}).")
-        return result
+            return result  # Return the complete response directly
 
     except Exception as e:
+        # This catches errors from core_chat_function if it fails *before* returning a generator,
+        # or other unexpected errors within this wrapper function itself (outside the stream loop).
         logger.exception(
-            f"Error inside chat_wrapper_function (sync worker target) for endpoint {api_endpoint} (model {model_name}): {e}")
-        # Return a string that ChatMessage can display as an error
-        return f"[bold red]Error during chat processing (worker target):[/]\n{escape_markup(str(e))}"
+            f"Error in chat_wrapper_function for '{api_endpoint}', model '{model_name}' (potentially pre-stream or non-stream path): {e}")
+        # To ensure consistent error handling through StreamDone for the UI:
+        app_instance.post_message(StreamDone(full_text="", error=f"Chat wrapper error: {str(e)}"))
+        return "STREAMING_HANDLED_BY_EVENTS" # Signal that this path also used an event to report error
+        # Alternative for WorkerState.ERROR: raise e
 
 #
 # End of worker_events.py
