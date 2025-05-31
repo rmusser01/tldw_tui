@@ -430,6 +430,7 @@ def chat_with_kobold(
         stop_sequence: Optional[Union[str, List[str]]] = None, # Mapped from 'stop'
         num_responses: Optional[int] = None, # Mapped from 'n'
         seed: Optional[int] = None, # Mapped from 'seed'
+        fixed_tokens_mode: bool = False, # New parameter
         # Add api_url as an optional parameter if it can be passed directly
         api_url: Optional[str] = None
 ):
@@ -508,13 +509,18 @@ def chat_with_kobold(
     payload: Dict[str, Any] = {
         "prompt": final_prompt_string,
         "max_context_length": max_context_length, # Context window size
-        "max_length": current_max_length,         # Max tokens to generate
+        # "max_length": current_max_length, # Max tokens to generate - conditionally added below
         # Parameters from your map / common Kobold params
         "temperature": current_temp,
         "top_p": current_top_p,
         "top_k": current_top_k,
         # "stream": current_streaming, # Will be False due to above logic
     }
+
+    if fixed_tokens_mode:
+        payload["max_length"] = current_max_length
+    # Else, if not fixed_tokens_mode, max_length is deliberately omitted
+
     # Add other params if they are not None
     if current_stop_sequence is not None: payload['stop_sequence'] = current_stop_sequence # List of strings
     if current_num_responses is not None: payload['n'] = current_num_responses # Number of responses

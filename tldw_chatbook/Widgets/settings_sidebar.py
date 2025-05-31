@@ -152,6 +152,7 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
                 yield Static("LLM Max Tokens", classes="sidebar-label")
                 yield Input(id=f"{id_prefix}-llm-max-tokens", value="2048", placeholder="e.g., 1024",
                             classes="sidebar-input")
+                yield Checkbox("Fixed Tokens (Kobold)", id=f"{id_prefix}-llm-fixed-tokens-kobold", value=False, classes="sidebar-checkbox")
                 yield Static("LLM Seed", classes="sidebar-label")
                 yield Input(id=f"{id_prefix}-llm-seed", value="0", placeholder="e.g., 42", classes="sidebar-input")
                 yield Static("LLM Stop Sequences (comma-sep)", classes="sidebar-label")

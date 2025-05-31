@@ -116,16 +116,18 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     margin-right: 1; /* Space before button */
     border: round $surface;
 }
+
 /* Send button styling (shared) */
 .send-button { /* Targets Button */
-    width: 3;
+    width: 2;
     height: 3; /* Fixed height for consistency */
     /* align-self: stretch; REMOVED */
     margin-top: 0;
+    padding: 0; /* No padding for button */
 }
 
 .stop-button {
-    width: 1;
+    width: 2;
     height: 3;
     margin-top: 0;
 }
@@ -157,6 +159,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     padding: 1;
     overflow-y: auto; /* For conversation history */
 }
+
 
 /* Right Pane Styling */
 .cc-right-pane {
@@ -1025,3 +1028,20 @@ MetricsScreen Label.-info-message {
 }
 
 /* --- End of Media Tab Specific Options --- */
+
+
+#send-chat {
+    width: 20;
+    min-width: 20 !important;
+    max-width: 20vh !important; /* Using ch unit and important */
+    /* height: 3; /* Already set by .send-button class, but can be reiterated if needed */
+    /* margin-top: 0; /* Already set by .send-button class */
+}
+
+#stop-chat-generation {
+    width: 10;
+    min-width: 10 !important;
+    max-width: 10vh !important; /* Using ch unit and important */
+    /* height: 3; /* Already set by .stop-button class, but can be reiterated if needed */
+    /* margin-top: 0; /* Already set by .stop-button class */
+}
