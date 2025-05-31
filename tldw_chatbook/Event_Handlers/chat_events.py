@@ -503,6 +503,7 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
     elif "copy-button" in button_classes:
         logging.info("Action: Copy clicked for %s message: '%s...'", message_role, message_text[:50])
         app.copy_to_clipboard(message_text)  # message_text is already the raw, unescaped version
+        app.notify("Message content copied to clipboard.", severity="information", timeout=2)
         button.label = get_char(EMOJI_COPIED, FALLBACK_COPIED) + "Copied"
         app.set_timer(1.5, lambda: setattr(button, "label", get_char(EMOJI_COPY, FALLBACK_COPY)))
 
