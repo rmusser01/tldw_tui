@@ -79,17 +79,31 @@ class LLMManagementWindow(Container):
                     yield Button("Start Server", id="llamacpp-start-server-button", classes="action_button")
                     yield Button("Stop Server", id="llamacpp-stop-server-button", classes="action_button")
                 yield RichLog(id="llamacpp-log-output", classes="log_output", wrap=True, highlight=True)
-            yield Container(
-                Static("Llamafile Management Area - Content Coming Soon!"),
-                id="llm-view-llamafile",
-                classes="llm-view-area",
-            )
+            with Container(id="llm-view-llamafile", classes="llm-view-area"):
+                yield Label("Llamafile Executable Path:", classes="label")
+                with Container(classes="input_container"):
+                    yield Input(id="llamafile-exec-path", placeholder="/path/to/llamafile_executable")
+                    yield Button("Browse", id="llamafile-browse-exec-button", classes="browse_button")
+                yield Label("Llamafile Model Path:", classes="label")
+                with Container(classes="input_container"):
+                    yield Input(id="llamafile-model-path", placeholder="/path/to/model.gguf")
+                    yield Button("Browse", id="llamafile-browse-model-button", classes="browse_button")
+                yield Label("Host:", classes="label")
+                yield Input(id="llamafile-host", value="127.0.0.1")
+                yield Label("Port:", classes="label")
+                yield Input(id="llamafile-port", value="8000")
+                yield Label("Additional Arguments:", classes="label")
+                yield TextArea(id="llamafile-additional-args", classes="additional_args_textarea", language="bash", theme="vscode_dark") # Ensure TextArea is imported
+                with Container(classes="button_container"):
+                    yield Button("Start Server", id="llamafile-start-server-button", classes="action_button")
+                    yield Button("Stop Server", id="llamafile-stop-server-button", classes="action_button")
+                yield RichLog(id="llamafile-log-output", classes="log_output", wrap=True, highlight=True)
             with Container(id="llm-view-vllm", classes="llm-view-area"):
                 yield Label("Python Interpreter Path:", classes="label")
                 with Container(classes="input_container"):
-                    yield Input(id="vllm-python-path", placeholder="Default: python")
+                    yield Input(id="vllm-python-path", value="python", placeholder="e.g., /path/to/venv/bin/python")
                     yield Button("Browse", id="vllm-browse-python-button", classes="browse_button")
-                yield Label("Model Path or Hugging Face ID:", classes="label")
+                yield Label("Model Path (or HuggingFace Repo ID):", classes="label")
                 with Container(classes="input_container"):
                     yield Input(id="vllm-model-path", placeholder="e.g., /path/to/model or HuggingFaceName/ModelName")
                     yield Button("Browse", id="vllm-browse-model-button", classes="browse_button")
@@ -98,7 +112,7 @@ class LLMManagementWindow(Container):
                 yield Label("Port:", classes="label")
                 yield Input(id="vllm-port", value="8000")
                 yield Label("Additional Arguments:", classes="label")
-                yield TextArea(id="vllm-additional-args")
+                yield TextArea(id="vllm-additional-args", classes="additional_args_textarea", language="bash", theme="vscode_dark") # Ensure TextArea is imported
                 with Container(classes="button_container"):
                     yield Button("Start Server", id="vllm-start-server-button", classes="action_button")
                     yield Button("Stop Server", id="vllm-stop-server-button", classes="action_button")
