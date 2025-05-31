@@ -286,6 +286,7 @@ PROVIDER_PARAM_MAP = {
     'koboldcpp': {
         'api_key': 'api_key',
         'messages_payload': 'input_data',
+        'llm_fixed_tokens_kobold': 'fixed_tokens_mode', # Added
         'prompt': 'custom_prompt_input',
         'temperature': 'temp',
         'system_message': 'system_message',
@@ -482,7 +483,8 @@ def chat_api_call(
     stop: Optional[Union[str, List[str]]] = None,
     response_format: Optional[Dict[str, str]] = None,  # Expects {'type': 'text' | 'json_object'}
     n: Optional[int] = None,
-    user_identifier: Optional[str] = None  # Renamed from 'user' to avoid conflict with 'user' role in messages
+    user_identifier: Optional[str] = None,  # Renamed from 'user' to avoid conflict with 'user' role in messages
+    llm_fixed_tokens_kobold: Optional[bool] = False # Added
     ):
     """
     Acts as a unified dispatcher to call various LLM API providers.
@@ -577,7 +579,8 @@ def chat_api_call(
         'stop': stop,
         'response_format': response_format,
         'n': n,
-        'user_identifier': user_identifier
+        'user_identifier': user_identifier,
+        'llm_fixed_tokens_kobold': llm_fixed_tokens_kobold # Added
     }
 
     for generic_param_name, provider_param_name in params_map.items():
@@ -695,7 +698,8 @@ def chat(
     llm_presence_penalty: Optional[float] = None,
     llm_frequency_penalty: Optional[float] = None,
     llm_tools: Optional[List[Dict[str, Any]]] = None,
-    llm_tool_choice: Optional[Union[str, Dict[str, Any]]] = None
+    llm_tool_choice: Optional[Union[str, Dict[str, Any]]] = None,
+    llm_fixed_tokens_kobold: Optional[bool] = False # Added
 ) -> Union[str, Any]: # Any for streaming generator
     """
     Orchestrates a chat interaction with an LLM, handling message processing,
@@ -981,7 +985,8 @@ def chat(
             presence_penalty=llm_presence_penalty,
             frequency_penalty=llm_frequency_penalty,
             tools=llm_tools,
-            tool_choice=llm_tool_choice
+            tool_choice=llm_tool_choice,
+            llm_fixed_tokens_kobold=llm_fixed_tokens_kobold # Added
         )
 
         if streaming:

@@ -83,6 +83,7 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
         llm_frequency_penalty_widget = app.query_one(f"#{prefix}-llm-frequency-penalty", Input)
         llm_tools_widget = app.query_one(f"#{prefix}-llm-tools", TextArea)
         llm_tool_choice_widget = app.query_one(f"#{prefix}-llm-tool-choice", Input)
+        llm_fixed_tokens_kobold_widget = app.query_one(f"#{prefix}-llm-fixed-tokens-kobold", Checkbox)
 
     except QueryError as e:
         loguru_logger.error(f"Send Button: Could not find UI widgets for '{prefix}': {e}")
@@ -203,6 +204,7 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
         await chat_container.mount(ChatMessage(Text.from_markup("Error: Core API functions failed to load."), role="System", classes="-error"))
         loguru_logger.error("Attempted to send message, but API imports failed.")
         return
+    llm_fixed_tokens_kobold_value = llm_fixed_tokens_kobold_widget.value
 
     # --- 4. Build Chat History for API ---
     # History should contain messages *before* the current user's input.
@@ -393,6 +395,7 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
         llm_frequency_penalty=llm_frequency_penalty_value,
         llm_tools=llm_tools_value,
         llm_tool_choice=llm_tool_choice_value,
+        llm_fixed_tokens_kobold=llm_fixed_tokens_kobold_value, # Added new parameter
         media_content={}, # Placeholder for now
         selected_parts=[], # Placeholder for now
         chatdict_entries=None, # Placeholder for now
