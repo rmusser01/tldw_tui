@@ -88,116 +88,119 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
         static_text_widget_in_ai_msg = ai_message_widget.query_one(".message-text", Static)
 
         if event.state is WorkerState.SUCCESS:
-            result = event.worker.result
-            is_streaming_result = isinstance(result, Generator)
+                result = event.worker.result
+                is_streaming_result = isinstance(result, Generator)
+                
+                # Check if streaming was handled by events by examining the result
+                is_streaming_handled_by_events = (result == "STREAMING_HANDLED_BY_EVENTS")
 
-            ai_sender_name_for_db = "AI"
-            if not app.current_chat_is_ephemeral and app.current_chat_conversation_id:
-                # For persistent chats, get the character associated with THIS conversation
-                if app.chachanotes_db:
-                    conv_char_name = ccl.get_character_name_for_conversation(app.chachanotes_db, app.current_chat_conversation_id)
-                    if conv_char_name: ai_sender_name_for_db = conv_char_name
-            elif app.current_chat_active_character_data:
-                ai_sender_name_for_db = app.current_chat_active_character_data.get('name', 'AI')
+                ai_sender_name_for_db = "AI"
+                if not app.current_chat_is_ephemeral and app.current_chat_conversation_id:
+                    # For persistent chats, get the character associated with THIS conversation
+                    if app.chachanotes_db:
+                        conv_char_name = ccl.get_character_name_for_conversation(app.chachanotes_db, app.current_chat_conversation_id)
+                        if conv_char_name: ai_sender_name_for_db = conv_char_name
+                elif app.current_chat_active_character_data:
+                    ai_sender_name_for_db = app.current_chat_active_character_data.get('name', 'AI')
 
-            # Set the role of the placeholder AI widget to the determined sender name
-            # This ensures the header of the AI message bubble shows the correct character name
-            ai_message_widget.role = ai_sender_name_for_db
-            # Update the header label directly if role reactive doesn't auto-update it
-            try:
-                header_label = ai_message_widget.query_one(".message-header", Label)
-                header_label.update(ai_sender_name_for_db)
-            except QueryError:
-                logger.warning("Could not update AI message header label with character name.")
+                # Set the role of the placeholder AI widget to the determined sender name
+                # This ensures the header of the AI message bubble shows the correct character name
+                ai_message_widget.role = ai_sender_name_for_db
+                # Update the header label directly if role reactive doesn't auto-update it
+                try:
+                    header_label = ai_message_widget.query_one(".message-header", Label)
+                    header_label.update(ai_sender_name_for_db)
+                except QueryError:
+                    logger.warning("Could not update AI message header label with character name.")
 
-            current_thinking_text_pattern = f"AI {get_char(EMOJI_THINKING, FALLBACK_THINKING)}"
-            current_thinking_fallback_pattern = FALLBACK_THINKING # Simpler check
-            current_message_text_strip = ai_message_widget.message_text.strip()
+                current_thinking_text_pattern = f"AI {get_char(EMOJI_THINKING, FALLBACK_THINKING)}"
+                current_thinking_fallback_pattern = FALLBACK_THINKING # Simpler check
+                current_message_text_strip = ai_message_widget.message_text.strip()
 
-            if current_message_text_strip.startswith(current_thinking_text_pattern) or \
-               current_message_text_strip.endswith(current_thinking_fallback_pattern) or \
-               current_message_text_strip == current_thinking_fallback_pattern: # Exact match for fallback
-                logger.debug(f"Clearing thinking placeholder: '{current_message_text_strip}'")
-                ai_message_widget.message_text = ""
-                static_text_widget_in_ai_msg.update("")
-            else:
-                logger.debug(f"Thinking placeholder not found or already cleared. Current text: '{current_message_text_strip}'")
-
-
-            if is_streaming_handled_by_events:
-                logger.info(
-                    f"API call ({prefix}) for worker '{worker_name}' SUCCESS was handled with streaming events. "
-                    f"The StreamDone message will finalize UI updates, DB saving, and clear current_ai_message_widget. "
-                    f"No further action for this worker result in this function.")
-                # Note: The placeholder thinking message was already cleared.
-                # The ai_message_widget.role and header were already updated.
-                # We intentionally do NOT set app.current_ai_message_widget = None here for streaming success.
-                # That's the responsibility of the StreamDone message handler (e.g., on_stream_done in app.py)
-                # after the full message is processed or if an error occurred during streaming.
-            else:  # Non-streaming result (result contains the actual data)
-                worker_result_content = result # This is the actual data, not "STREAMING_HANDLED_BY_EVENTS"
-                logger.debug(
-                    f"NON-STREAMING RESULT for '{prefix}' (worker '{worker_name}'): {str(worker_result_content)[:200]}...")
-
-                final_display_text_obj: Text
-                original_text_for_storage: str = ""
-
-                if isinstance(worker_result_content, dict) and 'choices' in worker_result_content:
-                    # ... (same parsing logic as before) ...
-                    try:
-                        original_text_for_storage = worker_result_content['choices'][0]['message']['content']
-                        final_display_text_obj = Text(original_text_for_storage)
-                    except (KeyError, IndexError, TypeError) as e_parse:
-                        logger.error(f"Error parsing non-streaming dict result: {e_parse}. Resp: {worker_result_content}", exc_info=True)
-                        original_text_for_storage = "[AI: Error parsing successful response structure.]"
-                        final_display_text_obj = Text.from_markup(f"[bold red]{escape_markup(original_text_for_storage)}[/]")
-                elif isinstance(worker_result_content, str):
-                    # ... (same parsing logic as before) ...
-                    original_text_for_storage = worker_result_content
-                    if worker_result_content.startswith(("[bold red]Error during chat processing (worker target):[/]",
-                                                         "[bold red]Error during chat processing:[/]",
-                                                         "An error occurred in the chat function:")):
-                        final_display_text_obj = Text.from_markup(worker_result_content)
-                    else:
-                        final_display_text_obj = Text(worker_result_content)
-                elif worker_result_content is None:
-                    # ... (same parsing logic as before) ...
-                    original_text_for_storage = "[AI: Error – No response received from API (Result was None).]"
-                    final_display_text_obj = Text.from_markup(f"[bold red]{escape_markup(original_text_for_storage)}[/]")
+                if current_message_text_strip.startswith(current_thinking_text_pattern) or \
+                   current_message_text_strip.endswith(current_thinking_fallback_pattern) or \
+                   current_message_text_strip == current_thinking_fallback_pattern: # Exact match for fallback
+                    logger.debug(f"Clearing thinking placeholder: '{current_message_text_strip}'")
+                    ai_message_widget.message_text = ""
+                    static_text_widget_in_ai_msg.update("")
                 else:
-                    logger.error(f"Unexpected result type from API via worker: {type(worker_result_content)}. Content: {str(worker_result_content)[:200]}...")
-                    original_text_for_storage = f"[Error: Unexpected result type ({type(worker_result_content).__name__}) from API worker.]"
-                    final_display_text_obj = Text.from_markup(f"[bold red]{escape_markup(original_text_for_storage)}[/]")
+                    logger.debug(f"Thinking placeholder not found or already cleared. Current text: '{current_message_text_strip}'")
 
-                ai_message_widget.message_text = original_text_for_storage
-                static_text_widget_in_ai_msg.update(final_display_text_obj)
-                ai_message_widget.mark_generation_complete()
 
-                is_error_message = original_text_for_storage.startswith(("[AI: Error", "[Error:", "[bold red]Error"))
-                if app.chachanotes_db and app.current_chat_conversation_id and \
-                        not app.current_chat_is_ephemeral and original_text_for_storage and not is_error_message:
-                    try:
-                        ai_msg_db_id_ns_version = ccl.add_message_to_conversation(
-                            app.chachanotes_db, app.current_chat_conversation_id,
-                            ai_sender_name_for_db, # Use determined sender name
-                            original_text_for_storage
-                        )
-                        if ai_msg_db_id_ns_version: # This is just the ID
-                            saved_ai_msg_details_ns = app.chachanotes_db.get_message_by_id(ai_msg_db_id_ns_version)
-                            if saved_ai_msg_details_ns:
-                                ai_message_widget.message_id_internal = saved_ai_msg_details_ns.get('id')
-                                ai_message_widget.message_version_internal = saved_ai_msg_details_ns.get('version')
-                                logger.debug(
-                                    f"Non-streamed AI message saved to DB. ConvID: {app.current_chat_conversation_id}, "
-                                    f"MsgID: {saved_ai_msg_details_ns.get('id')}, Version: {saved_ai_msg_details_ns.get('version')}")
-                            else:
-                                logger.error(f"Failed to retrieve saved non-streamed AI message details from DB for ID {ai_msg_db_id_ns_version}.")
+                if is_streaming_handled_by_events:
+                    logger.info(
+                        f"API call ({prefix}) for worker '{worker_name}' SUCCESS was handled with streaming events. "
+                        f"The StreamDone message will finalize UI updates, DB saving, and clear current_ai_message_widget. "
+                        f"No further action for this worker result in this function.")
+                    # Note: The placeholder thinking message was already cleared.
+                    # The ai_message_widget.role and header were already updated.
+                    # We intentionally do NOT set app.current_ai_message_widget = None here for streaming success.
+                    # That's the responsibility of the StreamDone message handler (e.g., on_stream_done in app.py)
+                    # after the full message is processed or if an error occurred during streaming.
+                else:  # Non-streaming result (result contains the actual data)
+                    worker_result_content = result # This is the actual data, not "STREAMING_HANDLED_BY_EVENTS"
+                    logger.debug(
+                        f"NON-STREAMING RESULT for '{prefix}' (worker '{worker_name}'): {str(worker_result_content)[:200]}...")
+
+                    final_display_text_obj: Text
+                    original_text_for_storage: str = ""
+
+                    if isinstance(worker_result_content, dict) and 'choices' in worker_result_content:
+                        # ... (same parsing logic as before) ...
+                        try:
+                            original_text_for_storage = worker_result_content['choices'][0]['message']['content']
+                            final_display_text_obj = Text(original_text_for_storage)
+                        except (KeyError, IndexError, TypeError) as e_parse:
+                            logger.error(f"Error parsing non-streaming dict result: {e_parse}. Resp: {worker_result_content}", exc_info=True)
+                            original_text_for_storage = "[AI: Error parsing successful response structure.]"
+                            final_display_text_obj = Text.from_markup(f"[bold red]{escape_markup(original_text_for_storage)}[/]")
+                    elif isinstance(worker_result_content, str):
+                        # ... (same parsing logic as before) ...
+                        original_text_for_storage = worker_result_content
+                        if worker_result_content.startswith(("[bold red]Error during chat processing (worker target):[/]",
+                                                             "[bold red]Error during chat processing:[/]",
+                                                             "An error occurred in the chat function:")):
+                            final_display_text_obj = Text.from_markup(worker_result_content)
                         else:
-                            logger.error(f"Failed to save non-streamed AI message to DB (no ID returned).")
-                    except (CharactersRAGDBError, InputError) as e_save_ai_ns:
-                        logger.error(f"Failed to save non-streamed AI message to DB: {e_save_ai_ns}", exc_info=True)
+                            final_display_text_obj = Text(worker_result_content)
+                    elif worker_result_content is None:
+                        # ... (same parsing logic as before) ...
+                        original_text_for_storage = "[AI: Error – No response received from API (Result was None).]"
+                        final_display_text_obj = Text.from_markup(f"[bold red]{escape_markup(original_text_for_storage)}[/]")
+                    else:
+                        logger.error(f"Unexpected result type from API via worker: {type(worker_result_content)}. Content: {str(worker_result_content)[:200]}...")
+                        original_text_for_storage = f"[Error: Unexpected result type ({type(worker_result_content).__name__}) from API worker.]"
+                        final_display_text_obj = Text.from_markup(f"[bold red]{escape_markup(original_text_for_storage)}[/]")
 
-                app.current_ai_message_widget = None
+                    ai_message_widget.message_text = original_text_for_storage
+                    static_text_widget_in_ai_msg.update(final_display_text_obj)
+                    ai_message_widget.mark_generation_complete()
+
+                    is_error_message = original_text_for_storage.startswith(("[AI: Error", "[Error:", "[bold red]Error"))
+                    if app.chachanotes_db and app.current_chat_conversation_id and \
+                            not app.current_chat_is_ephemeral and original_text_for_storage and not is_error_message:
+                        try:
+                            ai_msg_db_id_ns_version = ccl.add_message_to_conversation(
+                                app.chachanotes_db, app.current_chat_conversation_id,
+                                ai_sender_name_for_db, # Use determined sender name
+                                original_text_for_storage
+                            )
+                            if ai_msg_db_id_ns_version: # This is just the ID
+                                saved_ai_msg_details_ns = app.chachanotes_db.get_message_by_id(ai_msg_db_id_ns_version)
+                                if saved_ai_msg_details_ns:
+                                    ai_message_widget.message_id_internal = saved_ai_msg_details_ns.get('id')
+                                    ai_message_widget.message_version_internal = saved_ai_msg_details_ns.get('version')
+                                    logger.debug(
+                                        f"Non-streamed AI message saved to DB. ConvID: {app.current_chat_conversation_id}, "
+                                        f"MsgID: {saved_ai_msg_details_ns.get('id')}, Version: {saved_ai_msg_details_ns.get('version')}")
+                                else:
+                                    logger.error(f"Failed to retrieve saved non-streamed AI message details from DB for ID {ai_msg_db_id_ns_version}.")
+                            else:
+                                logger.error(f"Failed to save non-streamed AI message to DB (no ID returned).")
+                        except (CharactersRAGDBError, InputError) as e_save_ai_ns:
+                            logger.error(f"Failed to save non-streamed AI message to DB: {e_save_ai_ns}", exc_info=True)
+
+                    app.current_ai_message_widget = None
 
         elif event.state is WorkerState.ERROR:
             # ... (same error handling as before) ...
