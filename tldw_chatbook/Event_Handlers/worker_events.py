@@ -3,12 +3,14 @@
 #
 # Imports
 import logging
-from typing import TYPE_CHECKING, Generator, Any, Union, Dict, List, AsyncGenerator  # Added Union, Dict, List
+import json # Added for SSE JSON parsing
+from typing import TYPE_CHECKING, Generator, Any, Union
 #
 # 3rd-Party Imports
 from loguru import logger as loguru_logger  # If used directly here
 from rich.text import Text
 from rich.markup import escape as escape_markup
+from textual.message import Message
 from textual.worker import Worker, WorkerState
 from textual.widgets import Static, TextArea, Label  # Added TextArea
 from textual.containers import VerticalScroll  # Added VerticalScroll
@@ -24,6 +26,20 @@ from ..DB.ChaChaNotes_DB import CharactersRAGDBError, InputError  # For specific
 #
 if TYPE_CHECKING:
     from ..app import TldwCli
+
+# Custom Messages for Streaming
+class StreamingChunk(Message):
+    """Custom message to send a piece of streamed text."""
+    def __init__(self, text_chunk: str) -> None:
+        super().__init__()
+        self.text_chunk = text_chunk
+
+class StreamDone(Message):
+    """Custom message to signal the end of a stream."""
+    def __init__(self, full_text: str, error: Union[str, None] = None) -> None: # Added Optional error
+        super().__init__()
+        self.full_text = full_text
+        self.error = error # Store error
 #
 ########################################################################################################################
 #
@@ -60,7 +76,8 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
             chat_container_fallback: VerticalScroll = app.query_one(f"#{prefix}-log", VerticalScroll)
             error_msg_text = Text.from_markup(
                 f"[bold red]Error:[/]\nAI response for worker '{worker_name}' received, but its display widget was missing.")
-            await chat_container_fallback.mount(ChatMessage(message=error_msg_text.plain, role="System")) # Use plain text for ChatMessage
+            # Use plain text for ChatMessage content if it doesn't support Text directly
+            await chat_container_fallback.mount(ChatMessage(message=error_msg_text.plain, role="System", classes="-error"))
         except QueryError:
             logger.error(f"Fallback: Could not find chat container #{prefix}-log.")
         app.current_ai_message_widget = None
@@ -71,26 +88,16 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
         static_text_widget_in_ai_msg = ai_message_widget.query_one(".message-text", Static)
 
         if event.state is WorkerState.SUCCESS:
-            result = event.worker.result  # This is what chat_wrapper_function returned
-
-            # Your chat function is synchronous. If streaming, it returns a sync Generator.
+            result = event.worker.result
             is_streaming_result = isinstance(result, Generator)
 
-            current_thinking_text_pattern = f"AI {get_char(EMOJI_THINKING, FALLBACK_THINKING)}"
-
-            # Clear "AI is thinking..." text
-            if ai_message_widget.message_text.strip().startswith(current_thinking_text_pattern):
-                ai_message_widget.message_text = ""
-                static_text_widget_in_ai_msg.update("")
-
-            # Determine sender name for AI message in DB
-            ai_sender_name_for_db = "AI" # Default
+            ai_sender_name_for_db = "AI"
             if not app.current_chat_is_ephemeral and app.current_chat_conversation_id:
                 # For persistent chats, get the character associated with THIS conversation
                 if app.chachanotes_db:
                     conv_char_name = ccl.get_character_name_for_conversation(app.chachanotes_db, app.current_chat_conversation_id)
                     if conv_char_name: ai_sender_name_for_db = conv_char_name
-            elif app.current_chat_active_character_data: # Ephemeral chat but with an active character
+            elif app.current_chat_active_character_data:
                 ai_sender_name_for_db = app.current_chat_active_character_data.get('name', 'AI')
 
             # Set the role of the placeholder AI widget to the determined sender name
@@ -103,10 +110,24 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
             except QueryError:
                 logger.warning("Could not update AI message header label with character name.")
 
+            current_thinking_text_pattern = f"AI {get_char(EMOJI_THINKING, FALLBACK_THINKING)}"
+            current_thinking_fallback_pattern = FALLBACK_THINKING # Simpler check
+            current_message_text_strip = ai_message_widget.message_text.strip()
+
+            if current_message_text_strip.startswith(current_thinking_text_pattern) or \
+               current_message_text_strip.endswith(current_thinking_fallback_pattern) or \
+               current_message_text_strip == current_thinking_fallback_pattern: # Exact match for fallback
+                logger.debug(f"Clearing thinking placeholder: '{current_message_text_strip}'")
+                ai_message_widget.message_text = ""
+                static_text_widget_in_ai_msg.update("")
+            else:
+                logger.debug(f"Thinking placeholder not found or already cleared. Current text: '{current_message_text_strip}'")
+
+
             if is_streaming_result:
                 logger.info(
                     f"API call ({prefix}) for worker '{worker_name}' returned a sync Generator – processing as stream.")
-                full_original_text_streamed = ""
+                full_original_text_streamed = "" # Initialize accumulator for the full text
 
                 if not ai_message_widget or not ai_message_widget.is_mounted:
                     logger.warning(
@@ -115,35 +136,86 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
                     return
 
                 try:
-                    # Iterate over the synchronous generator provided by the worker's result
-                    # This loop will run in the main (UI) thread because on_worker_state_changed is async
-                    # but the generator itself is sync. This is okay for Textual as long as
-                    # each chunk processing is fast.
-                    for chunk in result:  # type: ignore[misc] # result is Generator here
+                    logger.debug(f"Starting stream iteration for worker '{worker_name}'...")
+                    for chunk_idx, chunk_raw in enumerate(result): # type: ignore[misc]
                         if not ai_message_widget or not ai_message_widget.is_mounted:
                             logger.warning(
-                                f"Stream processing for '{prefix}' (worker '{worker_name}') aborted mid-stream: AI widget became unmounted.")
+                                f"Stream processing for '{prefix}' (worker '{worker_name}') aborted mid-stream (chunk {chunk_idx}): AI widget became unmounted.")
                             break
 
-                        text_chunk_original = str(chunk)
-                        full_original_text_streamed += text_chunk_original
-                        ai_message_widget.message_text += text_chunk_original # Update internal state
-                        static_text_widget_in_ai_msg.update(escape_markup(ai_message_widget.message_text)) # Update display
+                        chunk = str(chunk_raw)
+                        logger.trace(f"Stream chunk {chunk_idx} RAW from generator for '{worker_name}': >>{chunk}<<")
 
-                        if chat_container.is_mounted:
-                            # For sync generator, direct call to scroll_end is fine.
-                            # If it were an async generator, self.call_later or scheduling might be needed
-                            # if updates were too frequent and blocking. But Textual handles this well.
-                            chat_container.scroll_end(animate=False, duration=0.05)
+                        if not chunk.strip(): # Skip if chunk is just whitespace (e.g. empty lines from iter_lines)
+                            logger.trace(f"Stream chunk {chunk_idx} SKIPPED (empty or whitespace)")
+                            continue
+
+                        if chunk.startswith("data: "):
+                            json_str = chunk[len("data: "):].strip()
+                            logger.debug(f"Stream chunk {chunk_idx} JSON part for '{worker_name}': >>{json_str}<<")
+
+                            if json_str == "[DONE]":
+                                logger.info(f"Stream chunk {chunk_idx}: Received [DONE] signal for '{worker_name}'.")
+                                break
+
+                            if not json_str:
+                                logger.trace(f"Stream chunk {chunk_idx} SKIPPED (empty JSON part after 'data: ' stripping).")
+                                continue
+
+                            try:
+                                json_data = json.loads(json_str)
+                                logger.trace(f"Stream chunk {chunk_idx} PARSED JSON for '{worker_name}': {json_data}")
+
+                                extracted_text = None
+                                finish_reason = None
+                                choices = json_data.get("choices")
+                                if choices and isinstance(choices, list) and len(choices) > 0:
+                                    delta = choices[0].get("delta", {})
+                                    extracted_text = delta.get("content")
+                                    finish_reason = choices[0].get("finish_reason")
+                                    # Also log if tool_calls are present in delta, for future debugging
+                                    if "tool_calls" in delta:
+                                        logger.debug(f"Stream chunk {chunk_idx}: Delta contains tool_calls: {delta['tool_calls']}")
+
+
+                                if extracted_text is not None:
+                                    logger.debug(f"Stream chunk {chunk_idx}: Extracted text for '{worker_name}': >>{extracted_text}<<")
+                                    full_original_text_streamed += extracted_text
+                                    ai_message_widget.message_text += extracted_text
+                                    static_text_widget_in_ai_msg.update(escape_markup(ai_message_widget.message_text))
+                                    if chat_container.is_mounted:
+                                        chat_container.scroll_end(animate=False, duration=0.05)
+                                elif finish_reason:
+                                    logger.info(f"Stream chunk {chunk_idx}: Received finish_reason '{finish_reason}' for '{worker_name}' (no new text content in this chunk).")
+                                    # If the finish reason implies the end, we could break, but [DONE] is the primary signal.
+                                else:
+                                    logger.trace(f"Stream chunk {chunk_idx}: No text content or finish_reason in choices for '{worker_name}'. Full choice: {choices[0] if choices else 'N/A'}")
+
+                            except json.JSONDecodeError as e_json:
+                                logger.warning(
+                                    f"Stream chunk {chunk_idx}: JSON parsing error for '{worker_name}': {e_json}. JSON string was: >>{json_str}<<")
+                            except Exception as e_parse:
+                                logger.error(
+                                    f"Stream chunk {chunk_idx}: Error processing JSON data for '{worker_name}' (JSON: >>{json_str}<<): {e_parse}", exc_info=True)
+                        else:
+                            # This path should ideally not be hit if all LLM_API_Calls.py streaming functions
+                            # correctly yield SSE-formatted strings. If it is hit, it means a provider's
+                            # streaming function is not yielding the expected "data: ..." lines.
+                            logger.warning(
+                                f"Stream chunk {chunk_idx}: Received non-SSE chunk or unexpected format for '{worker_name}': >>{chunk[:200]}...<<")
+                    # After stream loop finishes (either by [DONE] or generator exhaustion)
+                    logger.debug(f"Finished stream iteration for worker '{worker_name}'.")
 
                     # After stream finishes
                     if ai_message_widget and ai_message_widget.is_mounted:
                         ai_message_widget.mark_generation_complete()
                         logger.info(
-                            f"Stream finished for '{prefix}' (worker '{worker_name}'). Final original length: {len(full_original_text_streamed)} chars.")
+                            f"Stream fully processed for '{prefix}' (worker '{worker_name}'). Final original length: {len(full_original_text_streamed)} chars.")
 
                         # Save streamed AI message to DB if chat is persistent
-                        if app.chachanotes_db and app.current_chat_conversation_id and not app.current_chat_is_ephemeral:
+                        # Ensure that full_original_text_streamed is not empty before saving
+                        if app.chachanotes_db and app.current_chat_conversation_id and \
+                           not app.current_chat_is_ephemeral and full_original_text_streamed.strip():
                             try:
                                 ai_msg_db_id_version = ccl.add_message_to_conversation(
                                     app.chachanotes_db, app.current_chat_conversation_id,
@@ -164,23 +236,36 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
                                     logger.error(f"Failed to save streamed AI message to DB (no ID returned).")
                             except (CharactersRAGDBError, InputError) as e_save_ai_stream:
                                 logger.error(f"Failed to save streamed AI message to DB: {e_save_ai_stream}", exc_info=True)
+                        elif not full_original_text_streamed.strip():
+                            logger.info(f"Stream for '{prefix}' (worker '{worker_name}') resulted in empty content. Not saving to DB.")
+                        else:
+                             logger.debug(f"Streamed AI message for '{prefix}' (worker '{worker_name}') not saved to DB (chat is ephemeral or other condition not met).")
+
+
                 except Exception as exc_stream_outer:
                     logger.exception(
-                        f"Error during sync stream iteration for worker '{worker_name}': {exc_stream_outer}")
+                        f"Outer error during stream processing for worker '{worker_name}': {exc_stream_outer}")
                     if ai_message_widget and ai_message_widget.is_mounted:
                         current_text_plain = ai_message_widget.message_text
                         error_message_display = Text.from_markup(
-                            escape_markup(current_text_plain) + "\n[bold red]Error during stream processing.[/]")
+                            escape_markup(current_text_plain) + f"\n[bold red]Error during stream processing:\n{escape_markup(str(exc_stream_outer))}[/]")
                         try:
                             static_text_widget_in_ai_msg.update(error_message_display)
                         except QueryError:
-                            logger.error("Failed to update AI widget with stream processing error message.")
+                            logger.error("Failed to update AI widget with stream processing error message after outer exception.")
                         ai_message_widget.mark_generation_complete()
                 finally:
+                    logger.debug(f"Stream processing 'finally' block reached for worker '{worker_name}'.")
                     app.current_ai_message_widget = None
                     if app.is_mounted:
-                        try: app.query_one(f"#{prefix}-input", TextArea).focus()
-                        except QueryError: pass
+                        try:
+                            # Try to focus input only if no critical error has occurred that might prevent UI interaction
+                            if event.state is WorkerState.SUCCESS or (ai_message_widget and ai_message_widget.is_mounted):
+                                app.query_one(f"#{prefix}-input", TextArea).focus()
+                        except QueryError:
+                            logger.debug(f"Could not focus input #{prefix}-input after stream, widget might not exist.")
+                        except Exception as e_focus:
+                            logger.error(f"Error focusing input after stream: {e_focus}", exc_info=True)
             else:  # Non-streaming result
                 worker_result_content = result
                 logger.debug(
@@ -255,6 +340,13 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
             escaped_error_for_display = escape_markup(error_message_str)
             ai_message_widget.message_text = error_message_str # Store raw error
             ai_message_widget.role = "System" # Display as System error
+            # Update header label as well for consistency
+            try:
+                header_label = ai_message_widget.query_one(".message-header", Label)
+                header_label.update("System Error")
+            except QueryError:
+                logger.warning("Could not update AI message header label for worker error state.")
+
             static_text_widget_in_ai_msg.update(Text.from_markup(f"[bold red]{escaped_error_for_display}[/]"))
             ai_message_widget.mark_generation_complete()
             app.current_ai_message_widget = None
@@ -262,31 +354,40 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
         if chat_container.is_mounted:
             chat_container.scroll_end(animate=True)
         if app.is_mounted and app.current_ai_message_widget is None: # Focus input if AI turn is fully complete
-            try: app.query_one(f"#{prefix}-input", TextArea).focus()
-            except QueryError: pass
+            try:
+                app.query_one(f"#{prefix}-input", TextArea).focus()
+            except QueryError:
+                logger.debug(f"Could not focus input #{prefix}-input after API call, widget might not exist.")
+            except Exception as e_final_focus:
+                logger.error(f"Error focusing input after API call processing: {e_final_focus}", exc_info=True)
+
     except QueryError as qe_outer:
-        # ... (same outer QueryError handling as before) ...
         logger.error(
             f"QueryError in handle_api_call_worker_state_changed for '{worker_name}': {qe_outer}. Widget might have been removed.",
             exc_info=True)
         if app.current_ai_message_widget and app.current_ai_message_widget.is_mounted:
-            try: await app.current_ai_message_widget.remove()
-            except Exception as e_remove_final: logger.error(f"Error removing AI widget during outer QueryError: {e_remove_final}")
+            try:
+                await app.current_ai_message_widget.remove()
+            except Exception as e_remove_final:
+                logger.error(f"Error removing AI widget during outer QueryError handling: {e_remove_final}")
         app.current_ai_message_widget = None
     except Exception as exc_outer:
-        # ... (same outer Exception handling as before) ...
-        logger.exception(
-            f"Unexpected error in handle_api_call_worker_state_changed for worker '{worker_name}': {exc_outer}")
+        logger.exception( # Use logger.exception to include stack trace for unexpected errors
+            f"Unexpected outer error in handle_api_call_worker_state_changed for worker '{worker_name}': {exc_outer}")
         if ai_message_widget and ai_message_widget.is_mounted:
             try:
                 static_widget_unexp_err = ai_message_widget.query_one(".message-text", Static)
                 error_update_text_unexp = Text.from_markup(
                     f"[bold red]Internal error handling AI response:[/]\n{escape_markup(str(exc_outer))}")
                 static_widget_unexp_err.update(error_update_text_unexp)
-                ai_message_widget.role = "System" # Display as System error
+                ai_message_widget.role = "System"
+                try:
+                    header_label = ai_message_widget.query_one(".message-header", Label)
+                    header_label.update("System Error")
+                except QueryError: pass
                 ai_message_widget.mark_generation_complete()
             except Exception as e_unexp_final_update:
-                logger.error(f"Further error updating AI widget during outer unexp error: {e_unexp_final_update}")
+                logger.error(f"Further error updating AI widget during outer unexpected error: {e_unexp_final_update}")
         app.current_ai_message_widget = None
 
 

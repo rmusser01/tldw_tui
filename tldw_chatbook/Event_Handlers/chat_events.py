@@ -137,7 +137,7 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
         should_stream = provider_specific_settings.get("streaming", False)
         loguru_logger.debug(f"Streaming for {selected_provider} set to {should_stream} based on config.")
     else:
-        loguru_logger.debug("No provider selected, streaming defaults to False.")
+        loguru_logger.debug("No provider selected, streaming defaults to False for this request.")
 
     # --- Integration of Active Character Data ---
     system_prompt_from_ui = system_prompt_widget.text # This is the system prompt from the LEFT sidebar
@@ -637,7 +637,7 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
         min_p_regen = safe_float(min_p_widget_regen.value, 0.05, "min_p")
         top_k_regen = app._safe_int(top_k_widget_regen.value, 50, "top_k")
 
-        # --- Integration of Active Character Data for REGENERATION ---
+        # --- Integration of Active Character Data & Streaming Config for REGENERATION ---
         active_char_data_regen = app.current_chat_active_character_data
         original_system_prompt_from_ui_regen = system_prompt_regen # Keep a reference
 
@@ -651,7 +651,17 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
                 loguru_logger.debug(f"Active character data present for REGENERATION, but 'system_prompt' is None or missing. Using: '{system_prompt_regen[:100]}...' (might be from UI or empty).")
         else:
             loguru_logger.info("No active character data for REGENERATION. Using system prompt from UI.")
-        # --- End of Integration for REGENERATION ---
+        should_stream_regen = False  # Default for regen
+        if selected_provider_regen:
+            provider_settings_key_regen = selected_provider_regen.lower().replace(" ", "_")
+            provider_specific_settings_regen = app.app_config.get("api_settings", {}).get(provider_settings_key_regen,
+                                                                                          {})
+            should_stream_regen = provider_specific_settings_regen.get("streaming", False)
+            loguru_logger.debug(
+                f"Streaming for REGENERATION with {selected_provider_regen} set to {should_stream_regen} based on config.")
+        else:
+            loguru_logger.debug("No provider selected for REGENERATION, streaming defaults to False.")
+        # --- End of Integration & Streaming Config for REGENERATION ---
 
         llm_max_tokens_value_regen = app._safe_int(llm_max_tokens_widget_regen.value, 1024, "llm_max_tokens")
         llm_seed_value_regen = app._safe_int(llm_seed_widget_regen.value, None, "llm_seed")
@@ -720,8 +730,7 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
         worker_target_regen = lambda: app.chat_wrapper(
             message="", history=history_for_regeneration, api_endpoint=selected_provider_regen,
             api_key=api_key_for_regen,
-            custom_prompt="", temperature=temperature_regen, system_message=system_prompt_regen, streaming=False,
-            # Or get from UI
+            custom_prompt="", temperature=temperature_regen, system_message=system_prompt_regen, streaming=should_stream_regen,
             minp=min_p_regen, model=selected_model_regen, topp=top_p_regen, topk=top_k_regen,
             llm_max_tokens=llm_max_tokens_value_regen, llm_seed=llm_seed_value_regen, llm_stop=llm_stop_value_regen,
             llm_response_format=llm_response_format_value_regen, llm_n=llm_n_value_regen,

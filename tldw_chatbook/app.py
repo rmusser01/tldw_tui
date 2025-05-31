@@ -13,6 +13,7 @@ from typing import Union, Optional, Any, Dict, List, Callable
 from PIL import Image
 # --- Textual Imports ---
 from loguru import logger as loguru_logger, logger  # Keep if app.py uses it directly, or pass app.loguru_logger
+from rich.text import Text
 from textual import on
 # --- Textual Imports ---
 from textual.app import App, ComposeResult
@@ -21,12 +22,16 @@ from textual.widgets import (
     Static, Button, Input, Header, Footer, RichLog, TextArea, Select, ListView, Checkbox, Collapsible, ListItem, Label
 )
 from textual.containers import Horizontal, Container, HorizontalScroll, VerticalScroll
+# Import for escape_markup
+from rich.markup import escape as escape_markup
 from textual.reactive import reactive
 from textual.worker import Worker
 from textual.binding import Binding
 from textual.dom import DOMNode  # For type hinting if needed
 from textual.timer import Timer
 from textual.css.query import QueryError  # For specific error handling
+
+from tldw_chatbook.Event_Handlers.worker_events import StreamingChunk, StreamDone
 #
 # --- Local API library Imports ---
 from .UI.MediaWindow import MediaWindow, slugify as media_slugify
@@ -61,8 +66,9 @@ from .Event_Handlers import (
     notes_events as notes_handlers,
     worker_events as worker_handlers, worker_events, ingest_events,
 )
+from .Character_Chat import Character_Chat_Lib as ccl
 from .Notes.Notes_Library import NotesInteropService
-from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
+from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError, InputError
 from .Widgets.chat_message import ChatMessage
 from .Widgets.settings_sidebar import create_settings_sidebar
 from .Widgets.notes_sidebar_left import NotesSidebarLeft
@@ -2301,6 +2307,114 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     async def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         # Delegate all worker state changes to the central handler
         await worker_handlers.handle_api_call_worker_state_changed(self, event)
+
+    async def on_streaming_chunk(self, event: StreamingChunk) -> None:
+        logger = getattr(self, 'loguru_logger', logging) # Get logger
+        if self.current_ai_message_widget and self.current_ai_message_widget.is_mounted:
+            try:
+                static_text_widget = self.current_ai_message_widget.query_one(".message-text", Static)
+                self.current_ai_message_widget.message_text += event.text_chunk
+                static_text_widget.update(escape_markup(self.current_ai_message_widget.message_text))
+
+                chat_log_container = self.query_one("#chat-log", VerticalScroll) # Or appropriate ID for the chat log
+                chat_log_container.scroll_end(animate=False, duration=0.05)
+            except QueryError as e:
+                logger.error(f"Error accessing UI components during streaming chunk update: {e}", exc_info=True)
+            except Exception as e_chunk:
+                logger.error(f"Error processing streaming chunk: {e_chunk}", exc_info=True)
+        else:
+            logger.warning("Received StreamingChunk but no current_ai_message_widget is active or mounted.")
+
+    async def on_stream_done(self, event: StreamDone) -> None:
+        logger = getattr(self, 'loguru_logger', logging)
+        logger.info(f"StreamDone received. Final accumulated text length: {len(event.full_text)}. Error: {event.error}")
+
+        if not self.current_ai_message_widget or not self.current_ai_message_widget.is_mounted:
+            logger.warning("Received StreamDone but no current_ai_message_widget is active or mounted.")
+            # If there's an error to report but no widget, we might log it more prominently or notify globally
+            if event.error:
+                self.notify(f"Stream error occurred: {event.error}", severity="error", timeout=10)
+            return
+
+        try:
+            static_text_widget = self.current_ai_message_widget.query_one(".message-text", Static)
+
+            if event.error:
+                logger.error(f"Streaming error reported by worker: {event.error}")
+                # Display the error, possibly appended to any partial text received.
+                error_display_text = event.full_text + f"\n\n[bold red]Stream Error: {escape_markup(event.error)}[/]"
+                # Or, to make the error more prominent if full_text might be long:
+                # error_display_text = f"[bold red]Stream Error: {escape_markup(event.error)}[/]\n\n(Partial text received: {escape_markup(event.full_text)})"
+
+                static_text_widget.update(Text.from_markup(error_display_text))
+                self.current_ai_message_widget.message_text = event.full_text + f"\nStream Error: {event.error}" # Update internal raw text
+                self.current_ai_message_widget.role = "System" # Change role to indicate system/error
+
+                try: # Update header to reflect error state
+                    header_label = self.current_ai_message_widget.query_one(".message-header", Label)
+                    header_label.update("System Error")
+                except QueryError:
+                    logger.warning("Could not update AI message header for stream error.")
+
+                self.current_ai_message_widget.mark_generation_complete()
+                # NOTE: Do NOT save to DB if there was a stream error.
+                # The 'finally' block below will handle clearing current_ai_message_widget and focusing input.
+                return # Return early to bypass normal finalization (like DB saving)
+
+            # If no error, proceed with normal finalization:
+            self.current_ai_message_widget.message_text = event.full_text # Ensure internal state is final
+            static_text_widget.update(escape_markup(event.full_text)) # Final update with escaped full text
+            self.current_ai_message_widget.mark_generation_complete()
+
+            ai_sender_name_for_db = "AI"
+            if not self.current_chat_is_ephemeral and self.current_chat_conversation_id and self.chachanotes_db:
+                conv_char_name = ccl.get_character_name_for_conversation(self.chachanotes_db, self.current_chat_conversation_id)
+                if conv_char_name: ai_sender_name_for_db = conv_char_name
+            elif self.current_chat_active_character_data:
+                ai_sender_name_for_db = self.current_chat_active_character_data.get('name', 'AI')
+
+            if self.current_ai_message_widget.role != ai_sender_name_for_db:
+                self.current_ai_message_widget.role = ai_sender_name_for_db
+                try:
+                    header_label = self.current_ai_message_widget.query_one(".message-header", Label)
+                    header_label.update(ai_sender_name_for_db)
+                except QueryError:
+                    logger.warning("Could not update AI message header label with character name in StreamDone.")
+
+            if self.chachanotes_db and self.current_chat_conversation_id and \
+               not self.current_chat_is_ephemeral and event.full_text: # event.full_text should be non-empty if no error
+                try:
+                    ai_msg_db_id = ccl.add_message_to_conversation(
+                        self.chachanotes_db,
+                        self.current_chat_conversation_id,
+                        ai_sender_name_for_db,
+                        event.full_text
+                    )
+                    if ai_msg_db_id:
+                        saved_ai_msg_details = self.chachanotes_db.get_message_by_id(ai_msg_db_id)
+                        if saved_ai_msg_details:
+                            self.current_ai_message_widget.message_id_internal = saved_ai_msg_details.get('id')
+                            self.current_ai_message_widget.message_version_internal = saved_ai_msg_details.get('version')
+                            logger.debug(f"Streamed AI message saved to DB via StreamDone. ConvID: {self.current_chat_conversation_id}, MsgID: {saved_ai_msg_details.get('id')}")
+                        else:
+                            logger.error(f"Failed to retrieve saved streamed AI message details from DB for ID {ai_msg_db_id} in StreamDone.")
+                    else:
+                        logger.error("Failed to save streamed AI message to DB via StreamDone (no ID returned).")
+                except (CharactersRAGDBError, InputError) as e_save_ai_stream:
+                    logger.error(f"Failed to save streamed AI message to DB via StreamDone: {e_save_ai_stream}", exc_info=True)
+
+        except QueryError as e:
+            logger.error(f"Error accessing UI components during stream finalization (event.error='{event.error}'): {e}", exc_info=True)
+        except Exception as e_done:
+            logger.error(f"Error processing stream done (event.error='{event.error}'): {e_done}", exc_info=True)
+        finally:
+            if self.current_ai_message_widget: # Check again as it might be None if initial check failed
+                 self.current_ai_message_widget = None # Clear the reference
+            try:
+                chat_input_widget = self.query_one("#chat-input", TextArea)
+                chat_input_widget.focus()
+            except QueryError:
+                logger.warning("Could not focus chat input after stream completion.")
 
     # --- Helper methods that remain in app.py (mostly for UI orchestration or complex state) ---
     def _safe_float(self, value: str, default: float, name: str) -> float:

@@ -291,20 +291,20 @@ def chat_with_openai(
                     try:
                         for line in response.iter_lines(decode_unicode=True):
                             if line and line.strip():
-                                yield line + "\n\n"  # Adhere to SSE format for client
-                        # OpenAI stream itself does not send a final [DONE] in this way,
-                        # but our endpoint wrapper expects it.
-                        # The actual DONE event should be data: [DONE]\n\n
+                                # Pass through OpenAI's SSE lines directly.
+                                # Ensure they end with \n\n if not already.
+                                # OpenAI's SSE usually includes double newlines.
+                                yield line if line.endswith("\n") else line + "\n"
                     except requests.exceptions.ChunkedEncodingError as e_chunk:
                         logging.error(f"OpenAI: ChunkedEncodingError during stream: {e_chunk}", exc_info=True)
                         error_content = json.dumps({"error": {"message": f"Stream connection error: {str(e_chunk)}",
                                                               "type": "openai_stream_error"}})
-                        yield f"data: {error_content}\n\n"
+                        yield f"data: {error_content}\n\n" # Yield as SSE error
                     except Exception as e_stream:
                         logging.error(f"OpenAI: Error during stream iteration: {e_stream}", exc_info=True)
                         error_content = json.dumps({"error": {"message": f"Stream iteration error: {str(e_stream)}",
                                                               "type": "openai_stream_error"}})
-                        yield f"data: {error_content}\n\n"
+                        yield f"data: {error_content}\n\n" # Yield as SSE error
                     finally:
                         # Ensure DONE is sent for the endpoint wrapper's logic
                         yield "data: [DONE]\n\n"
@@ -473,8 +473,10 @@ def chat_with_anthropic(
                 completion_id = f"chatcmpl-anthropic-{time.time_ns()}"
                 created_time = int(time.time())
 
-                event_name = None
-                data_buffer = []
+                created_ts = int(time.time())
+                # model_name = current_model # Defined outside this generator
+                # Note: Anthropic event types: message_start, content_block_start, content_block_delta, content_block_stop, message_delta, message_stop
+                # We primarily care about content_block_delta for text and message_delta/message_stop for finish_reason.
 
                 try:
                     for line_bytes in response.iter_lines():  # iter_lines gives bytes
@@ -483,33 +485,54 @@ def chat_with_anthropic(
                         # Anthropic SSE has "event:" and "data:" lines
                         # Parse them and reformat
                         # Example (simplified, actual Anthropic events are more complex):
-                        if line.startswith("data:"):
+                        if line.startswith("event:"):
+                            # event_name = line[len("event:"):].strip() # Store event name if needed
+                            pass  # We'll parse the data line
+                        elif line.startswith("data:"):
                             event_data_str = line[len("data:"):].strip()
                             try:
                                 anthropic_event = json.loads(event_data_str)
-                                # Extract delta and finish_reason based on anthropic_event['type']
-                                # (e.g., 'content_block_delta', 'message_delta')
                                 delta_content = None
                                 finish_reason = None
+                                tool_calls_delta = None  # For future tool streaming
+
                                 if anthropic_event.get("type") == "content_block_delta":
                                     delta = anthropic_event.get("delta", {})
                                     if delta.get("type") == "text_delta":
                                         delta_content = delta.get("text")
                                 elif anthropic_event.get("type") == "message_delta":
                                     finish_reason_anth = anthropic_event.get("delta", {}).get("stop_reason")
+                                    # usage_anth = anthropic_event.get("usage") # Can capture usage here
                                     if finish_reason_anth:
                                         finish_reason_map = {"end_turn": "stop", "max_tokens": "length", "stop_sequence": "stop", "tool_use": "tool_calls"}
                                         finish_reason = finish_reason_map.get(finish_reason_anth, finish_reason_anth)
+                                # message_stop is the final event, might contain final usage metrics.
+                                elif anthropic_event.get("type") == "message_stop":
+                                    # This event confirms the end. If no explicit finish_reason was in message_delta,
+                                    # the previous one (or lack thereof) stands.
+                                    # It's a good place to emit the [DONE] signal.
+                                    # logging.debug(f"Anthropic stream: message_stop received. Full event: {anthropic_event}")
+                                    pass # The [DONE] is yielded in finally or after loop.
 
-                                if delta_content:
-                                    sse_chunk = {"id": completion_id, "object": "chat.completion.chunk", "created": created_time, "model": current_model, "choices": [{"index": 0, "delta": {"content": delta_content}, "finish_reason": None}]}
-                                    yield f"data: {json.dumps(sse_chunk)}\n\n"
+                                sse_choice_payload = {}
+                                if delta_content is not None:  # Can be empty string
+                                    sse_choice_payload["delta"] = {"content": delta_content}
+                                if tool_calls_delta:  # Placeholder for tool streaming
+                                    if "delta" not in sse_choice_payload: sse_choice_payload["delta"] = {}
+                                    sse_choice_payload["delta"]["tool_calls"] = tool_calls_delta
                                 if finish_reason:
-                                    sse_chunk = {"id": completion_id, "object": "chat.completion.chunk", "created": created_time, "model": current_model, "choices": [{"index": 0, "delta": {}, "finish_reason": finish_reason}]}
+                                    sse_choice_payload["finish_reason"] = finish_reason
+
+                                if sse_choice_payload:  # If there's anything to send in choices
+                                    sse_choice_payload["index"] = 0  # Standard for non-batched choices
+                                    sse_chunk = {
+                                        "id": completion_id, "object": "chat.completion.chunk",
+                                        "created": created_ts, "model": current_model,
+                                        "choices": [sse_choice_payload]
+                                    }
                                     yield f"data: {json.dumps(sse_chunk)}\n\n"
                             except json.JSONDecodeError:
                                 logging.warning(f"Anthropic Stream: Could not decode JSON: {event_data_str}")
-                    yield "data: [DONE]\n\n"
                 except requests.exceptions.ChunkedEncodingError as e: # ... error handling ...
                     logging.error(f"Anthropic: ChunkedEncodingError during stream: {e}", exc_info=True)
                     yield f"data: {json.dumps({'error': {'message': f'Stream connection error: {str(e)}', 'type': 'anthropic_stream_error'}})}\n\n"
@@ -517,7 +540,7 @@ def chat_with_anthropic(
                     logging.error(f"Anthropic: Error during stream iteration: {e}", exc_info=True)
                     yield f"data: {json.dumps({'error': {'message': f'Stream iteration error: {str(e)}', 'type': 'anthropic_stream_error'}})}\n\n"
                 finally:
-                    yield "data: [DONE]\n\n" # Crucial for client
+                    yield "data: [DONE]\n\n"
                     if response: response.close()
             return stream_generator()
         else:
@@ -716,7 +739,10 @@ def chat_with_cohere(
             response.raise_for_status() # Check for HTTP errors on initial connection
             logging.debug("Cohere: Streaming response connection established.")
 
-            def stream_generator_cohere_text_chunks(response_iterator): # Removed unused model_name_for_event
+            def stream_generator_cohere_sse(response_iterator):
+                completion_id = f"chatcmpl-cohere-{time.time_ns()}"
+                created_ts = int(time.time())
+                # model_name = final_model # Outer scope
                 stream_properly_closed = False
                 accumulated_text_for_log = []
                 try:
@@ -725,35 +751,49 @@ def chat_with_cohere(
                         decoded_line = line_bytes.decode('utf-8').strip()
                         if not decoded_line: continue
 
-                        # Cohere's /v1/chat SSE format:
-                        # It often sends events like:
-                        # event: text-generation\ndata: {"text": "...", ...}\n\n
-                        # event: stream-end\ndata: {"finish_reason": "...", ...}\n\n
-                        # Sometimes, there's no explicit 'event:' line, and the data line itself contains 'event_type'.
-                        # We need to handle lines starting with 'data:' primarily.
-
                         if decoded_line.startswith("data:"):
                             json_data_str = decoded_line[len("data:"):].strip()
                             if not json_data_str: continue
                             try:
                                 cohere_event = json.loads(json_data_str)
                                 event_type = cohere_event.get("event_type")
+                                sse_payload_for_choice = None
 
                                 if event_type == "text-generation":
                                     text_chunk = cohere_event.get("text")
                                     if text_chunk:
                                         accumulated_text_for_log.append(text_chunk)
-                                        yield text_chunk
+                                        sse_payload_for_choice = {"delta": {"content": text_chunk}, "index": 0}
                                 elif event_type == "stream-end":
                                     stream_properly_closed = True
                                     final_response_details = cohere_event.get("response", {})
                                     finish_reason = final_response_details.get("finish_reason") or cohere_event.get("finish_reason", "UNKNOWN")
-                                    logging.info(f"Cohere stream: 'stream-end' event. Finish: {finish_reason}. Fragments: {len(accumulated_text_for_log)}")
-                                    return
+                                    # Map Cohere finish reasons
+                                    fr_map = {"COMPLETE": "stop",
+                                                "MAX_TOKENS": "length",
+                                                "ERROR_TOXIC": "content_filter",
+                                                "ERROR_LIMIT": "length",
+                                                "ERROR": "error",
+                                                "USER_CANCEL": "stop",
+                                                "TOOL_CALLS": "tool_calls"}
+                                    openai_fr = fr_map.get(finish_reason, finish_reason.lower() if finish_reason else "unknown")
+                                    logging.info(
+                                        f"Cohere stream: 'stream-end' event. Finish: {finish_reason} (Mapped: {openai_fr}). Fragments: {len(accumulated_text_for_log)}")
+                                    sse_payload_for_choice = {"delta": {}, "finish_reason": openai_fr, "index": 0}
+                                    # After sending this, we'll send [DONE]
                                 elif event_type == "stream-start": # Cohere sends this
                                     logging.debug(f"Cohere stream: 'stream-start' event. Gen ID: {cohere_event.get('generation_id')}")
                                 elif event_type: # Log other known event types if curious
                                      logging.debug(f"Cohere stream event type: {event_type}, data: {cohere_event}")
+
+                                if sse_payload_for_choice:
+                                    sse_chunk = {"id": completion_id, "object": "chat.completion.chunk",
+                                                 "created": created_ts, "model": final_model,
+                                                 "choices": [sse_payload_for_choice]}
+                                    yield f"data: {json.dumps(sse_chunk)}\n\n"
+                                    if event_type == "stream-end": # After sending final choice, send DONE
+                                        yield "data: [DONE]\n\n"
+                                        return # End generator
 
                             except json.JSONDecodeError:
                                 logging.warning(f"Cohere Stream: JSON decode error for data: '{json_data_str}' from line: '{decoded_line}'")
@@ -768,12 +808,14 @@ def chat_with_cohere(
                     logging.warning(f"Cohere stream: ChunkedEncodingError: {e}. Stream may have been interrupted.")
                 except Exception as e_stream:
                     logging.error(f"Cohere stream: Error during streaming: {e_stream}", exc_info=True)
-                finally:
+                finally:  # Ensure [DONE] is sent if loop terminates unexpectedly
                     if not stream_properly_closed:
                         logging.warning("Cohere stream generator loop finished without explicit 'stream-end'.")
-                    logging.debug(f"Cohere stream_generator for {final_model} finished. Total text: {''.join(accumulated_text_for_log)[:100]}...")
+                    yield "data: [DONE]\n\n"
+                    logging.debug(
+                        f"Cohere SSE stream_generator for {final_model} finished. Total text: {''.join(accumulated_text_for_log)[:100]}...")
                     if response: response.close()
-            return stream_generator_cohere_text_chunks(response.iter_lines())
+            return stream_generator_cohere_sse(response.iter_lines())
         else:  # Non-streaming
             # The session.post will use the retry strategy and timeout for each attempt.
             response = session.post(COHERE_CHAT_URL, headers=headers, json=payload, stream=False, timeout=timeout_seconds)
@@ -947,13 +989,16 @@ def chat_with_deepseek(
             # ... (OpenAI-like streaming logic, use "DeepSeek" in logs) ...
             with requests.Session() as session:
                 response = session.post(api_url, headers=headers, json=data, stream=True, timeout=180)
-                response.raise_for_status()
+                response.raise_for_status()  # Check for HTTP errors on initial connection
 
                 def stream_generator():
                     try:
                         for line in response.iter_lines(decode_unicode=True):
-                            if line and line.strip(): yield line + "\n\n"
-                    # ... (error handling for stream) ...
+                            if line and line.strip():  # DeepSeek provides OpenAI-compatible SSE
+                                yield line if line.endswith("\n") else line + "\n"
+                    except Exception as e_stream:
+                        logging.error(f"DeepSeek: Error during stream iteration: {e_stream}", exc_info=True)
+                        yield f"data: {json.dumps({'error': {'message': f'Stream iteration error: {str(e_stream)}', 'type': 'deepseek_stream_error'}})}\n\n"
                     finally:
                         yield "data: [DONE]\n\n"
                         if response: response.close()
@@ -989,28 +1034,27 @@ def chat_with_google(
         stop_sequences: Optional[List[str]] = None,  # from stop
         candidate_count: Optional[int] = None,  # from n
         response_format: Optional[Dict[str, str]] = None,  # for response_mime_type
-        # Gemini doesn't directly take seed, user_id, logit_bias, presence/freq_penalty, logprobs via REST in the same way.
-        # Tools are handled via a 'tools' field in the payload, with a specific format.
         tools: Optional[List[Dict[str, Any]]] = None,  # Gemini 'tools' config
         custom_prompt_arg: Optional[str] = None
 ):
-    loaded_config_data = settings.get('api_settings', {})  # Get the [api_settings] table
+    loaded_config_data = settings.get('api_settings', {})
     google_config = loaded_config_data.get('google_api', {})
     final_api_key = api_key or google_config.get('api_key')
-    if not final_api_key: raise ChatConfigurationError(provider="google", message="Google API Key required.")
+    if not final_api_key:
+        raise ChatConfigurationError(provider="google", message="Google API Key required.")
+
     current_model = model or google_config.get('model', 'gemini-1.5-flash-latest')
     current_streaming_cfg = google_config.get('streaming', False)
     current_streaming = streaming if streaming is not None else \
-        (str(current_streaming_cfg).lower() == 'true' if isinstance(current_streaming_cfg, str) else bool(
-            current_streaming_cfg))
+        (str(current_streaming_cfg).lower() == 'true' if isinstance(current_streaming_cfg, str) else bool(current_streaming_cfg))
 
     gemini_contents = []
-    # ... (message transformation from input_data to gemini_contents) ...
     for msg in input_data:
         role = msg.get("role")
         content = msg.get("content")
         gemini_role = "user" if role == "user" else "model" if role == "assistant" else None
-        if not gemini_role: continue
+        if not gemini_role:
+            continue
         gemini_parts = []
         if isinstance(content, str):
             gemini_parts.append({"text": content})
@@ -1020,9 +1064,11 @@ def chat_with_google(
                     gemini_parts.append({"text": part_obj.get("text", "")})
                 elif part_obj.get("type") == "image_url":
                     parsed_image = _parse_data_url_for_multimodal(part_obj.get("image_url", {}).get("url", ""))
-                    if parsed_image: gemini_parts.append(
-                        {"inline_data": {"mime_type": parsed_image[0], "data": parsed_image[1]}})
-        if gemini_parts: gemini_contents.append({"role": gemini_role, "parts": gemini_parts})
+                    if parsed_image:
+                        gemini_parts.append(
+                            {"inline_data": {"mime_type": parsed_image[0], "data": parsed_image[1]}})
+        if gemini_parts:
+            gemini_contents.append({"role": gemini_role, "parts": gemini_parts})
 
     generation_config = {}
     if temp is not None: generation_config["temperature"] = temp
@@ -1037,15 +1083,17 @@ def chat_with_google(
     payload = {"contents": gemini_contents}
     if generation_config: payload["generationConfig"] = generation_config
     if system_message: payload["system_instruction"] = {"parts": [{"text": system_message}]}
-    if tools: payload["tools"] = tools  # Assuming 'tools' is in Gemini's specific format
+    if tools: payload["tools"] = tools
 
     stream_suffix = ":streamGenerateContent?alt=sse" if current_streaming else ":generateContent"
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{current_model}{stream_suffix}"
     headers = {'x-goog-api-key': final_api_key, 'Content-Type': 'application/json'}
-    logging.debug(f"Google Gemini Request Payload: {payload}")
+    logging.debug(f"Google Gemini Request Payload (excluding contents): {{k: v for k,v in payload.items() if k != 'contents'}}")
+    logging.debug(f"Google Gemini Contents (first item parts): {payload.get('contents', [{}])[0].get('parts', [])[:2] if payload.get('contents') else 'No contents'}")
 
+
+    response = None # Initialize response to None for the finally block
     try:
-        # ... (retry logic) ...
         adapter = HTTPAdapter(max_retries=Retry(total=int(google_config.get('api_retries', 3)),
                                                 backoff_factor=float(google_config.get('api_retry_delay', 1)),
                                                 status_forcelist=[429, 500, 503], allowed_methods=["POST"]))
@@ -1058,78 +1106,65 @@ def chat_with_google(
             logging.debug("Google Gemini: Streaming response received.")
 
             def stream_generator():
+                # response object is from the outer scope
+                nonlocal response
+                completion_id = f"chatcmpl-gemini-{time.time_ns()}"
+                created_ts = int(time.time())
                 try:
                     for line in response.iter_lines(decode_unicode=True):
                         if line and line.strip().startswith('data:'):
-                            json_str = line.strip()[len('data:'):]
+                            json_str = line.strip()[len('data:'):].strip()
                             try:
                                 data_chunk_outer = json.loads(json_str)
-                                # Gemini stream chunks are sometimes lists, sometimes single objects
-                                data_chunks_to_process = data_chunk_outer if isinstance(data_chunk_outer, list) else [
-                                    data_chunk_outer]
-
-                                for data_chunk in data_chunks_to_process:
+                                openai_sse_choice = None
+                                candidates = data_chunk_outer.get('candidates', [])
+                                if candidates:
+                                    candidate = candidates[0]
                                     chunk_text = ""
-                                    finish_reason = None  # Check for finish reason in Gemini stream
-                                    tool_calls_delta = None
-
-                                    candidates = data_chunk.get('candidates', [])
-                                    if candidates:
-                                        candidate = candidates[0]
-                                        # Text content
-                                        if candidate.get('content', {}).get('parts', []):
-                                            for part in candidate['content']['parts']:
-                                                if 'text' in part:
-                                                    chunk_text += part.get('text', '')
-                                                # Check for functionCall delta if Gemini supports streaming them this way
-                                                if 'functionCall' in part:
-                                                    # This needs careful mapping to OpenAI's tool_calls delta
-                                                    # For now, just logging it if complex
-                                                    logging.debug(
-                                                        f"Gemini Stream: Received functionCall part: {part['functionCall']}")
-                                                    # Example: if part['functionCall'] has 'name' and 'args'
-                                                    # tool_calls_delta = [{"index": 0, "id": "call_SOMEID", "type": "function", "function": {"name": part['functionCall']['name'], "arguments": part['functionCall']['args']}}]
-
-                                        # Finish reason
-                                        raw_finish_reason = candidate.get("finishReason")
-                                        if raw_finish_reason:
-                                            finish_reason_map = {"MAX_TOKENS": "length", "STOP": "stop",
-                                                                 "SAFETY": "content_filter",
-                                                                 "RECITATION": "content_filter", "OTHER": "error",
-                                                                 "TOOL_CODE_NOT_FOUND": "error"}  # Simplified
-                                            finish_reason = finish_reason_map.get(raw_finish_reason,
-                                                                                  raw_finish_reason.lower())
-
-                                    if chunk_text or tool_calls_delta:  # If there's text or tool call delta
-                                        delta_payload = {}
-                                        if chunk_text: delta_payload["content"] = chunk_text
-                                        if tool_calls_delta: delta_payload[
-                                            "tool_calls"] = tool_calls_delta  # This needs to be OpenAI's delta format for tool_calls
-
-                                        sse_chunk = {'choices': [{'delta': delta_payload,
-                                                                  "finish_reason": finish_reason if finish_reason else None,
-                                                                  "index": 0}]}
-                                        # Add common SSE fields if needed by client: id, object, created, model
-                                        yield f"data: {json.dumps(sse_chunk)}\n\n"
-                                    elif finish_reason:  # Only finish reason
-                                        sse_chunk = {
-                                            'choices': [{'delta': {}, "finish_reason": finish_reason, "index": 0}]}
-                                        yield f"data: {json.dumps(sse_chunk)}\n\n"
-
+                                    if candidate.get('content', {}).get('parts', []):
+                                        for part in candidate['content']['parts']:
+                                            if 'text' in part:
+                                                chunk_text += part.get('text', '')
+                                    raw_finish_reason = candidate.get("finishReason")
+                                    openai_finish_reason = None
+                                    if raw_finish_reason:
+                                        fr_map = {"MAX_TOKENS": "length", "STOP": "stop", "SAFETY": "content_filter",
+                                                  "RECITATION": "content_filter", "OTHER": "error",
+                                                  "TOOL_CODE_NOT_FOUND": "error", "FUNCTION_CALL": "tool_calls"}
+                                        openai_finish_reason = fr_map.get(raw_finish_reason, raw_finish_reason.lower())
+                                    delta_payload_for_choice = {}
+                                    if chunk_text:
+                                        delta_payload_for_choice["content"] = chunk_text
+                                    if delta_payload_for_choice or openai_finish_reason:
+                                        openai_sse_choice = {"index": 0, "delta": delta_payload_for_choice}
+                                        if openai_finish_reason:
+                                            openai_sse_choice["finish_reason"] = openai_finish_reason
+                                if openai_sse_choice:
+                                    sse_chunk = {
+                                        "id": completion_id, "object": "chat.completion.chunk",
+                                        "created": created_ts, "model": current_model,
+                                        "choices": [openai_sse_choice]
+                                    }
+                                    yield f"data: {json.dumps(sse_chunk)}\n\n"
                             except json.JSONDecodeError:
                                 logging.warning(f"Google Gemini: Could not decode JSON line: {json_str}")
-                    yield "data: [DONE]\n\n"
-                # ... (error handling for stream) ...
+                except requests.exceptions.ChunkedEncodingError as e:
+                    logging.error(f"Google Gemini: ChunkedEncodingError during stream: {e}", exc_info=True)
+                    yield f"data: {json.dumps({'error': {'message': f'Stream connection error: {str(e)}', 'type': 'gemini_stream_error'}})}\n\n"
+                except Exception as e_stream:
+                    logging.error(f"Google Gemini: Error during stream iteration: {e_stream}", exc_info=True)
+                    yield f"data: {json.dumps({'error': {'message': f'Stream iteration error: {str(e_stream)}', 'type': 'gemini_stream_error'}})}\n\n"
                 finally:
-                    if response: response.close()
-
+                    yield "data: [DONE]\n\n"
+                    if response: # Close the response from the outer scope
+                        response.close()
             return stream_generator()
-        else:
+        else: # Non-streaming
             response_data = response.json()
             logging.debug("Google Gemini: Non-streaming request successful.")
             assistant_content = ""
             finish_reason = "unknown"
-            tool_calls = None  # For non-streaming
+            tool_calls = None
 
             if response_data.get("candidates"):
                 candidate = response_data["candidates"][0]
@@ -1138,47 +1173,93 @@ def chat_with_google(
                     for part in parts:
                         if "text" in part:
                             assistant_content += part.get("text", "")
-                        if "functionCall" in part:  # Handle non-streaming tool calls
+                        if "functionCall" in part:
                             if tool_calls is None: tool_calls = []
-                            # Map Gemini functionCall to OpenAI tool_calls format
-                            # This needs a unique ID for each call.
                             tool_calls.append({
-                                "id": f"call_gemini_{time.time_ns()}_{len(tool_calls)}",  # Placeholder ID
+                                "id": f"call_gemini_{time.time_ns()}_{len(tool_calls)}",
                                 "type": "function",
                                 "function": {
                                     "name": part["functionCall"].get("name"),
                                     "arguments": json.dumps(part["functionCall"].get("args", {}))
-                                    # Ensure args is stringified JSON
                                 }
                             })
-
                 raw_finish_reason = candidate.get("finishReason")
                 if raw_finish_reason:
-                    finish_reason_map = {"MAX_TOKENS": "length", "STOP": "stop", "SAFETY": "content_filter",
+                    fr_map = {"MAX_TOKENS": "length", "STOP": "stop", "SAFETY": "content_filter",
                                          "RECITATION": "content_filter", "OTHER": "error",
                                          "TOOL_CODE_NOT_FOUND": "error", "FUNCTION_CALL": "tool_calls"}
-                    finish_reason = finish_reason_map.get(raw_finish_reason, raw_finish_reason.lower())
+                    finish_reason = fr_map.get(raw_finish_reason, raw_finish_reason.lower())
 
             message_content = {"role": "assistant", "content": assistant_content.strip()}
             if tool_calls:
                 message_content["tool_calls"] = tool_calls
-                if not assistant_content.strip():  # If only tool_calls, content might be null for OpenAI spec
+                if not assistant_content.strip():
                     message_content["content"] = None
+
+            prompt_feedback = response_data.get("promptFeedback")
+            if prompt_feedback and prompt_feedback.get("blockReason"):
+                logging.warning(f"Google Gemini: Prompt blocked. Reason: {prompt_feedback.get('blockReason')}, Safety Ratings: {prompt_feedback.get('safetyRatings')}")
+                if not response_data.get("candidates"):
+                    message_content["content"] = "[Blocked by API due to safety settings]"
+                    finish_reason = "content_filter"
 
             normalized_response = {
                 "id": f"gemini-{time.time_ns()}", "object": "chat.completion", "created": int(time.time()),
                 "model": current_model,
                 "choices": [{"index": 0, "message": message_content, "finish_reason": finish_reason}],
-                "usage": {
-                    "prompt_tokens": response_data.get("usageMetadata", {}).get("promptTokenCount"),
-                    "completion_tokens": response_data.get("usageMetadata", {}).get("candidatesTokenCount"),
-                    "total_tokens": response_data.get("usageMetadata", {}).get("totalTokenCount")}
             }
+            usage_meta = response_data.get("usageMetadata")
+            if usage_meta and all(k in usage_meta for k in ["promptTokenCount", "candidatesTokenCount", "totalTokenCount"]):
+                 normalized_response["usage"] = {
+                    "prompt_tokens": usage_meta.get("promptTokenCount"),
+                    "completion_tokens": usage_meta.get("candidatesTokenCount"),
+                    "total_tokens": usage_meta.get("totalTokenCount")
+                }
             return normalized_response
-    except requests.exceptions.HTTPError as e:  # ... error handling ...
-        raise
-    except Exception as e:  # ... error handling ...
-        raise ChatProviderError(provider="google", message=f"Unexpected error: {e}")
+
+    except requests.exceptions.HTTPError as e:
+        status_code = e.response.status_code if e.response is not None else 500
+        error_text = e.response.text if e.response is not None else "No response text"
+        logging.error(f"Google Gemini API call HTTPError {status_code}. Details: {error_text[:500]}", exc_info=False)
+        if status_code == 400:
+            try:
+                error_json = e.response.json()
+                detail = error_json.get("error", {}).get("message", error_text)
+                if "The response was blocked" in detail or "The prompt was blocked" in detail or "SAFETY" in detail.upper():
+                     raise ChatProviderError(provider="google", message=f"Content blocked by API: {detail[:200]}", status_code=status_code, is_content_filter=True) from e
+                raise ChatBadRequestError(provider="google", message=f"Bad request ({status_code}). Detail: {detail[:200]}") from e
+            except json.JSONDecodeError:
+                raise ChatBadRequestError(provider="google", message=f"Bad request ({status_code}). Detail: {error_text[:200]}") from e
+        elif status_code == 401: raise ChatAuthenticationError(provider="google", message=f"Auth failed. Detail: {error_text[:200]}") from e
+        elif status_code == 429: raise ChatRateLimitError(provider="google", message=f"Rate limit. Detail: {error_text[:200]}") from e
+        else: raise ChatProviderError(provider="google", message=f"API error ({status_code}). Detail: {error_text[:200]}", status_code=status_code) from e
+    except requests.exceptions.RequestException as e:
+        raise ChatProviderError(provider="google", message=f"Network error: {str(e)}", status_code=504) from e
+    except Exception as e:
+        logging.error(f"Google Gemini: Unexpected error: {e}", exc_info=True)
+        # Ensure it's a ChatAPIError subtype before raising, or wrap it
+        if isinstance(e, ChatAPIError):
+            raise
+        else:
+            raise ChatProviderError(provider="google", message=f"Unexpected error: {str(e)}") from e
+    finally:
+        # If streaming, the response object is closed inside stream_generator's finally.
+        # If not streaming, the response object is implicitly closed by the `with requests.Session() as session:` block ending.
+        # However, if `session.post` was called outside `with` or `response` was from `session.post(stream=True)`
+        # and an error occurred *before* entering `stream_generator`, it might need closing here.
+        # The `nonlocal response` and assignment `response = session.post(...)` helps manage this.
+        if not current_streaming and response and not response.connection == None : # Check if response exists and not already closed
+            # For non-streaming, response.close() is usually handled by requests Session context manager.
+            # For streaming, it's handled in the generator's finally.
+            # This is a fallback, generally not needed if using `with session:` properly.
+            try:
+                if response.raw and not response.raw.closed: # For non-streaming with `requests.post`
+                     response.raw.close()
+            except AttributeError: # `response.raw` might not exist if connection failed early
+                pass
+            except Exception as e_close:
+                logging.warning(f"Google Gemini: Error during explicit response.close in outer finally: {e_close}")
+
 
 
 
@@ -1264,7 +1345,8 @@ def chat_with_groq(
                 def stream_generator():
                     try:
                         for line in response.iter_lines(decode_unicode=True):
-                            if line and line.strip(): yield line + "\n\n"
+                            if line and line.strip():  # Groq provides OpenAI-compatible SSE
+                                yield line if line.endswith("\n") else line + "\n"
                     except requests.exceptions.ChunkedEncodingError as e:  # ... error handling ...
                         logging.error(f"Groq: ChunkedEncodingError: {e}", exc_info=True)
                         yield f"data: {json.dumps({'error': {'message': f'Stream error: {str(e)}', 'type': 'groq_stream_error'}})}\n\n"
@@ -1274,7 +1356,6 @@ def chat_with_groq(
                     finally:
                         yield "data: [DONE]\n\n"
                         if response: response.close()
-
                 return stream_generator()
         else:
             # ... (non-streaming logic, retry) ...
