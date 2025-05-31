@@ -851,6 +851,12 @@ MetricsScreen Label.-info-message {
 .llm-view-area { /* Common class for individual content areas */
     width: 100%;
     height: 100%; /* Or auto */
+    display: none; /* Initially hidden until activated */
+}
+
+/* Make the initial default view visible */
+#llm-view-llama-cpp {
+    display: block; /* Initially visible */
 }
 
 /* Chat Sidebar Prompts Section Specific Styles */

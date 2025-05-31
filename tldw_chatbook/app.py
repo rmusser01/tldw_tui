@@ -65,6 +65,7 @@ from .Event_Handlers import (
     media_events as media_handlers,
     notes_events as notes_handlers,
     worker_events as worker_handlers, worker_events, ingest_events,
+    llm_nav_events as llm_handlers,
 )
 from .Character_Chat import Character_Chat_Lib as ccl
 from .Notes.Notes_Library import NotesInteropService
@@ -1391,6 +1392,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 self.loguru_logger.debug(
                     f"Switched to LLM Management tab, activating initial view: {self._initial_llm_view}")
                 self.call_later(setattr, self, 'llm_active_view', self._initial_llm_view)
+                
+            # Add class to highlight the active button
+            try:
+                active_button = self.query_one(f"#llm-nav-llama-cpp", Button)
+                active_button.add_class("-active")
+            except QueryError:
+                self.loguru_logger.warning("Could not find the llama-cpp button to highlight")
 
     async def _activate_initial_ingest_view(self) -> None:
         self.loguru_logger.info("Attempting to activate initial ingest view via _activate_initial_ingest_view.")
@@ -2175,10 +2183,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         # --- LLM Inference Tab ---
         elif current_active_tab == TAB_LLM:
             if button_id and button_id.startswith("llm-nav-"):
-                # e.g., "llm-nav-llama-cpp" -> "llm-view-llama-cpp"
-                view_to_activate = button_id.replace("llm-nav-", "llm-view-")
-                self.loguru_logger.debug(f"LLM nav button '{button_id}' pressed. Activating view '{view_to_activate}'.")
-                self.llm_active_view = view_to_activate  # Triggers watcher
+                await llm_handlers.handle_llm_nav_button_pressed(self, button_id)
             else:
                 self.loguru_logger.warning(
                     f"Unhandled button on LLM MANAGEMENT tab: ID:{button_id}, Label:'{button.label}'")
