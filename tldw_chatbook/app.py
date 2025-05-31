@@ -2407,14 +2407,24 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             logger.error(f"Error accessing UI components during stream finalization (event.error='{event.error}'): {e}", exc_info=True)
         except Exception as e_done:
             logger.error(f"Error processing stream done (event.error='{event.error}'): {e_done}", exc_info=True)
-        finally:
-            if self.current_ai_message_widget: # Check again as it might be None if initial check failed
-                 self.current_ai_message_widget = None # Clear the reference
-            try:
-                chat_input_widget = self.query_one("#chat-input", TextArea)
-                chat_input_widget.focus()
-            except QueryError:
-                logger.warning("Could not focus chat input after stream completion.")
+            # Ensure that even if the main try block has an issue, we attempt to clean up and focus.
+            # The original finally block's logic is now effectively part of this extended try-except-finally.
+
+        # The following logic will run after the try-except block above,
+        # regardless of whether an error occurred within that block,
+        # but not if an error occurred *before* the try block (e.g., widget already gone).
+        # This acts like the "end of the try block" for the new logic.
+        self.current_ai_message_widget = None
+        logger.debug("Cleared current_ai_message_widget in on_stream_done.")
+        try:
+            # Assuming the main chat input ID is "chat-input"
+            chat_input_widget = self.query_one("#chat-input", TextArea)
+            chat_input_widget.focus()
+            self.loguru_logger.debug("Focused chat input in on_stream_done.")
+        except QueryError:
+            self.loguru_logger.warning("Could not focus chat input in on_stream_done (widget #chat-input not found).")
+        except Exception as e_focus_final: # Catch any other error during focus
+            self.loguru_logger.error(f"Error focusing chat input in on_stream_done: {e_focus_final}", exc_info=True)
 
     # --- Helper methods that remain in app.py (mostly for UI orchestration or complex state) ---
     def _safe_float(self, value: str, default: float, name: str) -> float:

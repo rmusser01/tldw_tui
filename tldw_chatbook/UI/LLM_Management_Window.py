@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 # 3rd-Party Imports
 from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll
-from textual.widgets import Static, Button
+from textual.widgets import Static, Button, Input, RichLog, Label
 # Local Imports
 #
 if TYPE_CHECKING:
@@ -38,11 +38,25 @@ class LLMManagementWindow(Container):
             yield Button("Download Models", id="llm-nav-download-models", classes="llm-nav-button")
 
         with Container(id="llm-content-pane", classes="llm-content-pane"):
-            yield Container(
-                Static("Llama.cpp Management Area - Content Coming Soon!"),
-                id="llm-view-llama-cpp",
-                classes="llm-view-area",
-            )
+            with Container(id="llm-view-llama-cpp", classes="llm-view-area"):
+                yield Label("Executable Path:", classes="label")
+                with Container(classes="input_container"):
+                    yield Input(id="llamacpp-exec-path", placeholder="/path/to/llama.cpp/server")
+                    yield Button("Browse", id="llamacpp-browse-exec-button", classes="browse_button")
+                yield Label("Model Path:", classes="label")
+                with Container(classes="input_container"):
+                    yield Input(id="llamacpp-model-path", placeholder="/path/to/model.gguf")
+                    yield Button("Browse", id="llamacpp-browse-model-button", classes="browse_button")
+                yield Label("Host:", classes="label")
+                yield Input(id="llamacpp-host", value="127.0.0.1")
+                yield Label("Port:", classes="label")
+                yield Input(id="llamacpp-port", value="8001")
+                yield Label("Additional Arguments:", classes="label")
+                yield Input(id="llamacpp-additional-args", placeholder="e.g., --n-gpu-layers 1")
+                with Container(classes="button_container"):
+                    yield Button("Start Server", id="llamacpp-start-server-button", classes="action_button")
+                    yield Button("Stop Server", id="llamacpp-stop-server-button", classes="action_button")
+                yield RichLog(id="llamacpp-log-output", classes="log_output", wrap=True, highlight=True)
             yield Container(
                 Static("Llamafile Management Area - Content Coming Soon!"),
                 id="llm-view-llamafile",

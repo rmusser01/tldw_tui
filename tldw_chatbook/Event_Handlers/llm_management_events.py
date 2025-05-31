@@ -52,6 +52,7 @@ __all__ = [
     "handle_llamacpp_browse_exec_button_pressed",
     "handle_llamacpp_browse_model_button_pressed",
     "handle_start_llamacpp_server_button_pressed",
+    "handle_stop_llamacpp_server_button_pressed",
     # ─── vLLM ─────────────────────────────────────────────────────────────────
     "handle_vllm_browse_python_button_pressed",
     "handle_vllm_browse_model_button_pressed",
@@ -439,14 +440,14 @@ async def handle_start_llamacpp_server_button_pressed(app: "TldwCli") -> None:
         model_path_input = app.query_one("#llamacpp-model-path", Input)
         host_input = app.query_one("#llamacpp-host", Input)
         port_input = app.query_one("#llamacpp-port", Input)
-        additional_args_input = app.query_one("#llamacpp-additional-args", TextArea)
+        additional_args_input = app.query_one("#llamacpp-additional-args", Input)
         log_output_widget = app.query_one("#llamacpp-log-output", RichLog)
 
         exec_path = exec_path_input.value.strip()
         model_path = model_path_input.value.strip()
         host = host_input.value.strip() or "127.0.0.1"
         port = port_input.value.strip() or "8001"
-        additional_args_str = additional_args_input.text.strip()
+        additional_args_str = additional_args_input.value.strip()
 
         if not exec_path:
             app.notify("Executable path is required.", severity="error")
@@ -495,6 +496,13 @@ async def handle_start_llamacpp_server_button_pressed(app: "TldwCli") -> None:
     except Exception as err:  # pragma: no cover
         logger.error("Error preparing to start Llama.cpp server: %s", err, exc_info=True)
         app.notify("Error setting up Llama.cpp server start.", severity="error")
+
+
+async def handle_stop_llamacpp_server_button_pressed(app: "TldwCli") -> None:
+    """Placeholder for stopping the Llama.cpp server."""
+    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
+    logger.info("Stop Llama.cpp server button pressed - functionality to be implemented.")
+    app.notify("Stop server functionality is not yet implemented.", severity="warning")
 
 
 ###############################################################################
