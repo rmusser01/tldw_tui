@@ -127,7 +127,16 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
     min_p = safe_float(min_p_widget.value, 0.05, "min_p")
     top_k = safe_int(top_k_widget.value, 50, "top_k") # Use imported safe_int
     custom_prompt = ""  # Assuming this isn't used directly in chat send, but passed
-    should_stream = False # Defaulting to False as per original logic
+
+    # Determine if streaming should be enabled based on provider settings
+    should_stream = False  # Default to False
+    if selected_provider:
+        provider_settings_key = selected_provider.lower().replace(" ", "_")
+        provider_specific_settings = app.app_config.get("api_settings", {}).get(provider_settings_key, {})
+        should_stream = provider_specific_settings.get("streaming", False)
+        loguru_logger.debug(f"Streaming for {selected_provider} set to {should_stream} based on config.")
+    else:
+        loguru_logger.debug("No provider selected, streaming defaults to False.")
 
     # --- Integration of Active Character Data ---
     system_prompt_from_ui = system_prompt_widget.text # This is the system prompt from the LEFT sidebar
