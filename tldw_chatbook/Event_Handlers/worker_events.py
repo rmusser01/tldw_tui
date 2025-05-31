@@ -58,6 +58,14 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
     worker_name = event.worker.name or "Unknown Worker"
     logger.debug(f"Worker '{worker_name}' state changed to {event.state}")
 
+    # ---- batching UI updates ----
+    # Define how often to update the UI
+    UI_UPDATE_CHUNK_INTERVAL = 5  # Update UI every 5 text chunks
+    # Alternatively, or in addition, a time interval:
+    # UI_UPDATE_TIME_INTERVAL_SEC = 0.1 # Update UI at least every 0.1 seconds
+    # last_ui_update_time = time.monotonic()
+    # ------------------------------------------
+
     if not worker_name.startswith("API_Call_"):
         logger.debug(f"Ignoring worker state change for non-API call worker: {worker_name}")
         return
@@ -129,6 +137,7 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
                 logger.info(
                     f"API call ({prefix}) for worker '{worker_name}' returned a sync Generator – processing as stream.")
                 full_original_text_streamed = "" # Initialize accumulator for the full text
+                current_batch_text_for_ui_update = ""
 
                 if not ai_message_widget or not ai_message_widget.is_mounted:
                     logger.warning(
@@ -136,9 +145,9 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
                     app.current_ai_message_widget = None
                     return
 
-                try:
+                try:  # Inner try for the loop itself
                     logger.debug(f"Starting stream iteration for worker '{worker_name}'...")
-                    for chunk_idx, chunk_raw in enumerate(result): # type: ignore[misc]
+                    for chunk_idx, chunk_raw in enumerate(result):  # type: ignore[misc]
                         if not ai_message_widget or not ai_message_widget.is_mounted:
                             logger.warning(
                                 f"Stream processing for '{prefix}' (worker '{worker_name}') aborted mid-stream (chunk {chunk_idx}): AI widget became unmounted.")
@@ -147,7 +156,7 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
                         chunk = str(chunk_raw)
                         logger.trace(f"Stream chunk {chunk_idx} RAW from generator for '{worker_name}': >>{chunk}<<")
 
-                        if not chunk.strip(): # Skip if chunk is just whitespace (e.g. empty lines from iter_lines)
+                        if not chunk.strip():
                             logger.trace(f"Stream chunk {chunk_idx} SKIPPED (empty or whitespace)")
                             continue
 
@@ -157,112 +166,142 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
 
                             if json_str == "[DONE]":
                                 logger.info(f"Stream chunk {chunk_idx}: Received [DONE] signal for '{worker_name}'.")
+                                if current_batch_text_for_ui_update:  # Process final batch before breaking
+                                    logger.debug(f"Updating UI with final batch before [DONE] for '{worker_name}'.")
+                                    ai_message_widget.message_text += current_batch_text_for_ui_update
+                                    static_text_widget_in_ai_msg.update(escape_markup(ai_message_widget.message_text))
+                                    if chat_container.is_mounted:
+                                        chat_container.scroll_end(animate=False, duration=0.05)
+                                    await asyncio.sleep(0.01)
+                                    current_batch_text_for_ui_update = ""
                                 break
 
                             if not json_str:
-                                logger.trace(f"Stream chunk {chunk_idx} SKIPPED (empty JSON part after 'data: ' stripping).")
+                                logger.trace(
+                                    f"Stream chunk {chunk_idx} SKIPPED (empty JSON part after 'data: ' stripping).")
                                 continue
 
-                            try:
+                            # Initialize extracted_text for this chunk before the try-except for json.loads
+                            extracted_text = None
+                            finish_reason = None
+
+                            try:  # Innermost try for JSON processing of a single chunk
                                 json_data = json.loads(json_str)
                                 logger.trace(f"Stream chunk {chunk_idx} PARSED JSON for '{worker_name}': {json_data}")
 
-                                extracted_text = None
-                                finish_reason = None
                                 choices = json_data.get("choices")
                                 if choices and isinstance(choices, list) and len(choices) > 0:
                                     delta = choices[0].get("delta", {})
                                     extracted_text = delta.get("content")
                                     finish_reason = choices[0].get("finish_reason")
-                                    # Also log if tool_calls are present in delta, for future debugging
                                     if "tool_calls" in delta:
-                                        logger.debug(f"Stream chunk {chunk_idx}: Delta contains tool_calls: {delta['tool_calls']}")
-
-
-                                if extracted_text is not None:
-                                    logger.debug(f"Stream chunk {chunk_idx}: Extracted text for '{worker_name}': >>{extracted_text}<<")
-                                    full_original_text_streamed += extracted_text
-                                    ai_message_widget.message_text += extracted_text
-                                    static_text_widget_in_ai_msg.update(escape_markup(ai_message_widget.message_text))
-                                    if chat_container.is_mounted:
-                                        chat_container.scroll_end(animate=False, duration=0.05)
-                                    await asyncio.sleep(0)  # Yield control to allow UI refresh
-                                elif finish_reason:
-                                    logger.info(f"Stream chunk {chunk_idx}: Received finish_reason '{finish_reason}' for '{worker_name}' (no new text content in this chunk).")
-                                    # If the finish reason implies the end, we could break, but [DONE] is the primary signal.
-                                    pass
-                                else:
-                                    logger.trace(f"Stream chunk {chunk_idx}: No text content or finish_reason in choices for '{worker_name}'. Full choice: {choices[0] if choices else 'N/A'}")
+                                        logger.debug(
+                                            f"Stream chunk {chunk_idx}: Delta contains tool_calls: {delta['tool_calls']}")
 
                             except json.JSONDecodeError as e_json:
                                 logger.warning(
                                     f"Stream chunk {chunk_idx}: JSON parsing error for '{worker_name}': {e_json}. JSON string was: >>{json_str}<<")
-                                pass
-                            except Exception as e_parse:
+                                # Do not try to process extracted_text if JSON parsing failed for this chunk
+                                continue  # Move to the next chunk
+                            except Exception as e_inner_parse:  # Catch other errors during parsing this specific chunk
                                 logger.error(
-                                    f"Stream chunk {chunk_idx}: Error processing JSON data for '{worker_name}' (JSON: >>{json_str}<<): {e_parse}", exc_info=True)
-                                pass
+                                    f"Stream chunk {chunk_idx}: Error processing inner JSON data for '{worker_name}' (JSON: >>{json_str}<<): {e_inner_parse}",
+                                    exc_info=True)
+                                # Do not try to process extracted_text if an error occurred
+                                continue  # Move to the next chunk
+
+                            # This block now only runs if JSON parsing for the current chunk was successful
+                            if extracted_text is not None:
+                                logger.debug(
+                                    f"Stream chunk {chunk_idx}: Extracted text for '{worker_name}': >>{extracted_text}<<")
+                                full_original_text_streamed += extracted_text
+                                current_batch_text_for_ui_update += extracted_text
+                                text_chunks_since_last_ui_update += 1
+
+                                if text_chunks_since_last_ui_update >= UI_UPDATE_CHUNK_INTERVAL:
+                                    logger.trace(
+                                        f"UI Update Triggered (chunk interval) for '{worker_name}'. Batch: >>{current_batch_text_for_ui_update}<<")
+                                    ai_message_widget.message_text += current_batch_text_for_ui_update
+                                    static_text_widget_in_ai_msg.update(escape_markup(ai_message_widget.message_text))
+                                    if chat_container.is_mounted:
+                                        chat_container.scroll_end(animate=False, duration=0.05)
+                                    current_batch_text_for_ui_update = ""
+                                    text_chunks_since_last_ui_update = 0
+                                    await asyncio.sleep(0.01)
+                            elif finish_reason:
+                                logger.info(
+                                    f"Stream chunk {chunk_idx}: Received finish_reason '{finish_reason}' for '{worker_name}'.")
+                            else:
+                                logger.trace(
+                                    f"Stream chunk {chunk_idx}: No text content or finish_reason in choices for '{worker_name}'.")
                         else:
-                            # This path should ideally not be hit if all LLM_API_Calls.py streaming functions
-                            # correctly yield SSE-formatted strings. If it is hit, it means a provider's
-                            # streaming function is not yielding the expected "data: ..." lines.
                             logger.warning(
                                 f"Stream chunk {chunk_idx}: Received non-SSE chunk or unexpected format for '{worker_name}': >>{chunk[:200]}...<<")
-                            pass
-                    # After stream loop finishes (either by [DONE] or generator exhaustion)
-                    logger.debug(f"Finished stream iteration for worker '{worker_name}'.")
+                    # End of for loop
 
-                    # After stream finishes
-                    if ai_message_widget and ai_message_widget.is_mounted:
+                    # After the loop, update with any remaining text in the batch
+                    if current_batch_text_for_ui_update:
+                        logger.debug(
+                            f"Updating UI with final remaining batch after loop for '{worker_name}'. Batch: >>{current_batch_text_for_ui_update}<<")
+                        ai_message_widget.message_text += current_batch_text_for_ui_update
+                        static_text_widget_in_ai_msg.update(escape_markup(ai_message_widget.message_text))
+                        if chat_container.is_mounted:
+                            chat_container.scroll_end(animate=False, duration=0.05)
+                        await asyncio.sleep(0)
+
+                    if ai_message_widget and ai_message_widget.is_mounted:  # Check again before marking complete
                         ai_message_widget.mark_generation_complete()
-                        logger.info(
-                            f"Stream fully processed for '{prefix}' (worker '{worker_name}'). Final original length: {len(full_original_text_streamed)} chars.")
+                    logger.info(
+                        f"Stream fully processed for '{prefix}' (worker '{worker_name}'). Final original length: {len(full_original_text_streamed)} chars.")
 
-                        # Save streamed AI message to DB if chat is persistent
-                        # Ensure that full_original_text_streamed is not empty before saving
-                        if app.chachanotes_db and app.current_chat_conversation_id and \
-                           not app.current_chat_is_ephemeral and full_original_text_streamed.strip():
-                            try:
-                                ai_msg_db_id_version = ccl.add_message_to_conversation(
-                                    app.chachanotes_db, app.current_chat_conversation_id,
-                                    ai_sender_name_for_db, # Use determined sender name
-                                    full_original_text_streamed
-                                )
-                                if ai_msg_db_id_version: # This is just the ID
-                                    saved_ai_msg_details = app.chachanotes_db.get_message_by_id(ai_msg_db_id_version)
-                                    if saved_ai_msg_details:
-                                        ai_message_widget.message_id_internal = saved_ai_msg_details.get('id')
-                                        ai_message_widget.message_version_internal = saved_ai_msg_details.get('version')
-                                        logger.debug(
-                                            f"Streamed AI message saved to DB. ConvID: {app.current_chat_conversation_id}, "
-                                            f"MsgID: {saved_ai_msg_details.get('id')}, Version: {saved_ai_msg_details.get('version')}")
-                                    else:
-                                        logger.error(f"Failed to retrieve saved streamed AI message details from DB for ID {ai_msg_db_id_version}.")
+                    # Save streamed AI message to DB if chat is persistent
+                    # Ensure that full_original_text_streamed is not empty before saving
+                    if app.chachanotes_db and app.current_chat_conversation_id and \
+                       not app.current_chat_is_ephemeral and full_original_text_streamed.strip():
+                        try:
+                            ai_msg_db_id_version = ccl.add_message_to_conversation(
+                                app.chachanotes_db, app.current_chat_conversation_id,
+                                ai_sender_name_for_db, # Use determined sender name
+                                full_original_text_streamed
+                            )
+                            if ai_msg_db_id_version: # This is just the ID
+                                saved_ai_msg_details = app.chachanotes_db.get_message_by_id(ai_msg_db_id_version)
+                                if saved_ai_msg_details:
+                                    ai_message_widget.message_id_internal = saved_ai_msg_details.get('id')
+                                    ai_message_widget.message_version_internal = saved_ai_msg_details.get('version')
+                                    logger.debug(
+                                        f"Streamed AI message saved to DB. ConvID: {app.current_chat_conversation_id}, "
+                                        f"MsgID: {saved_ai_msg_details.get('id')}, Version: {saved_ai_msg_details.get('version')}")
                                 else:
-                                    logger.error(f"Failed to save streamed AI message to DB (no ID returned).")
-                            except (CharactersRAGDBError, InputError) as e_save_ai_stream:
-                                logger.error(f"Failed to save streamed AI message to DB: {e_save_ai_stream}", exc_info=True)
-                        elif not full_original_text_streamed.strip():
-                            logger.info(f"Stream for '{prefix}' (worker '{worker_name}') resulted in empty content. Not saving to DB.")
-                        else:
-                             logger.debug(f"Streamed AI message for '{prefix}' (worker '{worker_name}') not saved to DB (chat is ephemeral or other condition not met).")
+                                    logger.error(f"Failed to retrieve saved streamed AI message details from DB for ID {ai_msg_db_id_version}.")
+                            else:
+                                logger.error(f"Failed to save streamed AI message to DB (no ID returned).")
+                        except (CharactersRAGDBError, InputError) as e_save_ai_stream:
+                            logger.error(f"Failed to save streamed AI message to DB: {e_save_ai_stream}", exc_info=True)
+                    elif not full_original_text_streamed.strip():
+                        logger.info(f"Stream for '{prefix}' (worker '{worker_name}') resulted in empty content. Not saving to DB.")
+                    else:
+                         logger.debug(f"Streamed AI message for '{prefix}' (worker '{worker_name}') not saved to DB (chat is ephemeral or other condition not met).")
 
 
                 except Exception as exc_stream_outer:
-                    logger.exception(
-                        f"Outer error during stream processing for worker '{worker_name}': {exc_stream_outer}")
+                    logger.error(f"Outer error during stream processing for worker '{worker_name}'. Exception type: {type(exc_stream_outer).__name__}, Message: {exc_stream_outer}", exc_info=True)
                     if ai_message_widget and ai_message_widget.is_mounted:
-                        current_text_plain = ai_message_widget.message_text
+                        current_text_plain = ai_message_widget.message_text  # Get what was streamed so far
+                        # Ensure exc_stream_outer is converted to string for display
                         error_message_display = Text.from_markup(
-                            escape_markup(current_text_plain) + f"\n[bold red]Error during stream processing:\n{escape_markup(str(exc_stream_outer))}[/]")
+                            escape_markup(
+                                current_text_plain) + f"\n[bold red]Error during stream processing:\n{escape_markup(str(exc_stream_outer))}[/]")
                         try:
                             static_text_widget_in_ai_msg.update(error_message_display)
                         except QueryError:
-                            logger.error("Failed to update AI widget with stream processing error message after outer exception.")
-                        ai_message_widget.mark_generation_complete()
+                            logger.error(
+                                "Failed to update AI widget with stream processing error message after outer exception.")
+                        if hasattr(ai_message_widget, 'mark_generation_complete'):  # Check before calling
+                            ai_message_widget.mark_generation_complete()
                 finally:
                     logger.debug(f"Stream processing 'finally' block reached for worker '{worker_name}'.")
-                    app.current_ai_message_widget = None
+                    app.current_ai_message_widget = None  # Crucial
                     if app.is_mounted:
                         try:
                             # Try to focus input only if no critical error has occurred that might prevent UI interaction
@@ -272,6 +311,7 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
                             logger.debug(f"Could not focus input #{prefix}-input after stream, widget might not exist.")
                         except Exception as e_focus:
                             logger.error(f"Error focusing input after stream: {e_focus}", exc_info=True)
+                        pass
             else:  # Non-streaming result
                 worker_result_content = result
                 logger.debug(
@@ -336,6 +376,7 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
                         logger.error(f"Failed to save non-streamed AI message to DB: {e_save_ai_ns}", exc_info=True)
 
                 app.current_ai_message_widget = None
+                pass
 
         elif event.state is WorkerState.ERROR:
             # ... (same error handling as before) ...
