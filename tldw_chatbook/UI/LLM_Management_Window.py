@@ -30,23 +30,24 @@ class LLMManagementWindow(Container):
 
     def on_mount(self) -> None:
         self.app_instance.loguru_logger.debug("LLMManagementWindow.on_mount called")
-        try:
-            content_pane = self.query_one("#llm-content-pane", Container)
-            view_areas = content_pane.query(".llm-view-area")
-            if not view_areas:
-                self.app_instance.loguru_logger.warning("LLMManagementWindow.on_mount: No .llm-view-area found in #llm-content-pane.")
-                return
-
-            for view in view_areas:
-                if view.id: # Only hide if it has an ID (sanity check)
-                    self.app_instance.loguru_logger.debug(f"LLMManagementWindow.on_mount: Hiding view #{view.id}")
-                    view.styles.display = "none"
-                else:
-                    self.app_instance.loguru_logger.warning("LLMManagementWindow.on_mount: Found a .llm-view-area without an ID, not hiding it.")
-        except QueryError as e:
-            self.app_instance.loguru_logger.error(f"LLMManagementWindow.on_mount: QueryError: {e}", exc_info=True)
-        except Exception as e:
-            self.app_instance.loguru_logger.error(f"LLMManagementWindow.on_mount: Unexpected error: {e}", exc_info=True)
+        # try:
+        #     content_pane = self.query_one("#llm-content-pane", Container)
+        #     view_areas = content_pane.query(".llm-view-area")
+        #     if not view_areas:
+        #         self.app_instance.loguru_logger.warning("LLMManagementWindow.on_mount: No .llm-view-area found in #llm-content-pane.")
+        #         return
+        #
+        #     for view in view_areas:
+        #         if view.id: # Only hide if it has an ID (sanity check)
+        #             self.app_instance.loguru_logger.debug(f"LLMManagementWindow.on_mount: Hiding view #{view.id}")
+        #             view.styles.display = "none"
+        #         else:
+        #             self.app_instance.loguru_logger.warning("LLMManagementWindow.on_mount: Found a .llm-view-area without an ID, not hiding it.")
+        # except QueryError as e:
+        #     self.app_instance.loguru_logger.error(f"LLMManagementWindow.on_mount: QueryError: {e}", exc_info=True)
+        # except Exception as e:
+        #     self.app_instance.loguru_logger.error(f"LLMManagementWindow.on_mount: Unexpected error: {e}", exc_info=True)
+        pass
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="llm-nav-pane", classes="llm-nav-pane"):
