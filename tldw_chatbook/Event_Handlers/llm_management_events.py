@@ -1,3 +1,30 @@
+# llm_management_events.py
+#
+# Imports
+from __future__ import annotations
+#
+import logging
+import shlex
+import subprocess
+from pathlib import Path
+from typing import TYPE_CHECKING, List, Optional
+#
+# Third-Party Libraries
+from textual.containers import Container
+from textual.css.query import QueryError
+from textual.worker import Worker, WorkerState
+from textual.widgets import Input, RichLog, TextArea, Button
+#
+# Local Imports
+if TYPE_CHECKING:
+    from ..app import TldwCli  # pragma: no cover – runtime import only
+from ..Local_Inference.mlx_lm_inference_local import start_mlx_lm_server, stop_mlx_lm_server
+# subprocess already imported
+from ..Third_Party.textual_fspicker import FileOpen, Filters
+#
+########################################################################################################################
+#
+#
 """llm_management_events.py
 
 A collection of helper callbacks, worker functions and event‑handler
@@ -26,26 +53,8 @@ The UI layer itself (layouts, widgets, tab switching, etc.) lives in
 vertical `VerticalTabs` widget whose four tabs bind to the handlers
 below.
 """
-from __future__ import annotations
+#
 
-import logging
-import shlex
-import subprocess
-from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional
-
-from textual.containers import Container
-from textual.css.query import QueryError
-from textual.worker import Worker, WorkerState
-from textual.widgets import Input, RichLog, TextArea, Button
-if TYPE_CHECKING:
-    from ..app import TldwCli  # pragma: no cover – runtime import only
-    from ..UI.LLM_Management_Window import LLMManagementWindow # For type hints if used within methods
-
-from ..Local_Inference.mlx_lm_inference_local import start_mlx_lm_server, stop_mlx_lm_server
-# subprocess already imported
-
-from ..Third_Party.textual_fspicker import FileOpen, FileSave, Filters
 
 __all__ = [
     # ─── Llamafile ────────────────────────────────────────────────────────────
@@ -57,26 +66,9 @@ __all__ = [
     "handle_llamacpp_browse_model_button_pressed",
     "handle_start_llamacpp_server_button_pressed",
     "handle_stop_llamacpp_server_button_pressed",
-    # ─── vLLM ─────────────────────────────────────────────────────────────────
-    "handle_vllm_browse_python_button_pressed",
-    "handle_vllm_browse_model_button_pressed",
-    "handle_start_vllm_server_button_pressed",
-    "handle_stop_vllm_server_button_pressed",
     # ─── Model download ───────────────────────────────────────────────────────
     "handle_browse_models_dir_button_pressed",
     "handle_start_model_download_button_pressed",
-    # ─── Ollama ───────────────────────────────────────────────────────────────
-    "handle_ollama_nav_button_pressed",
-    "handle_ollama_list_models_button_pressed",
-    "handle_ollama_show_model_button_pressed",
-    "handle_ollama_delete_model_button_pressed",
-    "handle_ollama_copy_model_button_pressed",
-    "handle_ollama_pull_model_button_pressed",
-    "handle_ollama_create_model_button_pressed",
-    "handle_ollama_browse_modelfile_button_pressed",
-    "handle_ollama_push_model_button_pressed",
-    "handle_ollama_embeddings_button_pressed",
-    "handle_ollama_ps_button_pressed",
     # ─── MLX-LM ───────────────────────────────────────────────────────────────
     "handle_mlx_lm_nav_button_pressed",
     "handle_start_mlx_server_button_pressed",
@@ -170,6 +162,7 @@ def _stream_process(app_instance: "TldwCli", log_fn_name: str, process: subproce
         process.stdout.close()
 
 
+# FIXME
 def run_llamafile_server_worker(app_instance: "TldwCli", command: List[str]):
     logger = getattr(app_instance, "loguru_logger", logging.getLogger(__name__))
     logger.info("Llamafile worker begins: %s", " ".join(command))
@@ -203,6 +196,7 @@ def run_llamafile_server_worker(app_instance: "TldwCli", command: List[str]):
         yield msg
 
 
+# FIXME
 def run_llamacpp_server_worker(app_instance: "TldwCli", command: List[str]):
     logger = getattr(app_instance, "loguru_logger", logging.getLogger(__name__))
     logger.info("Llama.cpp worker begins: %s", " ".join(command))
@@ -236,46 +230,7 @@ def run_llamacpp_server_worker(app_instance: "TldwCli", command: List[str]):
         yield msg
 
 
-def run_vllm_server_worker(app_instance: "TldwCli", command: List[str]):
-    """Worker that launches *vllm* via the given *command* list."""
-
-    logger = getattr(app_instance, "loguru_logger", logging.getLogger(__name__))
-    logger.info("vLLM worker begins: %s", " ".join(command))
-    app_instance.vllm_server_process = None  # Clear any old process reference
-
-    try:
-        process = subprocess.Popen(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-            universal_newlines=True,
-        )
-        app_instance.vllm_server_process = process  # Store the process
-
-        app_instance.call_from_thread(
-            app_instance._update_vllm_log, f"vLLM server started (PID: {process.pid})…\n"
-        )
-        _stream_process(app_instance, "_update_vllm_log", process)
-        process.wait()
-        yield f"vLLM server exited with code: {process.returncode}\n"
-    except FileNotFoundError:
-        app_instance.vllm_server_process = None # Clear process on error
-        msg = f"ERROR: vLLM interpreter not found: {command[0]}\n"
-        logger.error(msg.rstrip())
-        app_instance.call_from_thread(app_instance._update_vllm_log, msg)
-        yield msg
-    except Exception as err:
-        app_instance.vllm_server_process = None # Clear process on error
-        msg = f"ERROR in vLLM worker: {err}\n"
-        logger.error(msg.rstrip(), exc_info=True)
-        app_instance.call_from_thread(app_instance._update_vllm_log, msg)
-        yield msg
-    finally:
-        app_instance.vllm_server_process = None # Ensure process is cleared
-
-
+# FIXME
 def run_model_download_worker(app_instance: "TldwCli", command: List[str]):
     """Background worker that executes *command* to download a model.
 
@@ -326,6 +281,7 @@ async def stream_worker_output_to_log(app: "TldwCli", worker: Worker, log_widget
 
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
 
+    # FIXME
     try:
         log_widget = app.query_one(log_widget_id, RichLog)
         wrote_final = False
@@ -533,133 +489,6 @@ async def handle_stop_llamacpp_server_button_pressed(app: "TldwCli") -> None:
 
 
 ###############################################################################
-# ─── vLLM UI helpers ────────────────────────────────────────────────────────
-###############################################################################
-
-
-async def handle_vllm_browse_python_button_pressed(app: "TldwCli") -> None:
-    """Let the user pick the Python interpreter used for vLLM (venv, etc.)."""
-
-    await app.push_screen(
-        FileOpen(
-            location=str(Path.home()),
-            title="Select Python interpreter for vLLM",
-            filters=Filters(("Python executable", lambda p: p.name.startswith("python"))),
-        ),
-        callback=_make_path_update_callback(app, "vllm-python-path"),
-    )
-
-
-async def handle_vllm_browse_model_button_pressed(app: "TldwCli") -> None:
-    await app.push_screen(
-        FileOpen(
-            location=str(Path.home()),
-            title="Select Model (checkpoint or GGUF) for vLLM",
-            filters=Filters(("All files", lambda p: True)),
-        ),
-        callback=_make_path_update_callback(app, "vllm-model-path"),
-    )
-
-
-async def handle_start_vllm_server_button_pressed(app: "TldwCli") -> None:
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.info("User requested to start vLLM server.")
-
-    try:
-        python_path_input = app.query_one("#vllm-python-path", Input)
-        model_path_input = app.query_one("#vllm-model-path", Input)
-        host_input = app.query_one("#vllm-host", Input)
-        port_input = app.query_one("#vllm-port", Input)
-        additional_args_input = app.query_one("#vllm-additional-args", TextArea)
-        log_output_widget = app.query_one("#vllm-log-output", RichLog)
-
-        python_path = python_path_input.value.strip() or "python"
-        model_path = model_path_input.value.strip()
-        host = host_input.value.strip() or "127.0.0.1"
-        port = port_input.value.strip() or "8002"
-        additional_args_str = additional_args_input.text.strip()
-
-        if model_path and not Path(model_path).exists():
-            app.notify(f"Model path not found: {model_path}", severity="error")
-            model_path_input.focus()
-            return
-
-        command = [
-            python_path,
-            "-m",
-            "vllm.entrypoints.api_server",
-            "--host",
-            host,
-            "--port",
-            port,
-        ]
-        if model_path:
-            command.extend(["--model", model_path])
-        if additional_args_str:
-            command.extend(shlex.split(additional_args_str))
-
-        log_output_widget.clear()
-        log_output_widget.write(f"Executing: {' '.join(command)}\n")
-
-        app.run_worker(
-            run_vllm_server_worker,
-            args=[app, command],
-            group="vllm_server",
-            description="Running vLLM API server",
-            exclusive=True,
-            done=lambda w: app.call_from_thread(
-                stream_worker_output_to_log, app, w, "#vllm-log-output"
-            ),
-        )
-        app.notify("vLLM server starting…")
-    except Exception as err:  # pragma: no cover
-        logger.error("Error preparing to start vLLM server: %s", err, exc_info=True)
-        app.notify("Error setting up vLLM server start.", severity="error")
-
-
-async def handle_stop_vllm_server_button_pressed(app: "TldwCli") -> None:
-    """Stops the vLLM server process if it's running."""
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.info("User requested to stop vLLM server.")
-
-    log_output_widget = app.query_one("#vllm-log-output", RichLog)
-
-    if hasattr(app, "vllm_server_process") and app.vllm_server_process:
-        process = app.vllm_server_process
-        if process.poll() is None:  # Process is running
-            logger.info(f"Stopping vLLM server process (PID: {process.pid}).")
-            log_output_widget.write(f"Stopping vLLM server (PID: {process.pid})...\n")
-            process.terminate()  # or process.kill()
-            try:
-                process.wait(timeout=10)  # Wait for up to 10 seconds
-                logger.info("vLLM server process terminated.")
-                log_output_widget.write("vLLM server stopped.\n")
-                app.notify("vLLM server stopped.")
-            except subprocess.TimeoutExpired:
-                logger.warning("Timeout waiting for vLLM server to terminate. Killing.")
-                log_output_widget.write("vLLM server did not stop gracefully, killing...\n")
-                process.kill()
-                process.wait() # Ensure it's killed
-                log_output_widget.write("vLLM server killed.\n")
-                app.notify("vLLM server killed after timeout.", severity="warning")
-            except Exception as e: # pylint: disable=broad-except
-                logger.error(f"Error during vLLM server termination: {e}", exc_info=True)
-                log_output_widget.write(f"Error stopping vLLM server: {e}\n")
-                app.notify(f"Error stopping vLLM server: {e}", severity="error")
-            finally:
-                app.vllm_server_process = None
-        else:
-            logger.info("vLLM server process was found but is not running.")
-            log_output_widget.write("vLLM server is not currently running.\n")
-            app.notify("vLLM server is not running.", severity="warning")
-            app.vllm_server_process = None # Clear the stale process reference
-    else:
-        logger.info("No vLLM server process found to stop.")
-        log_output_widget.write("vLLM server is not currently running.\n")
-        app.notify("vLLM server is not running.", severity="warning")
-
-
-###############################################################################
 # ─── Model download UI helpers ──────────────────────────────────────────────
 ###############################################################################
 
@@ -667,6 +496,7 @@ async def handle_stop_vllm_server_button_pressed(app: "TldwCli") -> None:
 async def handle_browse_models_dir_button_pressed(app: "TldwCli") -> None:
     """Open a directory picker so the user can choose the *models* directory."""
 
+    # FIXME
     await app.push_screen(
         FileOpen(
             location=str(Path.home()),
@@ -737,408 +567,7 @@ async def handle_start_model_download_button_pressed(app: "TldwCli") -> None:
         app.notify("Error setting up model download.", severity="error")
 
 
-###############################################################################
-# ─── Ollama UI helpers ──────────────────────────────────────────────────────
-###############################################################################
 
-
-async def handle_ollama_nav_button_pressed(app: "TldwCli") -> None:
-    """Handle the Ollama navigation button press."""
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.debug("Ollama nav button pressed.")
-
-    try:
-        content_pane = app.query_one("#llm-content-pane", Container)
-        view_areas = content_pane.query(".llm-view-area")
-
-        for view in view_areas:
-            if view.id:  # Only hide if it has an ID
-                logger.debug(f"Hiding view #{view.id}")
-                view.styles.display = "none"
-            else: # pragma: no cover
-                logger.warning("Found a .llm-view-area without an ID, not hiding it.")
-
-        ollama_view = app.query_one("#llm-view-ollama", Container)
-        logger.debug(f"Showing view #{ollama_view.id}")
-        ollama_view.styles.display = "block"
-
-        # Clear/initialize Ollama specific fields
-        try:
-            # Input fields for actions
-            app.query_one("#ollama-show-model-name", Input).value = ""
-            app.query_one("#ollama-delete-model-name", Input).value = ""
-            app.query_one("#ollama-copy-source-model", Input).value = ""
-            app.query_one("#ollama-copy-destination-model", Input).value = ""
-            app.query_one("#ollama-pull-model-name", Input).value = ""
-            app.query_one("#ollama-create-model-name", Input).value = ""
-            app.query_one("#ollama-create-modelfile-path", Input).value = ""
-            app.query_one("#ollama-push-model-name", Input).value = ""
-            app.query_one("#ollama-embeddings-model-name", Input).value = ""
-            app.query_one("#ollama-embeddings-prompt", Input).value = ""
-
-            # Output TextAreas
-            app.query_one("#ollama-list-models-output", TextArea).clear()
-            app.query_one("#ollama-show-model-output", TextArea).clear()
-            app.query_one("#ollama-embeddings-output", TextArea).clear()
-            app.query_one("#ollama-ps-output", TextArea).clear()
-
-            # Main log output
-            log_output = app.query_one("#ollama-log-output", RichLog)
-            log_output.clear()
-            log_output.write("Switched to Ollama view. Output log cleared.")
-
-        except QueryError as qe: # pragma: no cover
-            logger.warning(f"Ollama UI clear: Could not find one or more UI elements during view switch: {qe}")
-            app.notify("Warning: Some Ollama UI elements might not have been reset properly.", severity="warning")
-
-        logger.info("Switched to Ollama view and cleared/initialized fields.")
-        # app.notify("Switched to Ollama view.") # Optional notification
-
-    except QueryError as e: # pragma: no cover
-        logger.error(f"QueryError in handle_ollama_nav_button_pressed: {e}", exc_info=True)
-        app.notify("Error switching to Ollama view: Could not find required UI elements.", severity="error")
-    except Exception as e: # pragma: no cover
-        logger.error(f"Unexpected error in handle_ollama_nav_button_pressed: {e}", exc_info=True)
-        app.notify("An unexpected error occurred while switching to Ollama view.", severity="error")
-
-
-async def handle_ollama_list_models_button_pressed(app: "TldwCli") -> None:
-    """Handles the 'List Models' button press for Ollama."""
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.debug("Ollama 'List Models' button pressed.")
-    try:
-        base_url_input = app.query_one("#ollama-server-url", Input)
-        log_output_widget = app.query_one("#ollama-list-models-output", TextArea) # Changed to specific output
-        # general_log_widget = app.query_one("#ollama-log-output", RichLog) # For general messages
-
-        base_url = base_url_input.value.strip()
-        if not base_url:
-            app.notify("Ollama Server URL is required.", severity="error")
-            base_url_input.focus()
-            return
-
-        log_output_widget.clear()
-        # general_log_widget.write(f"Attempting to list models from: {base_url}")
-        # Placeholder for API call:
-        log_output_widget.write(f"Placeholder: Called ollama_list_local_models with base_url: {base_url}\nOutput will appear here.")
-        app.notify("Listing Ollama models (placeholder)...")
-    except QueryError as e: # pragma: no cover
-        logger.error(f"QueryError in handle_ollama_list_models_button_pressed: {e}", exc_info=True)
-        app.notify("Error accessing Ollama UI elements for listing models.", severity="error")
-    except Exception as e: # pragma: no cover
-        logger.error(f"Unexpected error in handle_ollama_list_models_button_pressed: {e}", exc_info=True)
-        app.notify("An unexpected error occurred while listing Ollama models.", severity="error")
-
-
-async def handle_ollama_show_model_button_pressed(app: "TldwCli") -> None:
-    """Handles the 'Show Model Info' button press for Ollama."""
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.debug("Ollama 'Show Model Info' button pressed.")
-    try:
-        base_url_input = app.query_one("#ollama-server-url", Input)
-        model_name_input = app.query_one("#ollama-show-model-name", Input)
-        log_output_widget = app.query_one("#ollama-show-model-output", TextArea)
-        # general_log_widget = app.query_one("#ollama-log-output", RichLog)
-
-        base_url = base_url_input.value.strip()
-        model_name = model_name_input.value.strip()
-
-        if not base_url:
-            app.notify("Ollama Server URL is required.", severity="error")
-            base_url_input.focus()
-            return
-        if not model_name:
-            app.notify("Model name is required to show info.", severity="error")
-            model_name_input.focus()
-            return
-
-        log_output_widget.clear()
-        # general_log_widget.write(f"Attempting to show info for model: {model_name} from {base_url}")
-        # Placeholder for API call:
-        log_output_widget.write(f"Placeholder: Called ollama_model_info for model: {model_name} at base_url: {base_url}\nDetails will appear here.")
-        app.notify(f"Fetching info for {model_name} (placeholder)...")
-    except QueryError as e: # pragma: no cover
-        logger.error(f"QueryError in handle_ollama_show_model_button_pressed: {e}", exc_info=True)
-        app.notify("Error accessing Ollama UI elements for showing model info.", severity="error")
-    except Exception as e: # pragma: no cover
-        logger.error(f"Unexpected error in handle_ollama_show_model_button_pressed: {e}", exc_info=True)
-        app.notify("An unexpected error occurred while showing model info.", severity="error")
-
-
-async def handle_ollama_delete_model_button_pressed(app: "TldwCli") -> None:
-    """Handles the 'Delete Model' button press for Ollama."""
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.debug("Ollama 'Delete Model' button pressed.")
-    try:
-        base_url_input = app.query_one("#ollama-server-url", Input)
-        model_name_input = app.query_one("#ollama-delete-model-name", Input)
-        log_output_widget = app.query_one("#ollama-log-output", RichLog) # General log for delete
-
-        base_url = base_url_input.value.strip()
-        model_name = model_name_input.value.strip()
-
-        if not base_url:
-            app.notify("Ollama Server URL is required.", severity="error")
-            base_url_input.focus()
-            return
-        if not model_name:
-            app.notify("Model name is required to delete.", severity="error")
-            model_name_input.focus()
-            return
-
-        log_output_widget.write(f"Attempting to delete model: {model_name} from {base_url}")
-        # Placeholder for API call:
-        log_output_widget.write(f"Placeholder: Called ollama_delete_model for model: {model_name} at base_url: {base_url}")
-        app.notify(f"Deleting model {model_name} (placeholder)...")
-        # After actual deletion, you might want to refresh the model list automatically
-        # await handle_ollama_list_models_button_pressed(app)
-    except QueryError as e: # pragma: no cover
-        logger.error(f"QueryError in handle_ollama_delete_model_button_pressed: {e}", exc_info=True)
-        app.notify("Error accessing Ollama UI elements for deleting model.", severity="error")
-    except Exception as e: # pragma: no cover
-        logger.error(f"Unexpected error in handle_ollama_delete_model_button_pressed: {e}", exc_info=True)
-        app.notify("An unexpected error occurred while deleting model.", severity="error")
-
-
-async def handle_ollama_copy_model_button_pressed(app: "TldwCli") -> None:
-    """Handles the 'Copy Model' button press for Ollama."""
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.debug("Ollama 'Copy Model' button pressed.")
-    try:
-        base_url_input = app.query_one("#ollama-server-url", Input)
-        source_model_input = app.query_one("#ollama-copy-source-model", Input)
-        dest_model_input = app.query_one("#ollama-copy-destination-model", Input)
-        log_output_widget = app.query_one("#ollama-log-output", RichLog)
-
-        base_url = base_url_input.value.strip()
-        source_model = source_model_input.value.strip()
-        dest_model = dest_model_input.value.strip()
-
-        if not base_url:
-            app.notify("Ollama Server URL is required.", severity="error")
-            base_url_input.focus()
-            return
-        if not source_model:
-            app.notify("Source model name is required for copy.", severity="error")
-            source_model_input.focus()
-            return
-        if not dest_model:
-            app.notify("Destination model name is required for copy.", severity="error")
-            dest_model_input.focus()
-            return
-
-        log_output_widget.write(f"Attempting to copy model: {source_model} to {dest_model} from {base_url}")
-        # Placeholder for API call:
-        log_output_widget.write(f"Placeholder: Called ollama_copy_model for source: {source_model}, destination: {dest_model} at base_url: {base_url}")
-        app.notify(f"Copying model {source_model} to {dest_model} (placeholder)...")
-    except QueryError as e: # pragma: no cover
-        logger.error(f"QueryError in handle_ollama_copy_model_button_pressed: {e}", exc_info=True)
-        app.notify("Error accessing Ollama UI elements for copying model.", severity="error")
-    except Exception as e: # pragma: no cover
-        logger.error(f"Unexpected error in handle_ollama_copy_model_button_pressed: {e}", exc_info=True)
-        app.notify("An unexpected error occurred while copying model.", severity="error")
-
-
-async def handle_ollama_pull_model_button_pressed(app: "TldwCli") -> None:
-    """Handles the 'Pull Model' button press for Ollama."""
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.debug("Ollama 'Pull Model' button pressed.")
-    try:
-        base_url_input = app.query_one("#ollama-server-url", Input)
-        model_name_input = app.query_one("#ollama-pull-model-name", Input)
-        log_output_widget = app.query_one("#ollama-log-output", RichLog)
-
-        base_url = base_url_input.value.strip()
-        model_name = model_name_input.value.strip()
-
-        if not base_url:
-            app.notify("Ollama Server URL is required.", severity="error")
-            base_url_input.focus()
-            return
-        if not model_name:
-            app.notify("Model name is required to pull.", severity="error")
-            model_name_input.focus()
-            return
-
-        log_output_widget.write(f"Attempting to pull model: {model_name} from {base_url}")
-        # Placeholder for API call (will use stream_log_callback):
-        log_output_widget.write(f"Placeholder: Called ollama_pull_model for model: {model_name} at base_url: {base_url}. Streaming logs here...")
-        app.notify(f"Pulling model {model_name} (placeholder)...")
-    except QueryError as e: # pragma: no cover
-        logger.error(f"QueryError in handle_ollama_pull_model_button_pressed: {e}", exc_info=True)
-        app.notify("Error accessing Ollama UI elements for pulling model.", severity="error")
-    except Exception as e: # pragma: no cover
-        logger.error(f"Unexpected error in handle_ollama_pull_model_button_pressed: {e}", exc_info=True)
-        app.notify("An unexpected error occurred while pulling model.", severity="error")
-
-
-async def handle_ollama_browse_modelfile_button_pressed(app: "TldwCli") -> None:
-    """Handles the 'Browse for Modelfile' button press for Ollama create model."""
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.debug("Ollama 'Browse for Modelfile' button pressed.")
-
-    # No specific filters for "Modelfile" by extension, so allow all files or common text files.
-    # Users should know what a Modelfile looks like.
-    modelfile_filters = Filters(
-        ("Modelfiles (Modelfile, *.txt)", lambda p: p.name.lower() == "modelfile" or p.suffix.lower() == ".txt"),
-        ("All files (*.*)", lambda p: True)
-    )
-    await app.push_screen(
-        FileOpen(
-            location=str(Path.cwd()), # Start in current working directory or user's preferred location
-            title="Select Modelfile",
-            filters=modelfile_filters,
-        ),
-        callback=_make_path_update_callback(app, "ollama-create-modelfile-path"),
-    )
-
-
-async def handle_ollama_create_model_button_pressed(app: "TldwCli") -> None:
-    """Handles the 'Create Model' button press for Ollama."""
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.debug("Ollama 'Create Model' button pressed.")
-    try:
-        base_url_input = app.query_one("#ollama-server-url", Input)
-        model_name_input = app.query_one("#ollama-create-model-name", Input)
-        modelfile_path_input = app.query_one("#ollama-create-modelfile-path", Input)
-        log_output_widget = app.query_one("#ollama-log-output", RichLog)
-
-        base_url = base_url_input.value.strip()
-        model_name = model_name_input.value.strip()
-        modelfile_path = modelfile_path_input.value.strip()
-
-        if not base_url:
-            app.notify("Ollama Server URL is required.", severity="error")
-            base_url_input.focus()
-            return
-        if not model_name:
-            app.notify("New model name is required for creation.", severity="error")
-            model_name_input.focus()
-            return
-        if not modelfile_path:
-            app.notify("Path to Modelfile is required for creation.", severity="error")
-            # modelfile_path_input.focus() # This is read-only, so focus the browse button indirectly or notify.
-            app.notify("Use 'Browse for Modelfile' to select a file.", severity="info")
-            return
-        if not Path(modelfile_path).is_file():
-            app.notify(f"Modelfile not found at: {modelfile_path}", severity="error")
-            # modelfile_path_input.focus()
-            return
-
-
-        log_output_widget.write(f"Attempting to create model: {model_name} using Modelfile: {modelfile_path} from {base_url}")
-        # Placeholder for API call (will use stream_log_callback):
-        log_output_widget.write(f"Placeholder: Called ollama_create_model for model: {model_name}, path: {modelfile_path} at base_url: {base_url}. Streaming logs here...")
-        app.notify(f"Creating model {model_name} (placeholder)...")
-    except QueryError as e: # pragma: no cover
-        logger.error(f"QueryError in handle_ollama_create_model_button_pressed: {e}", exc_info=True)
-        app.notify("Error accessing Ollama UI elements for creating model.", severity="error")
-    except Exception as e: # pragma: no cover
-        logger.error(f"Unexpected error in handle_ollama_create_model_button_pressed: {e}", exc_info=True)
-        app.notify("An unexpected error occurred while creating model.", severity="error")
-
-
-async def handle_ollama_push_model_button_pressed(app: "TldwCli") -> None:
-    """Handles the 'Push Model' button press for Ollama."""
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.debug("Ollama 'Push Model' button pressed.")
-    try:
-        base_url_input = app.query_one("#ollama-server-url", Input)
-        model_name_input = app.query_one("#ollama-push-model-name", Input)
-        log_output_widget = app.query_one("#ollama-log-output", RichLog)
-
-        base_url = base_url_input.value.strip()
-        model_name = model_name_input.value.strip()
-
-        if not base_url:
-            app.notify("Ollama Server URL is required.", severity="error")
-            base_url_input.focus()
-            return
-        if not model_name:
-            app.notify("Model name is required to push.", severity="error")
-            model_name_input.focus()
-            return
-
-        log_output_widget.write(f"Attempting to push model: {model_name} from {base_url}")
-        # Placeholder for API call (will use stream_log_callback):
-        log_output_widget.write(f"Placeholder: Called ollama_push_model for model: {model_name} at base_url: {base_url}. Streaming logs here...")
-        app.notify(f"Pushing model {model_name} (placeholder)...")
-    except QueryError as e: # pragma: no cover
-        logger.error(f"QueryError in handle_ollama_push_model_button_pressed: {e}", exc_info=True)
-        app.notify("Error accessing Ollama UI elements for pushing model.", severity="error")
-    except Exception as e: # pragma: no cover
-        logger.error(f"Unexpected error in handle_ollama_push_model_button_pressed: {e}", exc_info=True)
-        app.notify("An unexpected error occurred while pushing model.", severity="error")
-
-
-async def handle_ollama_embeddings_button_pressed(app: "TldwCli") -> None:
-    """Handles the 'Generate Embeddings' button press for Ollama."""
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.debug("Ollama 'Generate Embeddings' button pressed.")
-    try:
-        base_url_input = app.query_one("#ollama-server-url", Input)
-        model_name_input = app.query_one("#ollama-embeddings-model-name", Input)
-        prompt_input = app.query_one("#ollama-embeddings-prompt", Input)
-        embeddings_output_widget = app.query_one("#ollama-embeddings-output", TextArea)
-        # general_log_widget = app.query_one("#ollama-log-output", RichLog)
-
-
-        base_url = base_url_input.value.strip()
-        model_name = model_name_input.value.strip()
-        prompt = prompt_input.value.strip()
-
-        if not base_url:
-            app.notify("Ollama Server URL is required.", severity="error")
-            base_url_input.focus()
-            return
-        if not model_name:
-            app.notify("Model name is required for embeddings.", severity="error")
-            model_name_input.focus()
-            return
-        if not prompt:
-            app.notify("Prompt is required for embeddings.", severity="error")
-            prompt_input.focus()
-            return
-
-        embeddings_output_widget.clear()
-        # general_log_widget.write(f"Attempting to generate embeddings for model: {model_name} with prompt: '{prompt[:30]}...' from {base_url}")
-        # Placeholder for API call:
-        embeddings_output_widget.write(f"Placeholder: Called ollama_generate_embeddings for model: {model_name}, prompt: '{prompt}' at base_url: {base_url}\nEmbeddings will appear here.")
-        app.notify(f"Generating embeddings with {model_name} (placeholder)...")
-    except QueryError as e: # pragma: no cover
-        logger.error(f"QueryError in handle_ollama_embeddings_button_pressed: {e}", exc_info=True)
-        app.notify("Error accessing Ollama UI elements for generating embeddings.", severity="error")
-    except Exception as e: # pragma: no cover
-        logger.error(f"Unexpected error in handle_ollama_embeddings_button_pressed: {e}", exc_info=True)
-        app.notify("An unexpected error occurred while generating embeddings.", severity="error")
-
-
-async def handle_ollama_ps_button_pressed(app: "TldwCli") -> None:
-    """Handles the 'List Running Models (ps)' button press for Ollama."""
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.debug("Ollama 'List Running Models (ps)' button pressed.")
-    try:
-        base_url_input = app.query_one("#ollama-server-url", Input)
-        ps_output_widget = app.query_one("#ollama-ps-output", TextArea)
-        # general_log_widget = app.query_one("#ollama-log-output", RichLog)
-
-        base_url = base_url_input.value.strip()
-        if not base_url:
-            app.notify("Ollama Server URL is required.", severity="error")
-            base_url_input.focus()
-            return
-
-        ps_output_widget.clear()
-        # general_log_widget.write(f"Attempting to list running models (ps) from: {base_url}")
-        # Placeholder for API call:
-        ps_output_widget.write(f"Placeholder: Called ollama_list_running_models at base_url: {base_url}\nOutput will appear here.")
-        app.notify("Listing running Ollama models (ps) (placeholder)...")
-    except QueryError as e: # pragma: no cover
-        logger.error(f"QueryError in handle_ollama_ps_button_pressed: {e}", exc_info=True)
-        app.notify("Error accessing Ollama UI elements for listing running models.", severity="error")
-    except Exception as e: # pragma: no cover
-        logger.error(f"Unexpected error in handle_ollama_ps_button_pressed: {e}", exc_info=True)
-        app.notify("An unexpected error occurred while listing running models.", severity="error")
 
 
 ###############################################################################
@@ -1175,6 +604,7 @@ async def handle_mlx_lm_nav_button_pressed(app: "TldwCli") -> None:
         start_button = mlx_lm_view.query_one("#mlx-start-server-button", Button)
         stop_button = mlx_lm_view.query_one("#mlx-stop-server-button", Button)
 
+        # FIXME
         if app.mlx_server_process and app.mlx_server_process.poll() is None:
             # Server is likely running
             start_button.disabled = True
@@ -1250,6 +680,7 @@ async def handle_start_mlx_server_button_pressed(app: "TldwCli") -> None:
             port_input.focus()
             return
 
+        # FIXME
         if app.mlx_server_process and app.mlx_server_process.poll() is None:
             log_output_widget.write(f"MLX-LM server is already running (PID: {app.mlx_server_process.pid}).")
             app.notify("MLX-LM server is already running.", severity="warning")
@@ -1308,7 +739,7 @@ async def handle_stop_mlx_server_button_pressed(app: "TldwCli") -> None:
                 app.notify("MLX-LM server stopped.")
             else: # Process already terminated
                 log_output_widget.write(f"MLX-LM server (PID: {app.mlx_server_process.pid}) was already stopped.")
-                app.notify("MLX-LM server was already stopped.", severity="info")
+                app.notify("MLX-LM server was already stopped.", severity="information")
                 app.mlx_server_process = None # Clear the stale process object
         else:
             log_output_widget.write("MLX-LM server is not currently running or no process tracked.")

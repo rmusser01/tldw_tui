@@ -1185,7 +1185,7 @@ local-llm = ["None"] # Add if you have a specific local-llm provider entry
 provider = "DeepSeek"
 model = "deepseek-chat"
 system_prompt = "You are a helpful AI assistant."
-temperature = 1.3
+temperature = 0.6
 top_p = 0.95
 min_p = 0.05
 top_k = 50
@@ -1214,7 +1214,7 @@ try:
     DEFAULT_CONFIG_FROM_TOML: Dict[str, Any] = tomllib.loads(CONFIG_TOML_CONTENT)
 except tomllib.TOMLDecodeError as e:
     logger.critical(f"FATAL: Could not parse internal DEFAULT_CONFIG_TOML_CONTENT: {e}. Application cannot start correctly.")
-    DEFAULT_CONFIG_FROM_TOML: Dict[str, Any] = {} # Should not happen with valid TOML string
+    DEFAULT_CONFIG_FROM_TOML = {} # Should not happen with valid TOML string
 
 # --- Helper for deep merging dictionaries ---
 def deep_merge_dicts(base: Dict, update: Dict) -> Dict:

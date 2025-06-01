@@ -6,28 +6,32 @@ coroutines specifically for the **vLLM** back‑end in the
 
 This module isolates vLLM-specific logic from the main llm_management_events.py.
 """
+# Imports
 from __future__ import annotations
-
+#
 import logging
 import shlex
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional
-
-from textual.containers import Container
-from textual.css.query import QueryError
-from textual.worker import Worker, WorkerState
-from textual.widgets import Input, RichLog, TextArea, Button
-
+from typing import TYPE_CHECKING, List
+#
+# Third-party Libraries
+from textual.widgets import Input, RichLog, TextArea
 if TYPE_CHECKING:
     from ..app import TldwCli
     # Assuming LLMManagementWindow might be needed for type hints if methods are complex
     # from ..UI.LLM_Management_Window import LLMManagementWindow
-
+#
+# Local Imports
 # Imports for shared functions from the original events file
 from .llm_management_events import _make_path_update_callback, _stream_process, stream_worker_output_to_log
-# Import for FileOpen and Filters
 from ..Third_Party.textual_fspicker import FileOpen, Filters
+#
+#
+########################################################################################################################
+#
+# Functions:
+
 
 __all__ = [
     "handle_vllm_browse_python_button_pressed",
