@@ -12,6 +12,7 @@ from textual.widgets import Button, TextArea, Static
 # Local Imports
 from ..Widgets.notes_sidebar_left import NotesSidebarLeft
 from ..Widgets.notes_sidebar_right import NotesSidebarRight
+from ..Widgets.emoji_picker import EmojiSelected # Import EmojiSelected
 # from ..Constants import TAB_NOTES # Not strictly needed if IDs are hardcoded here
 #
 if TYPE_CHECKING:
@@ -42,6 +43,14 @@ class NotesWindow(Container):
                 yield Button("R ☰", id="toggle-notes-sidebar-right", classes="sidebar-toggle")
 
         yield NotesSidebarRight(id="notes-sidebar-right")
+
+    def on_emoji_picker_emoji_selected(self, message: EmojiSelected) -> None:
+        """Handles the EmojiSelected message from the EmojiPicker in the notes sidebar."""
+        if message.sender.id == "notes-emoji-picker": # Ensure it's from the correct picker
+            notes_editor = self.query_one("#notes-editor-area", TextArea)
+            notes_editor.insert_text_at_cursor(message.emoji)
+            notes_editor.focus()
+            message.stop()
 
 #
 # End of Notes_Window.py
