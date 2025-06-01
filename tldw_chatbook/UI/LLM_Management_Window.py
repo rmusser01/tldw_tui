@@ -134,11 +134,20 @@ class LLMManagementWindow(Container):
                 id="llm-view-download-models",
                 classes="llm-view-area",
             )
-            yield Container(
-                Static("MLX-LM Management Area - Content Coming Soon!"),
-                id="llm-view-mlx-lm",
-                classes="llm-view-area",
-            )
+            with Container(id="llm-view-mlx-lm", classes="llm-view-area"):
+                with VerticalScroll():
+                    yield Label("MLX Model Path (HuggingFace ID or local path):", classes="label")
+                    yield Input(id="mlx-model-path", placeholder="e.g., mlx-community/Nous-Hermes-2-Mistral-7B-DPO-4bit-MLX", classes="input_field")
+                    yield Label("Host:", classes="label")
+                    yield Input(id="mlx-host", value="127.0.0.1", classes="input_field")
+                    yield Label("Port:", classes="label")
+                    yield Input(id="mlx-port", value="8080", classes="input_field")
+                    yield Label("Additional Server Arguments:", classes="label")
+                    yield TextArea(id="mlx-additional-args", classes="additional_args_textarea", language="bash", theme="vscode_dark")
+                    with Container(classes="button_container"):
+                        yield Button("Start MLX Server", id="mlx-start-server-button", classes="action_button")
+                        yield Button("Stop MLX Server", id="mlx-stop-server-button", classes="action_button")
+                    yield RichLog(id="mlx-log-output", classes="log_output", wrap=True, highlight=True)
             yield Container(
                 Static("Ollama Management Area - Content Coming Soon!"),
                 id="llm-view-ollama",

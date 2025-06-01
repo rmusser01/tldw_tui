@@ -31,3 +31,34 @@
 - **`tldw_chatbook/Config.py`**: Contains all configuration settings for the application, including API keys, database paths, and other settings.
 - **`tldw_chatbook/Constants.py`**: Contains all constants used throughout the application, such as default values and error messages.
 - **`tldw_chatbook/Logging_Config.py`**: Contains the logging configuration for the application, setting up loggers, handlers, and formatters.
+
+
+
+
+
+## LLM Backend Integrations
+
+This section details the various Large Language Model (LLM) inference backends integrated into `tldw_chatbook`.
+
+### Llama.cpp Integration
+
+### Llamafile Integration
+
+### Ollama Integration
+
+### vLLM Integration
+
+### Transformers Integration
+
+### ONNX Runtime Integration
+
+### MLX-LM Integration
+
+The application now supports MLX-LM for running local language models optimized for Apple Silicon hardware.
+Users can manage MLX-LM instances via the "LLM Management" tab, allowing configuration of:
+
+*   **Model Path**: Specify a HuggingFace model ID compatible with MLX or a path to a local MLX model.
+*   **Server Host & Port**: Configure the network address for the MLX-LM server.
+*   **Additional Arguments**: Pass extra command-line arguments to the `mlx_lm.server` process.
+
+The integration starts a local `mlx_lm.server` process and interacts with it, assuming an OpenAI-compatible API endpoint (typically at `/v1`). This allows for efficient local inference leveraging MLX's performance benefits on supported hardware.

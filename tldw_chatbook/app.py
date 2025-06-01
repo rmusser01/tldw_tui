@@ -62,6 +62,7 @@ from .Event_Handlers import (
     tab_events as tab_handlers,
     sidebar_events as sidebar_handlers,
     chat_events as chat_handlers,
+    chat_events,
     conv_char_events as ccp_handlers,
     media_events as media_handlers,
     notes_events as notes_handlers,
@@ -2034,29 +2035,72 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         if current_active_tab == TAB_CHAT:
             action_widget = self._get_chat_message_widget_from_button(button)
             if action_widget:
+                # Specific buttons within ChatMessage take precedence
+                if button_id == "continue-response-button":
+                    self.loguru_logger.info(f"Continue Response button ({button_id}) pressed in ChatMessage. Calling handler.")
+                    self.call_later(chat_events.handle_continue_response_button_pressed, self, button, action_widget) # Corrected call_later
+                    return
+                # Fallback to generic action button handler for other buttons in ChatMessage
                 self.loguru_logger.debug(
-                    f"Button (ID: {button_id}, Label: '{button.label}') identified as part of ChatMessage. Delegating to chat_actions.")
+                    f"Button (ID: {button_id}, Label: '{button.label}') identified as part of ChatMessage. Delegating to generic chat_actions.")
                 await chat_handlers.handle_chat_action_button_pressed(self, button, action_widget)
                 return
-            if button_id == "send-chat": await chat_handlers.handle_chat_send_button_pressed(self, TAB_CHAT)
-            elif button_id == "chat-new-conversation-button": await chat_handlers.handle_chat_new_conversation_button_pressed(self)
-            elif button_id == "chat-new-temp-chat-button": await chat_handlers.handle_chat_new_conversation_button_pressed(self) # Reuses existing handler
-            elif button_id == "chat-save-current-chat-button": await chat_handlers.handle_chat_save_current_chat_button_pressed(self)
-            elif button_id == "chat-save-conversation-details-button": await chat_handlers.handle_chat_save_details_button_pressed(self)
-            elif button_id == "chat-conversation-load-selected-button": await chat_handlers.handle_chat_load_selected_button_pressed(self)
-            elif button_id == "chat-prompt-load-selected-button": await chat_handlers.handle_chat_view_selected_prompt_button_pressed(self)
-            elif button_id == "chat-prompt-copy-system-button": await chat_handlers.handle_chat_copy_system_prompt_button_pressed(self)
-            elif button_id == "chat-prompt-copy-user-button": await chat_handlers.handle_chat_copy_user_prompt_button_pressed(self)
-            elif button_id == "chat-load-character-button": await chat_handlers.handle_chat_load_character_button_pressed(self, event) # Pass event if needed by handler
-            elif button_id == "chat-clear-active-character-button": # Ensure this exact line exists
+
+            # Buttons directly in the ChatWindow, not inside a ChatMessage
+            if button_id == "send-chat":
+                await chat_handlers.handle_chat_send_button_pressed(self, TAB_CHAT)
+                return
+            elif button_id == "respond-for-me-button": # New handler for Respond For Me
+                self.loguru_logger.info(f"Respond For Me button ({button_id}) pressed. Calling handler.")
+                self.call_later(chat_events.handle_respond_for_me_button_pressed, self) # Corrected call_later usage
+                return
+            elif button_id == "chat-new-conversation-button":
+                await chat_handlers.handle_chat_new_conversation_button_pressed(self)
+                return
+            elif button_id == "chat-new-temp-chat-button":
+                await chat_handlers.handle_chat_new_conversation_button_pressed(self) # Reuses existing handler
+                return
+            elif button_id == "chat-save-current-chat-button":
+                await chat_handlers.handle_chat_save_current_chat_button_pressed(self)
+                return
+            elif button_id == "chat-save-conversation-details-button":
+                await chat_handlers.handle_chat_save_details_button_pressed(self)
+                return
+            elif button_id == "chat-conversation-load-selected-button":
+                await chat_handlers.handle_chat_load_selected_button_pressed(self)
+                return
+            elif button_id == "chat-prompt-load-selected-button":
+                await chat_handlers.handle_chat_view_selected_prompt_button_pressed(self)
+                return
+            elif button_id == "chat-prompt-copy-system-button":
+                await chat_handlers.handle_chat_copy_system_prompt_button_pressed(self)
+                return
+            elif button_id == "chat-prompt-copy-user-button":
+                await chat_handlers.handle_chat_copy_user_prompt_button_pressed(self)
+                return
+            elif button_id == "chat-load-character-button":
+                await chat_handlers.handle_chat_load_character_button_pressed(self, event) # Pass event if needed by handler
+                return
+            elif button_id == "chat-clear-active-character-button":
                 await chat_handlers.handle_chat_clear_active_character_button_pressed(self)
+                return
             # --- Chat Tab Notes Sidebar Buttons ---
             # These are handled by @on decorators, so we just acknowledge them here to prevent "unhandled" warnings.
-            elif button_id == "chat-notes-create-new-button": self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
-            elif button_id == "chat-notes-search-button": self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
-            elif button_id == "chat-notes-load-button": self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
-            elif button_id == "chat-notes-save-button": self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
+            elif button_id == "chat-notes-create-new-button":
+                self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
+                return # Assuming @on handles it fully
+            elif button_id == "chat-notes-search-button":
+                self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
+                return # Assuming @on handles it fully
+            elif button_id == "chat-notes-load-button":
+                self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
+                return # Assuming @on handles it fully
+            elif button_id == "chat-notes-save-button":
+                self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
+                return # Assuming @on handles it fully
+            # No return after the final else, so it can fall through to the generic unhandled warning
             else: self.loguru_logger.warning(f"Unhandled button on CHAT tab -> ID: {button_id}, Label: '{button.label}'")
+            # No return here, let it fall through if it was an unhandled button on CHAT tab
 
         elif current_active_tab == TAB_CCP:
             # ---- First, try to identify if it's an action button within a ChatMessage (if CCP tab uses them) ----

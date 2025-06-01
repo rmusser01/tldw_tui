@@ -6,6 +6,7 @@
 ####
 import json
 import os
+import subprocess
 from typing import Any, Generator, Union, Dict, Optional, List
 
 import requests
@@ -1333,6 +1334,109 @@ def save_summary_to_file(summary: str, file_path: str): # Type hinting
 
 #
 #
+#######################################################################################################################
+
+
+def chat_with_mlx_lm(
+    input_data: List[Dict[str, Any]],
+    model: Optional[str] = None, # This will be the model_path for MLX-LM
+    temp: Optional[float] = None,
+    system_message: Optional[str] = None,
+    streaming: Optional[bool] = False,
+    max_tokens: Optional[int] = None,
+    top_p: Optional[float] = None,
+    api_url: Optional[str] = None, # If passed, overrides config for base URL
+    **kwargs: Any # To catch any other params from API_CALL_HANDLERS
+) -> Union[Dict[str, Any], Generator[str, None, None]]:
+    """
+    Sends a chat request to a running MLX-LM server (assumed OpenAI compatible).
+    """
+    provider_name = "MLX-LM"
+    logging.debug(f"{provider_name}: Chat request initiated.")
+
+    # --- Settings Load ---
+    api_settings_table = settings.get('api_settings', {})
+    mlx_cfg = api_settings_table.get('mlx_lm', {})
+
+    current_model_path = model or mlx_cfg.get('model_path') or mlx_cfg.get('model')
+    if not current_model_path:
+        raise ChatConfigurationError(
+            provider=provider_name,
+            message="MLX-LM model path (model_path or model in config) is required and could not be determined."
+        )
+
+    if api_url:
+        current_api_base_url = api_url.rstrip('/')
+    else:
+        host = mlx_cfg.get('host', '127.0.0.1')
+        port = mlx_cfg.get('port', 8080) # Default port for MLX server is 8080
+        # Default endpoint for OpenAI compatibility in mlx-lm is /v1
+        current_api_base_url = f"http://{host}:{str(port)}/v1"
+
+    current_temp = temp if temp is not None else float(mlx_cfg.get('temperature', 0.7))
+    current_streaming_cfg = mlx_cfg.get('streaming', False)
+    current_streaming = streaming if streaming is not None else (current_streaming_cfg if isinstance(current_streaming_cfg, bool) else str(current_streaming_cfg).lower() == 'true')
+    current_max_tokens = max_tokens if max_tokens is not None else int(mlx_cfg.get('max_tokens', 2048))
+    current_top_p = top_p if top_p is not None else float(mlx_cfg.get('top_p', 1.0)) # mlx-lm server default top_p is 1.0
+
+    # Extract other OpenAI compatible parameters from kwargs or mlx_cfg
+    # Prioritize kwargs (from direct call) then mlx_cfg (from settings)
+    current_seed = kwargs.get('seed', mlx_cfg.get('seed'))
+    current_stop = kwargs.get('stop', mlx_cfg.get('stop'))
+    current_response_format = kwargs.get('response_format', mlx_cfg.get('response_format'))
+    current_top_k = kwargs.get('top_k', mlx_cfg.get('top_k'))
+    # min_p is not a standard mlx-lm server param, but can be passed if user configured it
+    current_min_p = kwargs.get('min_p', mlx_cfg.get('min_p'))
+    current_presence_penalty = kwargs.get('presence_penalty', mlx_cfg.get('presence_penalty'))
+    current_frequency_penalty = kwargs.get('frequency_penalty', mlx_cfg.get('frequency_penalty'))
+    current_logit_bias = kwargs.get('logit_bias', mlx_cfg.get('logit_bias'))
+    current_user_identifier = kwargs.get('user_identifier', mlx_cfg.get('user_identifier', mlx_cfg.get('user')))
+    current_logprobs = kwargs.get('logprobs', mlx_cfg.get('logprobs'))
+    current_top_logprobs = kwargs.get('top_logprobs', mlx_cfg.get('top_logprobs'))
+    current_tools = kwargs.get('tools', mlx_cfg.get('tools'))
+    current_tool_choice = kwargs.get('tool_choice', mlx_cfg.get('tool_choice'))
+
+
+    timeout = int(mlx_cfg.get('api_timeout', 120))
+    api_retries = int(mlx_cfg.get('api_retries', 1))
+    api_retry_delay = int(mlx_cfg.get('api_retry_delay', 1))
+
+    if isinstance(current_streaming, str): current_streaming = current_streaming.lower() == "true"
+    if isinstance(current_logprobs, str): current_logprobs = current_logprobs.lower() == "true"
+
+
+    logging.debug(f"{provider_name}: Using API base: {current_api_base_url}, Model (path): {current_model_path}")
+
+    return _chat_with_openai_compatible_local_server(
+        api_base_url=current_api_base_url,
+        model_name=current_model_path,
+        input_data=input_data,
+        api_key=None, # MLX-LM server doesn't use API keys by default
+        temp=current_temp,
+        system_message=system_message,
+        streaming=current_streaming,
+        max_tokens=current_max_tokens,
+        top_p=current_top_p,
+        top_k=current_top_k,
+        min_p=current_min_p,
+        n=kwargs.get('n', mlx_cfg.get('n')), # 'n' for number of choices
+        stop=current_stop,
+        presence_penalty=current_presence_penalty,
+        frequency_penalty=current_frequency_penalty,
+        logit_bias=current_logit_bias,
+        seed=current_seed,
+        response_format=current_response_format,
+        tools=current_tools,
+        tool_choice=current_tool_choice,
+        logprobs=current_logprobs,
+        top_logprobs=current_top_logprobs,
+        user_identifier=current_user_identifier,
+        provider_name=provider_name,
+        timeout=timeout,
+        api_retries=api_retries,
+        api_retry_delay=api_retry_delay
+    )
+
 #######################################################################################################################
 
 

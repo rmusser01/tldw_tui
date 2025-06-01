@@ -1901,6 +1901,577 @@ async def handle_chat_sidebar_prompt_search_changed(
     logger.info(f"[Prompts] Search '{search_term}' → {len(prompts)} results.")
 
 
+async def handle_continue_response_button_pressed(app: 'TldwCli', button: Button, message_widget: ChatMessage) -> None:
+    """Handles the 'Continue Response' button press on an AI chat message."""
+    loguru_logger.info(f"Continue Response button pressed for message_id: {message_widget.message_id_internal}, current text: '{message_widget.message_text[:50]}...'")
+    db = app.chachanotes_db
+    prefix = "chat" # Assuming 'chat' is the prefix for UI elements in the main chat window
+
+    continue_button_widget: Optional[Button] = None
+    original_button_label: Optional[str] = None
+    static_text_widget: Optional[Static] = None
+    original_display_text_obj: Optional[Union[str, Text]] = None # renderable can be str or Text
+
+    try:
+        # Ensure we are targeting the correct button on the specific message_widget instance
+        # The 'button' argument is the button that was pressed.
+        continue_button_widget = button # This IS the button that was pressed.
+        original_button_label = continue_button_widget.label
+        continue_button_widget.disabled = True
+        continue_button_widget.label = get_char(EMOJI_THINKING, FALLBACK_THINKING) # "⏳" or similar
+
+        static_text_widget = message_widget.query_one(".message-text", Static)
+        original_display_text_obj = static_text_widget.renderable # Save the original renderable (Text object or str)
+    except QueryError as qe:
+        loguru_logger.error(f"Error querying essential UI component for continuation: {qe}", exc_info=True)
+        app.notify("Error initializing continuation: UI component missing.", severity="error")
+        if continue_button_widget and original_button_label: # Attempt to restore button if found
+            continue_button_widget.disabled = False
+            continue_button_widget.label = original_button_label
+        return
+    except Exception as e_init: # Catch any other init error
+        loguru_logger.error(f"Unexpected error during continue response initialization: {e_init}", exc_info=True)
+        app.notify("Unexpected error starting continuation.", severity="error")
+        if continue_button_widget and original_button_label:
+            continue_button_widget.disabled = False
+            continue_button_widget.label = original_button_label
+        if static_text_widget and original_display_text_obj: # Restore text if changed
+             static_text_widget.update(original_display_text_obj)
+        return
+
+    original_message_text = message_widget.message_text # Raw text content
+    original_message_version = message_widget.message_version_internal
+
+    # --- 1. Retrieve History for API ---
+    # History should include the message being continued, as the LLM needs its content.
+    history_for_api: List[Dict[str, Any]] = []
+    chat_log: Optional[VerticalScroll] = None
+    try:
+        chat_log = app.query_one(f"#{prefix}-log", VerticalScroll)
+        all_messages_in_log = list(chat_log.query(ChatMessage))
+
+        for msg_w in all_messages_in_log:
+            # Map UI role to API role (user/assistant)
+            # Allow for character names to be mapped to "assistant"
+            api_role = "user" if msg_w.role == "User" else "assistant"
+
+            if msg_w.generation_complete or msg_w is message_widget: # Include incomplete target message
+                content_for_api = msg_w.message_text
+                history_for_api.append({"role": api_role, "content": content_for_api})
+
+            if msg_w is message_widget: # Stop after adding the target message
+                break
+
+        if not any(msg_info['content'] == original_message_text and msg_info['role'] == 'assistant' for msg_info in history_for_api):
+             loguru_logger.warning("Target message for continuation not found in constructed history. This is unexpected.")
+             # This might indicate an issue with message_widget identity or history construction logic.
+
+        loguru_logger.debug(f"Built history for API continuation with {len(history_for_api)} messages. Last message is the one to continue.")
+
+    except QueryError as e:
+        loguru_logger.error(f"Continue Response: Could not find UI elements for history: {e}", exc_info=True)
+        app.notify("Error: Chat log or other UI element not found.", severity="error")
+        if continue_button_widget: continue_button_widget.disabled = False; continue_button_widget.label = original_button_label
+        if static_text_widget: static_text_widget.update(original_display_text_obj)
+        return
+    except Exception as e_hist:
+        loguru_logger.error(f"Error building history for continuation: {e_hist}", exc_info=True)
+        app.notify("Error preparing message history for continuation.", severity="error")
+        if continue_button_widget: continue_button_widget.disabled = False; continue_button_widget.label = original_button_label
+        if static_text_widget: static_text_widget.update(original_display_text_obj)
+        return
+
+    # --- 2. LLM Call Preparation ---
+    thinking_indicator_suffix = f" ... {get_char(EMOJI_THINKING, FALLBACK_THINKING)}"
+    try:
+        # Display thinking indicator by updating the Static widget.
+        # original_display_text_obj might be a Text object, ensure we append str to str or Text to Text
+        if isinstance(original_display_text_obj, Text):
+            # Create a new Text object if the original was Text
+            text_with_indicator = original_display_text_obj.copy()
+            text_with_indicator.append(thinking_indicator_suffix)
+            static_text_widget.update(text_with_indicator)
+        else: # Assuming str
+            static_text_widget.update(original_message_text + thinking_indicator_suffix)
+
+    except Exception as e_indicator: # Non-critical if this fails
+        loguru_logger.warning(f"Could not update message with thinking indicator: {e_indicator}", exc_info=True)
+
+    # Prompt for the LLM to continue the last message in the history
+    continuation_prompt_instruction = (
+        "The last message in this conversation is from you (assistant). "
+        "Please continue generating the response for that message. "
+        "Only provide the additional text; do not repeat any part of the existing message, "
+        "and do not add any conversational filler, apologies, or introductory phrases. "
+        "Directly continue from where the last message ended."
+    )
+    # Note: The actual message to be continued is already the last one in `history_for_api`.
+    # The `message` parameter to `chat_wrapper` will be this instruction.
+
+    # --- 3. Fetch Chat Parameters & API Key ---
+    try:
+        provider_widget = app.query_one(f"#{prefix}-api-provider", Select)
+        model_widget = app.query_one(f"#{prefix}-api-model", Select)
+        system_prompt_widget = app.query_one(f"#{prefix}-system-prompt", TextArea) # Main system prompt from left sidebar
+        temp_widget = app.query_one(f"#{prefix}-temperature", Input)
+        top_p_widget = app.query_one(f"#{prefix}-top-p", Input)
+        min_p_widget = app.query_one(f"#{prefix}-min-p", Input)
+        top_k_widget = app.query_one(f"#{prefix}-top-k", Input)
+        llm_max_tokens_widget = app.query_one(f"#{prefix}-llm-max-tokens", Input)
+        llm_seed_widget = app.query_one(f"#{prefix}-llm-seed", Input)
+        llm_stop_widget = app.query_one(f"#{prefix}-llm-stop", Input)
+        llm_response_format_widget = app.query_one(f"#{prefix}-llm-response-format", Select)
+        llm_n_widget = app.query_one(f"#{prefix}-llm-n", Input)
+        llm_user_identifier_widget = app.query_one(f"#{prefix}-llm-user-identifier", Input)
+        llm_logprobs_widget = app.query_one(f"#{prefix}-llm-logprobs", Checkbox)
+        llm_top_logprobs_widget = app.query_one(f"#{prefix}-llm-top-logprobs", Input)
+        llm_logit_bias_widget = app.query_one(f"#{prefix}-llm-logit-bias", TextArea)
+        llm_presence_penalty_widget = app.query_one(f"#{prefix}-llm-presence-penalty", Input)
+        llm_frequency_penalty_widget = app.query_one(f"#{prefix}-llm-frequency-penalty", Input)
+        llm_tools_widget = app.query_one(f"#{prefix}-llm-tools", TextArea)
+        llm_tool_choice_widget = app.query_one(f"#{prefix}-llm-tool-choice", Input)
+        llm_fixed_tokens_kobold_widget = app.query_one(f"#{prefix}-llm-fixed-tokens-kobold", Checkbox)
+    except QueryError as e:
+        loguru_logger.error(f"Continue Response: Could not find UI settings widgets for '{prefix}': {e}", exc_info=True)
+        app.notify("Error: Missing UI settings for continuation.", severity="error")
+        if static_text_widget: static_text_widget.update(original_display_text_obj) # Restore original text
+        if continue_button_widget: continue_button_widget.disabled = False; continue_button_widget.label = original_button_label
+        return
+
+    selected_provider = str(provider_widget.value) if provider_widget.value != Select.BLANK else None
+    selected_model = str(model_widget.value) if model_widget.value != Select.BLANK else None
+    temperature = safe_float(temp_widget.value, 0.7, "temperature")
+    top_p = safe_float(top_p_widget.value, 0.95, "top_p")
+    min_p = safe_float(min_p_widget.value, 0.05, "min_p")
+    top_k = safe_int(top_k_widget.value, 50, "top_k")
+    llm_max_tokens_value = safe_int(llm_max_tokens_widget.value, 1024, "llm_max_tokens")
+    llm_seed_value = safe_int(llm_seed_widget.value, None, "llm_seed")
+    llm_stop_value = [s.strip() for s in llm_stop_widget.value.split(',') if s.strip()] if llm_stop_widget.value.strip() else None
+    llm_response_format_value = {"type": str(llm_response_format_widget.value)} if llm_response_format_widget.value != Select.BLANK else {"type": "text"}
+    llm_n_value = safe_int(llm_n_widget.value, 1, "llm_n")
+    llm_user_identifier_value = llm_user_identifier_widget.value.strip() or None
+    llm_logprobs_value = llm_logprobs_widget.value
+    llm_top_logprobs_value = safe_int(llm_top_logprobs_widget.value, 0, "llm_top_logprobs") if llm_logprobs_value else 0
+    llm_presence_penalty_value = safe_float(llm_presence_penalty_widget.value, 0.0, "llm_presence_penalty")
+    llm_frequency_penalty_value = safe_float(llm_frequency_penalty_widget.value, 0.0, "llm_frequency_penalty")
+    llm_tool_choice_value = llm_tool_choice_widget.value.strip() or None
+    llm_fixed_tokens_kobold_value = llm_fixed_tokens_kobold_widget.value
+    try:
+        llm_logit_bias_text = llm_logit_bias_widget.text.strip()
+        llm_logit_bias_value = json.loads(llm_logit_bias_text) if llm_logit_bias_text and llm_logit_bias_text != "{}" else None
+    except json.JSONDecodeError: llm_logit_bias_value = None; loguru_logger.warning("Invalid JSON in llm_logit_bias for continuation.")
+    try:
+        llm_tools_text = llm_tools_widget.text.strip()
+        llm_tools_value = json.loads(llm_tools_text) if llm_tools_text and llm_tools_text != "[]" else None
+    except json.JSONDecodeError: llm_tools_value = None; loguru_logger.warning("Invalid JSON in llm_tools for continuation.")
+
+    # System Prompt (Active Character > UI)
+    final_system_prompt_for_api = system_prompt_widget.text # Default to UI's system prompt
+    if app.current_chat_active_character_data:
+        char_specific_system_prompt = app.current_chat_active_character_data.get('system_prompt')
+        if char_specific_system_prompt and char_specific_system_prompt.strip():
+            final_system_prompt_for_api = char_specific_system_prompt
+            loguru_logger.debug("Using active character's system prompt for continuation.")
+        else:
+            loguru_logger.debug("Active character has no system_prompt; using UI system prompt for continuation.")
+    else:
+        loguru_logger.debug("No active character; using UI system prompt for continuation.")
+
+    should_stream = True # Always stream for continuation for better UX
+    if selected_provider: # Log provider's normal streaming setting for info
+        provider_settings_key = selected_provider.lower().replace(" ", "_")
+        provider_specific_settings = app.app_config.get("api_settings", {}).get(provider_settings_key, {})
+        loguru_logger.debug(f"Provider {selected_provider} normally streams: {provider_specific_settings.get('streaming', False)}. Forcing stream for continuation.")
+
+    # API Key Fetching
+    api_key_for_call = None
+    if selected_provider:
+        provider_settings_key = selected_provider.lower().replace(" ", "_")
+        provider_config = app.app_config.get("api_settings", {}).get(provider_settings_key, {})
+        if "api_key" in provider_config and provider_config["api_key"] and provider_config["api_key"] != "<API_KEY_HERE>":
+            api_key_for_call = provider_config["api_key"]
+        elif "api_key_env_var" in provider_config and provider_config["api_key_env_var"]:
+            api_key_for_call = os.environ.get(provider_config["api_key_env_var"])
+
+    providers_requiring_key = ["OpenAI", "Anthropic", "Google", "MistralAI", "Groq", "Cohere", "OpenRouter", "HuggingFace", "DeepSeek"]
+    if selected_provider in providers_requiring_key and not api_key_for_call:
+        loguru_logger.error(f"API Key for '{selected_provider}' is missing for continuation.")
+        app.notify(f"API Key for {selected_provider} is missing.", severity="error")
+        if static_text_widget: static_text_widget.update(original_display_text_obj)
+        if continue_button_widget: continue_button_widget.disabled = False; continue_button_widget.label = original_button_label
+        return
+
+    # --- 4. Disable other AI action buttons ---
+    other_action_buttons_ids = ["thumb-up", "thumb-down", "regenerate"] # Add other relevant button IDs
+    original_button_states: Dict[str, bool] = {}
+    try:
+        for btn_id in other_action_buttons_ids:
+            # Ensure query is specific to the message_widget
+            b = message_widget.query_one(f"#{btn_id}", Button)
+            original_button_states[btn_id] = b.disabled
+            b.disabled = True
+    except QueryError as qe:
+        loguru_logger.warning(f"Could not find or disable one or more action buttons during continuation: {qe}")
+
+
+    # --- 5. Streaming LLM Call & UI Update ---
+    current_full_text = original_message_text # Start with the original text
+    first_chunk_received_flag = False
+
+    try:
+        async for chunk_data in app.chat_wrapper(
+            message=continuation_prompt_instruction, # The instruction for how to use the history
+            history=history_for_api,                 # Contains the actual message to be continued as the last item
+            api_endpoint=selected_provider,
+            api_key=api_key_for_call,
+            system_message=final_system_prompt_for_api,
+            temperature=temperature,
+            topp=top_p, minp=min_p, topk=top_k,
+            llm_max_tokens=llm_max_tokens_value,
+            llm_seed=llm_seed_value,
+            llm_stop=llm_stop_value,
+            llm_response_format=llm_response_format_value,
+            llm_n=llm_n_value,
+            llm_user_identifier=llm_user_identifier_value,
+            llm_logprobs=llm_logprobs_value,
+            llm_top_logprobs=llm_top_logprobs_value,
+            llm_logit_bias=llm_logit_bias_value,
+            llm_presence_penalty=llm_presence_penalty_value,
+            llm_frequency_penalty=llm_frequency_penalty_value,
+            llm_tools=llm_tools_value,
+            llm_tool_choice=llm_tool_choice_value,
+            llm_fixed_tokens_kobold=llm_fixed_tokens_kobold_value,
+            streaming=should_stream, # Forced True
+            # These are older/other params, ensure they are correctly defaulted or excluded if not needed
+            custom_prompt="", media_content={}, selected_parts=[], chatdict_entries=None, max_tokens=500, strategy="sorted_evenly"
+        ):
+            if not first_chunk_received_flag:
+                first_chunk_received_flag = True
+                # Remove thinking indicator from display.
+                # current_full_text already holds original_message_text.
+                # Static widget is updated with Text object to prevent markup issues.
+                if static_text_widget: static_text_widget.update(Text(current_full_text))
+
+            if isinstance(chunk_data, str):
+                current_full_text += chunk_data
+                if static_text_widget: static_text_widget.update(Text(current_full_text))
+            elif isinstance(chunk_data, dict) and 'error' in chunk_data:
+                error_detail = chunk_data['error']
+                loguru_logger.error(f"Error chunk received from LLM during continuation: {error_detail}")
+                app.notify(f"LLM Error: {str(error_detail)[:100]}", severity="error", timeout=7)
+                # Restore original state on error
+                message_widget.message_text = original_message_text # Restore internal text
+                if static_text_widget: static_text_widget.update(original_display_text_obj)
+                if continue_button_widget: continue_button_widget.disabled = False; continue_button_widget.label = original_button_label
+                for btn_id, was_disabled in original_button_states.items():
+                    try: message_widget.query_one(f"#{btn_id}", Button).disabled = was_disabled
+                    except QueryError: pass
+                return # Stop processing
+
+            if chat_log: chat_log.scroll_end(animate=False)
+
+        # After successful stream, update the ChatMessage's internal text
+        message_widget.message_text = current_full_text
+
+    except Exception as e_llm:
+        loguru_logger.error(f"Error during LLM call for continuation: {e_llm}", exc_info=True)
+        app.notify(f"LLM call failed: {str(e_llm)[:100]}", severity="error")
+        message_widget.message_text = original_message_text # Restore internal text
+        if static_text_widget: static_text_widget.update(original_display_text_obj) # Restore display
+        if continue_button_widget: continue_button_widget.disabled = False; continue_button_widget.label = original_button_label
+        for btn_id, was_disabled in original_button_states.items():
+            try: message_widget.query_one(f"#{btn_id}", Button).disabled = was_disabled
+            except QueryError: pass
+        return
+
+    # --- 6. Post-Stream Processing (DB Update) ---
+    message_widget.generation_complete = True # Ensure it's marked complete
+
+    if db and message_widget.message_id_internal and original_message_version is not None:
+        try:
+            success = ccl.edit_message_content(
+                db,
+                message_widget.message_id_internal,
+                current_full_text, # The new, complete message text
+                original_message_version # Expected version before this edit
+            )
+            if success:
+                message_widget.message_version_internal = original_message_version + 1
+                loguru_logger.info(f"Continued message ID {message_widget.message_id_internal} updated in DB. New version: {message_widget.message_version_internal}")
+                app.notify("Message continuation saved to DB.", severity="information", timeout=2)
+            else: # edit_message_content returned False, but no exception
+                loguru_logger.error(f"ccl.edit_message_content returned False for continued message {message_widget.message_id_internal} without specific error.")
+                app.notify("Failed to save continuation to DB (operation indicated failure).", severity="error")
+                # Consider if UI should be reverted here if DB save is critical
+        except ccl.ConflictError as e_conflict:
+            loguru_logger.error(f"DB conflict updating continued message {message_widget.message_id_internal}: {e_conflict}", exc_info=True)
+            app.notify(f"Save conflict: {e_conflict}. Message may be out of sync.", severity="error", timeout=7)
+        except (ccl.CharactersRAGDBError, ccl.InputError) as e_db_update:
+            loguru_logger.error(f"DB/Input error updating continued message {message_widget.message_id_internal}: {e_db_update}", exc_info=True)
+            app.notify(f"Failed to save continuation to DB: {str(e_db_update)[:100]}", severity="error")
+        except Exception as e_db_generic:
+            loguru_logger.error(f"Unexpected DB error updating continued message {message_widget.message_id_internal}: {e_db_generic}", exc_info=True)
+            app.notify(f"Unexpected error saving continuation to DB: {str(e_db_generic)[:100]}", severity="error")
+
+    # --- 7. Button State (Re-enable/Finalize) ---
+    if continue_button_widget and original_button_label:
+        continue_button_widget.disabled = False # Re-enable for potential further continuation
+        continue_button_widget.label = original_button_label
+
+    # Re-enable other action buttons to their original state
+    for btn_id, was_disabled_originally in original_button_states.items():
+        try:
+            # Only re-enable if it was not disabled before we started
+            # However, typical flow is they are enabled, we disable, then re-enable.
+            # So, setting disabled to 'was_disabled_originally' covers this.
+             message_widget.query_one(f"#{btn_id}", Button).disabled = was_disabled_originally
+        except QueryError:
+            loguru_logger.warning(f"Could not restore state for button {btn_id} post-continuation.")
+
+    loguru_logger.info(f"Continuation process completed for message_id: {message_widget.message_id_internal}. Final text length: {len(current_full_text)}")
+
+
+async def handle_respond_for_me_button_pressed(app: 'TldwCli') -> None:
+    """Handles the 'Respond for Me' (Suggest) button press in the chat input area."""
+    loguru_logger.info("Respond for Me button pressed.")
+    prefix = "chat" # For querying UI elements like #chat-log, #chat-input, etc.
+
+    respond_button: Optional[Button] = None
+    original_button_label: Optional[str] = "💡" # Default/fallback icon
+
+    try:
+        respond_button = app.query_one("#respond-for-me-button", Button)
+        original_button_label = respond_button.label
+        respond_button.disabled = True
+        respond_button.label = f"{get_char(EMOJI_THINKING, FALLBACK_THINKING)} Suggesting..."
+        app.notify("Generating suggestion...", timeout=2)
+
+        # --- 1. Retrieve History for API ---
+        history_for_api: List[Dict[str, Any]] = []
+        chat_log_widget: Optional[VerticalScroll] = None
+        try:
+            chat_log_widget = app.query_one(f"#{prefix}-log", VerticalScroll)
+            all_messages_in_log = list(chat_log_widget.query(ChatMessage))
+
+            if not all_messages_in_log:
+                app.notify("Cannot generate suggestion: Chat history is empty.", severity="warning", timeout=4)
+                loguru_logger.info("Respond for Me: Chat history is empty.")
+                # No 'return' here, finally block will re-enable button
+                raise ValueError("Empty history") # Raise to go to finally
+
+            for msg_w in all_messages_in_log:
+                api_role = "user" if msg_w.role == "User" else "assistant"
+                if msg_w.generation_complete: # Only include completed messages
+                    history_for_api.append({"role": api_role, "content": msg_w.message_text})
+
+            loguru_logger.debug(f"Built history for suggestion API with {len(history_for_api)} messages.")
+
+        except QueryError as e_hist_query:
+            loguru_logger.error(f"Respond for Me: Could not find UI elements for history: {e_hist_query}", exc_info=True)
+            app.notify("Error: Chat log not found.", severity="error")
+            raise # Re-raise to go to finally
+        except ValueError: # Catch empty history explicitly if needed for specific handling before finally
+            raise
+        except Exception as e_hist_build:
+            loguru_logger.error(f"Error building history for suggestion: {e_hist_build}", exc_info=True)
+            app.notify("Error preparing message history for suggestion.", severity="error")
+            raise # Re-raise to go to finally
+
+        # --- 2. LLM Call Preparation ---
+        # Convert history to a string format for the prompt, or pass as structured history if API supports
+        conversation_history_str = "\n".join([f"{item['role']}: {item['content']}" for item in history_for_api])
+
+        suggestion_prompt_instruction = (
+            "Based on the following conversation, please suggest a concise and relevant response for the user to send next. "
+            "Focus on being helpful and natural in the context of the conversation. "
+            "Only provide the suggested response text, without any additional explanations, apologies, or conversational filler like 'Sure, here's a suggestion:'. "
+            "Directly output the text that the user could send.\n\n"
+            "CONVERSATION HISTORY:\n"
+            f"{conversation_history_str}"
+        )
+
+        # --- 3. Fetch Chat Parameters & API Key (similar to other handlers) ---
+        try:
+            provider_widget = app.query_one(f"#{prefix}-api-provider", Select)
+            model_widget = app.query_one(f"#{prefix}-api-model", Select)
+            provider_widget = app.query_one(f"#{prefix}-api-provider", Select)
+            model_widget = app.query_one(f"#{prefix}-api-model", Select)
+            system_prompt_widget = app.query_one(f"#{prefix}-system-prompt", TextArea) # Main system prompt
+            temp_widget = app.query_one(f"#{prefix}-temperature", Input)
+            top_p_widget = app.query_one(f"#{prefix}-top-p", Input)
+            min_p_widget = app.query_one(f"#{prefix}-min-p", Input)
+            top_k_widget = app.query_one(f"#{prefix}-top-k", Input)
+            llm_max_tokens_widget = app.query_one(f"#{prefix}-llm-max-tokens", Input)
+            llm_seed_widget = app.query_one(f"#{prefix}-llm-seed", Input)
+            llm_stop_widget = app.query_one(f"#{prefix}-llm-stop", Input)
+            llm_response_format_widget = app.query_one(f"#{prefix}-llm-response-format", Select)
+            llm_n_widget = app.query_one(f"#{prefix}-llm-n", Input)
+            llm_user_identifier_widget = app.query_one(f"#{prefix}-llm-user-identifier", Input)
+            llm_logprobs_widget = app.query_one(f"#{prefix}-llm-logprobs", Checkbox)
+            llm_top_logprobs_widget = app.query_one(f"#{prefix}-llm-top-logprobs", Input)
+            llm_logit_bias_widget = app.query_one(f"#{prefix}-llm-logit-bias", TextArea)
+            llm_presence_penalty_widget = app.query_one(f"#{prefix}-llm-presence-penalty", Input)
+            llm_frequency_penalty_widget = app.query_one(f"#{prefix}-llm-frequency-penalty", Input)
+            llm_tools_widget = app.query_one(f"#{prefix}-llm-tools", TextArea)
+            llm_tool_choice_widget = app.query_one(f"#{prefix}-llm-tool-choice", Input)
+            llm_fixed_tokens_kobold_widget = app.query_one(f"#{prefix}-llm-fixed-tokens-kobold", Checkbox)
+        except QueryError as e_params_query:
+            loguru_logger.error(f"Respond for Me: Could not find UI settings widgets: {e_params_query}", exc_info=True)
+            app.notify("Error: Missing UI settings for suggestion.", severity="error")
+            raise # Re-raise to go to finally
+
+        selected_provider = str(provider_widget.value) if provider_widget.value != Select.BLANK else None
+        selected_model = str(model_widget.value) if model_widget.value != Select.BLANK else None
+        temperature = safe_float(temp_widget.value, 0.7, "temperature")
+        top_p = safe_float(top_p_widget.value, 0.95, "top_p")
+        min_p = safe_float(min_p_widget.value, 0.05, "min_p")
+        top_k = safe_int(top_k_widget.value, 50, "top_k")
+        llm_max_tokens_value = safe_int(llm_max_tokens_widget.value, 200, "llm_max_tokens_suggestion") # Suggestion max tokens
+        llm_seed_value = safe_int(llm_seed_widget.value, None, "llm_seed")
+        llm_stop_value = [s.strip() for s in llm_stop_widget.value.split(',') if s.strip()] if llm_stop_widget.value.strip() else None
+        llm_response_format_value = {"type": str(llm_response_format_widget.value)} if llm_response_format_widget.value != Select.BLANK else {"type": "text"}
+        llm_n_value = safe_int(llm_n_widget.value, 1, "llm_n")
+        llm_user_identifier_value = llm_user_identifier_widget.value.strip() or None
+        llm_logprobs_value = llm_logprobs_widget.value
+        llm_top_logprobs_value = safe_int(llm_top_logprobs_widget.value, 0, "llm_top_logprobs") if llm_logprobs_value else 0
+        llm_presence_penalty_value = safe_float(llm_presence_penalty_widget.value, 0.0, "llm_presence_penalty")
+        llm_frequency_penalty_value = safe_float(llm_frequency_penalty_widget.value, 0.0, "llm_frequency_penalty")
+        llm_tool_choice_value = llm_tool_choice_widget.value.strip() or None
+        llm_fixed_tokens_kobold_value = llm_fixed_tokens_kobold_widget.value # Added
+        try:
+            llm_logit_bias_text = llm_logit_bias_widget.text.strip()
+            llm_logit_bias_value = json.loads(llm_logit_bias_text) if llm_logit_bias_text and llm_logit_bias_text != "{}" else None
+        except json.JSONDecodeError: llm_logit_bias_value = None; loguru_logger.warning("Invalid JSON in llm_logit_bias for suggestion.")
+        try:
+            llm_tools_text = llm_tools_widget.text.strip()
+            llm_tools_value = json.loads(llm_tools_text) if llm_tools_text and llm_tools_text != "[]" else None
+        except json.JSONDecodeError: llm_tools_value = None; loguru_logger.warning("Invalid JSON in llm_tools for suggestion.")
+
+        # System Prompt: Use a generic one for suggestion, or allow character's? For now, generic.
+        # Or, could use the main chat's system prompt if that makes sense.
+        # For this feature, a neutral "you are a helpful assistant suggesting responses" might be better
+        # than the character's persona, unless the goal is for the character to suggest *as if they were the user*.
+        # Let's use a new, specific system prompt for this feature for now.
+        suggestion_system_prompt = "You are an AI assistant helping a user by suggesting potential chat responses based on conversation history."
+
+        # If using the main chat's system prompt:
+        # final_system_prompt_for_api = system_prompt_widget.text
+        # if app.current_chat_active_character_data:
+        #     char_sys_prompt = app.current_chat_active_character_data.get('system_prompt')
+        #     if char_sys_prompt and char_sys_prompt.strip():
+        #         final_system_prompt_for_api = char_sys_prompt
+        final_system_prompt_for_api = suggestion_system_prompt
+
+
+        # API Key Fetching (copied from continue handler, ensure it's complete)
+        api_key_for_call = None
+        if selected_provider:
+            provider_settings_key = selected_provider.lower().replace(" ", "_")
+            provider_config = app.app_config.get("api_settings", {}).get(provider_settings_key, {})
+            if "api_key" in provider_config and provider_config["api_key"] and provider_config["api_key"] != "<API_KEY_HERE>":
+                api_key_for_call = provider_config["api_key"]
+            elif "api_key_env_var" in provider_config and provider_config["api_key_env_var"]:
+                api_key_for_call = os.environ.get(provider_config["api_key_env_var"])
+
+        providers_requiring_key = ["OpenAI", "Anthropic", "Google", "MistralAI", "Groq", "Cohere", "OpenRouter", "HuggingFace", "DeepSeek"]
+        if selected_provider in providers_requiring_key and not api_key_for_call:
+            loguru_logger.error(f"API Key for '{selected_provider}' is missing for suggestion.")
+            app.notify(f"API Key for {selected_provider} is missing.", severity="error")
+            raise ApiKeyMissingError(f"API Key for {selected_provider} required.") # Custom exception to catch in finally
+
+        # --- 4. Perform Non-Streaming LLM Call ---
+        # For simplicity, the prompt contains the history. Alternatively, pass structured history.
+        # The chat_wrapper might need adjustment if it expects history only for streaming.
+        # Assuming chat_wrapper can take message + history for non-streaming.
+        # If not, history_for_api should be [] and suggestion_prompt_instruction contains all.
+
+        # Forcing non-streaming for a direct suggestion response.
+        # The `message` param to chat_wrapper is the main prompt.
+        # `history` param is the preceding conversation.
+        llm_response_text = await app.chat_wrapper(
+            message=suggestion_prompt_instruction, # This is the specific instruction to suggest a response
+            history=[], # Full context is in the message for this specific prompt type
+            api_endpoint=selected_provider,
+            api_key=api_key_for_call,
+            system_message=final_system_prompt_for_api, # This is the suggestion_system_prompt
+            temperature=temperature,
+            topp=top_p, minp=min_p, topk=top_k,
+            llm_max_tokens=llm_max_tokens_value,
+            llm_seed=llm_seed_value,
+            llm_stop=llm_stop_value,
+            llm_response_format=llm_response_format_value,
+            llm_n=llm_n_value,
+            llm_user_identifier=llm_user_identifier_value,
+            llm_logprobs=llm_logprobs_value,
+            llm_top_logprobs=llm_top_logprobs_value,
+            llm_logit_bias=llm_logit_bias_value,
+            llm_presence_penalty=llm_presence_penalty_value,
+            llm_frequency_penalty=llm_frequency_penalty_value,
+            llm_tools=llm_tools_value,
+            llm_tool_choice=llm_tool_choice_value,
+            llm_fixed_tokens_kobold=llm_fixed_tokens_kobold_value,
+            # Ensure custom_prompt, media_content etc. are defaulted if not used for suggestions
+            custom_prompt="", media_content={}, selected_parts=[], chatdict_entries=None,
+            max_tokens=500, # This is chatdict's max_tokens, distinct from llm_max_tokens. Review if needed here.
+            strategy="sorted_evenly", # Default or from config
+            streaming=False # Explicitly non-streaming for suggestions
+        )
+
+        if not llm_response_text or not isinstance(llm_response_text, str):
+            loguru_logger.warning(f"LLM did not return a valid string suggestion. Received: {llm_response_text}")
+            app.notify("Failed to get a valid suggestion from the AI.", severity="warning")
+            raise ValueError("Invalid LLM response for suggestion")
+
+
+        # --- 5. Populate Input Field ---
+        try:
+            chat_input_widget = app.query_one(f"#{prefix}-input", TextArea)
+            # Clean up the response if it includes common AI conversational filler
+            # This is a basic cleanup, more sophisticated parsing might be needed.
+            cleaned_response = llm_response_text.strip()
+            common_fillers = [
+                "Sure, here's a suggestion:", "Here's a possible response:", "You could say:", "How about this:",
+                "Okay, here's a suggestion:", "Here is a suggestion:", "Here's a suggestion for your response:"
+            ]
+            for filler in common_fillers:
+                if cleaned_response.lower().startswith(filler.lower()):
+                    cleaned_response = cleaned_response[len(filler):].strip()
+
+            # Remove leading/trailing quotes if present
+            if (cleaned_response.startswith('"') and cleaned_response.endswith('"')) or \
+               (cleaned_response.startswith("'") and cleaned_response.endswith("'")):
+                cleaned_response = cleaned_response[1:-1]
+
+            chat_input_widget.text = cleaned_response
+            chat_input_widget.focus()
+            app.notify("Suggestion populated in the input field.", severity="information", timeout=3)
+            loguru_logger.info(f"Suggestion populated: '{cleaned_response[:100]}...'")
+
+        except QueryError as e_input_query:
+            loguru_logger.error(f"Respond for Me: Could not find chat input area: {e_input_query}", exc_info=True)
+            app.notify("Error: Chat input field not found.", severity="error")
+            # LLM call was successful, but couldn't populate. Log suggestion.
+            loguru_logger.info(f"LLM suggestion (not populated): {llm_response_text}")
+            raise # Re-raise to go to finally
+
+    except ApiKeyMissingError as e_api_key: # Specific catch for API key issues
+        # Notification already handled where raised or before.
+        loguru_logger.error(f"API Key Error for suggestion: {e_api_key}")
+    except ValueError as e_val: # Catch specific ValueErrors like empty history or bad LLM response
+        loguru_logger.warning(f"Respond for Me: Value error encountered: {e_val}")
+        # Notification for empty history is handled above. Others as they occur.
+    except Exception as e_main:
+        loguru_logger.error(f"Failed to generate suggestion: {e_main}", exc_info=True)
+        app.notify(f"Failed to generate suggestion: {str(e_main)[:100]}", severity="error", timeout=5)
+    finally:
+        if respond_button:
+            respond_button.disabled = False
+            respond_button.label = original_button_label
+        loguru_logger.debug("Respond for Me button re-enabled.")
+
+class ApiKeyMissingError(Exception): # Custom exception for cleaner handling in try/finally
+    pass
+
 #
 # End of chat_events.py
 ########################################################################################################################

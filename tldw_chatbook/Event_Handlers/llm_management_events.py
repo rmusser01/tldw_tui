@@ -37,10 +37,13 @@ from typing import TYPE_CHECKING, List, Optional
 from textual.containers import Container
 from textual.css.query import QueryError
 from textual.worker import Worker, WorkerState
-from textual.widgets import Input, RichLog, TextArea
-
+from textual.widgets import Input, RichLog, TextArea, Button
 if TYPE_CHECKING:
     from ..app import TldwCli  # pragma: no cover – runtime import only
+    from ..UI.LLM_Management_Window import LLMManagementWindow # For type hints if used within methods
+
+from ..Local_Inference.mlx_lm_inference_local import start_mlx_lm_server, stop_mlx_lm_server
+# subprocess already imported
 
 from ..Third_Party.textual_fspicker import FileOpen, FileSave, Filters
 
@@ -782,12 +785,171 @@ async def handle_mlx_lm_nav_button_pressed(app: "TldwCli") -> None:
         mlx_lm_view.styles.display = "block"
         #app.notify("Switched to MLX-LM view.") # Optional: uncomment if you want a notification
 
+        # Set initial button states when MLX-LM view is shown
+        # This assumes TldwCli app has an attribute 'mlx_server_process' initialized to None
+        if not hasattr(app, 'mlx_server_process'):
+            app.mlx_server_process = None # Initialize if not present
+
+        start_button = mlx_lm_view.query_one("#mlx-start-server-button", Button)
+        stop_button = mlx_lm_view.query_one("#mlx-stop-server-button", Button)
+
+        if app.mlx_server_process and app.mlx_server_process.poll() is None:
+            # Server is likely running
+            start_button.disabled = True
+            stop_button.disabled = False
+        else:
+            # Server is not running or process object is stale
+            start_button.disabled = False
+            stop_button.disabled = True
+
     except QueryError as e: # pragma: no cover
         logger.error(f"QueryError in handle_mlx_lm_nav_button_pressed: {e}", exc_info=True)
         app.notify("Error switching to MLX-LM view: Could not find required UI elements.", severity="error")
     except Exception as e: # pragma: no cover
         logger.error(f"Unexpected error in handle_mlx_lm_nav_button_pressed: {e}", exc_info=True)
         app.notify("An unexpected error occurred while switching to MLX-LM view.", severity="error")
+
+
+async def handle_start_mlx_server_button_pressed(app: "TldwCli") -> None:
+    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
+    logger.info("User requested to start MLX-LM server.")
+
+    # Ensure 'app' has 'mlx_server_process' attribute, initialized to None somewhere
+    # This should ideally be done in TldwCli's __init__ or on_mount.
+    if not hasattr(app, 'mlx_server_process'):
+        app.mlx_server_process = None # Initialize if not present, though this is a fallback
+
+    log_output_widget: Optional[RichLog] = None # Initialize for broader scope in case of early QueryError
+    start_button: Optional[Button] = None
+    stop_button: Optional[Button] = None
+
+    try:
+        # Querying through app, assuming #llm-view-mlx-lm is unique and globally accessible under app.screen
+        # More robustly, one might pass LLMManagementWindow instance or query via a more specific parent.
+        llm_mlx_view_container = app.query_one("#llm-view-mlx-lm", Container)
+
+        model_path_input = llm_mlx_view_container.query_one("#mlx-model-path", Input)
+        host_input = llm_mlx_view_container.query_one("#mlx-host", Input)
+        port_input = llm_mlx_view_container.query_one("#mlx-port", Input)
+        additional_args_area = llm_mlx_view_container.query_one("#mlx-additional-args", TextArea)
+        log_output_widget = llm_mlx_view_container.query_one("#mlx-log-output", RichLog)
+        start_button = llm_mlx_view_container.query_one("#mlx-start-server-button", Button)
+        stop_button = llm_mlx_view_container.query_one("#mlx-stop-server-button", Button)
+
+        model_path = model_path_input.value.strip()
+        host = host_input.value.strip()
+        port_str = port_input.value.strip()
+        additional_args = additional_args_area.text.strip()
+
+        log_output_widget.clear()
+
+        if not model_path:
+            log_output_widget.write("Error: MLX Model Path is required.")
+            app.notify("MLX Model Path is required.", severity="error")
+            model_path_input.focus()
+            return
+
+        if not host:
+            log_output_widget.write("Error: Host is required.")
+            app.notify("Host is required.", severity="error")
+            host_input.focus()
+            return
+
+        if not port_str:
+            log_output_widget.write("Error: Port is required.")
+            app.notify("Port is required.", severity="error")
+            port_input.focus()
+            return
+        try:
+            port_val = int(port_str)
+        except ValueError:
+            log_output_widget.write("Error: Port must be a valid number.")
+            app.notify("Port must be a valid number.", severity="error")
+            port_input.focus()
+            return
+
+        if app.mlx_server_process and app.mlx_server_process.poll() is None:
+            log_output_widget.write(f"MLX-LM server is already running (PID: {app.mlx_server_process.pid}).")
+            app.notify("MLX-LM server is already running.", severity="warning")
+            return
+
+        log_output_widget.write(f"Attempting to start MLX-LM server with model: {model_path} on {host}:{port_val}...")
+
+        server_process_instance = start_mlx_lm_server(model_path, host, port_val, additional_args)
+        app.mlx_server_process = server_process_instance
+
+        if app.mlx_server_process and app.mlx_server_process.poll() is None:
+            log_output_widget.write(f"MLX-LM server process started successfully (PID: {app.mlx_server_process.pid}).")
+            log_output_widget.write("Note: Full log streaming from the server is not yet implemented in this view. Check console if needed.")
+            app.notify("MLX-LM server started.")
+            start_button.disabled = True
+            stop_button.disabled = False
+        else:
+            log_output_widget.write("Error: Failed to start MLX-LM server. Check application logs for details.")
+            app.notify("Failed to start MLX-LM server.", severity="error")
+            start_button.disabled = False # Ensure start button is re-enabled on failure
+            stop_button.disabled = True
+
+    except QueryError as e:
+        logger.error(f"QueryError in handle_start_mlx_server_button_pressed: {e}", exc_info=True)
+        if log_output_widget: log_output_widget.write(f"UI Error: Could not find required elements for MLX-LM: {e}")
+        app.notify("Error accessing MLX-LM UI elements.", severity="error")
+    except Exception as e:
+        logger.error(f"Error starting MLX-LM server: {e}", exc_info=True)
+        if log_output_widget:
+            log_output_widget.write(f"An unexpected error occurred: {e}")
+        app.notify(f"An unexpected error occurred: {e}", severity="error")
+        if start_button: start_button.disabled = False
+        if stop_button: stop_button.disabled = True
+
+
+async def handle_stop_mlx_server_button_pressed(app: "TldwCli") -> None:
+    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
+    logger.info("User requested to stop MLX-LM server.")
+
+    log_output_widget: Optional[RichLog] = None
+    start_button: Optional[Button] = None
+    stop_button: Optional[Button] = None
+
+    try:
+        llm_mlx_view_container = app.query_one("#llm-view-mlx-lm", Container)
+        log_output_widget = llm_mlx_view_container.query_one("#mlx-log-output", RichLog)
+        start_button = llm_mlx_view_container.query_one("#mlx-start-server-button", Button)
+        stop_button = llm_mlx_view_container.query_one("#mlx-stop-server-button", Button)
+
+        if hasattr(app, 'mlx_server_process') and app.mlx_server_process:
+            if app.mlx_server_process.poll() is None: # Process is running
+                log_output_widget.write(f"Stopping MLX-LM server (PID: {app.mlx_server_process.pid})...")
+                stop_mlx_lm_server(app.mlx_server_process) # stop_mlx_lm_server handles terminate/kill/wait
+                app.mlx_server_process = None # Clear the stored process
+                log_output_widget.write("MLX-LM server stop command issued.")
+                app.notify("MLX-LM server stopped.")
+            else: # Process already terminated
+                log_output_widget.write(f"MLX-LM server (PID: {app.mlx_server_process.pid}) was already stopped.")
+                app.notify("MLX-LM server was already stopped.", severity="info")
+                app.mlx_server_process = None # Clear the stale process object
+        else:
+            log_output_widget.write("MLX-LM server is not currently running or no process tracked.")
+            app.notify("MLX-LM server is not running.", severity="warning")
+            if hasattr(app, 'mlx_server_process'): # If attribute exists but is None
+                 app.mlx_server_process = None
+
+        start_button.disabled = False
+        stop_button.disabled = True
+
+    except QueryError as e:
+        logger.error(f"QueryError in handle_stop_mlx_server_button_pressed: {e}", exc_info=True)
+        if log_output_widget: log_output_widget.write(f"UI Error: Could not find required elements for MLX-LM: {e}")
+        app.notify("Error accessing MLX-LM UI elements.", severity="error")
+    except Exception as e:
+        logger.error(f"Error stopping MLX-LM server: {e}", exc_info=True)
+        if log_output_widget:
+            log_output_widget.write(f"An unexpected error occurred while stopping the server: {e}")
+        app.notify(f"An unexpected error occurred: {e}", severity="error")
+        # Attempt to set buttons to a safe state, though server state is uncertain
+        if start_button: start_button.disabled = False
+        if stop_button: stop_button.disabled = True
+
 
 #
 # End of llm_management_events.py
