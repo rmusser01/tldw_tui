@@ -23,6 +23,8 @@ from textual.widgets import (
     Static, Button, Input, Header, Footer, RichLog, TextArea, Select, ListView, Checkbox, Collapsible, ListItem, Label
 )
 from textual.containers import Horizontal, Container, HorizontalScroll, VerticalScroll
+# Import the new AppFooterStatus widget
+from .Widgets.AppFooterStatus import AppFooterStatus
 # Import for escape_markup
 from rich.markup import escape as escape_markup
 from textual.reactive import reactive
@@ -53,7 +55,7 @@ from .UI.MediaWindow import MediaWindow, slugify as media_slugify
 from tldw_chatbook.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, TAB_STATS, TAB_TOOLS_SETTINGS, \
     TAB_INGEST, TAB_LLM, TAB_MEDIA, TAB_SEARCH, TAB_EVALS
 from tldw_chatbook.DB.Client_Media_DB_v2 import MediaDatabase
-from tldw_chatbook.config import chachanotes_db as global_chachanotes_db_instance, get_media_db_path, CLI_APP_CLIENT_ID
+from tldw_chatbook.config import chachanotes_db as global_chachanotes_db_instance, CLI_APP_CLIENT_ID # get_media_db_path is now imported above
 from tldw_chatbook.Logging_Config import RichLogHandler
 from tldw_chatbook.Prompt_Management import Prompts_Interop as prompts_interop
 from tldw_chatbook.Utils.Emoji_Handling import get_char, EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN, EMOJI_TITLE_NOTE, \
@@ -221,8 +223,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # Renamed character_api_provider_value to ccp_api_provider_value for clarity with TAB_CCP
     ccp_api_provider_value: reactive[Optional[str]] = reactive(_default_ccp_provider)
 
-    # DB Size checker
-    _db_size_status_widget: Optional[Static] = None
+    # DB Size checker - now using AppFooterStatus
+    _db_size_status_widget: Optional[AppFooterStatus] = None
     _db_size_update_timer: Optional[Timer] = None
 
     # Reactives for sidebar
@@ -679,8 +681,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         yield from self.compose_content_area() # Call refactored content area composer
 
-        with Footer():
-            yield Static(id="db-size-indicator", markup=False) # markup=False to display text literally
+        # Yield the new AppFooterStatus widget instead of the old Footer
+        yield AppFooterStatus(id="app-footer-status")
         logging.debug("App compose finished.")
 
     def compose_tabs(self) -> ComposeResult:
@@ -1298,21 +1300,27 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         # --- DB Size Indicator Setup ---
         try:
-            self._db_size_status_widget = self.query_one("#db-size-indicator", Static)
+            # Query for the AppFooterStatus widget instance
+            self._db_size_status_widget = self.query_one(AppFooterStatus)
+            # Or use ID: self._db_size_status_widget = self.query_one("#app-footer-status", AppFooterStatus)
+            self.loguru_logger.info("AppFooterStatus widget instance acquired.")
+
             await self.update_db_sizes()  # Initial population
             self._db_size_update_timer = self.set_interval(60, self.update_db_sizes) # Periodic updates
-            self.loguru_logger.info("DB size indicator setup complete and timer started.")
+            self.loguru_logger.info("DB size update timer started for AppFooterStatus.")
         except QueryError:
-            self.loguru_logger.error("Failed to find #db-size-indicator widget for DB size display.")
+            self.loguru_logger.error("Failed to find AppFooterStatus widget for DB size display.")
         except Exception as e_db_size:
-            self.loguru_logger.error(f"Error setting up DB size indicator: {e_db_size}", exc_info=True)
+            self.loguru_logger.error(f"Error setting up DB size indicator with AppFooterStatus: {e_db_size}", exc_info=True)
         # --- End DB Size Indicator Setup ---
 
         self.loguru_logger.info("App _post_mount_setup: Post-mount setup completed.")
 
     async def update_db_sizes(self) -> None:
-        """Updates the database size information in the footer."""
+        """Updates the database size information in the AppFooterStatus widget."""
+        self.loguru_logger.debug("Attempting to update DB sizes in AppFooterStatus.")
         if not self._db_size_status_widget:
+            self.loguru_logger.warning("_db_size_status_widget (AppFooterStatus) is None, cannot update DB sizes.")
             return
 
         try:
@@ -1336,12 +1344,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 media_size_str = "N/A"
 
             status_string = f"Prompts DB: {prompts_size_str}  |  Chats/Notes DB: {chachanotes_size_str}  |  Media DB: {media_size_str}"
-            self._db_size_status_widget.update(status_string)
-            # self.loguru_logger.debug(f"Updated DB sizes: {status_string}") # Optional: for debugging frequency
+            self.loguru_logger.debug(f"DB size status string to display in AppFooterStatus: '{status_string}'")
+            # Call the custom update method on the AppFooterStatus widget
+            self._db_size_status_widget.update_db_sizes_display(status_string)
+            self.loguru_logger.info(f"Successfully updated DB sizes in AppFooterStatus: {status_string}")
         except Exception as e:
-            self.loguru_logger.error(f"Error updating DB sizes: {e}", exc_info=True)
+            self.loguru_logger.error(f"Error updating DB sizes in AppFooterStatus: {e}", exc_info=True)
             if self._db_size_status_widget: # Check again in case it became None somehow
-                self. _db_size_status_widget.update("Error loading DB sizes")
+                self._db_size_status_widget.update_db_sizes_display("Error loading DB sizes")
 
 
     async def on_shutdown_request(self) -> None:  # Use the imported ShutdownRequest
