@@ -32,6 +32,20 @@ from textual.dom import DOMNode  # For type hinting if needed
 from textual.timer import Timer
 from textual.css.query import QueryError  # For specific error handling
 
+# Ensure Path is imported
+from pathlib import Path
+# Ensure Utils is imported for get_formatted_file_size
+from .Utils import Utils
+# Ensure config functions are imported
+from .config import (
+    get_cli_setting,
+    get_chachanotes_db_path,
+    get_media_db_path,
+    # Keep existing imports from .config below
+    CONFIG_TOML_CONTENT,
+    DEFAULT_CONFIG_PATH,
+)
+
 from tldw_chatbook.Event_Handlers.worker_events import StreamingChunk, StreamDone
 #
 # --- Local API library Imports ---
@@ -71,7 +85,10 @@ from .Event_Handlers import (
     # Explicit import for Ollama handler as per subtask, though current dispatch is generic
     llm_management_events,
 )
-from .Event_Handlers.llm_management_events import handle_llamacpp_browse_exec_button_pressed, handle_llamacpp_browse_model_button_pressed, handle_llamafile_browse_exec_button_pressed, handle_llamafile_browse_model_button_pressed
+from .Event_Handlers.llm_management_events import handle_llamacpp_browse_exec_button_pressed, \
+    handle_llamacpp_browse_model_button_pressed, handle_llamafile_browse_exec_button_pressed, \
+    handle_llamafile_browse_model_button_pressed, handle_start_mlx_server_button_pressed, \
+    handle_stop_mlx_server_button_pressed
 from .Event_Handlers.llm_management_events_vllm import handle_vllm_browse_python_button_pressed, handle_vllm_browse_model_button_pressed, handle_start_vllm_server_button_pressed, handle_stop_vllm_server_button_pressed
 from .Character_Chat import Character_Chat_Lib as ccl
 from .Notes.Notes_Library import NotesInteropService
@@ -1278,7 +1295,53 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         #    self.call_later(ccp_handlers.perform_ccp_conversation_search, self)
         self.current_tab = self._initial_tab_value
         self.loguru_logger.info(f"Initial tab set to: {self.current_tab}")
+
+        # --- DB Size Indicator Setup ---
+        try:
+            self._db_size_status_widget = self.query_one("#db-size-indicator", Static)
+            await self.update_db_sizes()  # Initial population
+            self._db_size_update_timer = self.set_interval(60, self.update_db_sizes) # Periodic updates
+            self.loguru_logger.info("DB size indicator setup complete and timer started.")
+        except QueryError:
+            self.loguru_logger.error("Failed to find #db-size-indicator widget for DB size display.")
+        except Exception as e_db_size:
+            self.loguru_logger.error(f"Error setting up DB size indicator: {e_db_size}", exc_info=True)
+        # --- End DB Size Indicator Setup ---
+
         self.loguru_logger.info("App _post_mount_setup: Post-mount setup completed.")
+
+    async def update_db_sizes(self) -> None:
+        """Updates the database size information in the footer."""
+        if not self._db_size_status_widget:
+            return
+
+        try:
+            # Prompts DB
+            prompts_db_path_str = get_cli_setting("database", "prompts_db_path", str(Path.home() / ".local/share/tldw_cli/tldw_cli_prompts_v2.db"))
+            prompts_db_file = Path(prompts_db_path_str).expanduser().resolve()
+            prompts_size_str = Utils.get_formatted_file_size(prompts_db_file)
+            if prompts_size_str is None:
+                prompts_size_str = "N/A"
+
+            # ChaChaNotes DB
+            chachanotes_db_file = get_chachanotes_db_path()
+            chachanotes_size_str = Utils.get_formatted_file_size(chachanotes_db_file)
+            if chachanotes_size_str is None:
+                chachanotes_size_str = "N/A"
+
+            # Media DB
+            media_db_file = get_media_db_path()
+            media_size_str = Utils.get_formatted_file_size(media_db_file)
+            if media_size_str is None:
+                media_size_str = "N/A"
+
+            status_string = f"Prompts DB: {prompts_size_str}  |  Chats/Notes DB: {chachanotes_size_str}  |  Media DB: {media_size_str}"
+            self._db_size_status_widget.update(status_string)
+            # self.loguru_logger.debug(f"Updated DB sizes: {status_string}") # Optional: for debugging frequency
+        except Exception as e:
+            self.loguru_logger.error(f"Error updating DB sizes: {e}", exc_info=True)
+            if self._db_size_status_widget: # Check again in case it became None somehow
+                self. _db_size_status_widget.update("Error loading DB sizes")
 
 
     async def on_shutdown_request(self) -> None:  # Use the imported ShutdownRequest
@@ -1287,6 +1350,12 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             await self._rich_log_handler.stop_processor()
             logging.info("RichLogHandler processor stopped.")
 
+        # --- Stop DB Size Update Timer ---
+        if self._db_size_update_timer:
+            self._db_size_update_timer.stop()
+            self.loguru_logger.info("DB size update timer stopped.")
+        # --- End Stop DB Size Update Timer ---
+
     async def on_unmount(self) -> None:
         """Clean up logging resources on application exit."""
         logging.info("--- App Unmounting ---")
@@ -1294,6 +1363,12 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         if self._rich_log_handler: # Ensure it's removed if it exists
             logging.getLogger().removeHandler(self._rich_log_handler)
             logging.info("RichLogHandler removed.")
+
+        # Stop DB size update timer on unmount as well, if not already handled by shutdown_request
+        if self._db_size_update_timer and self._db_size_update_timer.is_running:
+            self._db_size_update_timer.stop()
+            self.loguru_logger.info("DB size update timer stopped during unmount.")
+
         # Find and remove file handler (more robustly)
         root_logger = logging.getLogger()
         for handler in root_logger.handlers[:]:

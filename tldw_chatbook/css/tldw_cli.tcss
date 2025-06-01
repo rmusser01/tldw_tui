@@ -1159,19 +1159,27 @@ MetricsScreen Label.-info-message {
 /* ----------------------------- ************************* ----------------------------- */
 /* --- Conversations, Characters & Prompts Window specific layouts --- */
 #send-chat {
-    width: 20;
-    min-width: 20 !important;
-    max-width: 20vh !important; /* Using ch unit and important */
+    width: 12;
+    min-width: 12 !important;
+    max-width: 12vh !important; /* Using ch unit and important */
     /* height: 3; /* Already set by .send-button class, but can be reiterated if needed */
     /* margin-top: 0; /* Already set by .send-button class */
 }
 
 #stop-chat-generation {
-    width: 10;
-    min-width: 10 !important;
-    max-width: 10vh !important; /* Using ch unit and important */
+    width: 6;
+    min-width: 6 !important;
+    max-width: 6vh !important; /* Using ch unit and important */
+    margin: 0 1;
     /* height: 3; /* Already set by .stop-button class, but can be reiterated if needed */
     /* margin-top: 0; /* Already set by .stop-button class */
+}
+
+.suggest-button {
+    width: 8;
+    min-width: 8 !important;
+    max-width: 8vh !important; /* Using ch unit and important */
+    margin: 0 1;
 }
 /* --- End of Conversations, Characters & Prompts Window specific layouts --- */
 /* ----------------------------- ************************* ----------------------------- */
