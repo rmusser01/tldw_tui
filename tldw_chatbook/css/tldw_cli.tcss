@@ -895,14 +895,19 @@ MetricsScreen Label.-info-message {
 }
 
 #chat-sidebar-prompts-listview {
-    height: 8; /* Adjust as needed, or use 1fr if it's the main expanding element */
+    min-height: 5;
+    max-height: 15;
+    height: auto;
+    overflow-y: auto;
     border: round $surface;
     margin-bottom: 1;
 }
 
 #chat-sidebar-prompt-system-display,
 #chat-sidebar-prompt-user-display {
-    height: 5; /* Adjust height for prompt display textareas */
+    min-height: 5;
+    max-height: 15;
+    height: auto;
     width: 100%; /* Ensure they take full width */
     margin-bottom: 1;
     border: round $surface; /* Standard border like other textareas */
