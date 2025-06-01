@@ -2388,7 +2388,9 @@ async def handle_respond_for_me_button_pressed(app: 'TldwCli') -> None:
         # Forcing non-streaming for a direct suggestion response.
         # The `message` param to chat_wrapper is the main prompt.
         # `history` param is the preceding conversation.
-        llm_response_text = await app.chat_wrapper(
+
+        # Define the target for the worker
+        worker_target = lambda: app.chat_wrapper(
             message=suggestion_prompt_instruction, # This is the specific instruction to suggest a response
             history=[], # Full context is in the message for this specific prompt type
             api_endpoint=selected_provider,
@@ -2417,42 +2419,20 @@ async def handle_respond_for_me_button_pressed(app: 'TldwCli') -> None:
             streaming=False # Explicitly non-streaming for suggestions
         )
 
-        if not llm_response_text or not isinstance(llm_response_text, str):
-            loguru_logger.warning(f"LLM did not return a valid string suggestion. Received: {llm_response_text}")
-            app.notify("Failed to get a valid suggestion from the AI.", severity="warning")
-            raise ValueError("Invalid LLM response for suggestion")
+        # Run the LLM call in a worker
+        app.run_worker(
+            worker_target,
+            name="respond_for_me_worker",
+            group="llm_suggestions",
+            thread=True,
+            description="Generating suggestion for user response..."
+        )
 
+        # The response will be handled by a worker event (e.g., on_stream_done or a custom one).
+        # So, remove direct processing of llm_response_text and UI population here.
+        # The notification "Suggestion populated..." will also move to that future event handler.
 
-        # --- 5. Populate Input Field ---
-        try:
-            chat_input_widget = app.query_one(f"#{prefix}-input", TextArea)
-            # Clean up the response if it includes common AI conversational filler
-            # This is a basic cleanup, more sophisticated parsing might be needed.
-            cleaned_response = llm_response_text.strip()
-            common_fillers = [
-                "Sure, here's a suggestion:", "Here's a possible response:", "You could say:", "How about this:",
-                "Okay, here's a suggestion:", "Here is a suggestion:", "Here's a suggestion for your response:"
-            ]
-            for filler in common_fillers:
-                if cleaned_response.lower().startswith(filler.lower()):
-                    cleaned_response = cleaned_response[len(filler):].strip()
-
-            # Remove leading/trailing quotes if present
-            if (cleaned_response.startswith('"') and cleaned_response.endswith('"')) or \
-               (cleaned_response.startswith("'") and cleaned_response.endswith("'")):
-                cleaned_response = cleaned_response[1:-1]
-
-            chat_input_widget.text = cleaned_response
-            chat_input_widget.focus()
-            app.notify("Suggestion populated in the input field.", severity="information", timeout=3)
-            loguru_logger.info(f"Suggestion populated: '{cleaned_response[:100]}...'")
-
-        except QueryError as e_input_query:
-            loguru_logger.error(f"Respond for Me: Could not find chat input area: {e_input_query}", exc_info=True)
-            app.notify("Error: Chat input field not found.", severity="error")
-            # LLM call was successful, but couldn't populate. Log suggestion.
-            loguru_logger.info(f"LLM suggestion (not populated): {llm_response_text}")
-            raise # Re-raise to go to finally
+        loguru_logger.info("Respond for Me worker dispatched. Waiting for suggestion...")
 
     except ApiKeyMissingError as e_api_key: # Specific catch for API key issues
         # Notification already handled where raised or before.

@@ -259,7 +259,56 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
                 ai_message_widget.mark_generation_complete()
             except Exception as e_unexp_final_update:
                 logger.error(f"Further error updating AI widget during outer unexpected error: {e_unexp_final_update}")
-        app.current_ai_message_widget = None
+            app.current_ai_message_widget = None
+
+        elif event.worker.name == "respond_for_me_worker":
+            if event.state is WorkerState.SUCCESS:
+                suggestion_result = event.worker.result
+                suggested_text = ""
+                if isinstance(suggestion_result, dict) and suggestion_result.get("choices"):
+                    try:
+                        suggested_text = suggestion_result["choices"][0].get("message", {}).get("content", "")
+                    except (IndexError, KeyError, AttributeError):
+                        logger.error(f"Error parsing suggestion_result dict: {suggestion_result}")
+                        suggested_text = "" # Fallback to empty if parsing fails
+                elif isinstance(suggestion_result, str):
+                    suggested_text = suggestion_result
+                else:
+                    logger.warning(f"Unexpected result type from 'respond_for_me_worker': {type(suggestion_result)}. Content: {str(suggestion_result)[:200]}")
+
+                if suggested_text:
+                    # Clean the text
+                    cleaned_suggested_text = suggested_text.strip()
+                    common_fillers = [
+                        "Sure, here's a suggestion:", "Here's a possible response:", "You could say:", "How about this:",
+                        "Okay, here's a suggestion:", "Here is a suggestion:", "Here's a suggestion for your response:"
+                    ]
+                    for filler in common_fillers:
+                        if cleaned_suggested_text.lower().startswith(filler.lower()):
+                            cleaned_suggested_text = cleaned_suggested_text[len(filler):].strip()
+                    if (cleaned_suggested_text.startswith('"') and cleaned_suggested_text.endswith('"')) or \
+                       (cleaned_suggested_text.startswith("'") and cleaned_suggested_text.endswith("'")):
+                        cleaned_suggested_text = cleaned_suggested_text[1:-1]
+
+                    try:
+                        chat_input_widget = app.query_one("#chat-input", TextArea)
+                        chat_input_widget.text = cleaned_suggested_text
+                        chat_input_widget.focus()
+                        app.notify("Suggestion populated in the input field.", severity="information", timeout=3)
+                        logger.info(f"Suggestion populated from worker: '{cleaned_suggested_text[:100]}...'")
+                    except QueryError:
+                        logger.error("Failed to query #chat-input to populate suggestion.")
+                        app.notify("Error populating suggestion (UI element missing).", severity="error")
+                else:
+                    logger.warning("'respond_for_me_worker' succeeded but returned empty suggestion.")
+                    app.notify("AI returned an empty suggestion.", severity="warning")
+
+            elif event.state is WorkerState.ERROR:
+                logger.error(f"Worker 'respond_for_me_worker' failed: {event.worker.error}", exc_info=event.worker.error)
+                app.notify(f"Failed to generate suggestion: {str(event.worker.error)[:100]}", severity="error", timeout=5)
+            # Button re-enabling is handled by the finally block in handle_respond_for_me_button_pressed
+        else:
+            logger.debug(f"Ignoring worker state change for unhandled worker: {worker_name}")
 
 
 #
