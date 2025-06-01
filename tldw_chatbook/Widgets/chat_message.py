@@ -140,7 +140,7 @@ class ChatMessage(Widget):
                 yield Button("🔊", classes="action-button speak-button", id="speak") # Emoji for speak
 
                 # AI-specific buttons
-                if self.role == "-ai":
+                if self.has_class("-ai"):
                     yield Button("👍", classes="action-button thumb-up-button", id="thumb-up")
                     yield Button("👎", classes="action-button thumb-down-button", id="thumb-down")
                     yield Button("🔄", classes="action-button regenerate-button", id="regenerate") # Emoji for regenerate
