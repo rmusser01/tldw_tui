@@ -4,6 +4,7 @@
 # Imports
 import logging
 import logging.handlers
+import subprocess
 import sys
 from pathlib import Path
 import traceback
@@ -36,7 +37,7 @@ from tldw_chatbook.Event_Handlers.worker_events import StreamingChunk, StreamDon
 # --- Local API library Imports ---
 from .UI.MediaWindow import MediaWindow, slugify as media_slugify
 from tldw_chatbook.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, TAB_STATS, TAB_TOOLS_SETTINGS, \
-    TAB_INGEST, TAB_LLM, TAB_MEDIA, TAB_SEARCH
+    TAB_INGEST, TAB_LLM, TAB_MEDIA, TAB_SEARCH, TAB_EVALS
 from tldw_chatbook.DB.Client_Media_DB_v2 import MediaDatabase
 from tldw_chatbook.config import chachanotes_db as global_chachanotes_db_instance, get_media_db_path, CLI_APP_CLIENT_ID
 from tldw_chatbook.Logging_Config import RichLogHandler
@@ -66,7 +67,10 @@ from .Event_Handlers import (
     notes_events as notes_handlers,
     worker_events as worker_handlers, worker_events, ingest_events,
     llm_nav_events as llm_handlers,
+    # Explicit import for Ollama handler as per subtask, though current dispatch is generic
+    llm_management_events,
 )
+from .Event_Handlers.llm_management_events import handle_llamacpp_browse_exec_button_pressed, handle_llamacpp_browse_model_button_pressed, handle_llamafile_browse_exec_button_pressed, handle_llamafile_browse_model_button_pressed, handle_vllm_browse_python_button_pressed, handle_vllm_browse_model_button_pressed
 from .Character_Chat import Character_Chat_Lib as ccl
 from .Notes.Notes_Library import NotesInteropService
 from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError, InputError
@@ -96,6 +100,7 @@ from .UI.Stats_Window import StatsWindow
 from .UI.Ingest_Window import IngestWindow
 from .UI.Tools_Settings_Window import ToolsSettingsWindow
 from .UI.LLM_Management_Window import LLMManagementWindow
+from .UI.Evals_Window import EvalsWindow # Added EvalsWindow
 from .UI.Tab_Bar import TabBar
 from .UI.MediaWindow import MediaWindow
 from .UI.SearchWindow import SearchWindow
@@ -176,7 +181,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     ALL_MAIN_WINDOW_IDS = [ # Assuming these are your main content window IDs
         "chat-window", "conversations_characters_prompts-window",
         "ingest-window", "tools_settings-window", "llm_management-window",
-        "media-window", "search-window", "logs-window"
+        "media-window", "search-window", "logs-window", "evals-window" # Added "evals-window"
     ]
 
     # Define reactive at class level with a placeholder default and type hint
@@ -208,6 +213,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     notes_sidebar_right_collapsed: reactive[bool] = reactive(False)
     conv_char_sidebar_left_collapsed: reactive[bool] = reactive(False)
     conv_char_sidebar_right_collapsed: reactive[bool] = reactive(False)
+    evals_sidebar_collapsed: reactive[bool] = reactive(False) # Added for Evals tab
 
     # Reactive variables for selected note details
     current_selected_note_id: reactive[Optional[str]] = reactive(None)
@@ -297,6 +303,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # LLM Inference Tab
     llm_active_view: reactive[Optional[str]] = reactive(None)
     _initial_llm_view: Optional[str] = "llm-view-llama-cpp"
+    vllm_server_process: Optional[subprocess.Popen] = None
 
     # De-Bouncers
     _conv_char_search_timer: Optional[Timer] = None
@@ -716,6 +723,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             # --- End MediaWindow with passed types ---
 
             yield from _yield_and_track(SearchWindow(self, id="search-window", classes="window"), TAB_SEARCH, "search-window")
+            yield from _yield_and_track(EvalsWindow(self, id="evals-window", classes="window"), TAB_EVALS, "evals-window") # Added EvalsWindow
 
             self.loguru_logger.info(f"Finished yielding concrete windows. Composed IDs: {composed_window_ids}")
 
@@ -1392,13 +1400,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 self.loguru_logger.debug(
                     f"Switched to LLM Management tab, activating initial view: {self._initial_llm_view}")
                 self.call_later(setattr, self, 'llm_active_view', self._initial_llm_view)
-                
-            # Add class to highlight the active button
-            try:
-                active_button = self.query_one(f"#llm-nav-llama-cpp", Button)
-                active_button.add_class("-active")
-            except QueryError:
-                self.loguru_logger.warning("Could not find the llama-cpp button to highlight")
+        elif new_tab == TAB_EVALS: # Added for Evals tab
+            # Placeholder for any specific actions when Evals tab is selected
+            # For example, if EvalsWindow has sub-views or needs initial data loading:
+            # if not self.evals_active_view: # Assuming an 'evals_active_view' reactive
+            #     self.loguru_logger.debug(f"Switched to Evals tab, activating initial view...")
+            #     self.call_later(setattr, self, 'evals_active_view', self._initial_evals_view) # Example
+            self.loguru_logger.debug(f"Switched to Evals tab. Initial sidebar state: collapsed={self.evals_sidebar_collapsed}")
+
 
     async def _activate_initial_ingest_view(self) -> None:
         self.loguru_logger.info("Attempting to activate initial ingest view via _activate_initial_ingest_view.")
@@ -1477,6 +1486,21 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             logging.error("Conversations, Characters & Prompts left sidebar pane (#conv-char-left-pane) not found.")
         except Exception as e:
             logging.error(f"Error toggling Conversations, Characters & Prompts left sidebar pane: {e}", exc_info=True)
+
+    def watch_evals_sidebar_collapsed(self, collapsed: bool) -> None:
+        """Hide or show the Evals sidebar."""
+        if not self._ui_ready:
+            self.loguru_logger.debug("watch_evals_sidebar_collapsed: UI not ready.")
+            return
+        try:
+            sidebar = self.query_one("#evals-sidebar") # ID from EvalsWindow.py
+            sidebar.set_class(collapsed, "collapsed") # Assumes "collapsed" class handles display: none
+            # Alternatively: sidebar.display = not collapsed
+            self.loguru_logger.debug(f"Evals sidebar collapsed state: {collapsed}, class set/removed.")
+        except QueryError:
+            self.loguru_logger.error("Evals sidebar (#evals-sidebar) not found for collapse toggle.")
+        except Exception as e:
+            self.loguru_logger.error(f"Error toggling Evals sidebar: {e}", exc_info=True)
 
     # --- Method DEFINITION for show_ingest_view ---
     def show_ingest_view(self, view_id_to_show: Optional[str]):
@@ -2184,6 +2208,20 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         elif current_active_tab == TAB_LLM:
             if button_id and button_id.startswith("llm-nav-"):
                 await llm_handlers.handle_llm_nav_button_pressed(self, button_id)
+            elif button_id == "llamacpp-browse-exec-button":
+                await handle_llamacpp_browse_exec_button_pressed(self)
+            elif button_id == "llamacpp-browse-model-button":
+                await handle_llamacpp_browse_model_button_pressed(self)
+            # Add these new conditions for Llamafile:
+            elif button_id == "llamafile-browse-exec-button":
+                await handle_llamafile_browse_exec_button_pressed(self)
+            elif button_id == "llamafile-browse-model-button":
+                await handle_llamafile_browse_model_button_pressed(self)
+            # Add these new conditions for vLLM:
+            elif button_id == "vllm-browse-python-button":
+                await handle_vllm_browse_python_button_pressed(self)
+            elif button_id == "vllm-browse-model-button":
+                await handle_vllm_browse_model_button_pressed(self)
             else:
                 self.loguru_logger.warning(
                     f"Unhandled button on LLM MANAGEMENT tab: ID:{button_id}, Label:'{button.label}'")
@@ -2192,6 +2230,16 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         elif current_active_tab == TAB_LOGS:
             if button_id == "copy-logs-button": await app_lifecycle_handlers.handle_copy_logs_button_pressed(self)
             else: self.loguru_logger.warning(f"Unhandled button on LOGS tab: {button_id}")
+
+        # --- Evals Tab ---
+        elif current_active_tab == TAB_EVALS:
+            if button_id == "toggle-evals-sidebar":
+                self.evals_sidebar_collapsed = not self.evals_sidebar_collapsed
+                self.loguru_logger.debug(f"Evals sidebar toggle button pressed. New state: {self.evals_sidebar_collapsed}")
+                return # Handled
+            else:
+                self.loguru_logger.warning(f"Unhandled button on EVALS tab: ID:{button_id}, Label:'{button.label}'")
+            return # Explicitly return after handling buttons on Evals tab.
 
         else:
             self.loguru_logger.warning(f"Button '{button_id}' pressed on unhandled/unknown tab '{current_active_tab}' or unhandled button ID.")

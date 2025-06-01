@@ -99,7 +99,8 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
                     id=f"{id_prefix}-prompts-listview",
                     classes="sidebar-listview"
                 )
-                results_list_view.styles.height = 7  # Set height for ListView
+                # USER-SETTING: Set height for Prompts Search Results ListView in Chat tab
+                results_list_view.styles.height = 15  # Set height for ListView
                 yield results_list_view
 
                 yield Button(
@@ -116,7 +117,8 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
                     classes="sidebar-textarea prompt-display-textarea",
                     read_only=True
                 )
-                system_prompt_display.styles.height = 5  # Set height for TextArea
+                # USER-SETTING: Set height for Prompts System Prompt in Chat tab
+                system_prompt_display.styles.height = 15  # Set height for TextArea
                 yield system_prompt_display
                 yield Button(
                     "Copy System",
@@ -133,7 +135,8 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
                     classes="sidebar-textarea prompt-display-textarea",
                     read_only=True
                 )
-                user_prompt_display.styles.height = 5  # Set height for TextArea
+                # USER-SETTING: Set height for Prompts User Prompt in Chat tab
+                user_prompt_display.styles.height = 15  # Set height for TextArea
                 yield user_prompt_display
                 yield Button(
                     "Copy User",

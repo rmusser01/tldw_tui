@@ -39,7 +39,7 @@ If you have general questions, feel free to reach out on the [tldw_Project Disco
 
 ## Coding Style
 
-*   Please follow [PEP 8](https://www.python.org/dev/peps/pep-0008/) for Python code. (I try)
+*   Please follow [PEP 8](https://www.python.org/dev/peps/pep-0008/) for Python code. (I try. I also try to use pylint but that's a whole rant.)
 *   Use clear and descriptive variable and function names.
 *   Add comments to your code where necessary to explain complex logic. over explained versus mysterious and demure.
 *   Ensure your code is well-formatted. Consider using a tool like Black or Ruff. (Is appreciated, even though I don't use it currently, I may in the future)
