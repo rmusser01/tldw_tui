@@ -2,7 +2,7 @@ from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.widgets import Static, Input, TextArea, Button, Collapsible
 
-from ..Widgets.emoji_picker import EmojiPicker # Import EmojiPicker
+#from ..Widgets.emoji_picker import
 
 
 class NotesSidebarRight(VerticalScroll):
@@ -63,7 +63,8 @@ class NotesSidebarRight(VerticalScroll):
 
         # New Collapsible for Emojis
         with Collapsible(title="Emojis", collapsed=True):
-            yield EmojiPicker(id="notes-emoji-picker")
+            #yield EmojiPicker(id="notes-emoji-picker")
+            pass  # Placeholder for EmojiPicker widget
 
         # Group export options
         with Collapsible(title="Export Options", collapsed=True):
