@@ -71,26 +71,8 @@ from .Event_Handlers import (
     # Explicit import for Ollama handler as per subtask, though current dispatch is generic
     llm_management_events,
 )
-from .Event_Handlers.llm_management_events import (
-    handle_llamacpp_browse_exec_button_pressed, handle_llamacpp_browse_model_button_pressed,
-    handle_llamafile_browse_exec_button_pressed, handle_llamafile_browse_model_button_pressed,
-    handle_vllm_browse_python_button_pressed, handle_vllm_browse_model_button_pressed,
-    # Ollama Handlers
-    handle_ollama_nav_button_pressed, # Already imported by llm_handlers or directly
-    handle_ollama_list_models_button_pressed,
-    handle_ollama_show_model_button_pressed,
-    handle_ollama_delete_model_button_pressed,
-    handle_ollama_copy_model_button_pressed,
-    handle_ollama_pull_model_button_pressed,
-    handle_ollama_create_model_button_pressed,
-    handle_ollama_browse_modelfile_button_pressed,
-    handle_ollama_push_model_button_pressed,
-    handle_ollama_embeddings_button_pressed,
-    handle_ollama_ps_button_pressed,
-    # MLX Handlers (ensure they are correctly imported if used in on_button_pressed)
-    handle_start_mlx_server_button_pressed,
-    handle_stop_mlx_server_button_pressed,
-)
+from .Event_Handlers.llm_management_events import handle_llamacpp_browse_exec_button_pressed, handle_llamacpp_browse_model_button_pressed, handle_llamafile_browse_exec_button_pressed, handle_llamafile_browse_model_button_pressed
+from .Event_Handlers.llm_management_events_vllm import handle_vllm_browse_python_button_pressed, handle_vllm_browse_model_button_pressed, handle_start_vllm_server_button_pressed, handle_stop_vllm_server_button_pressed
 from .Character_Chat import Character_Chat_Lib as ccl
 from .Notes.Notes_Library import NotesInteropService
 from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError, InputError
@@ -2275,6 +2257,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 await handle_llamacpp_browse_exec_button_pressed(self)
             elif button_id == "llamacpp-browse-model-button":
                 await handle_llamacpp_browse_model_button_pressed(self)
+            elif button_id == "llamacpp-start-server-button":
+                await llm_management_events.handle_start_llamacpp_server_button_pressed(self)
+            elif button_id == "llamacpp-stop-server-button":
+                await llm_management_events.handle_stop_llamacpp_server_button_pressed(self)
+            elif button_id == "llamafile-start-server-button":
+                await llm_management_events.handle_start_llamafile_server_button_pressed(self)
+            # Note: llamafile-stop-server-button is not handled here as it's not in the original code's __all__ for llm_management_events
+            # and doesn't have a dedicated handler in the provided snippets.
             # Add these new conditions for Llamafile:
             elif button_id == "llamafile-browse-exec-button":
                 await handle_llamafile_browse_exec_button_pressed(self)
@@ -2285,33 +2275,15 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 await handle_vllm_browse_python_button_pressed(self)
             elif button_id == "vllm-browse-model-button":
                 await handle_vllm_browse_model_button_pressed(self)
+            elif button_id == "vllm-start-server-button":
+                await handle_start_vllm_server_button_pressed(self)
+            elif button_id == "vllm-stop-server-button":
+                await handle_stop_vllm_server_button_pressed(self)
             # MLX Server Buttons
             elif button_id == "mlx-start-server-button":
                 await handle_start_mlx_server_button_pressed(self)
             elif button_id == "mlx-stop-server-button":
                 await handle_stop_mlx_server_button_pressed(self)
-            # Ollama Buttons
-            elif button_id == "ollama-list-models-button": # Corrected ID from "ollama-refresh-list-button" to match UI
-                await handle_ollama_list_models_button_pressed(self)
-            elif button_id == "ollama-show-model-button":
-                await handle_ollama_show_model_button_pressed(self)
-            elif button_id == "ollama-delete-model-button":
-                await handle_ollama_delete_model_button_pressed(self)
-            elif button_id == "ollama-copy-model-button":
-                await handle_ollama_copy_model_button_pressed(self)
-            elif button_id == "ollama-pull-model-button":
-                await handle_ollama_pull_model_button_pressed(self)
-            elif button_id == "ollama-browse-modelfile-button":
-                await handle_ollama_browse_modelfile_button_pressed(self)
-            elif button_id == "ollama-create-model-button":
-                await handle_ollama_create_model_button_pressed(self)
-            elif button_id == "ollama-push-model-button":
-                await handle_ollama_push_model_button_pressed(self)
-            elif button_id == "ollama-embeddings-button":
-                await handle_ollama_embeddings_button_pressed(self)
-            elif button_id == "ollama-ps-button":
-                await handle_ollama_ps_button_pressed(self)
-            # Add other LLM Management buttons here
             else:
                 self.loguru_logger.warning(
                     f"Unhandled button on LLM MANAGEMENT tab: ID:{button_id}, Label:'{button.label}'")

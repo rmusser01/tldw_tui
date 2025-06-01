@@ -14,7 +14,8 @@ if TYPE_CHECKING:
     from ..app import TldwCli  # pragma: no cover – runtime import only
 
 # Import the specific handler
-from .llm_management_events import handle_ollama_nav_button_pressed, handle_mlx_lm_nav_button_pressed
+from .llm_management_events_ollama import handle_ollama_nav_button_pressed
+from .llm_management_events import handle_mlx_lm_nav_button_pressed
 
 __all__ = [
     "handle_llm_nav_button_pressed",
