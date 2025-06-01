@@ -4,7 +4,11 @@
 # Imports
 import copy
 import json
-import tomllib
+import sys
+if sys.version_info < (3, 11):
+    import tomli as tomllib
+else:
+    import tomllib
 import os
 from pathlib import Path
 import toml
