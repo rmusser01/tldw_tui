@@ -53,6 +53,7 @@ This section details the various Large Language Model (LLM) inference backends i
 ### ONNX Runtime Integration
 
 ### MLX-LM Integration
+- https://github.com/ml-explore/mlx-lm/tree/main
 
 The application now supports MLX-LM for running local language models optimized for Apple Silicon hardware.
 Users can manage MLX-LM instances via the "LLM Management" tab, allowing configuration of:

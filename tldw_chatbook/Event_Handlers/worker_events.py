@@ -264,6 +264,7 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
         elif event.worker.name == "respond_for_me_worker":
             if event.state is WorkerState.SUCCESS:
                 suggestion_result = event.worker.result
+                logger.debug(f"Respond_for_me_worker raw result: {str(suggestion_result)[:1000]}") # Log a larger snippet
                 suggested_text = ""
                 if isinstance(suggestion_result, dict) and suggestion_result.get("choices"):
                     try:
@@ -276,9 +277,16 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
                 else:
                     logger.warning(f"Unexpected result type from 'respond_for_me_worker': {type(suggestion_result)}. Content: {str(suggestion_result)[:200]}")
 
+                logger.debug(f"Respond_for_me_worker initial extracted suggested_text: '{suggested_text[:500]}...'")
+
                 if suggested_text:
+                    if suggested_text: # Only log if there's something to clean
+                        logger.debug(f"Respond_for_me_worker suggested_text BEFORE cleaning: '{suggested_text[:500]}...'")
+                    else:
+                        logger.debug("Respond_for_me_worker suggested_text is empty or None BEFORE cleaning.")
                     # Clean the text
                     cleaned_suggested_text = suggested_text.strip()
+                    logger.debug(f"Respond_for_me_worker cleaned_suggested_text: '{cleaned_suggested_text[:500]}...'")
                     common_fillers = [
                         "Sure, here's a suggestion:", "Here's a possible response:", "You could say:", "How about this:",
                         "Okay, here's a suggestion:", "Here is a suggestion:", "Here's a suggestion for your response:"
@@ -290,22 +298,36 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
                        (cleaned_suggested_text.startswith("'") and cleaned_suggested_text.endswith("'")):
                         cleaned_suggested_text = cleaned_suggested_text[1:-1]
 
+                    logger.debug(f"Respond_for_me_worker cleaned_suggested_text after further cleaning: '{cleaned_suggested_text[:500]}...'")
+
                     try:
                         chat_input_widget = app.query_one("#chat-input", TextArea)
                         chat_input_widget.text = cleaned_suggested_text
                         chat_input_widget.focus()
-                        app.notify("Suggestion populated in the input field.", severity="information", timeout=3)
+                        try:
+                            app.notify("Suggestion populated in the input field.", severity="information", timeout=3)
+                        except Exception as e_notify:
+                            logger.error(f"Respond_for_me_worker: Error during app.notify call: {e_notify}", exc_info=True)
                         logger.info(f"Suggestion populated from worker: '{cleaned_suggested_text[:100]}...'")
                     except QueryError:
-                        logger.error("Failed to query #chat-input to populate suggestion.")
-                        app.notify("Error populating suggestion (UI element missing).", severity="error")
+                        logger.error("Respond_for_me_worker: Failed to query #chat-input to populate suggestion.")
+                        try:
+                            app.notify("Error populating suggestion (UI element missing).", severity="error")
+                        except Exception as e_notify:
+                            logger.error(f"Respond_for_me_worker: Error during app.notify call: {e_notify}", exc_info=True)
                 else:
                     logger.warning("'respond_for_me_worker' succeeded but returned empty suggestion.")
-                    app.notify("AI returned an empty suggestion.", severity="warning")
+                    try:
+                        app.notify("AI returned an empty suggestion.", severity="warning")
+                    except Exception as e_notify:
+                        logger.error(f"Respond_for_me_worker: Error during app.notify call: {e_notify}", exc_info=True)
 
             elif event.state is WorkerState.ERROR:
                 logger.error(f"Worker 'respond_for_me_worker' failed: {event.worker.error}", exc_info=event.worker.error)
-                app.notify(f"Failed to generate suggestion: {str(event.worker.error)[:100]}", severity="error", timeout=5)
+                try:
+                    app.notify(f"Failed to generate suggestion: {str(event.worker.error)[:100]}", severity="error", timeout=5)
+                except Exception as e_notify:
+                    logger.error(f"Respond_for_me_worker: Error during app.notify call: {e_notify}", exc_info=True)
             # Button re-enabling is handled by the finally block in handle_respond_for_me_button_pressed
         else:
             logger.debug(f"Ignoring worker state change for unhandled worker: {worker_name}")

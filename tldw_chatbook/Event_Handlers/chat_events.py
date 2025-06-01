@@ -2233,6 +2233,7 @@ async def handle_continue_response_button_pressed(app: 'TldwCli', button: Button
 
 async def handle_respond_for_me_button_pressed(app: 'TldwCli') -> None:
     """Handles the 'Respond for Me' (Suggest) button press in the chat input area."""
+    loguru_logger.info("Enter: handle_respond_for_me_button_pressed")
     loguru_logger.info("Respond for Me button pressed.")
     prefix = "chat" # For querying UI elements like #chat-log, #chat-input, etc.
 
@@ -2431,6 +2432,9 @@ async def handle_respond_for_me_button_pressed(app: 'TldwCli') -> None:
         # The response will be handled by a worker event (e.g., on_stream_done or a custom one).
         # So, remove direct processing of llm_response_text and UI population here.
         # The notification "Suggestion populated..." will also move to that future event handler.
+
+        loguru_logger.debug(f"Suggestion prompt instruction: {suggestion_prompt_instruction[:500]}...")
+        loguru_logger.debug(f"Suggestion params: provider='{selected_provider}', model='{selected_model}', system_prompt (for suggestion)='{final_system_prompt_for_api[:100]}...'")
 
         loguru_logger.info("Respond for Me worker dispatched. Waiting for suggestion...")
 
