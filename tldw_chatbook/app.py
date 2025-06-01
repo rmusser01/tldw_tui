@@ -67,6 +67,8 @@ from .Event_Handlers import (
     notes_events as notes_handlers,
     worker_events as worker_handlers, worker_events, ingest_events,
     llm_nav_events as llm_handlers,
+    # Explicit import for Ollama handler as per subtask, though current dispatch is generic
+    llm_management_events,
 )
 from .Event_Handlers.llm_management_events import handle_llamacpp_browse_exec_button_pressed, handle_llamacpp_browse_model_button_pressed, handle_llamafile_browse_exec_button_pressed, handle_llamafile_browse_model_button_pressed, handle_vllm_browse_python_button_pressed, handle_vllm_browse_model_button_pressed
 from .Character_Chat import Character_Chat_Lib as ccl

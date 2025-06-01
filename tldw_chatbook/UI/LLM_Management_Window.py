@@ -54,6 +54,7 @@ class LLMManagementWindow(Container):
             yield Static("LLM Options", classes="sidebar-title")
             yield Button("Llama.cpp", id="llm-nav-llama-cpp", classes="llm-nav-button")
             yield Button("Llamafile", id="llm-nav-llamafile", classes="llm-nav-button")
+            yield Button("Ollama", id="llm-nav-ollama", classes="llm-nav-button")
             yield Button("vLLM", id="llm-nav-vllm", classes="llm-nav-button")
             yield Button("Transformers", id="llm-nav-transformers", classes="llm-nav-button")
             yield Button("Local Models", id="llm-nav-local-models", classes="llm-nav-button")
@@ -130,6 +131,11 @@ class LLMManagementWindow(Container):
             yield Container(
                 Static("Model Download Area - Content Coming Soon!"),
                 id="llm-view-download-models",
+                classes="llm-view-area",
+            )
+            yield Container(
+                Static("Ollama Management Area - Content Coming Soon!"),
+                id="llm-view-ollama",
                 classes="llm-view-area",
             )
 
