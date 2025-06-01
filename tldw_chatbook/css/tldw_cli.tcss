@@ -1204,14 +1204,11 @@ AppFooterStatus {
     background: $primary-background-darken-1; /* Example color, adjust to theme */
     width: 100%;
     layout: horizontal; /* Ensures items inside flow horizontally */
-    align: right middle; /* Aligns children (like the Static widget) to the right vertically centered */
+    /* align: right middle; /* This is now removed, children use dock */
     padding: 0 1; /* Horizontal padding for the footer bar */
 }
 
-/* Styling for the Static widget inside AppFooterStatus */
-AppFooterStatus > Static#internal-db-size-indicator {
-    width: auto; /* Let the width be defined by content */
-    color: $text-muted; /* Example color */
-    /* No specific dock needed here if parent 'align' handles it */
-    /* Add margin if needed, e.g., margin-right: 1; */
-}
+/* Styling for the children of AppFooterStatus is primarily handled by
+   AppFooterStatus.DEFAULT_CSS in its Python file.
+   The rule for AppFooterStatus > Static#internal-db-size-indicator previously here
+   is removed to defer to DEFAULT_CSS for internal component styling. */
