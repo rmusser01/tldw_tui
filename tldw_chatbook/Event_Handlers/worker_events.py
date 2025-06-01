@@ -77,7 +77,7 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
             error_msg_text = Text.from_markup(
                 f"[bold red]Error:[/]\nAI response for worker '{worker_name}' received, but its display widget was missing.")
             # Use plain text for ChatMessage content if it doesn't support Text directly
-            await chat_container_fallback.mount(ChatMessage(message=error_msg_text.plain, role="System", classes="-error"))
+            app.notify(f"Error: AI response for worker '{worker_name}' received, but its display widget was missing.", severity="error", timeout=10)
         except QueryError:
             logger.error(f"Fallback: Could not find chat container #{prefix}-log.")
         app.current_ai_message_widget = None
