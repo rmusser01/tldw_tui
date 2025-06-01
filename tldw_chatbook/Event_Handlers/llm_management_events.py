@@ -64,6 +64,8 @@ __all__ = [
     "handle_start_model_download_button_pressed",
     # ─── Ollama ───────────────────────────────────────────────────────────────
     "handle_ollama_nav_button_pressed",
+    # ─── MLX-LM ───────────────────────────────────────────────────────────────
+    "handle_mlx_lm_nav_button_pressed",
 ]
 
 ###############################################################################
@@ -752,6 +754,40 @@ async def handle_ollama_nav_button_pressed(app: "TldwCli") -> None:
     except Exception as e: # pragma: no cover
         logger.error(f"Unexpected error in handle_ollama_nav_button_pressed: {e}", exc_info=True)
         app.notify("An unexpected error occurred while switching to Ollama view.", severity="error")
+
+
+###############################################################################
+# ─── MLX-LM UI helpers ──────────────────────────────────────────────────────
+###############################################################################
+
+
+async def handle_mlx_lm_nav_button_pressed(app: "TldwCli") -> None:
+    """Handle the MLX-LM navigation button press."""
+    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
+    logger.debug("MLX-LM nav button pressed.")
+
+    try:
+        content_pane = app.query_one("#llm-content-pane", Container)
+        view_areas = content_pane.query(".llm-view-area")
+
+        for view in view_areas:
+            if view.id:  # Only hide if it has an ID
+                logger.debug(f"Hiding view #{view.id}")
+                view.styles.display = "none"
+            else: # pragma: no cover
+                logger.warning("Found a .llm-view-area without an ID, not hiding it.")
+
+        mlx_lm_view = app.query_one("#llm-view-mlx-lm", Container)
+        logger.debug(f"Showing view #{mlx_lm_view.id}")
+        mlx_lm_view.styles.display = "block"
+        #app.notify("Switched to MLX-LM view.") # Optional: uncomment if you want a notification
+
+    except QueryError as e: # pragma: no cover
+        logger.error(f"QueryError in handle_mlx_lm_nav_button_pressed: {e}", exc_info=True)
+        app.notify("Error switching to MLX-LM view: Could not find required UI elements.", severity="error")
+    except Exception as e: # pragma: no cover
+        logger.error(f"Unexpected error in handle_mlx_lm_nav_button_pressed: {e}", exc_info=True)
+        app.notify("An unexpected error occurred while switching to MLX-LM view.", severity="error")
 
 #
 # End of llm_management_events.py

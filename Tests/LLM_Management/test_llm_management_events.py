@@ -265,3 +265,40 @@ async def test_handle_start_llamacpp_server_invalid_model_path(mock_app):
 # This means `call_args.args` will be `(run_llamacpp_server_worker,)`
 # and `call_args.kwargs` will be `{'args': [app, command], 'group': ..., ...}`.
 # The tests correctly access `call_args.kwargs['args'][1]`.
+
+from tldw_chatbook.Event_Handlers.llm_nav_events import handle_llm_nav_button_pressed
+from textual.containers import Container
+
+
+async def test_mlx_lm_nav_button_shows_correct_view():
+    """Test that pressing the MLX-LM nav button shows the correct view and hides others."""
+    app = TldwCli()
+    target_view_id = "llm-view-mlx-lm"
+    other_view_ids = [
+        "llm-view-llama-cpp",
+        "llm-view-llamafile",
+        "llm-view-ollama",
+        "llm-view-vllm",
+        "llm-view-transformers",
+        "llm-view-local-models",
+        "llm-view-download-models",
+    ]
+
+    async with app.run_test() as pilot:
+        # Initial state check (optional, but good for sanity)
+        # Ensure all views are initially hidden or one is active as per app logic
+        # For this test, we assume the handler will correctly set states regardless of initial.
+
+        # Simulate the MLX-LM nav button being pressed
+        await handle_llm_nav_button_pressed(pilot.app, "llm-nav-mlx-lm")
+
+        # Check that the MLX-LM view is visible
+        mlx_view = pilot.app.query_one(f"#{target_view_id}", Container)
+        assert mlx_view.styles.display is not None
+        assert mlx_view.styles.display.value == "block", f"{target_view_id} should be 'block'"
+
+        # Check that all other main LLM views are hidden
+        for view_id in other_view_ids:
+            other_view = pilot.app.query_one(f"#{view_id}", Container)
+            assert other_view.styles.display is not None
+            assert other_view.styles.display.value == "none", f"{view_id} should be 'none'"
