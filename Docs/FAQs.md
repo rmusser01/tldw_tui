@@ -79,3 +79,9 @@ If you frequently paste large amounts of text and find this warning disruptive, 
 If Windows Terminal's `largePasteWarning` is enabled and you click "Yes" to proceed with the paste, but the text still doesn't appear correctly in the application, this might indicate that the terminal itself is still having trouble sending the entirety of the large input to the application, or the application itself might have other limitations (though the 5KB issue described by the user seems directly tied to the terminal's warning).
 
 Refer to the official [Windows Terminal Interaction Settings Documentation](https://docs.microsoft.com/en-us/windows/terminal/customize-settings/interaction) for the most up-to-date information.
+
+
+
+
+### Samplers
+https://rentry.org/samplers

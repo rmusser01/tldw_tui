@@ -905,6 +905,16 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         except Exception as e:
             loguru_logger.error(f"Error toggling CCP right pane: {e}", exc_info=True)
 
+    def _update_llamacpp_log(self, message: str) -> None:
+        """Helper to write messages to the Llama.cpp log widget."""
+        try:
+            log_widget = self.query_one("#llamacpp-log-output", RichLog)
+            log_widget.write(message)
+        except QueryError:
+            self.loguru_logger.error("Failed to query #llamacpp-log-output to write message.")
+        except Exception as e:  # pylint: disable=broad-except
+            self.loguru_logger.error(f"Error writing to Llama.cpp log: {e}", exc_info=True)
+
     # --- Modify _clear_prompt_fields and _load_prompt_for_editing ---
     def _clear_prompt_fields(self) -> None:
         """Clears prompt input fields in the CENTER PANE editor."""
@@ -2507,43 +2517,231 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             await ingest_events.handle_tldw_api_media_type_changed(self, str(event.value))
 
     async def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
-        # Log the worker state change
-        self.loguru_logger.debug(f"Worker {event.worker.name} state changed to {event.worker.state}")
+        worker_name_attr = event.worker.name
+        worker_group = event.worker.group
+        worker_state = event.state
+        worker_description = event.worker.description  # For more informative logging
 
-        # Check if the worker is a chat worker
-        # Assuming chat worker names start with "API_Call_chat"
-        if event.worker.name and event.worker.name.startswith("API_Call_chat"):
-            self.loguru_logger.debug(f"Chat worker {event.worker.name} detected.")
-            if event.worker.state == WorkerState.RUNNING:
-                self.loguru_logger.info(f"Chat worker {event.worker.name} is RUNNING. Setting current_chat_worker.")
-                self.current_chat_worker = event.worker
+        self.loguru_logger.debug(
+            f"on_worker_state_changed: Worker NameAttr='{worker_name_attr}' (Type: {type(worker_name_attr)}), "
+            f"Group='{worker_group}', State='{worker_state}', Desc='{worker_description}'"
+        )
+
+        # --- Handle Chat-related API Calls (e.g., API_Call_chat, API_Call_ccp, respond_for_me_worker) ---
+        # This section addresses the logic that was causing the crash.
+        if isinstance(worker_name_attr, str) and \
+                (worker_name_attr.startswith("API_Call_chat") or \
+                 worker_name_attr.startswith("API_Call_ccp") or \
+                 worker_name_attr == "respond_for_me_worker"):
+
+            self.loguru_logger.debug(f"Chat-related worker '{worker_name_attr}' detected. State: {worker_state}.")
+
+            # Log RUNNING state as indicated by the original traceback context
+            if worker_state == WorkerState.RUNNING:
+                self.loguru_logger.info(f"Chat-related worker '{worker_name_attr}' is RUNNING.")
+                # Any specific UI updates for the RUNNING state of a chat worker would go here.
+                # (e.g., showing a thinking indicator, disabling input)
+                # This is often handled when the worker is initially started.
+
+            # For SUCCESS or ERROR states, the logic is complex (updating UI, DB, etc.).
+            # Delegate to the specialized handler in worker_events.py.
+            if worker_state == WorkerState.SUCCESS or worker_state == WorkerState.ERROR:
+                self.loguru_logger.debug(
+                    f"Delegating state {worker_state} for chat-related worker '{worker_name_attr}' to worker_handlers."
+                )
+                await worker_handlers.handle_api_call_worker_state_changed(self, event)
+
+            # If there are other states (like PENDING, CANCELLED) to handle directly for chat workers:
+            # elif worker_state == WorkerState.PENDING:
+            #     self.loguru_logger.debug(f"Chat-related worker '{worker_name_attr}' is PENDING.")
+            # else:
+            #     self.loguru_logger.debug(f"Chat-related worker '{worker_name_attr}' in unhandled state: {worker_state}")
+
+        # --- Handle Llama.cpp Server Worker (identified by group) ---
+        # This handles the case where worker_name_attr was a list.
+        elif worker_group == "llamacpp_server":
+            self.loguru_logger.info(
+                f"Llama.cpp server worker (Group: '{worker_group}') state changed to {worker_state}."
+            )
+            actual_start_button_id = "#llamacpp-start-server-button"
+            actual_stop_button_id = "#llamacpp-stop-server-button"
+
+            if worker_state == WorkerState.PENDING:
+                self.loguru_logger.debug("Llama.cpp server worker is PENDING.")
+                # You might disable the start button here as well, or show a "starting..." status
                 try:
-                    stop_button = self.query_one("#stop-chat-generation-button", Button)
-                    stop_button.disabled = False
-                    self.loguru_logger.info("Enabled 'stop-chat-generation' button.")
+                    self.query_one(actual_start_button_id, Button).disabled = True
+                    self.query_one(actual_stop_button_id, Button).disabled = True  # Disable stop until fully running
                 except QueryError:
-                    self.loguru_logger.error("Could not find 'stop-chat-generation-button' to enable.")
+                    self.loguru_logger.warning("Could not find Llama.cpp server buttons to update for PENDING state.")
 
-            elif event.worker.state in (WorkerState.SUCCESS, WorkerState.CANCELLED, WorkerState.ERROR):
-                self.loguru_logger.info(f"Chat worker {event.worker.name} finished with state: {event.worker.state}.")
-                if event.worker is self.current_chat_worker:
-                    self.loguru_logger.info(f"Current chat worker {self.current_chat_worker.name} matches event worker. Clearing and disabling button.")
-                    self.current_chat_worker = None
-                    try:
-                        stop_button = self.query_one("#stop-chat-generation-button", Button)
-                        stop_button.disabled = True
-                        self.loguru_logger.info("Disabled 'stop-chat-generation' button.")
-                    except QueryError:
-                        self.loguru_logger.error("Could not find 'stop-chat-generation-button' to disable.")
+            elif worker_state == WorkerState.RUNNING:
+                self.loguru_logger.info("Llama.cpp server worker is RUNNING (subprocess launched).")
+                try:
+                    self.query_one(actual_start_button_id, Button).disabled = True
+                    self.query_one(actual_stop_button_id, Button).disabled = False  # Enable stop when running
+                    self.notify("Llama.cpp server process starting...", title="Server Status")
+                except QueryError:
+                    self.loguru_logger.warning("Could not find Llama.cpp server buttons to update for RUNNING state.")
+
+            elif worker_state == WorkerState.SUCCESS:
+                self.loguru_logger.info(f"Llama.cpp server worker finished successfully (Textual worker perspective).")
+                # Define result_message and is_actual_server_error *inside* this block
+                result_message = str(
+                    event.worker.result).strip() if event.worker.result else "Worker completed with no specific result message."
+                self.loguru_logger.info(f"Llama.cpp worker result message: '{result_message}'")
+
+                is_actual_server_error = "exited quickly with error code" in result_message.lower() or \
+                                         "exited with non-zero code" in result_message.lower() or \
+                                         "error:" in result_message.lower()  # Broader check
+
+                if is_actual_server_error:
+                    self.notify(f"Llama.cpp server process reported an error. Check logs.", title="Server Status",
+                                severity="error", timeout=10)
+                elif "exited quickly with code: 0" in result_message.lower():
+                    self.notify(
+                        f"Llama.cpp server exited quickly (but successfully). Check logs if this was unexpected.",
+                        title="Server Status", severity="warning", timeout=10)
                 else:
-                    self.loguru_logger.debug(f"Finished worker {event.worker.name} is not the current_chat_worker ({getattr(self.current_chat_worker, 'name', 'None')}). Ignoring.")
+                    self.notify("Llama.cpp server process finished.", title="Server Status")
+
+                try:
+                    self.query_one(actual_start_button_id, Button).disabled = False
+                    self.query_one(actual_stop_button_id, Button).disabled = True  # Disable stop when not running
+                except QueryError:
+                    self.loguru_logger.warning("Could not find Llama.cpp server buttons to update for SUCCESS state.")
+
+            elif worker_state == WorkerState.ERROR:
+                self.loguru_logger.error(f"Llama.cpp server worker failed with an exception: {event.worker.error}")
+                self.notify(f"Llama.cpp worker error: {str(event.worker.error)[:100]}", title="Server Error",
+                            severity="error", timeout=10)
+                try:
+                    self.query_one(actual_start_button_id, Button).disabled = False
+                    self.query_one(actual_stop_button_id, Button).disabled = True
+                except QueryError:
+                    self.loguru_logger.warning("Could not find Llama.cpp server buttons to update for ERROR state.")
+
+        # --- Handle vLLM Server Worker (identified by group) ---
+        elif worker_group == "vllm_server":
+            self.loguru_logger.info(
+                f"vLLM server worker (Group: '{worker_group}', NameAttr: '{worker_name_attr}') state changed to {worker_state}."
+            )
+            if worker_state == WorkerState.RUNNING:
+                self.loguru_logger.info("vLLM server is RUNNING.")
+                try:
+                    self.query_one("#vllm-start-server-button", Button).disabled = True
+                    self.query_one("#vllm-stop-server-button", Button).disabled = False
+                    self.vllm_server_process = event.worker._worker_thread._target_args[
+                        1]  # Accessing underlying process if needed, BE CAREFUL
+                    self.notify("vLLM server started.", title="Server Status")
+                except QueryError:
+                    self.loguru_logger.warning("Could not find vLLM server buttons to update state for RUNNING.")
+                except (AttributeError, IndexError):
+                    self.loguru_logger.warning("Could not retrieve vLLM process object from worker.")
+
+            elif worker_state == WorkerState.SUCCESS or worker_state == WorkerState.ERROR:
+                status_message = "successfully" if worker_state == WorkerState.SUCCESS else "with an error"
+                self.loguru_logger.info(
+                    f"vLLM server process finished {status_message}. Final output handled by 'done' callback.")
+                try:
+                    self.query_one("#vllm-start-server-button", Button).disabled = False
+                    self.query_one("#vllm-stop-server-button", Button).disabled = True
+                    self.vllm_server_process = None  # Clear process reference
+                    self.notify(f"vLLM server stopped {status_message}.", title="Server Status",
+                                severity="information" if worker_state == WorkerState.SUCCESS else "error")
+                except QueryError:
+                    self.loguru_logger.warning("Could not find vLLM server buttons to update state for STOPPED/ERROR.")
+
+        # --- Handle Llamafile Server Worker (identified by group) ---
+        elif worker_group == "llamafile_server":
+            self.loguru_logger.info(
+                f"Llamafile server worker (Group: '{worker_group}', NameAttr: '{worker_name_attr}') state changed to {worker_state}."
+            )
+            if worker_state == WorkerState.RUNNING:
+                self.loguru_logger.info("Llamafile server is RUNNING.")
+                try:
+                    self.query_one("#llamafile-start-server-button", Button).disabled = True
+                    # Assuming you have a stop button:
+                    # self.query_one("#llamafile-stop-server-button", Button).disabled = False
+                    self.notify("Llamafile server started.", title="Server Status")
+                except QueryError:
+                    self.loguru_logger.warning("Could not find Llamafile server buttons to update state for RUNNING.")
+
+            elif worker_state == WorkerState.SUCCESS or worker_state == WorkerState.ERROR:
+                status_message = "successfully" if worker_state == WorkerState.SUCCESS else "with an error"
+                self.loguru_logger.info(
+                    f"Llamafile server process finished {status_message}. Final output handled by 'done' callback.")
+                try:
+                    self.query_one("#llamafile-start-server-button", Button).disabled = False
+                    # self.query_one("#llamafile-stop-server-button", Button).disabled = True
+                    self.notify(f"Llamafile server stopped {status_message}.", title="Server Status",
+                                severity="information" if worker_state == WorkerState.SUCCESS else "error")
+                except QueryError:
+                    self.loguru_logger.warning(
+                        "Could not find Llamafile server buttons to update state for STOPPED/ERROR.")
+
+        # --- Handle Model Download Worker (identified by group) ---
+        elif worker_group == "model_download":
+            self.loguru_logger.info(
+                f"Model Download worker (Group: '{worker_group}', NameAttr: '{worker_name_attr}') state changed to {worker_state}."
+            )
+            # The 'done' callback (stream_worker_output_to_log) handles the detailed log output.
+            if worker_state == WorkerState.SUCCESS:
+                self.notify("Model download completed successfully.", title="Download Status")
+            elif worker_state == WorkerState.ERROR:
+                self.notify("Model download failed. Check logs for details.", title="Download Status", severity="error")
+
+            # Re-enable the download button regardless of success or failure
+            try:
+                # Ensure this ID matches your actual "Start Download" button in LLM_Management_Window.py
+                # The provided LLM_Management_Window.py doesn't show a model download section yet.
+                # If it's added, ensure the button ID is correct here.
+                # For now, this is a placeholder ID.
+                download_button = self.query_one("#model-download-start-button", Button)  # Placeholder ID
+                download_button.disabled = False
+            except QueryError:
+                self.loguru_logger.warning(
+                    "Could not find model download button to re-enable (ID might be incorrect or view not present).")
+
+        # --- Fallback for any other workers not explicitly handled above ---
         else:
-            # If it's not a chat worker, delegate to the generic handler
-            # This is important if other types of workers exist and need handling.
-            # If only chat workers are managed this way, this delegation might not be strictly necessary
-            # but it's safer to keep it if handle_api_call_worker_state_changed has other logic.
-            self.loguru_logger.debug(f"Worker {event.worker.name} is not a chat worker. Delegating to generic handler.")
-            await worker_handlers.handle_api_call_worker_state_changed(self, event)
+            # This branch handles workers that are not chat-related and not one of the explicitly grouped servers.
+            # It also catches the case where worker_name_attr was a list but not for a known group.
+            name_for_log = worker_name_attr if isinstance(worker_name_attr,
+                                                          str) else f"[List Name for Group: {worker_group}]"
+            self.loguru_logger.debug(
+                f"Unhandled worker type or state in on_worker_state_changed: "
+                f"Name='{name_for_log}', Group='{worker_group}', State='{worker_state}', Desc='{worker_description}'"
+            )
+
+            # Generic handling for workers that might have output but no specific 'done' callback
+            # or if their 'done' callback isn't comprehensive for all states.
+            if worker_state == WorkerState.SUCCESS or worker_state == WorkerState.ERROR:
+                final_message_parts = []
+                try:
+                    # Check if worker.output is available and is an async iterable
+                    if hasattr(event.worker, 'output') and event.worker.output is not None:
+                        async for item in event.worker.output:  # type: ignore
+                            final_message_parts.append(str(item))
+
+                    final_message = "".join(final_message_parts)
+                    if final_message.strip():
+                        self.loguru_logger.info(
+                            f"Final output from unhandled worker '{name_for_log}' (Group: {worker_group}): {final_message.strip()}")
+                        # self.notify(f"Worker '{name_for_log}' finished: {final_message.strip()[:70]}...", title="Worker Update") # Optional notification
+                    elif worker_state == WorkerState.SUCCESS:
+                        self.loguru_logger.info(
+                            f"Unhandled worker '{name_for_log}' (Group: {worker_group}) completed successfully with no final message.")
+                        # self.notify(f"Worker '{name_for_log}' completed.", title="Worker Update") # Optional
+                    elif worker_state == WorkerState.ERROR:
+                        self.loguru_logger.error(
+                            f"Unhandled worker '{name_for_log}' (Group: {worker_group}) failed with no specific final message. Error: {event.worker.error}")
+                        # self.notify(f"Worker '{name_for_log}' failed. Error: {str(event.worker.error)[:70]}...", title="Worker Error", severity="error") # Optional
+
+                except Exception as e_output:
+                    self.loguru_logger.error(
+                        f"Error reading output from unhandled worker '{name_for_log}' (Group: {worker_group}): {e_output}",
+                        exc_info=True)
 
 
     async def on_streaming_chunk(self, event: StreamingChunk) -> None:

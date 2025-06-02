@@ -129,32 +129,39 @@ async def handle_start_vllm_server_button_pressed(app: "TldwCli") -> None:
         log_output_widget = app.query_one("#vllm-log-output", RichLog)
 
         python_path = python_path_input.value.strip() or "python"
-        model_path = model_path_input.value.strip()
-        host = host_input.value.strip() or "127.0.0.1"
-        port = port_input.value.strip() or "8002"
+        model_path = model_path_input.value.strip() # Can be repo ID, so Path().exists() might not apply
+        host = host_input.value.strip() or "127.0.0.1" # Default from snippet was 127.0.0.1
+        port = port_input.value.strip() or "8000" # Default from snippet was 8000, not 8002
         additional_args_str = additional_args_input.text.strip()
 
-        if model_path and not Path(model_path).exists():
-            app.notify(f"Model path not found: {model_path}", severity="error")
-            model_path_input.focus()
-            return
+        # vLLM model can be a HuggingFace repo ID, so Path(model_path).exists() is not always appropriate.
+        # We'll let vLLM handle model path validation.
+        # if model_path and not Path(model_path).exists() and not "/" in model_path: # Basic check for local path
+        #     app.notify(f"Local model path not found: {model_path}", severity="error")
+        #     model_path_input.focus()
+        #     return
 
         command = [
             python_path,
             "-m",
-            "vllm.entrypoints.api_server",
+            "vllm.entrypoints.api_server", # Corrected entrypoint
             "--host",
             host,
             "--port",
             port,
         ]
-        if model_path:
+        if model_path: # model_path is required for vLLM server
             command.extend(["--model", model_path])
+        else:
+            app.notify("Model path (or HuggingFace Repo ID) is required for vLLM.", severity="error")
+            model_path_input.focus()
+            return
+
         if additional_args_str:
             command.extend(shlex.split(additional_args_str))
 
         log_output_widget.clear()
-        log_output_widget.write(f"Executing: {' '.join(command)}\n")
+        log_output_widget.write(f"Executing: {' '.join(shlex.quote(c) for c in command)}\n") # Quote for safety
 
         app.run_worker(
             run_vllm_server_worker,
@@ -162,6 +169,7 @@ async def handle_start_vllm_server_button_pressed(app: "TldwCli") -> None:
             group="vllm_server",
             description="Running vLLM API server",
             exclusive=True,
+            thread=True,  # <--- ADDED THIS
             done=lambda w: app.call_from_thread(
                 stream_worker_output_to_log, app, w, "#vllm-log-output"
             ),
