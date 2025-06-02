@@ -920,7 +920,74 @@ MetricsScreen Label.-info-message {
     margin-top: 0; /* Remove top margin if directly after TextArea */
     margin-bottom: 1; /* Space after copy buttons */
 }
-/* -
+/*
+
+/* LLM Management Tab Specific Styles */
+#llm_management-window .llm-view-area > VerticalScroll { /* Target the new VS inside each view */
+    height: 100%; /* Ensure the VerticalScroll takes full height of its parent view area */
+}
+
+#llamacpp-args-help-collapsible,
+#llamafile-args-help-collapsible,
+#vllm-args-help-collapsible { /* Style for the collapsible itself */
+    margin-top: 1;
+    margin-bottom: 1;
+    border: round $primary-lighten-1; /* Optional border for the collapsible */
+}
+
+#llamacpp-args-help-collapsible > .collapsible--header,
+#llamafile-args-help-collapsible > .collapsible--header,
+#vllm-args-help-collapsible > .collapsible--header { /* Style for the collapsible title */
+    background: $surface-darken-1; /* Slightly different background for the header */
+}
+
+.help-text-display {
+    height: 25; /* Or your desired fixed height for the scrollable help text */
+    width: 100%;
+    border: round $surface;
+    padding: 1;
+    margin-top: 1; /* Space between collapsible title and the content */
+    background: $panel; /* Background for the help text area */
+    overflow-y: scroll !important; /* Ensure vertical scrolling */
+}
+
+/* Ensure input fields for additional args are appropriately sized if they were TextAreas */
+/* If you changed #llamacpp-additional-args to Input, this might not be needed for it */
+#llamacpp-additional-args, /* This is now an Input, so this rule might be less relevant for it */
+#llamafile-additional-args,
+#vllm-additional-args {
+    height: 3; /* For single-line Input or small TextArea */
+    /* If it's a TextArea and you want more lines: */
+    /* min-height: 3; */
+    /* max-height: 7; */
+    /* height: auto; */
+}
+
+/* Optional: Style for the input_container if needed */
+.input_container {
+    layout: horizontal;
+    height: auto;
+    margin-bottom: 1;
+}
+.input_container Input {
+    width: 1fr; /* Input takes available space */
+    margin-right: 1; /* Space before browse button */
+}
+.input_container .browse_button {
+    width: auto; /* Let button size itself */
+    height: 100%;
+}
+
+.button_container {
+    layout: horizontal;
+    height: auto;
+    margin-top: 1;
+    align-horizontal: right; /* Align buttons to the right */
+}
+.button_container Button {
+    margin-left: 1; /* Space between buttons */
+}
+
 /* ----------------------------- ************************* ----------------------------- */
 
 

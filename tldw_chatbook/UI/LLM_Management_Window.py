@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING
 from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll
 from textual.css.query import QueryError
-from textual.widgets import Static, Button, Input, RichLog, Label, TextArea
+from textual.widgets import Static, Button, Input, RichLog, Label, TextArea, Collapsible
+
 # Local Imports
 #
 if TYPE_CHECKING:
@@ -78,6 +79,15 @@ class LLMManagementWindow(Container):
                 yield Input(id="llamacpp-port", value="8001")
                 yield Label("Additional Arguments:", classes="label")
                 yield Input(id="llamacpp-additional-args", placeholder="e.g., --n-gpu-layers 1")
+                with Collapsible(title="Common Llama.cpp Server Arguments", collapsed=True,
+                                 id="llamacpp-args-help-collapsible"):
+                    # RichLog for scrollable, formatted help text
+                    yield RichLog(
+                        id="llamacpp-args-help-display",
+                        markup=True,
+                        highlight=False,  # No syntax highlighting needed for this help text
+                        classes="help-text-display"  # Add a class for styling
+                    )
                 with Container(classes="button_container"):
                     yield Button("Start Server", id="llamacpp-start-server-button", classes="action_button")
                     yield Button("Stop Server", id="llamacpp-stop-server-button", classes="action_button")
@@ -97,6 +107,9 @@ class LLMManagementWindow(Container):
                 yield Input(id="llamafile-port", value="8000")
                 yield Label("Additional Arguments:", classes="label")
                 yield TextArea(id="llamafile-additional-args", classes="additional_args_textarea", language="bash", theme="vscode_dark") # Ensure TextArea is imported
+                # Add a similar Collapsible RichLog for Llamafile args here if you have them
+                # with Collapsible(title="Common Llamafile Arguments", collapsed=True):
+                #     yield RichLog(id="llamafile-args-help-display", markup=True, classes="help-text-display")
                 with Container(classes="button_container"):
                     yield Button("Start Server", id="llamafile-start-server-button", classes="action_button")
                     yield Button("Stop Server", id="llamafile-stop-server-button", classes="action_button")
@@ -116,6 +129,9 @@ class LLMManagementWindow(Container):
                 yield Input(id="vllm-port", value="8000")
                 yield Label("Additional Arguments:", classes="label")
                 yield TextArea(id="vllm-additional-args", classes="additional_args_textarea", language="bash", theme="vscode_dark") # Ensure TextArea is imported
+                # Add a similar Collapsible RichLog for vLLM args here
+                # with Collapsible(title="Common vLLM Arguments", collapsed=True):
+                #     yield RichLog(id="vllm-args-help-display", markup=True, classes="help-text-display")
                 with Container(classes="button_container"):
                     yield Button("Start Server", id="vllm-start-server-button", classes="action_button")
                     yield Button("Stop Server", id="vllm-stop-server-button", classes="action_button")

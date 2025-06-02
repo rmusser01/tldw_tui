@@ -53,7 +53,7 @@ from tldw_chatbook.Event_Handlers.worker_events import StreamingChunk, StreamDon
 # --- Local API library Imports ---
 from .UI.MediaWindow import MediaWindow, slugify as media_slugify
 from tldw_chatbook.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, TAB_STATS, TAB_TOOLS_SETTINGS, \
-    TAB_INGEST, TAB_LLM, TAB_MEDIA, TAB_SEARCH, TAB_EVALS
+    TAB_INGEST, TAB_LLM, TAB_MEDIA, TAB_SEARCH, TAB_EVALS, LLAMA_CPP_SERVER_ARGS_HELP_TEXT
 from tldw_chatbook.DB.Client_Media_DB_v2 import MediaDatabase
 from tldw_chatbook.config import chachanotes_db as global_chachanotes_db_instance, CLI_APP_CLIENT_ID # get_media_db_path is now imported above
 from tldw_chatbook.Logging_Config import RichLogHandler
@@ -1166,10 +1166,32 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 view_to_show = content_pane.query_one(target_view_id_selector, Container)
                 view_to_show.styles.display = "block"
                 self.loguru_logger.info(f"Switched LLM Management view to: {new_view}")
-                # Optional: Focus
-                # try:
-                #     view_to_show.query(Input, Button)[0].focus()
-                # except IndexError: pass
+                # Populate help text when view becomes active
+                if new_view == "llm-view-llama-cpp":
+                    try:
+                        help_widget = view_to_show.query_one("#llamacpp-args-help-display", RichLog)
+                        # Check if help_widget has any lines. RichLog.lines is a list of segments.
+                        # A simple check is if it has any children (lines are added as children internally).
+                        # Or, more robustly, we can set a flag or check if the first line matches our help text.
+                        # For simplicity, let's assume if it has children, it's been populated.
+                        # A more direct way: RichLog stores its lines in a deque called 'lines'.
+                        if not help_widget.lines: # Check if the internal lines deque is empty
+                            self.loguru_logger.debug(f"Populating Llama.cpp help text in {new_view} as it's empty.")
+                            help_widget.clear() # Ensure it's clear before writing
+                            help_widget.write(LLAMA_CPP_SERVER_ARGS_HELP_TEXT)
+                        else:
+                            self.loguru_logger.debug(f"Llama.cpp help text in {new_view} already populated or not empty.")
+                    except QueryError:
+                        self.loguru_logger.warning(f"Help display widget #llamacpp-args-help-display not found in {new_view} during view switch.")
+                    except Exception as e_help_populate:
+                        self.loguru_logger.error(f"Error ensuring Llama.cpp help text in {new_view}: {e_help_populate}", exc_info=True)
+                # Add similar for other views like llamafile, vllm if they have help sections
+                # elif new_view == "llm-view-llamafile":
+                #     try:
+                #         help_widget = view_to_show.query_one("#llamafile-args-help-display", RichLog)
+                #         if not help_widget.document.strip():
+                #             help_widget.write(LLAMAFILE_ARGS_HELP_TEXT)
+                #     except QueryError: pass
             except QueryError as e:
                 self.loguru_logger.error(f"UI component '{new_view}' not found in #llm-content-pane: {e}",
                                          exc_info=True)
@@ -1274,6 +1296,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     async def _post_mount_setup(self) -> None:
         """Operations to perform after the main UI is expected to be fully mounted."""
         self.loguru_logger.info("App _post_mount_setup: Binding Select widgets and populating dynamic content...")
+        # Populate LLM help texts
+        self.call_later(self._populate_llm_help_texts)
 
         try:
             chat_select = self.query_one(f"#{TAB_CHAT}-api-provider", Select)
@@ -1333,6 +1357,32 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         # --- End DB Size Indicator Setup ---
 
         self.loguru_logger.info("App _post_mount_setup: Post-mount setup completed.")
+
+    async def _populate_llm_help_texts(self) -> None:
+        """Populates the RichLog widgets with help text for LLM arguments."""
+        self.loguru_logger.info("Populating LLM argument help texts...")
+        try:
+            # Llama.cpp
+            llamacpp_help_widget = self.query_one("#llamacpp-args-help-display", RichLog)
+            llamacpp_help_widget.clear()  # Clear any old content
+            llamacpp_help_widget.write(LLAMA_CPP_SERVER_ARGS_HELP_TEXT)
+            self.loguru_logger.debug("Populated Llama.cpp args help.")
+        except QueryError:
+            self.loguru_logger.error("Failed to find #llamacpp-args-help-display widget.")
+        except Exception as e:
+            self.loguru_logger.error(f"Error populating Llama.cpp help: {e}", exc_info=True)
+
+        # FIXME - LLM Inference
+        # You would add similar blocks for Llamafile, vLLM, etc.
+        # try:
+        #     llamafile_help_widget = self.query_one("#llamafile-args-help-display", RichLog)
+        #     llamafile_help_widget.clear()
+        #     llamafile_help_widget.write(LLAMAFILE_ARGS_HELP_TEXT) # Assuming you define this constant
+        #     self.loguru_logger.debug("Populated Llamafile args help.")
+        # except QueryError:
+        #     self.loguru_logger.error("Failed to find #llamafile-args-help-display widget.")
+        # except Exception as e:
+        #     self.loguru_logger.error(f"Error populating Llamafile help: {e}", exc_info=True)
 
     async def update_db_sizes(self) -> None:
         """Updates the database size information in the AppFooterStatus widget."""

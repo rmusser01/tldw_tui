@@ -1182,7 +1182,6 @@ local_mlx_lm = ["None"]
     system_prompt = "You are a helpful AI assistant"
 
     [api_settings.local-llm] # Matches key in [providers]
-    #api_key_env_var = "CUSTOM_2_API_KEY"
     api_url = "http://localhost:8000/v1/chat/completions"
     model = ""
     temperature = 0.7
@@ -1197,7 +1196,6 @@ local_mlx_lm = ["None"]
     system_prompt = "You are a helpful AI assistant"
 
     [api_settings.local_llamafile] # Matches key in [providers]
-    #api_key_env_var = "CUSTOM_2_API_KEY"
     api_url = "http://localhost:8001/v1/chat/completions"
     model = ""
     temperature = 0.7

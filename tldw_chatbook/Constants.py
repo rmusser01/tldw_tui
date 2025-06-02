@@ -952,7 +952,74 @@ MetricsScreen Label.-info-message {
     margin-top: 0; /* Remove top margin if directly after TextArea */
     margin-bottom: 1; /* Space after copy buttons */
 }
-/* -
+/*
+
+/* LLM Management Tab Specific Styles */
+#llm_management-window .llm-view-area > VerticalScroll { /* Target the new VS inside each view */
+    height: 100%; /* Ensure the VerticalScroll takes full height of its parent view area */
+}
+
+#llamacpp-args-help-collapsible,
+#llamafile-args-help-collapsible,
+#vllm-args-help-collapsible { /* Style for the collapsible itself */
+    margin-top: 1;
+    margin-bottom: 1;
+    border: round $primary-lighten-1; /* Optional border for the collapsible */
+}
+
+#llamacpp-args-help-collapsible > .collapsible--header,
+#llamafile-args-help-collapsible > .collapsible--header,
+#vllm-args-help-collapsible > .collapsible--header { /* Style for the collapsible title */
+    background: $surface-darken-1; /* Slightly different background for the header */
+}
+
+.help-text-display {
+    height: 25; /* Or your desired fixed height for the scrollable help text */
+    width: 100%;
+    border: round $surface;
+    padding: 1;
+    margin-top: 1; /* Space between collapsible title and the content */
+    background: $panel; /* Background for the help text area */
+    overflow-y: scroll !important; /* Ensure vertical scrolling */
+}
+
+/* Ensure input fields for additional args are appropriately sized if they were TextAreas */
+/* If you changed #llamacpp-additional-args to Input, this might not be needed for it */
+#llamacpp-additional-args, /* This is now an Input, so this rule might be less relevant for it */
+#llamafile-additional-args,
+#vllm-additional-args {
+    height: 3; /* For single-line Input or small TextArea */
+    /* If it's a TextArea and you want more lines: */
+    /* min-height: 3; */
+    /* max-height: 7; */
+    /* height: auto; */
+}
+
+/* Optional: Style for the input_container if needed */
+.input_container {
+    layout: horizontal;
+    height: auto;
+    margin-bottom: 1;
+}
+.input_container Input {
+    width: 1fr; /* Input takes available space */
+    margin-right: 1; /* Space before browse button */
+}
+.input_container .browse_button {
+    width: auto; /* Let button size itself */
+    height: 100%;
+}
+
+.button_container {
+    layout: horizontal;
+    height: auto;
+    margin-top: 1;
+    align-horizontal: right; /* Align buttons to the right */
+}
+.button_container Button {
+    margin-left: 1; /* Space between buttons */
+}
+
 /* ----------------------------- ************************* ----------------------------- */
 
 
@@ -1245,8 +1312,177 @@ AppFooterStatus {
    The rule for AppFooterStatus > Static#internal-db-size-indicator previously here
    is removed to defer to DEFAULT_CSS for internal component styling. */
     """
+#
+#
+#
+##########################################################################################################################
+
+##########################################################################################################################
 
 
+
+
+
+##########################################################################################################################
+
+
+
+##########################################################################################################################
+#
+#
+#
+LLAMA_CPP_SERVER_ARGS_HELP_TEXT = """
+[bold cyan]--- Server & Model Params ---[/]
+
+[bold]Simple 'Just Get Me Up And Running': -ngl 99 -fa -c 8192[/]
+
+[bold]-ngl, --gpu-layers, --n-gpu-layers N[/]
+  Number of layers to store in VRAM (e.g., [italic]--n-gpu-layers 35[/])
+  (env: LLAMA_ARG_N_GPU_LAYERS)
+
+[bold]-fa, --flash-attn[/]
+  Enable Flash Attention (default: disabled)
+  (env: LLAMA_ARG_FLASH_ATTN)
+
+[bold]-c, --ctx-size N[/]
+  Size of the prompt context (default: 4096, 0 = loaded from model)
+  (e.g., [italic]-c 2048[/])
+  (env: LLAMA_ARG_CTX_SIZE)
+
+[bold]-n, --predict, --n-predict N[/]
+  Number of tokens to predict (default: -1, -1 = infinity)
+  (e.g., [italic]-n 512[/])
+  (env: LLAMA_ARG_N_PREDICT)
+
+[bold]-m, --model FNAME[/]
+  Model path (Set via 'Model Path' field above)
+  (env: LLAMA_ARG_MODEL)
+
+[bold]-mu, --model-url MODEL_URL[/]
+  Model download URL (default: unused)
+  (env: LLAMA_ARG_MODEL_URL)
+
+[bold]-hf, -hfr, --hf-repo <user>/<model>[:quant][/]
+  Hugging Face model repository.
+  (e.g., [italic]--hf-repo unsloth/phi-3-mini-4k-instruct-gguf:Q4_K_M[/])
+  (env: LLAMA_ARG_HF_REPO)
+
+[bold]-hfd, -hfrd, --hf-repo-draft <user>/<model>[:quant][/]
+  Same as --hf-repo, but for the draft model.
+  (env: LLAMA_ARG_HFD_REPO)
+
+[bold]-hft, --hf-token TOKEN[/]
+  Hugging Face access token.
+  (env: HF_TOKEN)
+
+[bold]-t, --threads N[/]
+  Number of threads for generation (default: system dependent)
+  (e.g., [italic]-t 8[/])
+  (env: LLAMA_ARG_THREADS)
+
+[bold]-b, --batch-size N[/]
+  Logical maximum batch size (default: 2048)
+  (env: LLAMA_ARG_BATCH)
+
+[bold]-tb, --threads-batch N[/]
+  Number of threads for batch/prompt processing (default: same as --threads)
+  (env: LLAMA_ARG_THREADS_BATCH)
+
+[bold]-ub, --ubatch-size N[/]
+  Physical maximum batch size (default: 512)
+  (env: LLAMA_ARG_UBATCH)
+
+[bold]--keep N[/]
+  Tokens to keep from initial prompt (default: 0, -1 = all)
+
+[bold]-e, --escape[/]
+  Process escape sequences (default: true)
+
+[bold]--no-escape[/]
+  Do not process escape sequences
+
+[bold]--lora FNAME[/]
+  Path to LoRA adapter (repeatable)
+
+[bold]--lora-scaled FNAME SCALE[/]
+  Path to LoRA adapter with scaling (repeatable)
+
+[bold]--control-vector FNAME[/]
+  Add a control vector (repeatable)
+
+[bold]--control-vector-scaled FNAME SCALE[/]
+  Add a scaled control vector (repeatable)
+
+[bold]--control-vector-layer-range START END[/]
+  Layer range for control vector(s)
+
+[bold cyan]--- Sampling Params ---[/]
+
+[bold]--samplers SAMPLERS[/]
+  Samplers order, separated by ';' (default: see llama.cpp help)
+
+[bold]-s, --seed SEED[/]
+  RNG seed (default: -1, random)
+  (e.g., [italic]-s 1234[/])
+
+[bold]--temp N[/]
+  Temperature (default: 0.8)
+  (e.g., [italic]--temp 0.7[/])
+
+[bold]--top-k N[/]
+  Top-k sampling (default: 40, 0 = disabled)
+  (e.g., [italic]--top-k 50[/])
+
+[bold]--top-p N[/]
+  Top-p sampling (default: 0.9, 1.0 = disabled)
+  (e.g., [italic]--top-p 0.95[/])
+
+[bold]--min-p N[/]
+  Min-p sampling (default: 0.1, 0.0 = disabled)
+  (e.g., [italic]--min-p 0.05[/])
+
+[bold]--typical N[/]
+  Locally typical sampling (default: 1.0, 1.0 = disabled)
+
+[bold]--repeat-last-n N[/]
+  Last N tokens for penalty (default: 64, 0 = disabled)
+
+[bold]--repeat-penalty N[/]
+  Repeat penalty (default: 1.0, 1.0 = disabled)
+  (e.g., [italic]--repeat-penalty 1.1[/])
+
+[bold]--presence-penalty N[/]
+  Presence penalty (default: 0.0, 0.0 = disabled)
+
+[bold]--frequency-penalty N[/]
+  Frequency penalty (default: 0.0, 0.0 = disabled)
+
+[bold]--mirostat N[/]
+  Mirostat sampling (0=disabled, 1=Mirostat, 2=Mirostat 2.0)
+
+[bold]--mirostat-lr N[/]
+  Mirostat learning rate (default: 0.1)
+
+[bold]--mirostat-ent N[/]
+  Mirostat target entropy (default: 5.0)
+
+[bold]-l, --logit-bias TOKEN_ID(+/-)BIAS[/]
+  Modify token likelihood (e.g., [italic]--logit-bias 15043+1[/])
+
+[bold]--grammar GRAMMAR[/]
+  BNF-like grammar constraint
+
+[bold]--grammar-file FNAME[/]
+  File for grammar
+
+[bold]-j, --json-schema SCHEMA[/]
+  JSON schema constraint
+
+[bold]-jf, --json-schema-file FILE[/]
+  File for JSON schema
+
+[italic]Obtained from: https://github.com/ggml-org/llama.cpp/tree/master/tools/server[/]
+"""
 #
 # End of Constants.py
 ########################################################################################################################
