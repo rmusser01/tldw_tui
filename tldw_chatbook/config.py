@@ -919,6 +919,13 @@ Custom_2 = ["custom-model-gamma", "custom-model-delta"]
 TabbyAPI = ["tabby-model", "tabby-model-2", "tabby-model-3"]
 Aphrodite = ["aphrodite-engine", "aphrodite-engine-2"]
 local-llm = ["None"] # Add if you have a specific local-llm provider entry
+local_llamacpp = ["None"]
+local_llamafile = ["None"]
+local_ollama = ["None"]
+local_vllm = ["None"]
+local_onnx = ["None"]
+local_transformers = ["None"]
+local_mlx_lm = ["None"]
 
 [api_settings] # Parent section for all API provider specific settings
 
@@ -1174,10 +1181,122 @@ local-llm = ["None"] # Add if you have a specific local-llm provider entry
     streaming = false
     system_prompt = "You are a helpful AI assistant"
 
-    # [api_settings.local-llm] # If you have a generic local-llm setup
-    # api_url = "http://127.0.0.1:8080/v1/chat/completions" # Example LM Studio / Jan
-    # model = ""
-    # temperature = 0.7
+    [api_settings.local-llm] # Matches key in [providers]
+    #api_key_env_var = "CUSTOM_2_API_KEY"
+    api_url = "http://localhost:8000/v1/chat/completions"
+    model = ""
+    temperature = 0.7
+    top_p = 1.0
+    top_k = 0
+    min_p = 0.0
+    max_tokens = 4096
+    timeout = 120
+    retries = 2
+    retry_delay = 5
+    streaming = false
+    system_prompt = "You are a helpful AI assistant"
+
+    [api_settings.local_llamafile] # Matches key in [providers]
+    #api_key_env_var = "CUSTOM_2_API_KEY"
+    api_url = "http://localhost:8001/v1/chat/completions"
+    model = ""
+    temperature = 0.7
+    top_p = 1.0
+    top_k = 0
+    min_p = 0.0
+    max_tokens = 4096
+    timeout = 120
+    retries = 2
+    retry_delay = 5
+    streaming = false
+    system_prompt = "You are a helpful AI assistant"
+    
+    [api_settings.local_llamacpp] # Matches key in [providers]
+    #api_key_env_var = "local_llamacpp_API_KEY"
+    api_url = "http://localhost:8001/v1/chat/completions"
+    model = "custom-model-gamma"
+    temperature = 0.7
+    top_p = 1.0
+    top_k = 0
+    min_p = 0.0
+    max_tokens = 4096
+    timeout = 120
+    retries = 2
+    retry_delay = 5
+    streaming = false
+    system_prompt = "You are a helpful AI assistant"
+
+    [api_settings.local_vllm] # Matches key in [providers]
+    #api_key_env_var = "local_vllm_API_KEY" # If served behind auth
+    api_url = "http://localhost:8008/v1/chat/completions"
+    model = "custom-model-gamma"
+    temperature = 0.7
+    top_p = 1.0
+    top_k = 0
+    min_p = 0.0
+    max_tokens = 4096
+    timeout = 120
+    retries = 2
+    retry_delay = 5
+    streaming = false
+    system_prompt = "You are a helpful AI assistant"
+
+    [api_settings.local_ollama] # Matches key in [providers]
+    api_key_env_var = "local_ollama_API_KEY" # If served behind auth
+    api_url = "http://localhost:5678/v1/chat/completions"
+    model = "custom-model-gamma"
+    temperature = 0.7
+    top_p = 1.0
+    top_k = 0
+    min_p = 0.0
+    max_tokens = 4096
+    timeout = 120
+    retries = 2
+    retry_delay = 5
+    streaming = false
+    system_prompt = "You are a helpful AI assistant"
+
+    [api_settings.local_onnx] # Matches key in [providers]
+    api_url = "http://localhost:8000/v1/chat/completions"
+    model = ""
+    temperature = 0.7
+    top_p = 1.0
+    top_k = 0
+    min_p = 0.0
+    max_tokens = 4096
+    timeout = 120
+    retries = 2
+    retry_delay = 5
+    streaming = false
+    system_prompt = "You are a helpful AI assistant"
+
+    [api_settings.local_transformers] # Matches key in [providers]
+    api_url = "http://localhost:8000/v1/chat/completions"
+    model = ""
+    temperature = 0.7
+    top_p = 1.0
+    top_k = 0
+    min_p = 0.0
+    max_tokens = 4096
+    timeout = 120
+    retries = 2
+    retry_delay = 5
+    streaming = false
+    system_prompt = "You are a helpful AI assistant"
+
+    [api_settings.local_mlx_lm] # Matches key in [providers]
+    api_url = "http://localhost:5678/v1/chat/completions"
+    model = "custom-model-gamma"
+    temperature = 0.7
+    top_p = 1.0
+    top_k = 0
+    min_p = 0.0
+    max_tokens = 4096
+    timeout = 120
+    retries = 2
+    retry_delay = 5
+    streaming = false
+    system_prompt = "You are a helpful AI assistant"
     # ... etc ...
 
 [chat_defaults]

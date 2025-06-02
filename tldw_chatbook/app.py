@@ -326,7 +326,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # LLM Inference Tab
     llm_active_view: reactive[Optional[str]] = reactive(None)
     _initial_llm_view: Optional[str] = "llm-view-llama-cpp"
+    llamacpp_server_process: Optional[subprocess.Popen] = None
     vllm_server_process: Optional[subprocess.Popen] = None
+
 
     # De-Bouncers
     _conv_char_search_timer: Optional[Timer] = None
@@ -364,6 +366,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         self.selected_notes_files_for_import = []
         self.parsed_notes_for_preview = [] # <<< INITIALIZATION for notes
         self.last_notes_import_dir = None
+        # Llama.cpp server process
+        self.llamacpp_server_process = None
+        # vLLM server process
+        self.vllm_server_process = None
 
         # 1. Get the user name from the loaded settings
         # The fallback here should match what you expect if settings doesn't have it,
@@ -2605,16 +2611,29 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 else:
                     self.notify("Llama.cpp server process finished.", title="Server Status")
 
+                # Worker has finished, so the process it was managing should be gone or is now orphaned.
+                # The worker's 'finally' block should have cleared self.llamacpp_server_process.
+                # We double-check here.
+                if self.llamacpp_server_process is not None:
+                    self.loguru_logger.warning(f"Llama.cpp worker SUCCEEDED, but app.llamacpp_server_process was not None. Clearing it now.")
+                    self.llamacpp_server_process = None
+
                 try:
                     self.query_one(actual_start_button_id, Button).disabled = False
-                    self.query_one(actual_stop_button_id, Button).disabled = True  # Disable stop when not running
+                    self.query_one(actual_stop_button_id, Button).disabled = True
                 except QueryError:
                     self.loguru_logger.warning("Could not find Llama.cpp server buttons to update for SUCCESS state.")
 
             elif worker_state == WorkerState.ERROR:
-                self.loguru_logger.error(f"Llama.cpp server worker failed with an exception: {event.worker.error}")
-                self.notify(f"Llama.cpp worker error: {str(event.worker.error)[:100]}", title="Server Error",
-                            severity="error", timeout=10)
+                self.loguru_logger.error(f"Llama.cpp server worker itself failed with an exception: {event.worker.error}")
+                self.notify(f"Llama.cpp worker error: {str(event.worker.error)[:100]}", title="Server Worker Error", severity="error")
+
+                # Worker failed, so the process it was managing might be in an indeterminate state or already gone.
+                # The worker's 'finally' block should attempt cleanup and clear self.llamacpp_server_process.
+                if self.llamacpp_server_process is not None:
+                    self.loguru_logger.warning(f"Llama.cpp worker ERRORED, but app.llamacpp_server_process was not None. Clearing it now.")
+                    self.llamacpp_server_process = None
+
                 try:
                     self.query_one(actual_start_button_id, Button).disabled = False
                     self.query_one(actual_stop_button_id, Button).disabled = True

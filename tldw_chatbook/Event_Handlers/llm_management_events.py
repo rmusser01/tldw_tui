@@ -9,6 +9,7 @@ import logging
 import shlex
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
 #
@@ -199,76 +200,123 @@ def run_llamafile_server_worker(app_instance: "TldwCli", command: List[str]):
         yield msg
 
 
-def run_llamacpp_server_worker(app_instance: "TldwCli", command: List[str]) -> str:
+# Helper to set/clear the process on the app instance from the worker thread
+# This can be defined in this file or in app.py and imported.
+def _set_llamacpp_process_on_app(app_instance: "TldwCli", process: Optional[subprocess.Popen]):
+    """Helper to set/clear the Llama.cpp process on the app instance from the worker thread."""
+    app_instance.llamacpp_server_process = process  # Assumes app_instance has this attribute
+    if process and hasattr(process, 'pid') and process.pid is not None:
+        app_instance.loguru_logger.info(f"Stored Llama.cpp process PID {process.pid} on app instance.")
+    else:
+        app_instance.loguru_logger.info("Cleared Llama.cpp process from app instance (or process was None).")
+
+
+def run_llamacpp_server_worker(app_instance: "TldwCli", command: List[str]) -> str | None:
     logger = getattr(app_instance, "loguru_logger", logging.getLogger(__name__))
     quoted_command = ' '.join(shlex.quote(c) for c in command)
-    logger.info(f"Llama.cpp WORKER (communicate test) starting with command: {quoted_command}")
+    logger.info(f"Llama.cpp WORKER (persistent stream) starting with command: {quoted_command}")
 
-    process = None
-    final_status_message = f"Llama.cpp WORKER (communicate test): Default status for {quoted_command}"
+    process: Optional[subprocess.Popen] = None  # Ensure type hint
+    final_status_message = f"Llama.cpp WORKER (persistent stream): Default status for {quoted_command}"
+    pid_str = "N/A"
 
     try:
-        logger.debug("Llama.cpp WORKER (communicate test): Attempting to start subprocess...")
+        logger.debug("Llama.cpp WORKER (persistent stream): Attempting to start subprocess...")
         process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            universal_newlines=True,  # text=True implies this, but good to be explicit
+            universal_newlines=True,
+            bufsize=1,
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         )
-        pid = process.pid if process else 'Unknown'
-        logger.info(f"Llama.cpp WORKER (communicate test): Subprocess launched, PID: {pid}")
+        pid_str = str(process.pid) if process and process.pid else "UnknownPID"
+        logger.info(f"Llama.cpp WORKER (persistent stream): Subprocess launched, PID: {pid_str}")
+
+        # Store the process object on the app instance
+        app_instance.call_from_thread(_set_llamacpp_process_on_app, app_instance, process)
+
         app_instance.call_from_thread(app_instance._update_llamacpp_log,
-                                      f"[PID:{pid}] Llama.cpp server starting (communicate test)...\n")
+                                      f"[PID:{pid_str}] Llama.cpp server starting...\n")
 
-        # communicate() will wait for the process to terminate
-        # Set a timeout; a server should run longer, but if it exits quickly, we'll catch it.
-        # If it's a *real* server, this timeout will be hit, and that's an error for this test.
-        # For a server that's meant to run indefinitely, communicate() isn't the right final tool,
-        # but it's good for diagnosing if it even starts and produces initial output or errors.
-        timeout_seconds = 30  # Increased timeout to see if it's just slow to start/error
+        # Non-blocking read loop
+        while True:
+            output_received_in_iteration = False
 
+            # Check process health first
+            if process.poll() is not None:  # Process has terminated
+                logger.info(
+                    f"Llama.cpp WORKER (PID:{pid_str}): Process terminated during read loop. Exit code: {process.returncode}")
+                break  # Exit the while True loop
+
+            # Check stdout
+            if process.stdout:
+                try:
+                    # For a truly non-blocking read on a pipe, os.set_blocking(fd, False) and select would be needed.
+                    # readline() can block. If the server sends no newlines but keeps pipe open, it blocks.
+                    # However, most servers line-buffer or send newlines.
+                    line = process.stdout.readline()  # This can block
+                    if line:  # If readline returns empty string, pipe is closed or EOF
+                        line = line.strip()
+                        if line:
+                            logger.info(f"Llama.cpp WORKER STDOUT (PID:{pid_str}): {line}")
+                            app_instance.call_from_thread(app_instance._update_llamacpp_log, f"{line}\n")
+                            output_received_in_iteration = True
+                    elif process.poll() is not None:  # Check again if process ended after readline returned empty
+                        break
+                except Exception as e_stdout:
+                    logger.error(f"Llama.cpp WORKER (PID:{pid_str}): Exception reading stdout: {e_stdout}")
+                    break
+
+                    # Check stderr
+            if process.stderr:
+                try:
+                    line = process.stderr.readline()  # This can block
+                    if line:
+                        line = line.strip()
+                        if line:
+                            logger.error(f"Llama.cpp WORKER STDERR (PID:{pid_str}): {line}")
+                            app_instance.call_from_thread(app_instance._update_llamacpp_log,
+                                                          f"[STDERR] [bold red]{line}[/]\n")
+                            output_received_in_iteration = True
+                    elif process.poll() is not None:  # Check again
+                        break
+                except Exception as e_stderr:
+                    logger.error(f"Llama.cpp WORKER (PID:{pid_str}): Exception reading stderr: {e_stderr}")
+                    break
+
+            if not output_received_in_iteration and process.poll() is None:
+                time.sleep(0.1)  # Small sleep if no output and process is alive, to prevent tight loop
+
+        # Cleanup after loop (process has terminated or error occurred)
+        if process.stdout:
+            try:
+                process.stdout.close()
+            except Exception as e_close_stdout:
+                logger.debug(f"Exception closing stdout: {e_close_stdout}")
+        if process.stderr:
+            try:
+                process.stderr.close()
+            except Exception as e_close_stderr:
+                logger.debug(f"Exception closing stderr: {e_close_stderr}")
+
+        # Final wait, though poll() should have indicated termination
         try:
-            stdout_data, stderr_data = process.communicate(timeout=timeout_seconds)
-            logger.info(
-                f"Llama.cpp WORKER (communicate test): communicate() completed. PID {pid}, Exit Code: {process.returncode}")
-
-            if stdout_data:
-                logger.info(f"Llama.cpp WORKER (communicate test) STDOUT:\n{stdout_data.strip()}")
-                app_instance.call_from_thread(app_instance._update_llamacpp_log,
-                                              f"--- STDOUT (PID:{pid}) ---\n{stdout_data.strip()}\n")
-            if stderr_data:
-                logger.error(f"Llama.cpp WORKER (communicate test) STDERR:\n{stderr_data.strip()}")
-                app_instance.call_from_thread(app_instance._update_llamacpp_log,
-                                              f"--- STDERR (PID:{pid}) ---\n[bold red]{stderr_data.strip()}[/]\n")
-
-            if process.returncode != 0:
-                final_status_message = f"Llama.cpp server (PID:{pid}) exited with ERROR code: {process.returncode}."
-                if stderr_data: final_status_message += f"\nSTDERR: {stderr_data.strip()}"
-            else:
-                # If it exits with 0 but quickly, it's not acting like a persistent server.
-                final_status_message = f"Llama.cpp server (PID:{pid}) exited with code: {process.returncode} (SUCCESS)."
-                if stdout_data: final_status_message += f"\nSTDOUT: {stdout_data.strip()}"
-
-            app_instance.call_from_thread(app_instance._update_llamacpp_log, f"{final_status_message}\n")
-            return final_status_message
-
+            process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            logger.warning(
-                f"Llama.cpp WORKER (communicate test): Timeout ({timeout_seconds}s) expired for PID {pid}. Server is likely running or hung.")
-            app_instance.call_from_thread(app_instance._update_llamacpp_log,
-                                          f"[PID:{pid}] Server process timed out during 'communicate' test (expected if it's a long-running server).\n")
-            # If it times out, it means the server is running (which is good for a server).
-            # For this *test*, we'll consider it a special kind of "success" meaning "it didn't crash immediately".
-            # The actual streaming logic would then take over in a non-test scenario.
-            # However, for run_worker, we need to return something.
-            # To keep the worker alive for a real server, we would not use communicate() here.
-            # This version of the worker is for diagnostics.
-            # We'll kill it to ensure the worker function terminates.
-            process.kill()
-            logger.info(f"Llama.cpp WORKER (communicate test): Killed PID {pid} after timeout.")
-            return f"Llama.cpp server (PID:{pid}) was still running after {timeout_seconds}s (killed for test). This indicates it started."
+            logger.warning(f"Llama.cpp WORKER (PID:{pid_str}): Timeout on final wait, process might be stuck.")
+
+        exit_code = process.returncode if process.returncode is not None else -1  # Default if somehow None
+        logger.info(f"Llama.cpp WORKER (PID:{pid_str}): Subprocess finally exited with code: {exit_code}")
+
+        if exit_code != 0:
+            final_status_message = f"Llama.cpp server (PID:{pid_str}) exited with non-zero code: {exit_code}."
+        else:
+            final_status_message = f"Llama.cpp server (PID:{pid_str}) exited successfully (code: {exit_code})."
+
+        app_instance.call_from_thread(app_instance._update_llamacpp_log, f"{final_status_message}\n")
+        return final_status_message
 
     except FileNotFoundError:
         msg = f"ERROR: Llama.cpp executable not found: {command[0]}"
@@ -276,16 +324,22 @@ def run_llamacpp_server_worker(app_instance: "TldwCli", command: List[str]) -> s
         app_instance.call_from_thread(app_instance._update_llamacpp_log, f"[bold red]{msg}[/]\n")
         raise
     except Exception as err:
-        msg = f"CRITICAL ERROR in Llama.cpp worker (communicate test): {err} (Command: {quoted_command})"
+        msg = f"CRITICAL ERROR in Llama.cpp worker (persistent stream): {err} (Command: {quoted_command})"
         logger.error(msg, exc_info=True)
         app_instance.call_from_thread(app_instance._update_llamacpp_log, f"[bold red]{msg}[/]\n")
         raise
     finally:
-        logger.info(f"Llama.cpp WORKER (communicate test): Worker function for command '{quoted_command}' finishing.")
-        if process and process.poll() is None:  # Should be terminated by communicate or kill
-            logger.warning(
-                f"Llama.cpp WORKER (communicate test): Process PID {process.pid if process else 'N/A'} still running in finally. Killing.")
-            process.kill()
+        logger.info(f"Llama.cpp WORKER (persistent stream): Worker function for command '{quoted_command}' finishing.")
+        # Clear the process from the app instance when the worker finishes
+        app_instance.call_from_thread(_set_llamacpp_process_on_app, app_instance, None)
+        if process and process.poll() is None:
+            logger.warning(f"Llama.cpp WORKER (PID:{pid_str}): Process still running in finally. Terminating.")
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                logger.error(f"Llama.cpp WORKER (PID:{pid_str}): Process kill failed after terminate timeout.")
+                process.kill()
 
 
 # FIXME
