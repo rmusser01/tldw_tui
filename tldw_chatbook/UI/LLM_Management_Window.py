@@ -107,9 +107,14 @@ class LLMManagementWindow(Container):
                 yield Input(id="llamafile-port", value="8000")
                 yield Label("Additional Arguments:", classes="label")
                 yield TextArea(id="llamafile-additional-args", classes="additional_args_textarea", language="bash", theme="vscode_dark") # Ensure TextArea is imported
-                # Add a similar Collapsible RichLog for Llamafile args here if you have them
-                # with Collapsible(title="Common Llamafile Arguments", collapsed=True):
-                #     yield RichLog(id="llamafile-args-help-display", markup=True, classes="help-text-display")
+                with Collapsible(title="Common Llamafile Arguments", collapsed=True,
+                                 id="llamafile-args-help-collapsible"):
+                    yield RichLog(
+                        id="llamafile-args-help-display",
+                        markup=True,
+                        highlight=False,
+                        classes="help-text-display"
+                    )
                 with Container(classes="button_container"):
                     yield Button("Start Server", id="llamafile-start-server-button", classes="action_button")
                     yield Button("Stop Server", id="llamafile-stop-server-button", classes="action_button")

@@ -53,7 +53,8 @@ from tldw_chatbook.Event_Handlers.worker_events import StreamingChunk, StreamDon
 # --- Local API library Imports ---
 from .UI.MediaWindow import MediaWindow, slugify as media_slugify
 from tldw_chatbook.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, TAB_STATS, TAB_TOOLS_SETTINGS, \
-    TAB_INGEST, TAB_LLM, TAB_MEDIA, TAB_SEARCH, TAB_EVALS, LLAMA_CPP_SERVER_ARGS_HELP_TEXT
+    TAB_INGEST, TAB_LLM, TAB_MEDIA, TAB_SEARCH, TAB_EVALS, LLAMA_CPP_SERVER_ARGS_HELP_TEXT, \
+    LLAMAFILE_SERVER_ARGS_HELP_TEXT
 from tldw_chatbook.DB.Client_Media_DB_v2 import MediaDatabase
 from tldw_chatbook.config import chachanotes_db as global_chachanotes_db_instance, CLI_APP_CLIENT_ID # get_media_db_path is now imported above
 from tldw_chatbook.Logging_Config import RichLogHandler
@@ -86,11 +87,12 @@ from .Event_Handlers import (
     llm_nav_events as llm_handlers,
     # Explicit import for Ollama handler as per subtask, though current dispatch is generic
     llm_management_events,
+
 )
 from .Event_Handlers.llm_management_events import handle_llamacpp_browse_exec_button_pressed, \
     handle_llamacpp_browse_model_button_pressed, handle_llamafile_browse_exec_button_pressed, \
     handle_llamafile_browse_model_button_pressed, handle_start_mlx_server_button_pressed, \
-    handle_stop_mlx_server_button_pressed
+    handle_stop_mlx_server_button_pressed, handle_stop_llamafile_server_button_pressed
 from .Event_Handlers.llm_management_events_vllm import handle_vllm_browse_python_button_pressed, handle_vllm_browse_model_button_pressed, handle_start_vllm_server_button_pressed, handle_stop_vllm_server_button_pressed
 from .Character_Chat import Character_Chat_Lib as ccl
 from .Notes.Notes_Library import NotesInteropService
@@ -327,6 +329,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     llm_active_view: reactive[Optional[str]] = reactive(None)
     _initial_llm_view: Optional[str] = "llm-view-llama-cpp"
     llamacpp_server_process: Optional[subprocess.Popen] = None
+    llamafile_server_process: Optional[subprocess.Popen] = None
     vllm_server_process: Optional[subprocess.Popen] = None
 
 
@@ -368,6 +371,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         self.last_notes_import_dir = None
         # Llama.cpp server process
         self.llamacpp_server_process = None
+        # LlamaFile server process
+        self.llamafile_server_process = None
         # vLLM server process
         self.vllm_server_process = None
 
@@ -911,6 +916,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         except Exception as e:
             loguru_logger.error(f"Error toggling CCP right pane: {e}", exc_info=True)
 
+    # ###################################################################
+    # --- Helper methods for Local LLM Inference logging ---
+    # ###################################################################
     def _update_llamacpp_log(self, message: str) -> None:
         """Helper to write messages to the Llama.cpp log widget."""
         try:
@@ -920,6 +928,19 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.loguru_logger.error("Failed to query #llamacpp-log-output to write message.")
         except Exception as e:  # pylint: disable=broad-except
             self.loguru_logger.error(f"Error writing to Llama.cpp log: {e}", exc_info=True)
+
+    def _update_llamafile_log(self, message: str) -> None:
+        """Helper to write messages to the Llamafile log widget."""
+        try:
+            log_widget = self.query_one("#llamafile-log-output", RichLog)
+            log_widget.write(message)
+        except QueryError:
+            self.loguru_logger.error("Failed to query #llamafile-log-output to write message.")
+        except Exception as e:
+            self.loguru_logger.error(f"Error writing to Llamafile log: {e}", exc_info=True)
+    # ###################################################################
+    # --- End of Helper methods for Local LLM Inference logging ---
+    # ###################################################################
 
     # --- Modify _clear_prompt_fields and _load_prompt_for_editing ---
     def _clear_prompt_fields(self) -> None:
@@ -1185,6 +1206,15 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                         self.loguru_logger.warning(f"Help display widget #llamacpp-args-help-display not found in {new_view} during view switch.")
                     except Exception as e_help_populate:
                         self.loguru_logger.error(f"Error ensuring Llama.cpp help text in {new_view}: {e_help_populate}", exc_info=True)
+                elif new_view == "llm-view-llamafile":
+                    try:
+                        help_widget = view_to_show.query_one("#llamafile-args-help-display", RichLog)
+                        help_widget.clear()  # Clear and rewrite when tab becomes active
+                        help_widget.write(LLAMAFILE_SERVER_ARGS_HELP_TEXT)
+                        self.loguru_logger.debug(f"Ensured Llamafile help text in {new_view}.")
+                    except QueryError:
+                        self.loguru_logger.warning(
+                            f"Help display widget for Llamafile not found in {new_view} during view switch.")
                 # Add similar for other views like llamafile, vllm if they have help sections
                 # elif new_view == "llm-view-llamafile":
                 #     try:
@@ -1371,18 +1401,15 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.loguru_logger.error("Failed to find #llamacpp-args-help-display widget.")
         except Exception as e:
             self.loguru_logger.error(f"Error populating Llama.cpp help: {e}", exc_info=True)
-
-        # FIXME - LLM Inference
-        # You would add similar blocks for Llamafile, vLLM, etc.
-        # try:
-        #     llamafile_help_widget = self.query_one("#llamafile-args-help-display", RichLog)
-        #     llamafile_help_widget.clear()
-        #     llamafile_help_widget.write(LLAMAFILE_ARGS_HELP_TEXT) # Assuming you define this constant
-        #     self.loguru_logger.debug("Populated Llamafile args help.")
-        # except QueryError:
-        #     self.loguru_logger.error("Failed to find #llamafile-args-help-display widget.")
-        # except Exception as e:
-        #     self.loguru_logger.error(f"Error populating Llamafile help: {e}", exc_info=True)
+        try:
+            llamafile_help_widget = self.query_one("#llamafile-args-help-display", RichLog)
+            llamafile_help_widget.clear()  # Clear existing content
+            llamafile_help_widget.write(LLAMAFILE_SERVER_ARGS_HELP_TEXT)  # Write new content
+            self.loguru_logger.debug("Populated Llamafile args help.")
+        except QueryError:
+            self.loguru_logger.error("Failed to find #llamafile-args-help-display widget.")
+        except Exception as e:
+            self.loguru_logger.error(f"Error populating Llamafile help: {e}", exc_info=True)
 
     async def update_db_sizes(self) -> None:
         """Updates the database size information in the AppFooterStatus widget."""
@@ -2414,15 +2441,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 await llm_management_events.handle_start_llamacpp_server_button_pressed(self)
             elif button_id == "llamacpp-stop-server-button":
                 await llm_management_events.handle_stop_llamacpp_server_button_pressed(self)
-            elif button_id == "llamafile-start-server-button":
-                await llm_management_events.handle_start_llamafile_server_button_pressed(self)
-            # Note: llamafile-stop-server-button is not handled here as it's not in the original code's __all__ for llm_management_events
-            # and doesn't have a dedicated handler in the provided snippets.
-            # Add these new conditions for Llamafile:
             elif button_id == "llamafile-browse-exec-button":
                 await handle_llamafile_browse_exec_button_pressed(self)
             elif button_id == "llamafile-browse-model-button":
                 await handle_llamafile_browse_model_button_pressed(self)
+            elif button_id == "llamafile-start-server-button":
+                await llm_management_events.handle_start_llamafile_server_button_pressed(self)
+            elif button_id == "llamafile-stop-server-button":
+                await handle_stop_llamafile_server_button_pressed(self)
             # Add these new conditions for vLLM:
             elif button_id == "vllm-browse-python-button":
                 await handle_vllm_browse_python_button_pressed(self)
@@ -2689,6 +2715,68 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     self.query_one(actual_stop_button_id, Button).disabled = True
                 except QueryError:
                     self.loguru_logger.warning("Could not find Llama.cpp server buttons to update for ERROR state.")
+
+        # --- Handle Llamafile Server Worker (identified by group) ---
+        elif worker_group == "llamafile_server":  # Add this new elif block
+            self.loguru_logger.info(
+                f"Llamafile server worker (Group: '{worker_group}') state changed to {worker_state}."
+            )
+            actual_start_button_id = "#llamafile-start-server-button"
+            actual_stop_button_id = "#llamafile-stop-server-button"  # Assuming you have one
+
+            if worker_state == WorkerState.PENDING:
+                self.loguru_logger.debug("Llamafile server worker is PENDING.")
+                try:
+                    self.query_one(actual_start_button_id, Button).disabled = True
+                    if self.query_one(actual_stop_button_id, Button):  # Check if stop button exists
+                        self.query_one(actual_stop_button_id, Button).disabled = True
+                except QueryError:
+                    self.loguru_logger.warning("Could not find Llamafile server buttons for PENDING state.")
+
+            elif worker_state == WorkerState.RUNNING:
+                self.loguru_logger.info("Llamafile server worker is RUNNING.")
+                try:
+                    self.query_one(actual_start_button_id, Button).disabled = True
+                    if self.query_one(actual_stop_button_id, Button):
+                        self.query_one(actual_stop_button_id, Button).disabled = False
+                    self.notify("Llamafile server process is running.", title="Server Status")
+                except QueryError:
+                    self.loguru_logger.warning("Could not find Llamafile server buttons for RUNNING state.")
+
+            elif worker_state == WorkerState.SUCCESS:
+                self.loguru_logger.info(f"Llamafile server worker finished successfully.")
+                result_message = str(event.worker.result).strip() if event.worker.result else "Worker completed."
+                self.loguru_logger.info(f"Llamafile worker result: '{result_message}'")
+
+                is_server_error = "non-zero code" in result_message.lower() or "error" in result_message.lower()
+                if is_server_error:
+                    self.notify(f"Llamafile server process ended with an issue. Check logs.", title="Server Status",
+                                severity="error")
+                else:
+                    self.notify("Llamafile server process finished.", title="Server Status")
+
+                # if self.llamafile_server_process is not None: # If managing process
+                #     self.llamafile_server_process = None
+
+                try:
+                    self.query_one(actual_start_button_id, Button).disabled = False
+                    if self.query_one(actual_stop_button_id, Button):
+                        self.query_one(actual_stop_button_id, Button).disabled = True
+                except QueryError:
+                    self.loguru_logger.warning("Could not find Llamafile server buttons for SUCCESS state.")
+
+            elif worker_state == WorkerState.ERROR:
+                self.loguru_logger.error(f"Llamafile server worker failed: {event.worker.error}")
+                self.notify(f"Llamafile worker error: {str(event.worker.error)[:100]}", title="Server Worker Error",
+                            severity="error")
+                # if self.llamafile_server_process is not None: # If managing process
+                #     self.llamafile_server_process = None
+                try:
+                    self.query_one(actual_start_button_id, Button).disabled = False
+                    if self.query_one(actual_stop_button_id, Button):
+                        self.query_one(actual_stop_button_id, Button).disabled = True
+                except QueryError:
+                    self.loguru_logger.warning("Could not find Llamafile server buttons for ERROR state.")
 
         # --- Handle vLLM Server Worker (identified by group) ---
         elif worker_group == "vllm_server":
