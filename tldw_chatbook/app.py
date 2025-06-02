@@ -55,7 +55,7 @@ from tldw_chatbook.Event_Handlers.worker_events import StreamingChunk, StreamDon
 from .UI.MediaWindow import MediaWindow, slugify as media_slugify
 from tldw_chatbook.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, TAB_STATS, TAB_TOOLS_SETTINGS, \
     TAB_INGEST, TAB_LLM, TAB_MEDIA, TAB_SEARCH, TAB_EVALS, LLAMA_CPP_SERVER_ARGS_HELP_TEXT, \
-    LLAMAFILE_SERVER_ARGS_HELP_TEXT
+    LLAMAFILE_SERVER_ARGS_HELP_TEXT, TAB_CODING
 from tldw_chatbook.DB.Client_Media_DB_v2 import MediaDatabase
 from tldw_chatbook.config import chachanotes_db as global_chachanotes_db_instance, CLI_APP_CLIENT_ID # get_media_db_path is now imported above
 from tldw_chatbook.Logging_Config import RichLogHandler
@@ -125,6 +125,7 @@ from .UI.Ingest_Window import IngestWindow
 from .UI.Tools_Settings_Window import ToolsSettingsWindow
 from .UI.LLM_Management_Window import LLMManagementWindow
 from .UI.Evals_Window import EvalsWindow # Added EvalsWindow
+from .UI.Coding_Window import CodingWindow
 from .UI.Tab_Bar import TabBar
 from .UI.MediaWindow import MediaWindow
 from .UI.SearchWindow import SearchWindow
@@ -205,7 +206,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     ALL_MAIN_WINDOW_IDS = [ # Assuming these are your main content window IDs
         "chat-window", "conversations_characters_prompts-window",
         "ingest-window", "tools_settings-window", "llm_management-window",
-        "media-window", "search-window", "logs-window", "evals-window" # Added "evals-window"
+        "media-window", "search-window", "logs-window", "evals-window", "coding-window"
     ]
 
     # Define reactive at class level with a placeholder default and type hint
@@ -759,6 +760,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
             yield from _yield_and_track(SearchWindow(self, id="search-window", classes="window"), TAB_SEARCH, "search-window")
             yield from _yield_and_track(EvalsWindow(self, id="evals-window", classes="window"), TAB_EVALS, "evals-window") # Added EvalsWindow
+            yield from _yield_and_track(CodingWindow(self, id="coding-window", classes="window"), TAB_CODING, "coding-window")
 
             self.loguru_logger.info(f"Finished yielding concrete windows. Composed IDs: {composed_window_ids}")
 
