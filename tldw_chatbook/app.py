@@ -4,6 +4,7 @@
 # Imports
 import logging
 import logging.handlers
+import re # Added import for regex
 import subprocess
 import sys
 from pathlib import Path
@@ -71,7 +72,7 @@ from .config import (
     get_cli_log_file_path,
     get_cli_providers_and_models,
     API_MODELS_BY_PROVIDER,
-    LOCAL_PROVIDERS, get_chachanotes_db_path, settings
+    LOCAL_PROVIDERS, get_chachanotes_db_path, settings,
 )
 from .Screens.Stats_screen import StatsScreen
 from .Event_Handlers import (
@@ -2598,6 +2599,24 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         elif select_id == "tldw-api-media-type" and current_active_tab == TAB_INGEST:
             await ingest_events.handle_tldw_api_media_type_changed(self, str(event.value))
 
+    @on(Checkbox.Changed, "#chat-strip-thinking-tags-checkbox")
+    async def handle_strip_thinking_tags_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """Handles changes to the 'Strip Thinking Tags' checkbox."""
+        new_value = event.value
+        self.loguru_logger.info(f"'Strip Thinking Tags' checkbox changed to: {new_value}")
+
+        if "chat_defaults" not in self.app_config:
+            self.app_config["chat_defaults"] = {}
+        self.app_config["chat_defaults"]["strip_thinking_tags"] = new_value
+
+        # Persist the change
+        try:
+            save_setting_to_cli_config("chat_defaults", "strip_thinking_tags", new_value)
+            self.notify(f"Thinking tag stripping {'enabled' if new_value else 'disabled'}.", timeout=2)
+        except Exception as e:
+            self.loguru_logger.error(f"Failed to save 'strip_thinking_tags' setting: {e}", exc_info=True)
+            self.notify("Error saving thinking tag setting.", severity="error", timeout=4)
+
     async def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         worker_name_attr = event.worker.name
         worker_group = event.worker.group
@@ -2983,6 +3002,28 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 # Do NOT save to database if there was an error.
             else: # No error, stream completed successfully
                 logger.info("Stream completed successfully.")
+
+                # Apply thinking tag stripping if enabled
+                if event.full_text: # Check if there's any text to process
+                    strip_tags_setting = self.app_config.get("chat_defaults", {}).get("strip_thinking_tags", True)
+                    if strip_tags_setting:
+                        think_blocks = list(re.finditer(r"<think>.*?</think>", event.full_text, re.DOTALL))
+                        if len(think_blocks) > 1:
+                            self.loguru_logger.debug(f"Stripping thinking tags from streamed response. Found {len(think_blocks)} blocks.")
+                            text_parts = []
+                            last_kept_block_end = 0
+                            for i, block in enumerate(think_blocks):
+                                if i < len(think_blocks) - 1: # This is a block to remove
+                                    text_parts.append(event.full_text[last_kept_block_end:block.start()])
+                                    last_kept_block_end = block.end()
+                            text_parts.append(event.full_text[last_kept_block_end:])
+                            event.full_text = "".join(text_parts) # Modify the event's full_text
+                            self.loguru_logger.debug(f"Streamed response after stripping: {event.full_text[:200]}...")
+                        else:
+                            self.loguru_logger.debug(f"Not stripping tags from stream: {len(think_blocks)} block(s) found (need >1), setting is {strip_tags_setting}.")
+                    else:
+                        self.loguru_logger.debug("Not stripping tags from stream: strip_thinking_tags setting is disabled.")
+
                 ai_widget.message_text = event.full_text # Ensure internal state has the final, complete text
                 static_text_widget.update(escape_markup(event.full_text)) # Update display with final, escaped text
 
@@ -3180,14 +3221,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         except Exception as e_unexp:
             logging.error(f"Unexpected error populating char filter select (Chat Tab): {e_unexp}", exc_info=True)
 
-    def chat_wrapper(self, **kwargs: Any) -> Any:
+    def chat_wrapper(self, strip_thinking_tags: bool = True, **kwargs: Any) -> Any:
         """
         Delegates to the actual worker target function in worker_events.py.
         This method is called by app.run_worker.
         """
         # All necessary parameters (message, history, api_endpoint, model, etc.)
         # are passed via kwargs from the calling event handler (e.g., handle_chat_send_button_pressed).
-        return worker_events.chat_wrapper_function(self, **kwargs) # Pass self as 'app_instance'
+        return worker_events.chat_wrapper_function(self, strip_thinking_tags=strip_thinking_tags, **kwargs) # Pass self as 'app_instance'
 
 # --- Main execution block ---
 if __name__ == "__main__":

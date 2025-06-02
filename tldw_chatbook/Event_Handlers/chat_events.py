@@ -84,6 +84,13 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
         llm_tools_widget = app.query_one(f"#{prefix}-llm-tools", TextArea)
         llm_tool_choice_widget = app.query_one(f"#{prefix}-llm-tool-choice", Input)
         llm_fixed_tokens_kobold_widget = app.query_one(f"#{prefix}-llm-fixed-tokens-kobold", Checkbox)
+        # Query for the strip thinking tags checkbox
+        try:
+            strip_tags_checkbox = app.query_one("#chat-strip-thinking-tags-checkbox", Checkbox)
+            strip_thinking_tags_value = strip_tags_checkbox.value
+        except QueryError:
+            loguru_logger.warning("Could not find '#chat-strip-thinking-tags-checkbox'. Defaulting to True for strip_thinking_tags.")
+            strip_thinking_tags_value = True
 
     except QueryError as e:
         loguru_logger.error(f"Send Button: Could not find UI widgets for '{prefix}': {e}")
@@ -405,7 +412,8 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
         selected_parts=[], # Placeholder for now
         chatdict_entries=None, # Placeholder for now
         max_tokens=500, # This is the existing chatdict max_tokens, distinct from llm_max_tokens
-        strategy="sorted_evenly" # Default or get from config/UI
+        strategy="sorted_evenly", # Default or get from config/UI
+        strip_thinking_tags=strip_thinking_tags_value # Pass the new setting
     )
     app.run_worker(worker_target, name=f"API_Call_{prefix}", group="api_calls", thread=True,
                    description=f"Calling {selected_provider}")
@@ -627,6 +635,13 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
             llm_frequency_penalty_widget_regen = app.query_one(f"#{prefix}-llm-frequency-penalty", Input)
             llm_tools_widget_regen = app.query_one(f"#{prefix}-llm-tools", TextArea)
             llm_tool_choice_widget_regen = app.query_one(f"#{prefix}-llm-tool-choice", Input)
+            # Query for the strip thinking tags checkbox for regeneration
+            try:
+                strip_tags_checkbox_regen = app.query_one("#chat-strip-thinking-tags-checkbox", Checkbox)
+                strip_thinking_tags_value_regen = strip_tags_checkbox_regen.value
+            except QueryError:
+                loguru_logger.warning("Regenerate: Could not find '#chat-strip-thinking-tags-checkbox'. Defaulting to True.")
+                strip_thinking_tags_value_regen = True
         except QueryError as e_query_regen:
             loguru_logger.error(f"Regenerate: Could not find UI settings widgets for '{prefix}': {e_query_regen}")
             await chat_container.mount(
@@ -745,6 +760,7 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
             llm_presence_penalty=llm_presence_penalty_value_regen,
             llm_frequency_penalty=llm_frequency_penalty_value_regen,
             llm_tools=llm_tools_value_regen, llm_tool_choice=llm_tool_choice_value_regen,
+            strip_thinking_tags=strip_thinking_tags_value_regen, # Pass for regeneration
             media_content={}, selected_parts=[], chatdict_entries=None, max_tokens=500, strategy="sorted_evenly"
         )
         app.run_worker(worker_target_regen, name=f"API_Call_{prefix}_regenerate", group="api_calls", thread=True,
@@ -2321,6 +2337,13 @@ async def handle_respond_for_me_button_pressed(app: 'TldwCli') -> None:
             llm_tools_widget = app.query_one(f"#{prefix}-llm-tools", TextArea)
             llm_tool_choice_widget = app.query_one(f"#{prefix}-llm-tool-choice", Input)
             llm_fixed_tokens_kobold_widget = app.query_one(f"#{prefix}-llm-fixed-tokens-kobold", Checkbox)
+            # Query for the strip thinking tags checkbox for suggestion
+            try:
+                strip_tags_checkbox_suggest = app.query_one("#chat-strip-thinking-tags-checkbox", Checkbox)
+                strip_thinking_tags_value_suggest = strip_tags_checkbox_suggest.value
+            except QueryError:
+                loguru_logger.warning("Respond for Me: Could not find '#chat-strip-thinking-tags-checkbox'. Defaulting to True.")
+                strip_thinking_tags_value_suggest = True
         except QueryError as e_params_query:
             loguru_logger.error(f"Respond for Me: Could not find UI settings widgets: {e_params_query}", exc_info=True)
             app.notify("Error: Missing UI settings for suggestion.", severity="error")
@@ -2422,6 +2445,7 @@ async def handle_respond_for_me_button_pressed(app: 'TldwCli') -> None:
             custom_prompt="", media_content={}, selected_parts=[], chatdict_entries=None,
             max_tokens=500, # This is chatdict's max_tokens, distinct from llm_max_tokens. Review if needed here.
             strategy="sorted_evenly", # Default or from config
+            strip_thinking_tags=strip_thinking_tags_value_suggest, # Pass for suggestion
             streaming=False # Explicitly non-streaming for suggestions
         )
 

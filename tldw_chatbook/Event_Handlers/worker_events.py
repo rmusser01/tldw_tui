@@ -340,7 +340,7 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
 #
 ########################################################################################################################
 
-def chat_wrapper_function(app_instance: 'TldwCli', **kwargs: Any) -> Any:
+def chat_wrapper_function(app_instance: 'TldwCli', strip_thinking_tags: bool = True, **kwargs: Any) -> Any:
     """
     This function is the target for the worker. It calls the core_chat_function.
     If core_chat_function returns a generator (for streaming), this function consumes it,
@@ -356,10 +356,10 @@ def chat_wrapper_function(app_instance: 'TldwCli', **kwargs: Any) -> Any:
 
     try:
         # core_chat_function is your synchronous `Chat.Chat_Functions.chat`
-        result = core_chat_function(**kwargs)
+        result = core_chat_function(strip_thinking_tags=strip_thinking_tags, **kwargs)
 
         if isinstance(result, Generator):  # Streaming case
-            logger.info(f"Core chat function returned a generator for '{api_endpoint}' (model '{model_name}'). Processing stream in worker.")
+            logger.info(f"Core chat function returned a generator for '{api_endpoint}' (model '{model_name}', strip_tags={strip_thinking_tags}). Processing stream in worker.")
             accumulated_full_text = ""
             error_message_if_any = None
             try:
@@ -434,7 +434,7 @@ def chat_wrapper_function(app_instance: 'TldwCli', **kwargs: Any) -> Any:
 
         else:  # Non-streaming case
             logger.debug(
-                f"chat_wrapper_function for '{api_endpoint}' (model '{model_name}') is returning a direct result (type: {type(result)}).")
+                f"chat_wrapper_function for '{api_endpoint}' (model '{model_name}', strip_tags={strip_thinking_tags}) is returning a direct result (type: {type(result)}).")
             return result  # Return the complete response directly
 
     except Exception as e:

@@ -1306,6 +1306,7 @@ temperature = 0.6
 top_p = 0.95
 min_p = 0.05
 top_k = 50
+strip_thinking_tags = true
 
 [character_defaults]
 # Default settings specifically for the 'Character' tab

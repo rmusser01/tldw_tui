@@ -729,7 +729,8 @@ def chat(
     llm_frequency_penalty: Optional[float] = None,
     llm_tools: Optional[List[Dict[str, Any]]] = None,
     llm_tool_choice: Optional[Union[str, Dict[str, Any]]] = None,
-    llm_fixed_tokens_kobold: Optional[bool] = False # Added
+    llm_fixed_tokens_kobold: Optional[bool] = False, # Added
+    strip_thinking_tags: bool = True # Added for thinking tag stripping
 ) -> Union[str, Any]: # Any for streaming generator
     """
     Orchestrates a chat interaction with an LLM, handling message processing,
@@ -1055,6 +1056,29 @@ def chat(
                         logging.error(f"Error during post-generation replacement: {e_post_gen}", exc_info=True)
                 else:
                     logging.warning("Post-gen replacement enabled but dict file not found/configured.")
+            # For non-streaming, apply stripping logic if enabled
+            if not streaming and isinstance(response, str) and strip_thinking_tags:
+                # Regex to find all <think>...</think> blocks, non-greedy
+                think_blocks = list(re.finditer(r"<think>.*?</think>", response, re.DOTALL))
+
+                if len(think_blocks) > 1:
+                    logging.debug(f"Processing thinking tags for non-streaming. Found {len(think_blocks)} blocks.")
+                    # Keep only the last think block
+                    text_parts = []
+                    last_kept_block_end = 0
+                    for i, block in enumerate(think_blocks):
+                        if i < len(think_blocks) - 1: # This is a block to remove
+                            text_parts.append(response[last_kept_block_end:block.start()]) # Text before this block
+                            last_kept_block_end = block.end() # Skip this block
+                    # Add the text after the last removed block, which includes the final think block and any subsequent text
+                    text_parts.append(response[last_kept_block_end:])
+                    response = "".join(text_parts)
+                    logging.debug(f"Response after stripping all but last think block: {response[:200]}...")
+                elif think_blocks: # Only one block, or stripping not needed / done
+                    logging.debug(f"Thinking tags: {len(think_blocks)} block(s) found, no stripping needed or already processed if only one.")
+
+            # For streaming=True, stripping logic should be applied by the receiver
+            # of the stream (e.g., in app.py's on_stream_done event handler).
             return response
 
     except Exception as e:
