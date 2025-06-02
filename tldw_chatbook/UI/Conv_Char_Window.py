@@ -12,6 +12,9 @@ from textual.widgets import Static, Button, Input, ListView, Select, Collapsible
 #
 # Local Imports
 from ..Utils.Emoji_Handling import get_char, EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE
+from ..Widgets.settings_sidebar import create_settings_sidebar
+from ..Constants import TAB_CCP
+
 if TYPE_CHECKING:
     from ..app import TldwCli
 #
@@ -117,10 +120,9 @@ class CCPWindow(Container):
         with VerticalScroll(id="conv-char-right-pane", classes="cc-right-pane"):
             yield Static("Details & Settings", classes="sidebar-title") # This title is for the whole pane
 
-            # REMOVE or COMMENT OUT the LLM settings container and its contents:
-            # with Container(id="ccp-right-pane-llm-settings-container"):
-            #     # yield from create_settings_sidebar(TAB_CCP, self.app_instance.app_config) # <<< REMOVE THIS LINE
-            #     pass
+            # LLM Settings Container
+            with Container(id="ccp-right-pane-llm-settings-container"):
+                yield from create_settings_sidebar(TAB_CCP, self.app_instance.app_config)
 
             # Conversation Details Collapsible
             with Collapsible(title="Conversation Details", id="ccp-conversation-details-collapsible",

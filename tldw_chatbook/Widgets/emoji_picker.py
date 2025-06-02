@@ -8,6 +8,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import VerticalScroll, Horizontal, Vertical
 from textual.css.query import QueryError  # Import QueryError
+from textual.message import Message
 # from textual.message import Message # Not used directly, can remove
 # from textual.reactive import reactive # No longer needed if search_results reactive is removed
 # from textual.widget import Widget # Not used directly, can remove
@@ -105,6 +106,15 @@ ALL_EMOJIS, CATEGORIZED_EMOJIS, CATEGORY_NAMES = _load_emojis()
 
 
 # --- Textual Widgets ---
+
+# Add the new Message class definition here
+class EmojiSelected(Message):
+    """Message sent when an emoji is selected from the picker."""
+    def __init__(self, emoji: str, picker_id: Optional[str] = None) -> None:
+        super().__init__()
+        self.emoji: str = emoji
+        self.picker_id: Optional[str] = picker_id # Optional: if we need to identify the source picker
+
 class EmojiButton(Button):
     def __init__(self, emoji_data: ProcessedEmoji, **kwargs):
         super().__init__(label=emoji_data['char'], **kwargs)

@@ -91,11 +91,11 @@ def _make_path_update_callback(app: "TldwCli", input_widget_id: str):
                 input_widget = app.query_one(f"#{input_widget_id}", Input)
                 input_widget.value = str(selected_path)
                 logger.info(
-                    "Updated input #%s with path: %s", input_widget_id, selected_path
+                    f"Updated input {input_widget_id} with path:{selected_path}"
                 )
             except Exception as err:  # pragma: no cover – UI querying
                 logger.error(
-                    "Error updating input #%s: %s", input_widget_id, err, exc_info=True
+                    f"Error updating input #{input_widget_id}: {err}", input_widget_id, err, exc_info=True
                 )
                 app.notify(
                     f"Error setting path for {input_widget_id}.", severity="error"
@@ -201,6 +201,7 @@ def run_llamacpp_server_worker(app_instance: "TldwCli", command: List[str]):
     logger = getattr(app_instance, "loguru_logger", logging.getLogger(__name__))
     logger.info("Llama.cpp worker begins: %s", " ".join(command))
 
+    app_instance.llamacpp_server_process = None  # Initialize before try block
     try:
         process = subprocess.Popen(
             command,
@@ -210,6 +211,7 @@ def run_llamacpp_server_worker(app_instance: "TldwCli", command: List[str]):
             bufsize=1,
             universal_newlines=True,
         )
+        app_instance.llamacpp_server_process = process  # Store the process object
 
         app_instance.call_from_thread(
             app_instance._update_llamacpp_log,
@@ -217,13 +219,17 @@ def run_llamacpp_server_worker(app_instance: "TldwCli", command: List[str]):
         )
         _stream_process(app_instance, "_update_llamacpp_log", process)
         process.wait()
+        if process.returncode != 0:
+            app_instance.llamacpp_server_process = None  # Server exited abnormally
         yield f"Llama.cpp server exited with code: {process.returncode}\n"
     except FileNotFoundError:
+        app_instance.llamacpp_server_process = None  # Server failed to start
         msg = f"ERROR: Llama.cpp executable not found: {command[0]}\n"
         logger.error(msg.rstrip())
         app_instance.call_from_thread(app_instance._update_llamacpp_log, msg)
         yield msg
     except Exception as err:
+        app_instance.llamacpp_server_process = None  # Server failed to start
         msg = f"ERROR in Llama.cpp worker: {err}\n"
         logger.error(msg.rstrip(), exc_info=True)
         app_instance.call_from_thread(app_instance._update_llamacpp_log, msg)
@@ -467,25 +473,135 @@ async def handle_start_llamacpp_server_button_pressed(app: "TldwCli") -> None:
 
         app.run_worker(
             run_llamacpp_server_worker,
-            args=[app, command],
+            command,
             group="llamacpp_server",
             description="Running Llama.cpp server process",
             exclusive=True,
-            done=lambda w: app.call_from_thread(
-                stream_worker_output_to_log, app, w, "#llamacpp-log-output"
-            ),
         )
         app.notify("Llama.cpp server starting…")
+
+        # Update button states
+        start_button = app.query_one("#llamacpp-start-server-button", Button)
+        stop_button = app.query_one("#llamacpp-stop-server-button", Button)
+        start_button.disabled = True
+        stop_button.disabled = False
+
     except Exception as err:  # pragma: no cover
-        logger.error("Error preparing to start Llama.cpp server: %s", err, exc_info=True)
+        logger.error(f"Error preparing to start Llama.cpp server: {err}", err, exc_info=True)
         app.notify("Error setting up Llama.cpp server start.", severity="error")
+        try:
+            # Ensure buttons are in a consistent state on error
+            start_button = app.query_one("#llamacpp-start-server-button", Button)
+            stop_button = app.query_one("#llamacpp-stop-server-button", Button)
+            start_button.disabled = False
+            stop_button.disabled = True
+        except QueryError as q_err: # pragma: no cover
+            logger.error(f"Failed to query buttons to reset state after error: {q_err}", exc_info=True)
 
 
 async def handle_stop_llamacpp_server_button_pressed(app: "TldwCli") -> None:
-    """Placeholder for stopping the Llama.cpp server."""
+    """Stops the Llama.cpp server process if it is running."""
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.info("Stop Llama.cpp server button pressed - functionality to be implemented.")
-    app.notify("Stop server functionality is not yet implemented.", severity="warning")
+    logger.info("User requested to stop Llama.cpp server.")
+
+    log_output_widget = None
+    try:
+        log_output_widget = app.query_one("#llamacpp-log-output", RichLog)
+
+        if hasattr(app, 'llamacpp_server_process') and \
+           app.llamacpp_server_process and \
+           app.llamacpp_server_process.poll() is None:
+            pid = app.llamacpp_server_process.pid
+            logger.info(f"Stopping Llama.cpp server (PID: {pid}).")
+            log_output_widget.write(f"Stopping Llama.cpp server (PID: {pid})...\n")
+
+            app.llamacpp_server_process.terminate()
+            try:
+                app.llamacpp_server_process.wait(timeout=5) # Wait for graceful termination
+                logger.info("Llama.cpp server terminated.")
+                log_output_widget.write("Llama.cpp server stopped successfully.\n")
+                app.notify("Llama.cpp server stopped.")
+                # Update button states
+                start_button = app.query_one("#llamacpp-start-server-button", Button)
+                stop_button = app.query_one("#llamacpp-stop-server-button", Button)
+                start_button.disabled = False
+                stop_button.disabled = True
+            except subprocess.TimeoutExpired:
+                logger.warning(f"Llama.cpp server (PID: {pid}) did not terminate gracefully. Killing.")
+                log_output_widget.write(f"Llama.cpp server (PID: {pid}) did not stop in time, killing...\n")
+                app.llamacpp_server_process.kill() # Force kill
+                app.llamacpp_server_process.wait() # Wait for kill to complete
+                logger.info("Llama.cpp server killed.")
+                log_output_widget.write("Llama.cpp server killed.\n")
+                app.notify("Llama.cpp server killed.", severity="warning")
+                # Update button states even after kill
+                start_button = app.query_one("#llamacpp-start-server-button", Button)
+                stop_button = app.query_one("#llamacpp-stop-server-button", Button)
+                start_button.disabled = False
+                stop_button.disabled = True
+            except Exception as e: # Catch other errors during wait/terminate like process already exited
+                logger.error(f"Error during Llama.cpp server termination (PID: {pid}): {e}", exc_info=True)
+                log_output_widget.write(f"Error stopping Llama.cpp server (PID: {pid}): {e}\n")
+                app.notify(f"Error stopping Llama.cpp server: {e}", severity="error")
+                # Attempt to reset buttons on error
+                try:
+                    start_button = app.query_one("#llamacpp-start-server-button", Button)
+                    stop_button = app.query_one("#llamacpp-stop-server-button", Button)
+                    start_button.disabled = False
+                    stop_button.disabled = True
+                except QueryError as q_err: # pragma: no cover
+                    logger.error(f"Failed to query buttons to reset state after termination error: {q_err}", exc_info=True)
+        else:
+            logger.info("Llama.cpp server is not running or process attribute is missing.")
+            log_output_widget.write("Llama.cpp server is not running or was already stopped.\n")
+            app.notify("Llama.cpp server is not running.", severity="warning")
+            # Update button states
+            start_button = app.query_one("#llamacpp-start-server-button", Button)
+            stop_button = app.query_one("#llamacpp-stop-server-button", Button)
+            start_button.disabled = False
+            stop_button.disabled = True
+
+    except QueryError as e: # pragma: no cover
+        logger.error(f"Could not find #llamacpp-log-output or a button: {e}", exc_info=True)
+        app.notify("Error: UI widget not found during stop operation.", severity="error")
+        # Attempt to reset buttons even if log widget is missing
+        try:
+            start_button = app.query_one("#llamacpp-start-server-button", Button)
+            stop_button = app.query_one("#llamacpp-stop-server-button", Button)
+            start_button.disabled = False
+            stop_button.disabled = True
+        except QueryError as q_err: # pragma: no cover
+             logger.error(f"Failed to query buttons to reset state after QueryError: {q_err}", exc_info=True)
+    except Exception as e:  # Catch any other unexpected errors
+        logger.error(f"Error stopping Llama.cpp server: {e}", exc_info=True)
+        if log_output_widget: # Check if log_widget was found before error
+            log_output_widget.write(f"An unexpected error occurred while stopping the server: {e}\n")
+        app.notify(f"An unexpected error occurred: {e}", severity="error")
+        # Attempt to reset buttons on generic error
+        try:
+            start_button = app.query_one("#llamacpp-start-server-button", Button)
+            stop_button = app.query_one("#llamacpp-stop-server-button", Button)
+            start_button.disabled = False
+            stop_button.disabled = True
+        except QueryError as q_err: # pragma: no cover
+            logger.error(f"Failed to query buttons to reset state after generic error: {q_err}", exc_info=True)
+    finally:
+        if hasattr(app, 'llamacpp_server_process'):
+            app.llamacpp_server_process = None
+        logger.debug("Set app.llamacpp_server_process to None.")
+        # Final attempt to ensure buttons are in a consistent state
+        try:
+            start_button = app.query_one("#llamacpp-start-server-button", Button)
+            stop_button = app.query_one("#llamacpp-stop-server-button", Button)
+            # If server process is None here, it means it's stopped or was never started.
+            is_running = hasattr(app, 'llamacpp_server_process') and \
+                         app.llamacpp_server_process and \
+                         app.llamacpp_server_process.poll() is None
+
+            start_button.disabled = is_running
+            stop_button.disabled = not is_running
+        except QueryError as q_err: # pragma: no cover
+            logger.error(f"Failed to query buttons in finally block: {q_err}", exc_info=True)
 
 
 ###############################################################################

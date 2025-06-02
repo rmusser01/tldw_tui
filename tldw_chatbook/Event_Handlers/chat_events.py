@@ -369,6 +369,11 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
 
     # --- 11. Prepare and Dispatch API Call via Worker ---
     loguru_logger.debug(f"Dispatching API call to worker. Current message: '{message_text_from_input[:50]}...', History items: {len(chat_history_for_api)}")
+
+    # Set current_chat_is_streaming before running the worker
+    app.current_chat_is_streaming = should_stream
+    loguru_logger.info(f"Set app.current_chat_is_streaming to: {should_stream}")
+
     worker_target = lambda: app.chat_wrapper(
         message=message_text_from_input, # Current user utterance
         history=chat_history_for_api,    # History *before* current utterance
@@ -2455,6 +2460,70 @@ async def handle_respond_for_me_button_pressed(app: 'TldwCli') -> None:
 
 class ApiKeyMissingError(Exception): # Custom exception for cleaner handling in try/finally
     pass
+
+
+async def handle_stop_chat_generation_pressed(app: 'TldwCli') -> None:
+    """Handles the 'Stop Chat Generation' button press."""
+    loguru_logger.info("Stop Chat Generation button pressed.")
+
+    worker_cancelled = False
+    if app.current_chat_worker and app.current_chat_worker.is_running:
+        try:
+            app.current_chat_worker.cancel()
+            loguru_logger.info(f"Cancellation requested for worker: {app.current_chat_worker.name}")
+            worker_cancelled = True # Mark that cancellation was attempted
+
+            if not app.current_chat_is_streaming:
+                loguru_logger.debug("Handling cancellation for a non-streaming chat request.")
+                if app.current_ai_message_widget and app.current_ai_message_widget.is_mounted:
+                    try:
+                        # Update the placeholder message to indicate cancellation
+                        static_text_widget = app.current_ai_message_widget.query_one(".message-text", Static)
+                        cancelled_text = "[italic]Chat generation cancelled by user.[/]"
+                        static_text_widget.update(Text.from_markup(cancelled_text))
+
+                        app.current_ai_message_widget.message_text = "Chat generation cancelled by user." # Update raw text
+                        app.current_ai_message_widget.role = "System" # Change role
+
+                        # Update header if it exists
+                        try:
+                            header_label = app.current_ai_message_widget.query_one(".message-header", Label)
+                            header_label.update("System Message")
+                        except QueryError:
+                            loguru_logger.warning("Could not find .message-header to update for non-streaming cancellation.")
+
+                        app.current_ai_message_widget.mark_generation_complete() # Finalize UI state
+                        loguru_logger.info("Non-streaming AI message widget UI updated for cancellation.")
+                    except QueryError as qe_widget_update:
+                        loguru_logger.error(f"Error updating non-streaming AI message widget UI on cancellation: {qe_widget_update}", exc_info=True)
+                else:
+                    loguru_logger.warning("Non-streaming cancellation: current_ai_message_widget not found or not mounted.")
+            else: # It was a streaming request
+                loguru_logger.info("Cancellation for a streaming chat request initiated. Worker will handle stream termination.")
+                # For streaming, the worker itself should detect cancellation and stop sending StreamChunks.
+                # The on_stream_done event (with error or cancellation status) will then handle UI finalization.
+                # The on_worker_state_changed in app.py will also disable the button.
+
+        except Exception as e_cancel:
+            loguru_logger.error(f"Error during worker cancellation or UI update: {e_cancel}", exc_info=True)
+            app.notify("Error trying to stop generation.", severity="error")
+    else:
+        loguru_logger.info("No active and running chat worker to stop.")
+        if not app.current_chat_worker:
+            loguru_logger.debug("current_chat_worker is None.")
+        elif not app.current_chat_worker.is_running:
+            loguru_logger.debug(f"current_chat_worker ({app.current_chat_worker.name}) is not running (state: {app.current_chat_worker.state}).")
+
+
+    # Attempt to disable the button immediately, regardless of worker state.
+    # The on_worker_state_changed handler will also try to disable it when the worker eventually stops.
+    # This provides immediate visual feedback.
+    try:
+        stop_button = app.query_one("#stop-chat-generation-button", Button)
+        stop_button.disabled = True
+        loguru_logger.debug("Attempted to disable 'stop-chat-generation' button from handler.")
+    except QueryError:
+        loguru_logger.error("Could not find 'stop-chat-generation-button' to disable it directly from handler.")
 
 #
 # End of chat_events.py

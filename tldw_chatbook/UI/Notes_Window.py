@@ -2,7 +2,7 @@
 # Description: This file contains the UI components for the Notes Window 
 #
 # Imports
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional # Added Optional
 #
 # 3rd-Party Imports
 from textual.app import ComposeResult
@@ -12,7 +12,8 @@ from textual.widgets import Button, TextArea, Static
 # Local Imports
 from ..Widgets.notes_sidebar_left import NotesSidebarLeft
 from ..Widgets.notes_sidebar_right import NotesSidebarRight
-#from ..Widgets.emoji_picker import
+# Import EmojiSelected and EmojiPickerScreen
+from ..Widgets.emoji_picker import EmojiSelected, EmojiPickerScreen
 # from ..Constants import TAB_NOTES # Not strictly needed if IDs are hardcoded here
 #
 if TYPE_CHECKING:
@@ -38,19 +39,55 @@ class NotesWindow(Container):
             with Horizontal(id="notes-controls-area"):
                 yield Button("☰ L", id="toggle-notes-sidebar-left", classes="sidebar-toggle")
                 yield Static()  # Spacer
+                # Temporarily simplified button for testing:
+                yield Button("E", id="open-emoji-picker-button")
+                yield Static() # Spacer, ensure it's between emoji and save
                 yield Button("Save Note", id="notes-save-button", variant="primary")
                 yield Static()  # Spacer
                 yield Button("R ☰", id="toggle-notes-sidebar-right", classes="sidebar-toggle")
 
         yield NotesSidebarRight(id="notes-sidebar-right")
 
-    # def on_emoji_picker_emoji_selected(self, message: EmojiSelected) -> None:
-    #     """Handles the EmojiSelected message from the EmojiPicker in the notes sidebar."""
-    #     if message.sender.id == "notes-emoji-picker": # Ensure it's from the correct picker
-    #         notes_editor = self.query_one("#notes-editor-area", TextArea)
-    #         notes_editor.insert_text_at_cursor(message.emoji)
-    #         notes_editor.focus()
-    #         message.stop()
+    # New method to handle the result from EmojiPickerScreen
+    def _handle_emoji_picker_result(self, emoji_char: str) -> None:
+        """Callback for when the EmojiPickerScreen is dismissed."""
+        if emoji_char: # If an emoji was selected (not cancelled)
+            self.post_message(EmojiSelected(emoji_char))
+
+    # Added on_button_pressed to handle the new button
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handles button presses within the NotesWindow."""
+        if event.button.id == "open-emoji-picker-button":
+            # Use a unique ID for the picker if needed, e.g., "notes-modal-emoji-picker"
+            self.app.push_screen(EmojiPickerScreen(id="notes_emoji_modal_picker"), self._handle_emoji_picker_result)
+            event.stop()
+        # Add other button ID checks here if necessary for this window's specific buttons.
+        # For example, the sidebar toggles are often handled at the app level via actions,
+        # but if they were to be handled here, it would look like:
+        # elif event.button.id == "toggle-notes-sidebar-left":
+        #     self.app.action_toggle_notes_sidebar_left() # Assuming such an action exists
+        #     event.stop()
+        # elif event.button.id == "toggle-notes-sidebar-right":
+        #     self.app.action_toggle_notes_sidebar_right()
+        #     event.stop()
+        # elif event.button.id == "notes-save-button":
+        #     # This is likely handled by an event in notes_events.py or app.py,
+        #     # but if handled here, it would be:
+        #     # self.app.action_save_current_note() # Assuming such an action
+        #     pass # Let other handlers catch it if not stopped
+
+
+    def on_emoji_picker_emoji_selected(self, message: EmojiSelected) -> None:
+        """Handles the EmojiSelected message posted after an emoji is picked."""
+        # The message is now posted by _handle_emoji_picker_result,
+        # so we don't need to check message.sender.id as strictly if this NotesWindow
+        # is the one initiating and handling the modal emoji picker.
+        # If multiple sources could send EmojiSelected to NotesWindow,
+        # the picker_id attribute on EmojiSelected could be used.
+        notes_editor = self.query_one("#notes-editor-area", TextArea)
+        notes_editor.insert_text_at_cursor(message.emoji)
+        notes_editor.focus()
+        message.stop()
 
 #
 # End of Notes_Window.py

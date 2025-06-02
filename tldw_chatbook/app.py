@@ -28,7 +28,7 @@ from .Widgets.AppFooterStatus import AppFooterStatus
 # Import for escape_markup
 from rich.markup import escape as escape_markup
 from textual.reactive import reactive
-from textual.worker import Worker
+from textual.worker import Worker, WorkerState
 from textual.binding import Binding
 from textual.dom import DOMNode  # For type hinting if needed
 from textual.timer import Timer
@@ -211,6 +211,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
     # Add state to hold the currently streaming AI message widget
     current_ai_message_widget: Optional[ChatMessage] = None
+    current_chat_worker: Optional[Worker] = None
+    current_chat_is_streaming: bool = False
 
     # --- REACTIVES FOR PROVIDER SELECTS ---
     # Initialize with a dummy value or fetch default from config here
@@ -1375,7 +1377,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             logging.info("RichLogHandler removed.")
 
         # Stop DB size update timer on unmount as well, if not already handled by shutdown_request
-        if self._db_size_update_timer and self._db_size_update_timer.is_running:
+        if self._db_size_update_timer: # Removed .is_running check
             self._db_size_update_timer.stop()
             self.loguru_logger.info("DB size update timer stopped during unmount.")
 
@@ -2505,8 +2507,44 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             await ingest_events.handle_tldw_api_media_type_changed(self, str(event.value))
 
     async def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
-        # Delegate all worker state changes to the central handler
-        await worker_handlers.handle_api_call_worker_state_changed(self, event)
+        # Log the worker state change
+        self.loguru_logger.debug(f"Worker {event.worker.name} state changed to {event.worker.state}")
+
+        # Check if the worker is a chat worker
+        # Assuming chat worker names start with "API_Call_chat"
+        if event.worker.name and event.worker.name.startswith("API_Call_chat"):
+            self.loguru_logger.debug(f"Chat worker {event.worker.name} detected.")
+            if event.worker.state == WorkerState.RUNNING:
+                self.loguru_logger.info(f"Chat worker {event.worker.name} is RUNNING. Setting current_chat_worker.")
+                self.current_chat_worker = event.worker
+                try:
+                    stop_button = self.query_one("#stop-chat-generation-button", Button)
+                    stop_button.disabled = False
+                    self.loguru_logger.info("Enabled 'stop-chat-generation' button.")
+                except QueryError:
+                    self.loguru_logger.error("Could not find 'stop-chat-generation-button' to enable.")
+
+            elif event.worker.state in (WorkerState.SUCCESS, WorkerState.CANCELLED, WorkerState.ERROR):
+                self.loguru_logger.info(f"Chat worker {event.worker.name} finished with state: {event.worker.state}.")
+                if event.worker is self.current_chat_worker:
+                    self.loguru_logger.info(f"Current chat worker {self.current_chat_worker.name} matches event worker. Clearing and disabling button.")
+                    self.current_chat_worker = None
+                    try:
+                        stop_button = self.query_one("#stop-chat-generation-button", Button)
+                        stop_button.disabled = True
+                        self.loguru_logger.info("Disabled 'stop-chat-generation' button.")
+                    except QueryError:
+                        self.loguru_logger.error("Could not find 'stop-chat-generation-button' to disable.")
+                else:
+                    self.loguru_logger.debug(f"Finished worker {event.worker.name} is not the current_chat_worker ({getattr(self.current_chat_worker, 'name', 'None')}). Ignoring.")
+        else:
+            # If it's not a chat worker, delegate to the generic handler
+            # This is important if other types of workers exist and need handling.
+            # If only chat workers are managed this way, this delegation might not be strictly necessary
+            # but it's safer to keep it if handle_api_call_worker_state_changed has other logic.
+            self.loguru_logger.debug(f"Worker {event.worker.name} is not a chat worker. Delegating to generic handler.")
+            await worker_handlers.handle_api_call_worker_state_changed(self, event)
+
 
     async def on_streaming_chunk(self, event: StreamingChunk) -> None:
         """Handles incoming chunks of text during streaming."""
@@ -2523,19 +2561,23 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 # Update the display with the accumulated, escaped text
                 static_text_widget.update(escape_markup(self.current_ai_message_widget.message_text))
 
-                # Scroll the chat log to the end
-                # Determine the correct chat log container based on the active tab
-                chat_log_id_to_query = ""
+                # Scroll the chat log to the end, conditionally
+                chat_log_id_to_query = None
                 if self.current_tab == TAB_CHAT:
                     chat_log_id_to_query = "#chat-log"
                 elif self.current_tab == TAB_CCP:
-                    chat_log_id_to_query = "#ccp-conversation-log" # Assuming this is the ID in CCPWindow
+                    chat_log_id_to_query = "#ccp-conversation-log" # Ensure this is the correct ID for CCP tab's log
 
                 if chat_log_id_to_query:
-                    chat_log_container = self.query_one(chat_log_id_to_query, VerticalScroll)
-                    chat_log_container.scroll_end(animate=False, duration=0.05) # Fast scroll
+                    try:
+                        chat_log_container = self.query_one(chat_log_id_to_query, VerticalScroll)
+                        chat_log_container.scroll_end(animate=False, duration=0.05)
+                    except QueryError:
+                        # This path should ideally not be hit if current_tab is Chat or CCP and their logs exist
+                        logger.warning(f"on_streaming_chunk: Could not find chat log container '{chat_log_id_to_query}' even when tab is {self.current_tab}")
                 else:
-                    logger.warning(f"on_streaming_chunk: Could not determine chat log container for tab {self.current_tab}")
+                    # This else block will be hit if current_tab is not CHAT or CCP
+                    logger.debug(f"on_streaming_chunk: Current tab is {self.current_tab}, not attempting to scroll chat log.")
 
             except QueryError as e:
                 logger.error(f"Error accessing UI components during streaming chunk update: {e}", exc_info=True)
@@ -2681,15 +2723,15 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # --- Watchers for chat sidebar prompt display ---
     def watch_chat_sidebar_selected_prompt_system(self, new_system_prompt: Optional[str]) -> None:
         try:
-            self.query_one("#chat-sidebar-prompt-system-display", TextArea).load_text(new_system_prompt or "")
+            self.query_one("#chat-prompt-system-display", TextArea).load_text(new_system_prompt or "")
         except QueryError:
-            self.loguru_logger.error("Chat sidebar system prompt display area not found.")
+            self.loguru_logger.error("Chat sidebar system prompt display area (#chat-prompt-system-display) not found.")
 
     def watch_chat_sidebar_selected_prompt_user(self, new_user_prompt: Optional[str]) -> None:
         try:
-            self.query_one("#chat-sidebar-prompt-user-display", TextArea).load_text(new_user_prompt or "")
+            self.query_one("#chat-prompt-user-display", TextArea).load_text(new_user_prompt or "")
         except QueryError:
-            self.loguru_logger.error("Chat sidebar user prompt display area not found.")
+            self.loguru_logger.error("Chat sidebar user prompt display area (#chat-prompt-user-display) not found.")
 
     def _clear_chat_sidebar_prompt_display(self) -> None:
         """Clears the prompt display TextAreas in the chat sidebar."""

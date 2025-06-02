@@ -364,6 +364,20 @@ def chat_wrapper_function(app_instance: 'TldwCli', **kwargs: Any) -> Any:
             error_message_if_any = None
             try:
                 for chunk_raw in result:
+                    # Check for worker cancellation at the beginning of each iteration
+                    if app_instance.current_chat_worker and app_instance.current_chat_worker.is_cancelled:
+                        app_instance.loguru_logger.info("Chat worker cancelled by user during stream processing in chat_wrapper_function.")
+                        if hasattr(result, 'close'):
+                            result.close()
+                            app_instance.loguru_logger.debug("Closed response_gen (result).")
+                        # Post a StreamDone event indicating cancellation
+                        # Use accumulated_full_text if it contains partial data, or a specific message
+                        cancellation_message = "Streaming cancelled by user."
+                        # If accumulated_full_text is meaningful, you could prepend/append the cancellation reason.
+                        # For now, we assume the UI will primarily use the 'error' field from StreamDone.
+                        app_instance.post_message(StreamDone(full_text=accumulated_full_text, error=cancellation_message))
+                        return "STREAMING_HANDLED_BY_EVENTS" # Exit the worker function
+
                     # Process each raw chunk from the generator (expected to be SSE lines)
                     line = str(chunk_raw).strip()
                     if not line:

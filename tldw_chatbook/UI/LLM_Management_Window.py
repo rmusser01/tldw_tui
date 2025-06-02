@@ -56,6 +56,7 @@ class LLMManagementWindow(Container):
             yield Button("Llamafile", id="llm-nav-llamafile", classes="llm-nav-button")
             yield Button("Ollama", id="llm-nav-ollama", classes="llm-nav-button")
             yield Button("vLLM", id="llm-nav-vllm", classes="llm-nav-button")
+            yield Button("ONNX", id="llm-nav-onnx", classes="llm-nav-button")
             yield Button("Transformers", id="llm-nav-transformers", classes="llm-nav-button")
             yield Button("MLX-LM", id="llm-nav-mlx-lm", classes="llm-nav-button")
             yield Button("Local Models", id="llm-nav-local-models", classes="llm-nav-button")
@@ -119,6 +120,8 @@ class LLMManagementWindow(Container):
                     yield Button("Start Server", id="vllm-start-server-button", classes="action_button")
                     yield Button("Stop Server", id="vllm-stop-server-button", classes="action_button")
                 yield RichLog(id="vllm-log-output", classes="log_output", wrap=True, highlight=True)
+            with Container(id="llm-view-onnx", classes="llm-view-area"):
+                yield Static("ONNX Management Area - Content Coming Soon!")
             yield Container(
                 Static("Transformers Library Management Area - Content Coming Soon!"),
                 id="llm-view-transformers",
