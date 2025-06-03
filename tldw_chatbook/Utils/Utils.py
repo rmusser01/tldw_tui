@@ -633,6 +633,18 @@ def extract_media_id_from_result_string(result_msg: Optional[str]) -> Optional[s
         # The pattern "Media ID: <id>" was not found in the string
         return None
 
+def get_api_name(app_instance, provider: str, endpoints: dict) -> Optional[str]:
+    if not app_instance._ui_ready:
+        return None
+    provider_key_map = { "llama_cpp": "llama_cpp", "Ollama": "Ollama", "Oobabooga": "Oobabooga", "koboldcpp": "koboldcpp", "vllm": "vllm", "Custom": "Custom", "Custom-2": "Custom_2", }
+    endpoint_key = provider_key_map.get(provider)
+    if endpoint_key:
+        url = endpoints.get(endpoint_key)
+        if url: return url
+        else: logging.warning(f"URL key '{endpoint_key}' for provider '{provider}' missing in config [api_endpoints].")
+    return None
+
+
 #
 # End of Utils.py
 ########################################################################################################################

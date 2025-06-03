@@ -2211,24 +2211,24 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
                 if active_ingest_sub_view == "ingest-view-prompts":
                     if button_id == "ingest-prompts-select-file-button":
-                        await ingest_events.handle_ingest_prompts_select_file_button_pressed(self);
+                        await ingest_events.handle_ingest_prompts_select_file_button_pressed(self)
                         return
                     elif button_id == "ingest-prompts-clear-files-button":
-                        await ingest_events.handle_ingest_prompts_clear_files_button_pressed(self);
+                        await ingest_events.handle_ingest_prompts_clear_files_button_pressed(self)
                         return
                     elif button_id == "ingest-prompts-import-now-button":
-                        await ingest_events.handle_ingest_prompts_import_now_button_pressed(self);
+                        await ingest_events.handle_ingest_prompts_import_now_button_pressed(self)
                         return
 
                 elif active_ingest_sub_view == "ingest-view-characters":
                     if button_id == "ingest-characters-select-file-button":
-                        await ingest_events.handle_ingest_characters_select_file_button_pressed(self);
+                        await ingest_events.handle_ingest_characters_select_file_button_pressed(self)
                         return
                     elif button_id == "ingest-characters-clear-files-button":
-                        await ingest_events.handle_ingest_characters_clear_files_button_pressed(self);
+                        await ingest_events.handle_ingest_characters_clear_files_button_pressed(self)
                         return
                     elif button_id == "ingest-characters-import-now-button":
-                        await ingest_events.handle_ingest_characters_import_now_button_pressed(self);
+                        await ingest_events.handle_ingest_characters_import_now_button_pressed(self)
                         return
 
                 # Add other sub-views like ingest-view-notes here
@@ -2455,8 +2455,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         # --- Handle Chat-related API Calls (e.g., API_Call_chat, API_Call_ccp, respond_for_me_worker) ---
         # This section addresses the logic that was causing the crash.
         if isinstance(worker_name_attr, str) and \
-                (worker_name_attr.startswith("API_Call_chat") or \
-                 worker_name_attr.startswith("API_Call_ccp") or \
+                (worker_name_attr.startswith("API_Call_chat") or
+                 worker_name_attr.startswith("API_Call_ccp") or
                  worker_name_attr == "respond_for_me_worker"):
 
             self.loguru_logger.debug(f"Chat-related worker '{worker_name_attr}' detected. State: {worker_state}.")
@@ -2921,24 +2921,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     logger.error(f"Error focusing input '{input_id_to_focus}' in on_stream_done: {e_focus_final}", exc_info=True)
             else:
                 logger.debug(f"No specific input to focus for tab {self.current_tab} in on_stream_done.")
-
-    # --- Helper methods that remain in app.py (mostly for UI orchestration or complex state) ---
-    def _safe_float(self, value: str, default: float, name: str) -> float:
-        return safe_float(value, default, name) # Delegate to imported helper
-
-    def _safe_int(self, value: str, default: Optional[int], name: str) -> Optional[int]:
-        return safe_int(value, default, name) # Delegate to imported helper
-
-    def _get_api_name(self, provider: str, endpoints: dict) -> Optional[str]:
-        if not self._ui_ready:
-            return None
-        provider_key_map = { "llama_cpp": "llama_cpp", "Ollama": "Ollama", "Oobabooga": "Oobabooga", "koboldcpp": "koboldcpp", "vllm": "vllm", "Custom": "Custom", "Custom-2": "Custom_2", }
-        endpoint_key = provider_key_map.get(provider)
-        if endpoint_key:
-            url = endpoints.get(endpoint_key)
-            if url: return url
-            else: logging.warning(f"URL key '{endpoint_key}' for provider '{provider}' missing in config [api_endpoints].")
-        return None
 
     # --- Watchers for chat sidebar prompt display ---
     def watch_chat_sidebar_selected_prompt_system(self, new_system_prompt: Optional[str]) -> None:
