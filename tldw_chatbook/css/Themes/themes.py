@@ -1131,6 +1131,237 @@ starlight_cinema_noir_theme = Theme(
     },
 )
 
+# 1. Theme: "Eva Unit-01 Protocol" (Dark)
+# Inspired by Evangelion Unit-01: deep purples, vibrant greens, stark blacks, and alert oranges.
+eva_unit_01_protocol_theme = Theme(
+    name="eva_unit_01_protocol",
+    primary="#7CFC00",       # Luminous Bio-Green (interactive, focus)
+    secondary="#6A0DAD",     # Deep Armor Purple (secondary elements, borders)
+    accent="#FF8C00",        # Alert Orange/Core (highlights, input focus)
+    foreground="#D0E0D0",    # Pale Sync Interface Grey (main text)
+    background="#100C14",    # NERV Command Black (main background)
+    surface="#2A1F36",       # Dark Purple Bio-Plating (button background)
+    panel="#08060A",         # Deepest Cockpit Shadow (input backgrounds)
+    success="#32CD32",       # A.T. Field Green (success messages)
+    warning="#FFA500",       # Warning Signal Orange (warning messages)
+    error="#DC143C",         # Angel Core Crimson (error messages)
+    dark=True,
+    variables={
+        "sync-ratio-text": "#98FB98",            # Pale green for status readouts
+        "plugsuit-highlight": "#FFA500 30%",   # Orange with alpha for selection
+        "berserk-mode-indicator": "#FF0000",   # Pure Red for critical alerts
+        "lclinstrumentation-text": "#87CEFA",   # Light Sky Blue for LCL-like elements
+    },
+)
+
+# 2. Theme: "Ghibli's Hidden Forest" (Light/Earthy)
+# Soft, natural tones inspired by Studio Ghibli's lush landscapes.
+ghiblis_hidden_forest_theme = Theme(
+    name="ghiblis_hidden_forest",
+    primary="#6B8E23",       # Mossy Olive Green (interactive elements)
+    secondary="#87CEEB",     # Clear Sky Blue (secondary elements, borders)
+    accent="#D2B48C",        # Aged Wood Tan (highlights, input focus)
+    foreground="#4A3B31",    # Rich Earth Brown (main text)
+    background="#F5F5DC",    # Sun-dappled Beige (main background)
+    surface="#E0EEDD",       # Pale Leaf Green (button background)
+    panel="#FAF0E6",         # Linen/Light Cloud (input backgrounds)
+    success="#3CB371",       # Healthy Forest Green (success messages)
+    warning="#F4A460",       # Sandy Brown Warning (warning messages)
+    error="#CD5C5C",         # Faded Berry Red (error messages)
+    dark=False,
+    variables={
+        "river-flow-text": "#5F9EA0",           # Cadet blue for water elements
+        "soot-sprite-dot": "#2F4F4F",           # Dark slate gray for tiny details
+        "kodama-white": "#FFFAFA",              # Snow white for spirit-like accents
+        "sunbeam-yellow": "#FFFACD",            # Lemon chiffon for light effects
+    },
+)
+
+# 3. Theme: "Magical Girl Transform!" (Bright/Pastel Light)
+# Vibrant pastels of pink, blue, and yellow, full of sparkle and energy.
+magical_girl_transform_theme = Theme(
+    name="magical_girl_transform",
+    primary="#FF69B4",       # Bright Transformation Pink (interactive elements)
+    secondary="#ADD8E6",     # Cosmic Sky Blue (borders, secondary elements)
+    accent="#FFD700",        # Star Power Gold (highlights, input focus)
+    foreground="#800080",    # Royal Purple (for contrasty text)
+    background="#FFF0F5",    # Lavender Blush/Cloud White (main background)
+    surface="#FFC0CB",       # Lighter Pink Ribbon (button background)
+    panel="#E6E6FA",         # Pale Lavender Dream (input backgrounds)
+    success="#98FB98",       # Minty Fresh Green (success messages)
+    warning="#FFA07A",       # Light Salmon/Peach (warning messages)
+    error="#DB7093",         # Rose Quartz Red (error messages)
+    dark=False,
+    variables={
+        "sparkle-effect-color": "#FFFFFF",       # Pure white for sparkles
+        "friendship-aura-bg": "#FFB6C1 30%",   # Primary pink with alpha for highlights
+        "compact-mirror-border": "#C0C0C0",     # Silver for item borders
+        "mascot-guide-text": "#4682B4",         # Steel blue for helper text
+    },
+)
+
+# 4. Theme: "Jujutsu Sorcery Night" (Dark)
+# Deep indigos, cursed energy purples, and blood-red accents of Jujutsu Kaisen.
+jujutsu_sorcery_night_theme = Theme(
+    name="jujutsu_sorcery_night",
+    primary="#C71585",       # Cursed Energy Magenta (interactive)
+    secondary="#2A0D45",     # Deepest Indigo Veil (borders, secondary)
+    accent="#B22222",        # Blood Pact Red (highlights, input focus)
+    foreground="#D8BFD8",    # Pale Thistle/Spirit Light (main text)
+    background="#0B071A",    # Tokyo Night Black (main background)
+    surface="#1E1030",       # Shadow Technique Purple (button background)
+    panel="#05030D",         # Void Black (input backgrounds)
+    success="#00A86B",       # Jade Vine Green (positive outcome)
+    warning="#E09200",       # Cursed Seal Amber (warning messages)
+    error="#8B0000",         # Malevolent Shrine Dark Red (error messages)
+    dark=True,
+    variables={
+        "domain-expansion-field": "#4B0082 20%", # Indigo with alpha for fields
+        "cursed-tool-sheen": "#A9A9A9",          # Dark grey for metallic tools
+        "shikigami-outline": "#708090",         # Slate grey for summoned outlines
+        "sukuna-tattoo-red": "#800000",         # Darker red for specific accents
+    },
+)
+
+# 5. Theme: "Akira Neo-Tokyo Grit" (Dark)
+# The iconic crimson red, concrete grays, and neon highlights of Akira's dystopian world.
+akira_neo_tokyo_grit_theme = Theme(
+    name="akira_neo_tokyo_grit",
+    primary="#D70000",       # Iconic Akira Crimson (interactive elements)
+    secondary="#4A4A4A",     # Urban Concrete Grey (borders, secondary)
+    accent="#00E5FF",        # Capsule Gang Neon Cyan (highlights, input focus)
+    foreground="#E0E0E0",    # Dusty Billboard White (main text)
+    background="#1C1C1C",    # Asphalt Black (main background)
+    surface="#333333",       # Rubble Grey (button background)
+    panel="#0F0F0F",         # Deep Shadow Alley (input backgrounds)
+    success="#39FF14",       # Glitch Green (success, digital feel)
+    warning="#FFBF00",       # Hazard Yellow (warning messages)
+    error="#B20000",         # Destructive Red (error messages)
+    dark=True,
+    variables={
+        "kanedas-bike-red": "#FF0000",             # Brighter red for key highlights
+        "espers-power-glow": "#8A2BE2 40%",      # BlueViolet with alpha
+        "government-data-blue": "#3366CC",       # Official blue for specific text
+        "city-lights-yellow": "#FFFF66",         # Pale yellow for distant lights
+    },
+)
+
+# 6. Theme: "Scouting Legionnaire" (Muted/Desaturated Dark)
+# The somber, utilitarian colors of Attack on Titan's Survey Corps.
+scouting_legionnaire_theme = Theme(
+    name="scouting_legionnaire",
+    primary="#556B2F",       # Survey Corps Dark Olive (interactive)
+    secondary="#8B4513",     # Worn Leather Brown (borders, secondary)
+    accent="#A0522D",        # Faded Sienna/Terracotta (highlights, input focus)
+    foreground="#D2D2C0",    # Old Parchment/Report Paper (main text)
+    background="#2F2F28",    # Wall Sina Stone Grey (main background)
+    surface="#3E3E35",       # Barracks Wood Brown (button background)
+    panel="#1A1A17",         # Deep Forest Shadow (input backgrounds)
+    success="#6B8E23",       # Hopeful Green Sprout (success messages)
+    warning="#BDB76B",       # Cautionary Dark Khaki (warning messages)
+    error="#800000",         # Titan Blood Maroon (error messages)
+    dark=True,
+    variables={
+        "map-lines-color": "#A0522D",           # Sienna for map details
+        "uniform-strap-color": "#704214",       # Darker brown for details
+        "titan-steam-white": "#F5F5F5 30%",     # Off-white with alpha for steam
+        "flare-gun-green": "#2E8B57",           # SeaGreen for signals
+    },
+)
+
+# 7. Theme: "Saiyan Power Orange" (Vibrant/Energetic Light)
+# The iconic orange and blue of Goku's gi, bursting with Dragon Ball Z energy.
+saiyan_power_orange_theme = Theme(
+    name="saiyan_power_orange",
+    primary="#FF8C00",       # Goku's Gi Orange (interactive)
+    secondary="#1E90FF",     # Capsule Corp Blue (borders, secondary)
+    accent="#FFD700",        # Super Saiyan Gold (highlights, input focus)
+    foreground="#000080",    # Deep Training Blue/Black (main text for contrast)
+    background="#F0F8FF",    # Clear Sky AliceBlue (main background)
+    surface="#FFA500",       # Lighter Training Orange (button background)
+    panel="#FFFFFF",         # Nimbus Cloud White (input backgrounds)
+    success="#32CD32",       # Senzu Bean Green (success messages)
+    warning="#FFFF00",       # Ki Blast Yellow (warning messages)
+    error="#FF0000",         # Battle Damage Red (error messages)
+    dark=False,
+    variables={
+        "dragonball-star-red": "#FF4500",        # OrangeRed for Dragon Ball stars
+        "scouter-display-green": "#00FF00",      # Bright green for scouter text
+        "kame-house-roof": "#B22222",            # Firebrick for Namekian details
+        "training-ground-earth": "#DEB887",      # BurlyWood for environment colors
+    },
+)
+
+# 8. Theme: "Psycho-Pass Dominator" (Cool/Futuristic Dark)
+# Clinical blues, cyans, and grays with the distinct Dominator mode accents from Psycho-Pass.
+psycho_pass_dominator_theme = Theme(
+    name="psycho_pass_dominator",
+    primary="#00BFFF",       # Sibyl System Cyan (interactive, non-lethal)
+    secondary="#4682B4",     # Enforcer Steel Blue (borders, secondary)
+    accent="#FF4500",        # Lethal Eliminator Orange-Red (critical highlights, input focus)
+    foreground="#E0FFFF",    # Holographic Display Light Cyan (main text)
+    background="#101820",    # MWPSB Dark Blue-Grey (main background)
+    surface="#1C2833",       # Dominator Casing Grey (button background)
+    panel="#0A0F14",         # Crime Coefficient Black (input backgrounds)
+    success="#2ECC71",       # System Normal Green (success messages)
+    warning="#F39C12",       # Paralyzer Mode Yellow (warning messages)
+    error="#E74C3C",         # Crime Index Red (error messages)
+    dark=True,
+    variables={
+        "crime-coefficient-value": "#FF4500",   # Accent color for critical numbers
+        "latent-criminal-hue": "#B0E0E6 30%",  # PowderBlue with alpha for subtle highlights
+        "inspector-badge-gold": "#FFD700",      # Gold for official symbols
+        "area-scan-lines": "#008080 50%",      # Teal with alpha for scan effects
+    },
+)
+
+# 9. Theme: "Sakura Viewing Picnic" (Pastel Light)
+# Delicate cherry blossom pinks, fresh greens, and soft sky blues.
+sakura_viewing_picnic_theme = Theme(
+    name="sakura_viewing_picnic",
+    primary="#FFB6C1",       # Sakura Blossom Pink (interactive)
+    secondary="#90EE90",     # Fresh Sprout Green (borders, secondary)
+    accent="#ADD8E6",        # Spring Sky Light Blue (highlights, input focus)
+    foreground="#556B2F",    # Dark Moss Green (main text for readability)
+    background="#FFF5EE",    # Seashell White/Pale Petal (main background)
+    surface="#FFE4E1",       # Misty Rose/Lighter Pink (button background)
+    panel="#F0FFF0",         # Honeydew Green/Picnic Blanket (input backgrounds)
+    success="#3CB371",       # Healthy Leaf Green (success messages)
+    warning="#FFDEAD",       # Dango NavahoWhite (warning messages)
+    error="#F08080",         # Umeboshi Light Coral (error messages)
+    dark=False,
+    variables={
+        "hanami-lantern-paper": "#FAFAD2",      # LightGoldenrodYellow for lanterns
+        "tatami-mat-beige": "#EEE8AA",          # PaleGoldenrod for surfaces
+        "koi-pond-blue": "#87CEFA",             # LightSkyBlue for decorative elements
+        "falling-petal-accent": "#FFC0CB 60%",  # Pink with alpha for subtle effects
+    },
+)
+
+# 10. Theme: "80s Anime OVA Sunset" (Dark/Nostalgic Neon)
+# Inspired by the aesthetic of 80s OVAs: deep purples, magenta, teal, and sunset oranges.
+eighties_anime_ova_sunset_theme = Theme(
+    name="80s_anime_ova_sunset",
+    primary="#F92C86",       # Retro Magenta (interactive)
+    secondary="#03DAC5",     # Cassette Teal (borders, secondary)
+    accent="#FFA500",        # Tokyo Tower Sunset Orange (highlights, input focus)
+    foreground="#EAD7FE",    # Lavender Mist (main text)
+    background="#241E4E",    # Midnight Drive Purple (main background)
+    surface="#3B306A",       # Twilight Cityscape Indigo (button background)
+    panel="#1A1438",         # VHS Tape Dark Purple (input backgrounds)
+    success="#4CAF50",       # Arcade Screen Green (success messages)
+    warning="#FFEB3B",       # Headlight Yellow (warning messages)
+    error="#EF5350",         # Laser Disc Red (error messages)
+    dark=True,
+    variables={
+        "city-skyline-glow": "#673AB7 30%",    # DeepPurple with alpha for background glow
+        "boombox-chrome": "#B0BEC5",           # BlueGrey for metallic accents
+        "lens-flare-white": "#FFFFFF 70%",     # White with alpha for highlights
+        "character-outline-key": "#FF4081",    # Bright pink for strong outlines if needed
+    },
+)
+
+
 ALL_THEMES = [
     classic_terminal_green_theme,
     modern_dark_dracula_theme,
@@ -1179,6 +1410,16 @@ ALL_THEMES = [
     art_deco_metropolis_theme,
     desert_oasis_mirage_theme,
     starlight_cinema_noir_theme,
+    eva_unit_01_protocol_theme,
+    ghiblis_hidden_forest_theme,
+    magical_girl_transform_theme,
+    jujutsu_sorcery_night_theme,
+    akira_neo_tokyo_grit_theme,
+    scouting_legionnaire_theme,
+    saiyan_power_orange_theme,
+    psycho_pass_dominator_theme,
+    sakura_viewing_picnic_theme,
+    eighties_anime_ova_sunset_theme,
 ]
 
 # Example of a theme with the 'variables' attribute as shown in Textual docs:

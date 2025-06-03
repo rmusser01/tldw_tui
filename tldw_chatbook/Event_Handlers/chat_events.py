@@ -23,18 +23,17 @@ from ..Utils.Utils import safe_float, safe_int
 # Local Imports
 from ..Widgets.chat_message import ChatMessage
 from ..Widgets.titlebar import TitleBar
-from ..Prompt_Management import Prompts_Interop as prompts_interop
 from ..Utils.Emoji_Handling import (
     get_char, EMOJI_THINKING, FALLBACK_THINKING, EMOJI_EDIT, FALLBACK_EDIT,
     EMOJI_SAVE_EDIT, FALLBACK_SAVE_EDIT, EMOJI_COPIED, FALLBACK_COPIED, EMOJI_COPY, FALLBACK_COPY
 )
 from ..Character_Chat import Character_Chat_Lib as ccl
-from ..Character_Chat.Character_Chat_Lib import load_character_and_image # Added for character data loading
-from ..DB.ChaChaNotes_DB import ConflictError, CharactersRAGDBError, InputError  # Import specific DB errors
+from ..Character_Chat.Character_Chat_Lib import load_character_and_image
+from ..DB.ChaChaNotes_DB import ConflictError, CharactersRAGDBError, InputError
 from ..Prompt_Management import Prompts_Interop as prompts_interop
 #
 if TYPE_CHECKING:
-    from ..app import TldwCli, API_IMPORTS_SUCCESSFUL
+    from ..app import TldwCli
 
 
 #
@@ -1014,26 +1013,34 @@ async def handle_chat_load_selected_button_pressed(app: 'TldwCli') -> None:
     loguru_logger.info("Load selected chat button pressed.")
     try:
         results_list_view = app.query_one("#chat-conversation-search-results-list", ListView)
-        highlighted_item = results_list_view.highlighted_child
-        if not (highlighted_item and hasattr(highlighted_item, 'conversation_id')):
-            app.notify("No chat selected to load.", severity="warning")
-            loguru_logger.info("No conversation selected in the list to load.")
+        highlighted_widget = results_list_view.highlighted_child
+
+        if not isinstance(highlighted_widget, ListItem): # Check if it's a ListItem
+            app.notify("No chat selected to load (not a list item).", severity="warning")
+            loguru_logger.info("No conversation selected in the list to load (highlighted_widget is not ListItem).")
             return
 
-        loaded_conversation_id = highlighted_item.conversation_id
+        loaded_conversation_id: Optional[str] = getattr(highlighted_widget, 'conversation_id', None)
+
+        if loaded_conversation_id is None:
+            app.notify("No chat selected or item is invalid (missing conversation_id).", severity="warning")
+            loguru_logger.info("No conversation_id found on the selected ListItem.")
+            return
+
         loguru_logger.info(f"Attempting to load and display conversation ID: {loaded_conversation_id}")
 
         # _display_conversation_in_chat_tab handles UI updates and history loading
         await display_conversation_in_chat_tab_ui(app, loaded_conversation_id)
+
         app.current_chat_is_ephemeral = False  # A loaded chat is persistent
 
-        # Notification is usually handled by _display_conversation_in_chat_tab or its callees
-        # app.notify(f"Chat '{getattr(highlighted_item, 'conversation_title', 'Untitled')}' loaded.", severity="information")
+        conversation_title = getattr(highlighted_widget, 'conversation_title', 'Untitled')
+        app.notify(f"Chat '{conversation_title}' loaded.", severity="information")
 
     except QueryError as e_query:
         loguru_logger.error(f"UI component not found for loading chat: {e_query}", exc_info=True)
         app.notify("Error accessing UI for loading chat.", severity="error")
-    except CharactersRAGDBError as e_db:
+    except CharactersRAGDBError as e_db: # Make sure CharactersRAGDBError is imported
         loguru_logger.error(f"Database error loading chat: {e_db}", exc_info=True)
         app.notify("Database error loading chat.", severity="error")
     except Exception as e_unexp:
@@ -1399,55 +1406,101 @@ async def handle_chat_load_character_button_pressed(app: 'TldwCli', event: Butto
     loguru_logger.info("Load Character button pressed.")
     try:
         results_list_view = app.query_one("#chat-character-search-results-list", ListView)
-        highlighted_item = results_list_view.highlighted_child
+        highlighted_widget = results_list_view.highlighted_child
 
-        if not (highlighted_item and hasattr(highlighted_item, 'character_id') and highlighted_item.character_id is not None):
-            app.notify("No character selected to load.", severity="warning")
-            loguru_logger.info("No character selected in the list to load.")
+        # --- Type checking and attribute access fix for highlighted_item ---
+        if not isinstance(highlighted_widget, ListItem): # Check if it's a ListItem
+            app.notify("No character selected to load (not a list item).", severity="warning")
+            loguru_logger.info("No character selected in the list to load (highlighted_widget is not ListItem).")
             return
 
-        selected_char_id = highlighted_item.character_id
+        # Now that we know it's a ListItem, try to get 'character_id'
+        # Use getattr for dynamic attributes to satisfy type checkers and handle missing attribute
+        selected_char_id: Optional[str] = getattr(highlighted_widget, 'character_id', None)
+
+        if selected_char_id is None:
+            app.notify("No character selected or item is invalid.", severity="warning")
+            loguru_logger.info("No character_id found on the selected ListItem.")
+            return
+        # --- End of fix ---
+
         loguru_logger.info(f"Attempting to load character ID: {selected_char_id}")
 
-        if not app.notes_service:
+        if not app.notes_service: # This should be app.chachanotes_db for character operations
             app.notify("Database service not available.", severity="error")
-            loguru_logger.error("Notes service not available for loading character.")
+            loguru_logger.error("ChaChaNotes DB (via notes_service) not available for loading character.")
             return
 
-        db = app.notes_service._get_db(app.notes_user_id)
-        character_data_full, _, _ = load_character_and_image(db, selected_char_id,
-                                                             app.notes_user_id)  # Use your library function
+        # db = app.notes_service._get_db(app.notes_user_id) # Old way
+        # Correct way to get the CharactersRAGDB instance
+        if not app.chachanotes_db:
+            app.notify("Character database not properly initialized.", severity="error")
+            loguru_logger.error("app.chachanotes_db is not initialized.")
+            return
+        db = app.chachanotes_db
 
+
+        # Assuming app.notes_user_id is the correct user identifier for character operations.
+        # If characters are global or use a different user context, adjust app.notes_user_id.
+        character_data_full, _, _ = load_character_and_image(db, selected_char_id, app.notes_user_id)
 
         if character_data_full is None:
             app.notify(f"Character with ID {selected_char_id} not found in database.", severity="error")
             loguru_logger.error(f"Could not retrieve data for character ID {selected_char_id} from DB (returned None).")
-            # Optionally clear the fields if a previous character was loaded
-            app.query_one("#chat-character-name-edit", Input).value = ""
-            app.query_one("#chat-character-description-edit", TextArea).text = ""
-            app.query_one("#chat-character-personality-edit", TextArea).text = ""
-            app.query_one("#chat-character-scenario-edit", TextArea).text = ""
-            app.query_one("#chat-character-system-prompt-edit", TextArea).text = ""
-            app.query_one("#chat-character-first-message-edit", TextArea).text = ""
-            app.current_chat_active_character_data = None  # Clear reactive if it was set by a previous load
+            try:
+                # When querying from within an event handler in a separate module,
+                # it's safer to query from the app instance.
+                app.query_one("#chat-character-name-edit", Input).value = ""
+                app.query_one("#chat-character-description-edit", TextArea).text = ""
+                app.query_one("#chat-character-personality-edit", TextArea).text = ""
+                app.query_one("#chat-character-scenario-edit", TextArea).text = ""
+                app.query_one("#chat-character-system-prompt-edit", TextArea).text = ""
+                app.query_one("#chat-character-first-message-edit", TextArea).text = ""
+            except QueryError as qe_clear:
+                loguru_logger.warning(f"Could not clear all character edit fields after failed load: {qe_clear}")
+            app.current_chat_active_character_data = None
             return
 
-        if character_data_full:
-            app.current_chat_active_character_data = character_data_full # Update reactive state
+        # character_data_full is now a dictionary
+        app.current_chat_active_character_data = character_data_full
 
-            # Populate the editing fields
-            app.query_one("#chat-character-name-edit", Input).value = character_data_full.get('name') or ''
-            app.query_one("#chat-character-description-edit", TextArea).text = character_data_full.get('description') or ''
-            app.query_one("#chat-character-personality-edit", TextArea).text = character_data_full.get('personality') or ''
-            app.query_one("#chat-character-scenario-edit", TextArea).text = character_data_full.get('scenario') or ''
-            app.query_one("#chat-character-system-prompt-edit", TextArea).text = character_data_full.get('system_prompt') or ''
-            app.query_one("#chat-character-first-message-edit", TextArea).text = character_data_full.get('first_message') or ''
+        try:
+            app.query_one("#chat-character-name-edit", Input).value = character_data_full.get('name', '')
+            app.query_one("#chat-character-description-edit", TextArea).text = character_data_full.get('description', '')
+            app.query_one("#chat-character-personality-edit", TextArea).text = character_data_full.get('personality', '')
+            app.query_one("#chat-character-scenario-edit", TextArea).text = character_data_full.get('scenario', '')
+            app.query_one("#chat-character-system-prompt-edit", TextArea).text = character_data_full.get('system_prompt', '')
+            app.query_one("#chat-character-first-message-edit", TextArea).text = character_data_full.get('first_message', '')
+        except QueryError as qe_populate:
+            loguru_logger.error(f"Error populating character edit fields: {qe_populate}", exc_info=True)
+            app.notify("Error updating character display fields.", severity="error")
+            # Potentially revert app.current_chat_active_character_data if UI update fails critically
+            # app.current_chat_active_character_data = None # Or previous state
+            return
 
-            app.notify(f"Character '{character_data_full.get('name', 'Unknown')}' loaded.", severity="information")
 
-            # <<< START OF ADDED CODE >>>
-            if app.current_chat_is_ephemeral:
-                loguru_logger.debug("Chat is ephemeral, checking if greeting is appropriate.")
+        app.notify(f"Character '{character_data_full.get('name', 'Unknown')}' loaded.", severity="information")
+
+        # --- Fix for accessing reactive's value ---
+        # When accessing app.current_chat_active_character_data, it *IS* the dictionary (or None)
+        # because the reactive attribute itself resolves to its current value when accessed.
+        # The type checker error "Unresolved attribute reference 'get' for class 'reactive'"
+        # usually happens if you try to do `app.current_chat_active_character_data.get` where
+        # `current_chat_active_character_data` is the *descriptor* and not its value.
+        # However, in your code, when you assign `app.current_chat_active_character_data = character_data_full`,
+        # and then later access `app.current_chat_active_character_data.get('first_message')`,
+        # this should work correctly at runtime because `app.current_chat_active_character_data`
+        # will return the dictionary `character_data_full`.
+        # The type checker might be confused if the type hint for `current_chat_active_character_data` is too broad
+        # or if it thinks it's still dealing with the `reactive` object itself.
+
+        # To be absolutely clear for the type checker and ensure runtime correctness:
+        active_char_data_dict: Optional[Dict[str, Any]] = app.current_chat_active_character_data
+        # Now use active_char_data_dict for .get() calls
+
+        if app.current_chat_is_ephemeral:
+            loguru_logger.debug("Chat is ephemeral, checking if greeting is appropriate.")
+            if active_char_data_dict: # Check if the dictionary is not None
                 try:
                     chat_log_widget = app.query_one("#chat-log", VerticalScroll)
                     messages_in_log = list(chat_log_widget.query(ChatMessage))
@@ -1457,7 +1510,6 @@ async def handle_chat_load_character_button_pressed(app: 'TldwCli', event: Butto
                         loguru_logger.debug("Chat log is empty. Greeting is appropriate.")
                     else:
                         for msg_widget in messages_in_log:
-                            # Check if the message role is not "User". This includes "AI" or the character's name.
                             if msg_widget.role != "User":
                                 character_has_spoken = True
                                 loguru_logger.debug(f"Found message from role '{msg_widget.role}'. Greeting not appropriate.")
@@ -1466,14 +1518,15 @@ async def handle_chat_load_character_button_pressed(app: 'TldwCli', event: Butto
                             loguru_logger.debug("No non-User messages found in log. Greeting is appropriate.")
 
                     if not messages_in_log or not character_has_spoken:
-                        first_message_content = app.current_chat_active_character_data.get('first_message')
-                        character_name = app.current_chat_active_character_data.get('name')
+                        # Use active_char_data_dict here
+                        first_message_content = active_char_data_dict.get('first_message')
+                        character_name = active_char_data_dict.get('name')
 
                         if first_message_content and character_name:
                             loguru_logger.info(f"Displaying first_message for {character_name}.")
                             greeting_message_widget = ChatMessage(
                                 message=first_message_content,
-                                role=character_name, # Use character's name as role for their greeting
+                                role=character_name,
                                 generation_complete=True
                             )
                             await chat_log_widget.mount(greeting_message_widget)
@@ -1486,9 +1539,11 @@ async def handle_chat_load_character_button_pressed(app: 'TldwCli', event: Butto
                     loguru_logger.error(f"Could not find #chat-log to check for messages or mount greeting: {e_chat_log}")
                 except Exception as e_greeting:
                     loguru_logger.error(f"Error displaying character greeting: {e_greeting}", exc_info=True)
-            # <<< END OF ADDED CODE >>>
+            else:
+                loguru_logger.debug("No active character data (active_char_data_dict is None), skipping greeting.")
+        # --- End of fix ---
 
-            loguru_logger.info(f"Character ID {selected_char_id} loaded and fields populated.")
+        loguru_logger.info(f"Character ID {selected_char_id} loaded and fields populated.")
 
     except QueryError as e_query:
         loguru_logger.error(f"UI component not found for loading character: {e_query}", exc_info=True)
