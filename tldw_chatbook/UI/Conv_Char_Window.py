@@ -121,10 +121,6 @@ class CCPWindow(Container):
         with VerticalScroll(id="conv-char-right-pane", classes="cc-right-pane"):
             yield Static("Details & Settings", classes="sidebar-title") # This title is for the whole pane
 
-            # LLM Settings Container
-            with Container(id="ccp-right-pane-llm-settings-container"):
-                yield from create_settings_sidebar(TAB_CCP, self.app_instance.app_config)
-
             # Conversation Details Collapsible
             with Collapsible(title="Conversation Details", id="ccp-conversation-details-collapsible",
                              collapsed=False):  # Start expanded
