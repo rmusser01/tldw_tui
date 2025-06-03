@@ -77,7 +77,7 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
             error_msg_text = Text.from_markup(
                 f"[bold red]Error:[/]\nAI response for worker '{worker_name}' received, but its display widget was missing.")
             # Use plain text for ChatMessage content if it doesn't support Text directly
-            app.notify(f"Error: AI response for worker '{worker_name}' received, but its display widget was missing.", severity="error", timeout=10)
+            #app.notify(f"Error: AI response for worker '{worker_name}' received, but its display widget was missing.", severity="error", timeout=3)
         except QueryError:
             logger.error(f"Fallback: Could not find chat container #{prefix}-log.")
         app.current_ai_message_widget = None
@@ -220,7 +220,16 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
 
             static_text_widget_in_ai_msg.update(Text.from_markup(f"[bold red]{escaped_error_for_display}[/]"))
             ai_message_widget.mark_generation_complete()
-            app.current_ai_message_widget = None
+
+            if app.current_chat_is_streaming:
+                logger.info(f"Worker '{worker_name}' failed during an active stream. Posting StreamDone with error.")
+                # Post StreamDone event with the error details
+                app.post_message(StreamDone(full_text=ai_message_widget.message_text, error=str(error_from_worker)))
+                # DO NOT set app.current_ai_message_widget = None here.
+                # The handle_stream_done handler will be responsible for this.
+            else:
+                logger.info(f"Worker '{worker_name}' failed (non-streaming). Clearing current_ai_message_widget.")
+                app.current_ai_message_widget = None
 
         if chat_container.is_mounted:
             chat_container.scroll_end(animate=True)
