@@ -668,6 +668,469 @@ ghost_in_the_shell_theme = Theme(
     },
 )
 
+from textual.theme import Theme
+
+# 1. Theme: "Retro Mint Chip" (Light)
+# A refreshing light theme with minty greens, chocolate browns, and creamy off-whites.
+retro_mint_chip_theme = Theme(
+    name="retro_mint_chip",
+    primary="#68B0AB",       # Mint Green (for interactive elements, focus)
+    secondary="#A0937D",     # Lighter Brown/Taupe (secondary elements, borders)
+    accent="#3D8B83",        # Darker Teal/Mint (input highlights, accents)
+    foreground="#5E454B",    # Dark Chocolate Brown (main text)
+    background="#F5EFE6",    # Creamy Off-White (main background)
+    surface="#E8DFD8",       # Slightly darker cream (default button background, widget surface)
+    panel="#F0E6DB",         # Lighter panel background (input backgrounds, distinct panels)
+    success="#5A9C78",       # Muted Jade Green (success messages)
+    warning="#FFA07A",       # Light Salmon/Peach (warning messages)
+    error="#D2691E",         # Chocolate Brown/Sienna (error messages)
+    dark=False,
+    variables={
+        "text-muted": "#8C7853",              # Muted brown for less important text
+        "input-placeholder": "#BEB2A7",       # Lighter placeholder text
+        "border-subtle": "#D1C7B7",           # Subtle border color
+        "scrollbar-color": "#68B0AB",         # Primary color for scrollbar
+    },
+)
+
+# 2. Theme: "Blueprint Tech" (Dark)
+# A dark theme inspired by technical blueprints, featuring deep blues, cyans, and yellow accents.
+blueprint_tech_theme = Theme(
+    name="blueprint_tech",
+    primary="#00BFFF",       # Bright Cyan (DeepSkyBlue)
+    secondary="#4682B4",     # Medium Blue (SteelBlue)
+    accent="#FFD700",        # Yellow (Gold)
+    foreground="#E0FFFF",    # Light Cyan (main text)
+    background="#000080",    # Deep Blue (Navy - main background)
+    surface="#0000CD",       # Medium Blue (button background, widget surface)
+    panel="#000050",         # Even Darker Blue (input backgrounds, panels)
+    success="#32CD32",       # Lime Green
+    warning="#FFA500",       # Orange
+    error="#FF4500",         # OrangeRed
+    dark=True,
+    variables={
+        "text-highlight": "#FFFFFF",           # White for important highlights
+        "grid-line-major": "#3030A0",        # For schematic-like grids
+        "grid-line-minor": "#181860",        # Fainter grid lines
+        "code-background": "#000060",         # Background for code blocks
+    },
+)
+
+# 3. Theme: "Vintage Scroll" (Light)
+# A light theme evoking aged paper, rich inks, and classic bookbinding.
+vintage_scroll_theme = Theme(
+    name="vintage_scroll",
+    primary="#8B0000",       # Burgundy Red (DarkRed - for interactive elements)
+    secondary="#B8860B",     # Muted Gold (DarkGoldenrod - borders, secondary elements)
+    accent="#556B2F",        # Dark Olive Green (accents, input highlights)
+    foreground="#5D4037",    # Dark Sepia Brown (main text)
+    background="#F5F5DC",    # Aged Paper (Beige - main background)
+    surface="#EEE8AA",       # Pale Goldenrod (button background, widget surface)
+    panel="#FAF0E6",         # Linen (input backgrounds, panels)
+    success="#228B22",       # Forest Green
+    warning="#DAA520",       # Goldenrod
+    error="#A52A2A",         # Brown (for error messages)
+    dark=False,
+    variables={
+        "text-link": "#0000CD",               # Medium Blue for hyperlinks
+        "blockquote-background": "#F0EAD6",  # Slightly different bg for blockquotes
+        "blockquote-border": "#D2B48C",       # Tan border for blockquotes
+        "header-color": "#8B0000",            # Primary color for headers
+    },
+)
+
+# 4. Theme: "Twilight Lavender Fields" (Dark)
+# A calming dark theme with shades of lavender, purple, and soft pink accents.
+twilight_lavender_fields_theme = Theme(
+    name="twilight_lavender_fields",
+    primary="#9370DB",       # Medium Lavender (MediumPurple - interactive elements)
+    secondary="#6A5ACD",     # Muted Purple (SlateBlue - borders, secondary)
+    accent="#FFB6C1",        # Soft Pink (LightPink - highlights, input focus)
+    foreground="#E6E6FA",    # Light Lavender (main text)
+    background="#301934",    # Deep Purple/Indigo (main background)
+    surface="#483D8B",       # Dark Slate Blue (button background, widget surface)
+    panel="#200020",         # Very Dark Purple (input backgrounds, panels)
+    success="#3CB371",       # Medium Sea Green
+    warning="#FFDAB9",       # PeachPuff (Pale Yellowish-Pink)
+    error="#DB7093",         # PaleVioletRed (Dusky Rose/Muted Magenta)
+    dark=True,
+    variables={
+        "text-muted": "#B0A4C4",              # Muted light purple for less important text
+        "focus-border": "#FFB6C1",            # Accent color for focus borders
+        "progress-bar-color": "#9370DB",      # Primary color for progress bars
+        "tooltip-background": "#483D8B",      # Surface color for tooltips
+    },
+)
+
+# 5. Theme: "Golden Hour Desert" (Light)
+# A warm light theme inspired by desert landscapes at sunset, with sandy tones, burnt orange, and sky blue.
+golden_hour_desert_theme = Theme(
+    name="golden_hour_desert",
+    primary="#CC5500",       # Burnt Orange
+    secondary="#D4A017",     # Muted Yellow/Ochre (Golden Ochre)
+    accent="#87CEEB",        # Sky Blue
+    foreground="#4A3B31",    # Dark Brown/Charcoal (main text)
+    background="#F0E68C",    # Sandy Beige (Khaki - main background)
+    surface="#E6D8AD",       # Lighter, slightly desaturated sand (button background)
+    panel="#FAF3D2",         # Very light sand (input backgrounds)
+    success="#556B2F",       # Olive Green (DarkOliveGreen)
+    warning="#FF8C00",       # Deep Orange (DarkOrange)
+    error="#B22222",         # Rusty Red (Firebrick)
+    dark=False,
+    variables={
+        "text-muted": "#8B7D6B",                # Muted sandy brown
+        "button-primary-hover-background": "#E06000", # Darker orange for hover
+        "link-color": "#007BA7",              # Cerulean blue for links
+        "border-strong": "#A0522D",           # Sienna for stronger borders
+    },
+)
+
+# 6. Theme: "Industrial Gearworks" (Dark)
+# A stark, functional dark theme with various grays, steel blue, and metallic bronze/copper accents.
+industrial_gearworks_theme = Theme(
+    name="industrial_gearworks",
+    primary="#5F7D8E",       # Muted Steel Blue
+    secondary="#708090",     # Medium Gray (SlateGray)
+    accent="#B87333",        # Bronze/Copper
+    foreground="#D1D0CE",    # Light Steel Gray (main text)
+    background="#2B2B2B",    # Dark Charcoal Gray (main background)
+    surface="#3C3C3C",       # Slightly lighter dark gray (button background)
+    panel="#1E1E1E",         # Even Darker Gray (input backgrounds)
+    success="#38761D",       # Dark Green (like coated machinery)
+    warning="#FFCC00",       # Industrial Yellow (bright, like hazard tape)
+    error="#CC3333",         # Industrial Red
+    dark=True,
+    variables={
+        "text-highlight": "#FFFFFF",             # White for critical highlights
+        "border-heavy": "#A9A9A9",             # DarkGray for heavier borders
+        "widget-border": "#505050",             # Standard widget border
+        "tooltip-background": "#4A4A4A",        # Tooltip background
+    },
+)
+
+# 7. Theme: "Coral Bloom" (Light)
+# A bright and vibrant light theme inspired by coral reefs, with coral pink, seafoam green, and sunny yellow.
+coral_bloom_theme = Theme(
+    name="coral_bloom",
+    primary="#FF7F50",       # Bright Coral Pink
+    secondary="#40E0D0",     # Seafoam Green (Turquoise)
+    accent="#FFEB3B",        # Sunny Yellow (Material Yellow A200)
+    foreground="#2F4F4F",    # Dark Slate Gray (main text)
+    background="#F0FFFF",    # Very Light Aqua (Azure - main background)
+    surface="#E0FFFF",       # Light Cyan (button background)
+    panel="#FAFFFF",         # Almost white panel (input backgrounds)
+    success="#32CD32",       # Lime Green
+    warning="#FFA500",       # Orange
+    error="#FF4081",         # Bright Pink (Material Pink A200)
+    dark=False,
+    variables={
+        "text-muted": "#778899",                 # LightSlateGray
+        "list-item-active-background": "#FFEBCD", # BlanchedAlmond (warm highlight)
+        "highlight-primary": "#FF7F50 30%",      # Primary color with alpha for selections
+        "badge-background": "#40E0D0",           # Secondary for badges
+        "badge-foreground": "#2F4F4F",           # Dark text on badge
+    },
+)
+
+# 8. Theme: "Autumn Embers" (Dark)
+# A warm and cozy dark theme with fiery oranges, deep reds, golden yellows, and rich browns.
+autumn_embers_theme = Theme(
+    name="autumn_embers",
+    primary="#E67E22",       # Fiery Orange (Carrot)
+    secondary="#C04000",     # Muted Red (Maroon variant)
+    accent="#F1C40F",        # Golden Yellow (Sunflower)
+    foreground="#FDF5E6",    # Creamy Beige (OldLace - main text)
+    background="#362419",    # Deep Brown/Charcoal (main background)
+    surface="#5C3D2E",       # Rich Brown (button background)
+    panel="#2A1B10",         # Even Darker Brown (input backgrounds)
+    success="#2E8B57",       # Forest Green (SeaGreen)
+    warning="#E69B00",       # Amber (Dark Goldenrod variant)
+    error="#9B1B1B",         # Deep Burgundy/Crimson
+    dark=True,
+    variables={
+        "text-highlight": "#FFF0A5",           # Light yellow highlight
+        "log-date-foreground": "#F1C40F",      # Golden yellow for dates in logs
+        "code-comment-color": "#A0522D",       # Sienna for code comments
+        "button-hover-text": "#FFFFFF",
+    },
+)
+
+# 9. Theme: "Zen Garden" (Light)
+# A calm and minimalist light theme with stone grays, muted jade green, sandy beige, and a touch of water blue.
+zen_garden_theme = Theme(
+    name="zen_garden",
+    primary="#8FBC8F",       # Muted Jade Green (DarkSeaGreen)
+    secondary="#D2B48C",     # Sandy Beige (Tan)
+    accent="#ADD8E6",        # Water Blue (LightBlue)
+    foreground="#36454F",    # Dark Charcoal Gray (main text)
+    background="#F5F5F5",    # Light Stone Gray (WhiteSmoke - main background)
+    surface="#E9E9E9",       # Slightly darker light gray (button background)
+    panel="#FFFFFF",         # White (input backgrounds, panels for clean look)
+    success="#90EE90",       # Soft Green (LightGreen)
+    warning="#F0E68C",       # Pale Yellow (Khaki)
+    error="#CD5C5C",         # Terracotta/Muted Red (IndianRed)
+    dark=False,
+    variables={
+        "text-muted": "#707070",                  # Medium gray for muted text
+        "border-zen": "#C0C0C0",                # Silver for subtle borders
+        "input-focus-border": "#8FBC8F",        # Primary color for input focus border
+        "container-background-alt": "#ECECEC",   # Alternative background for containers
+    },
+)
+
+# 10. Theme: "Nebula Dreams" (Dark)
+# A cosmic dark theme featuring very dark purples, with vibrant magenta, teal, and electric blue accents like distant nebulae.
+nebula_dreams_theme = Theme(
+    name="nebula_dreams",
+    primary="#C71585",       # Electric Magenta (MediumVioletRed)
+    secondary="#008080",     # Deep Teal
+    accent="#1E90FF",        # Bright Cosmic Blue (DodgerBlue)
+    foreground="#AFEEEE",    # Pale Turquoise/Silver (main text)
+    background="#0B0014",    # Very Dark Purple/Almost Black (main background)
+    surface="#1A0033",       # Dark Purple (button background)
+    panel="#050008",         # Extremely Dark Purple/Black (input backgrounds)
+    success="#39FF14",       # Luminous Green (Neon Green)
+    warning="#FFFF33",       # Pulsar Yellow (Canary Yellow)
+    error="#FF004F",         # Red Giant (Neon Red/Strong Pink)
+    dark=True,
+    variables={
+        "star-highlight": "#FFFFFF",                   # Bright white for star-like highlights
+        "text-accent-glow": "#1E90FF 40%",           # Accent color with transparency for a glow effect
+        "scrollbar-thumb-color": "#C71585",          # Primary color for scrollbar thumb
+        "command-palette-selected-background": "#400080", # Darker purple for selections
+    },
+)
+
+# 1. Theme: "Volcanic Ash & Lava" (Dark)
+# A dramatic theme with molten oranges and reds against dark, ashen grays.
+volcanic_ash_lava_theme = Theme(
+    name="volcanic_ash_lava",
+    primary="#FF5A00",       # Molten Orange (interactive elements, focus)
+    secondary="#B22222",     # Firebrick Red (secondary elements, borders)
+    accent="#FFD700",        # Gold/Sulphur Yellow (highlights, input focus)
+    foreground="#E0E0E0",    # Light Ash Grey (main text)
+    background="#1A1A1A",    # Dark Ash (main background)
+    surface="#2C2C2C",       # Slightly Lighter Ash (button background, widget surface)
+    panel="#101010",         # Obsidian Black (input backgrounds, distinct panels)
+    success="#6AB04C",       # Muted Green (like new growth after eruption)
+    warning="#F0AD4E",       # Sulphur Yellow/Orange (warning messages)
+    error="#D9534F",         # Smoldering Red (error messages)
+    dark=True,
+    variables={
+        "tooltip-background": "#3D3D3D",          # Darker tooltip background
+        "border-accent": "#FF5A00",             # Use primary for prominent borders
+        "text-muted": "#777777",                  # Muted grey for less important text
+        "scrollbar-color-hover": "#FF8C00",     # DarkOrange for scrollbar hover
+    },
+)
+
+# 2. Theme: "Spring Meadowburst" (Light)
+# A vibrant light theme bursting with fresh greens, sky blues, and floral accents.
+spring_meadowburst_theme = Theme(
+    name="spring_meadowburst",
+    primary="#7FFF00",       # Chartreuse/Vibrant Green (interactive elements)
+    secondary="#87CEFA",     # Light Sky Blue (borders, secondary elements)
+    accent="#FF69B4",        # Hot Pink/Floral Accent (highlights, input focus)
+    foreground="#2E4020",    # Dark Forest Green (main text for contrast)
+    background="#F0FFF0",    # Honeydew (very light green, main background)
+    surface="#E0FEE0",       # Lighter Mint Cream (button background, widget surface)
+    panel="#FAFFAF",         # Pale Yellow/Sunlight (input backgrounds, panels)
+    success="#4CAF50",       # Healthy Green (success messages)
+    warning="#FFC107",       # Sunny Orange/Amber (warning messages)
+    error="#C00000",         # Deep Berry Red (error messages)
+    dark=False,
+    variables={
+        "link-color": "#1976D2",                # Standard blue for links
+        "text-highlight-bg": "#FFFFB3",         # Pale yellow for text selection background
+        "input-border-active": "#7FFF00",       # Primary color for active input border
+        "footer-background": "#D0E0D0",         # Light, earthy green for footer
+    },
+)
+
+# 3. Theme: "80s Arcade Carpet" (Dark)
+# A retro dark theme with neon pinks, electric blues, and bright yellows on a deep purple base, like an old arcade floor.
+eighties_arcade_carpet_theme = Theme(
+    name="80s_arcade_carpet",
+    primary="#FF00FF",       # Fuchsia/Neon Pink (interactive elements)
+    secondary="#00FFFF",     # Aqua/Electric Blue (borders, secondary elements)
+    accent="#FFFF00",        # Bright Yellow (highlights, input focus)
+    foreground="#EAEAEA",    # Light Grey (main text)
+    background="#1A001A",    # Deep Purple (main background)
+    surface="#2A102A",       # Darker Purple (button background, widget surface)
+    panel="#0D000D",         # Almost Black Purple (input backgrounds, panels)
+    success="#00DD00",       # Neon Green (success messages)
+    warning="#FFAB00",       # Neon Orange (warning messages)
+    error="#FF3333",         # Bright Error Red (error messages)
+    dark=True,
+    variables={
+        "scrollbar-color-active": "#FFFF00",    # Accent yellow for active scrollbar
+        "command-palette-border": "#FF00FF",    # Primary pink for command palette border
+        "grid-lines": "#330033",                # Subtle dark purple grid lines
+        "text-glow": "#00FFFF 50%",             # Secondary color with transparency for a glow
+    },
+)
+
+# 4. Theme: "Ancient Papyrus" (Light)
+# A warm, light theme evoking aged papyrus, with sepia tones, faded inks, and a touch of lapis lazuli.
+ancient_papyrus_theme = Theme(
+    name="ancient_papyrus",
+    primary="#0047AB",       # Cobalt Blue (Lapis Lazuli inspired, for important interactive elements)
+    secondary="#8B4513",     # Saddle Brown (faded ink, borders, secondary elements)
+    accent="#B8860B",        # DarkGoldenrod (gold details, highlights)
+    foreground="#5D4037",    # Dark Sepia (main text)
+    background="#FDF5E6",    # Old Lace/Papyrus (main background)
+    surface="#FAF0E6",       # Linen/Lighter Papyrus (button background, widget surface)
+    panel="#F5EFE0",         # Even Lighter Papyrus/Scroll Edge (input backgrounds, panels)
+    success="#556B2F",       # Dark Olive Green (preserved inscription color)
+    warning="#CD853F",       # Peru/Light Brown (faded warning on papyrus)
+    error="#A52A2A",         # Brown/Terracotta (damaged section color)
+    dark=False,
+    variables={
+        "blockquote-text": "#4A2E20",          # Darker brown for blockquote text
+        "header-underline-color": "#0047AB",  # Primary color for header underlines
+        "text-muted": "#A08C78",                # Muted beige/brown for less important text
+        "border-subtle": "#D2B48C",             # Tan for subtle borders
+    },
+)
+
+# 5. Theme: "Urban Stealth Camo" (Muted Dark)
+# A muted dark theme with desaturated urban grays, olive drab, and concrete accents.
+urban_stealth_camo_theme = Theme(
+    name="urban_stealth_camo",
+    primary="#5A6D7C",       # Muted Cadet Blue (main interactive)
+    secondary="#4B5340",     # Dark Olive Drab (borders, secondary)
+    accent="#787269",        # Desaturated Stone Grey/Concrete (highlights, input focus)
+    foreground="#A0A098",    # Light Grey/Off-White (main text)
+    background="#282C34",    # Dark Slate Grey/Asphalt (main background)
+    surface="#3A3F4B",       # Slightly Lighter Dark Slate (button background)
+    panel="#1E2127",         # Very Dark Slate (input backgrounds)
+    success="#4F7942",       # Muted Olive Green (success messages)
+    warning="#B08D57",       # Desaturated Bronze/Khaki (warning messages)
+    error="#9E4848",         # Dusky Muted Red (error messages)
+    dark=True,
+    variables={
+        "text-dim": "#6C7A89",                  # Dimmed text color
+        "button-outline-focus": "#787269",      # Accent for button focus outline
+        "panel-border": "#404552",              # Border for panels
+        "placeholder-text": "#525860",          # Darker placeholder text
+    },
+)
+
+# 6. Theme: "Confectionery Bliss" (Playful Light)
+# A sweet and playful light theme with pastel pinks, blues, yellows, and a contrasting deep lavender text.
+confectionery_bliss_theme = Theme(
+    name="confectionery_bliss",
+    primary="#FFB6C1",       # Light Pink/Bubblegum (interactive elements)
+    secondary="#AFEEEE",     # Pale Turquoise/Mint Frosting (borders, secondary)
+    accent="#FFFACD",        # Lemon Chiffon/Yellow Candy (highlights, input focus)
+    foreground="#6A4C9C",    # Deep Lavender/Grape (main text for readability)
+    background="#F0F8FF",    # AliceBlue (very pale, main background)
+    surface="#FFF0F5",       # LavenderBlush (pale pink surface for buttons)
+    panel="#F5FFFA",         # MintCream (pale mint panel for inputs)
+    success="#90EE90",       # Light Green/Pistachio (success messages)
+    warning="#FFD700",       # Gold/Butterscotch (warning messages)
+    error="#F08080",         # Light Coral/Cherry Red (error messages)
+    dark=False,
+    variables={
+        "input-background-hover": "#FFFFFF",    # White for input hover
+        "text-flavor-berry": "#800080",       # Purple for special flavor text
+        "highlight-secondary": "#AFEEEE 40%",  # Secondary color with alpha for selection
+        "button-text-primary": "#483263",     # Darker purple for text on primary buttons
+    },
+)
+
+# 7. Theme: "Mystic Redwood Grove" (Earthy Dark)
+# A deep, earthy dark theme inspired by ancient forests, with dark greens, rich browns, and bioluminescent accents.
+mystic_redwood_grove_theme = Theme(
+    name="mystic_redwood_grove",
+    primary="#3AAFA9",       # Muted Teal/Glowing Moss (interactive)
+    secondary="#4A3F35",     # Dark Bark Brown (borders, secondary)
+    accent="#F2A900",        # Golden Chanterelle/Muted Orange Glow (highlights)
+    foreground="#C5D1C0",    # Pale Lichen Green/Mist (main text)
+    background="#1B262C",    # Very Dark Blue-Green/Forest Night (main background)
+    surface="#2D3A40",       # Darker Forest Floor (button background)
+    panel="#11181C",         # Deepest Shadow (input backgrounds)
+    success="#5FAD56",       # Fern Green (success messages)
+    warning="#E9A800",       # Golden/Amber Glow (warning messages)
+    error="#C1440E",         # Russet/Decay (error messages)
+    dark=True,
+    variables={
+        "tree-guide-line": "#4A3F35",           # Brown for tree widget guides
+        "log-level-debug": "#3AAFA9",           # Primary color for debug logs
+        "code-background": "#243137",           # Background for code blocks
+        "text-ephemeral": "#88B0A4",            # Muted teal for less important text
+    },
+)
+
+# 8. Theme: "Art Deco Metropolis" (Elegant Dark)
+# An elegant dark theme featuring rich golds, silvers, and jewel tones against black or charcoal.
+art_deco_metropolis_theme = Theme(
+    name="art_deco_metropolis",
+    primary="#CAA472",       # Muted Gold/Brass (interactive elements)
+    secondary="#607D8B",     # Blue Grey/Steel (borders, secondary elements)
+    accent="#006A4E",        # Dark Emerald Green (highlights, input focus)
+    foreground="#E1D9D1",    # Alabaster/Off-White (main text)
+    background="#121212",    # Onyx Black (main background)
+    surface="#282828",       # Charcoal Grey (button background, widget surface)
+    panel="#0A0A0A",         # Pitch Black (input backgrounds, panels)
+    success="#2E7D32",       # Subtle Dark Green (success messages)
+    warning="#B7950B",       # Antiqued Gold (warning messages)
+    error="#981E19",         # Deep Crimson (error messages)
+    dark=True,
+    variables={
+        "border-metallic": "#8D99AE",           # Silver/metallic border color
+        "text-title": "#CAA472",                # Primary color for titles
+        "widget-highlight-border": "#006A4E",   # Accent color for special widget borders
+        "input-selection": "#455A64 50%",      # BlueGrey with alpha for input selection
+    },
+)
+
+# 9. Theme: "Desert Oasis Mirage" (Light/Contrast)
+# A light theme contrasting arid desert sands with vibrant oasis teals and sun-baked terracotta.
+desert_oasis_mirage_theme = Theme(
+    name="desert_oasis_mirage",
+    primary="#00A2CA",       # Vibrant Cerulean/Deep Oasis Water (interactive)
+    secondary="#E07A5F",     # Terracotta/Clay (borders, secondary)
+    accent="#F4D35E",        # Pale Sun Yellow/Mirage Glow (highlights)
+    foreground="#5C3D2E",    # Dark Sun-baked Earth (main text)
+    background="#FCF5E5",    # Pale Sand/Ivory (main background)
+    surface="#F8EDD8",       # Light Dune (button background)
+    panel="#FFFBF0",         # Whitewashed Sand (input backgrounds)
+    success="#50C878",       # Emerald Green/Lush Growth (success messages)
+    warning="#FFBF00",       # Amber/Strong Sun (warning messages)
+    error="#C12E2E",         # Sunburnt Red/Danger (error messages)
+    dark=False,
+    variables={
+        "water-text": "#00A2CA",                # Primary color for water-themed text
+        "sand-dune-highlight": "#FAF0C8",       # Very light sand for highlights
+        "text-muted": "#8B7965",                # Muted sandy brown
+        "border-strong": "#A0522D",             # Sienna for stronger borders
+    },
+)
+
+# 10. Theme: "Starlight Cinema Noir" (Monochromatic + Accent, Dark)
+# A high-contrast dark theme inspired by classic film noir, using deep blacks, bright whites, and a striking cinematic red accent.
+starlight_cinema_noir_theme = Theme(
+    name="starlight_cinema_noir",
+    primary="#E50914",       # Cinematic Red (e.g., Netflix red, for main interactions)
+    secondary="#666666",     # Mid-Dark Grey (supporting elements, borders)
+    accent="#B0B0B0",        # Silver Screen Grey (subtle highlights, input focus)
+    foreground="#F5F5F5",    # Bright White/Projector Light (main text)
+    background="#0D0D0D",    # Deep Black/Velvet Curtain (main background)
+    surface="#222222",       # Dark Stage Grey (button background, widget surface)
+    panel="#000000",         # Pure Black/Void (input backgrounds, panels)
+    success="#3DD13D",       # Green Screen Green (playful success)
+    warning="#FFAA00",       # Amber Warning Light (classic warning)
+    error="#D40000",         # Darker, Intense Red (error messages)
+    dark=True,
+    variables={
+        "focus-outline": "#E50914",             # Primary red for focus outlines
+        "text-subtle-contrast": "#CCCCCC",      # Lighter grey for subtitles or less critical text
+        "button-critical-background": "#990000",# Darker red for critical action buttons
+        "dialog-border": "#444444",             # Border for dialogs
+    },
+)
+
 ALL_THEMES = [
     classic_terminal_green_theme,
     modern_dark_dracula_theme,
@@ -696,6 +1159,26 @@ ALL_THEMES = [
     red_team_ops_theme,
     deep_dive_cyberspace_theme,
     ghost_in_the_shell_theme,
+    retro_mint_chip_theme,
+    blueprint_tech_theme,
+    vintage_scroll_theme,
+    twilight_lavender_fields_theme,
+    golden_hour_desert_theme,
+    industrial_gearworks_theme,
+    coral_bloom_theme,
+    autumn_embers_theme,
+    zen_garden_theme,
+    nebula_dreams_theme,
+    volcanic_ash_lava_theme,
+    spring_meadowburst_theme,
+    eighties_arcade_carpet_theme,
+    ancient_papyrus_theme,
+    urban_stealth_camo_theme,
+    confectionery_bliss_theme,
+    mystic_redwood_grove_theme,
+    art_deco_metropolis_theme,
+    desert_oasis_mirage_theme,
+    starlight_cinema_noir_theme,
 ]
 
 # Example of a theme with the 'variables' attribute as shown in Textual docs:
