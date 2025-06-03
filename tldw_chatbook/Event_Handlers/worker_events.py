@@ -77,7 +77,7 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
             error_msg_text = Text.from_markup(
                 f"[bold red]Error:[/]\nAI response for worker '{worker_name}' received, but its display widget was missing.")
             # Use plain text for ChatMessage content if it doesn't support Text directly
-            await chat_container_fallback.mount(ChatMessage(message=error_msg_text.plain, role="System", classes="-error"))
+            app.notify(f"Error: AI response for worker '{worker_name}' received, but its display widget was missing.", severity="error", timeout=10)
         except QueryError:
             logger.error(f"Fallback: Could not find chat container #{prefix}-log.")
         app.current_ai_message_widget = None
@@ -259,7 +259,78 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
                 ai_message_widget.mark_generation_complete()
             except Exception as e_unexp_final_update:
                 logger.error(f"Further error updating AI widget during outer unexpected error: {e_unexp_final_update}")
-        app.current_ai_message_widget = None
+            app.current_ai_message_widget = None
+
+        elif event.worker.name == "respond_for_me_worker":
+            if event.state is WorkerState.SUCCESS:
+                suggestion_result = event.worker.result
+                logger.debug(f"Respond_for_me_worker raw result: {str(suggestion_result)[:1000]}") # Log a larger snippet
+                suggested_text = ""
+                if isinstance(suggestion_result, dict) and suggestion_result.get("choices"):
+                    try:
+                        suggested_text = suggestion_result["choices"][0].get("message", {}).get("content", "")
+                    except (IndexError, KeyError, AttributeError):
+                        logger.error(f"Error parsing suggestion_result dict: {suggestion_result}")
+                        suggested_text = "" # Fallback to empty if parsing fails
+                elif isinstance(suggestion_result, str):
+                    suggested_text = suggestion_result
+                else:
+                    logger.warning(f"Unexpected result type from 'respond_for_me_worker': {type(suggestion_result)}. Content: {str(suggestion_result)[:200]}")
+
+                logger.debug(f"Respond_for_me_worker initial extracted suggested_text: '{suggested_text[:500]}...'")
+
+                if suggested_text:
+                    if suggested_text: # Only log if there's something to clean
+                        logger.debug(f"Respond_for_me_worker suggested_text BEFORE cleaning: '{suggested_text[:500]}...'")
+                    else:
+                        logger.debug("Respond_for_me_worker suggested_text is empty or None BEFORE cleaning.")
+                    # Clean the text
+                    cleaned_suggested_text = suggested_text.strip()
+                    logger.debug(f"Respond_for_me_worker cleaned_suggested_text: '{cleaned_suggested_text[:500]}...'")
+                    common_fillers = [
+                        "Sure, here's a suggestion:", "Here's a possible response:", "You could say:", "How about this:",
+                        "Okay, here's a suggestion:", "Here is a suggestion:", "Here's a suggestion for your response:"
+                    ]
+                    for filler in common_fillers:
+                        if cleaned_suggested_text.lower().startswith(filler.lower()):
+                            cleaned_suggested_text = cleaned_suggested_text[len(filler):].strip()
+                    if (cleaned_suggested_text.startswith('"') and cleaned_suggested_text.endswith('"')) or \
+                       (cleaned_suggested_text.startswith("'") and cleaned_suggested_text.endswith("'")):
+                        cleaned_suggested_text = cleaned_suggested_text[1:-1]
+
+                    logger.debug(f"Respond_for_me_worker cleaned_suggested_text after further cleaning: '{cleaned_suggested_text[:500]}...'")
+
+                    try:
+                        chat_input_widget = app.query_one("#chat-input", TextArea)
+                        chat_input_widget.text = cleaned_suggested_text
+                        chat_input_widget.focus()
+                        try:
+                            app.notify("Suggestion populated in the input field.", severity="information", timeout=3)
+                        except Exception as e_notify:
+                            logger.error(f"Respond_for_me_worker: Error during app.notify call: {e_notify}", exc_info=True)
+                        logger.info(f"Suggestion populated from worker: '{cleaned_suggested_text[:100]}...'")
+                    except QueryError:
+                        logger.error("Respond_for_me_worker: Failed to query #chat-input to populate suggestion.")
+                        try:
+                            app.notify("Error populating suggestion (UI element missing).", severity="error")
+                        except Exception as e_notify:
+                            logger.error(f"Respond_for_me_worker: Error during app.notify call: {e_notify}", exc_info=True)
+                else:
+                    logger.warning("'respond_for_me_worker' succeeded but returned empty suggestion.")
+                    try:
+                        app.notify("AI returned an empty suggestion.", severity="warning")
+                    except Exception as e_notify:
+                        logger.error(f"Respond_for_me_worker: Error during app.notify call: {e_notify}", exc_info=True)
+
+            elif event.state is WorkerState.ERROR:
+                logger.error(f"Worker 'respond_for_me_worker' failed: {event.worker.error}", exc_info=event.worker.error)
+                try:
+                    app.notify(f"Failed to generate suggestion: {str(event.worker.error)[:100]}", severity="error", timeout=5)
+                except Exception as e_notify:
+                    logger.error(f"Respond_for_me_worker: Error during app.notify call: {e_notify}", exc_info=True)
+            # Button re-enabling is handled by the finally block in handle_respond_for_me_button_pressed
+        else:
+            logger.debug(f"Ignoring worker state change for unhandled worker: {worker_name}")
 
 
 #
@@ -269,7 +340,7 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
 #
 ########################################################################################################################
 
-def chat_wrapper_function(app_instance: 'TldwCli', **kwargs: Any) -> Any:
+def chat_wrapper_function(app_instance: 'TldwCli', strip_thinking_tags: bool = True, **kwargs: Any) -> Any:
     """
     This function is the target for the worker. It calls the core_chat_function.
     If core_chat_function returns a generator (for streaming), this function consumes it,
@@ -285,14 +356,28 @@ def chat_wrapper_function(app_instance: 'TldwCli', **kwargs: Any) -> Any:
 
     try:
         # core_chat_function is your synchronous `Chat.Chat_Functions.chat`
-        result = core_chat_function(**kwargs)
+        result = core_chat_function(strip_thinking_tags=strip_thinking_tags, **kwargs)
 
         if isinstance(result, Generator):  # Streaming case
-            logger.info(f"Core chat function returned a generator for '{api_endpoint}' (model '{model_name}'). Processing stream in worker.")
+            logger.info(f"Core chat function returned a generator for '{api_endpoint}' (model '{model_name}', strip_tags={strip_thinking_tags}). Processing stream in worker.")
             accumulated_full_text = ""
             error_message_if_any = None
             try:
                 for chunk_raw in result:
+                    # Check for worker cancellation at the beginning of each iteration
+                    if app_instance.current_chat_worker and app_instance.current_chat_worker.is_cancelled:
+                        app_instance.loguru_logger.info("Chat worker cancelled by user during stream processing in chat_wrapper_function.")
+                        if hasattr(result, 'close'):
+                            result.close()
+                            app_instance.loguru_logger.debug("Closed response_gen (result).")
+                        # Post a StreamDone event indicating cancellation
+                        # Use accumulated_full_text if it contains partial data, or a specific message
+                        cancellation_message = "Streaming cancelled by user."
+                        # If accumulated_full_text is meaningful, you could prepend/append the cancellation reason.
+                        # For now, we assume the UI will primarily use the 'error' field from StreamDone.
+                        app_instance.post_message(StreamDone(full_text=accumulated_full_text, error=cancellation_message))
+                        return "STREAMING_HANDLED_BY_EVENTS" # Exit the worker function
+
                     # Process each raw chunk from the generator (expected to be SSE lines)
                     line = str(chunk_raw).strip()
                     if not line:
@@ -349,7 +434,7 @@ def chat_wrapper_function(app_instance: 'TldwCli', **kwargs: Any) -> Any:
 
         else:  # Non-streaming case
             logger.debug(
-                f"chat_wrapper_function for '{api_endpoint}' (model '{model_name}') is returning a direct result (type: {type(result)}).")
+                f"chat_wrapper_function for '{api_endpoint}' (model '{model_name}', strip_tags={strip_thinking_tags}) is returning a direct result (type: {type(result)}).")
             return result  # Return the complete response directly
 
     except Exception as e:

@@ -23,8 +23,9 @@ TAB_LLM = "llm_management"
 TAB_STATS = "stats"
 TAB_LOGS = "logs"
 TAB_EVALS = "evals"
+TAB_CODING = "coding"
 ALL_TABS = [TAB_CHAT, TAB_CCP, TAB_NOTES, TAB_MEDIA, TAB_SEARCH, TAB_INGEST,
-            TAB_TOOLS_SETTINGS, TAB_LLM, TAB_LOGS, TAB_STATS, TAB_EVALS]
+            TAB_TOOLS_SETTINGS, TAB_LLM, TAB_LOGS, TAB_STATS, TAB_EVALS, TAB_CODING]
 
 
 # --- CSS definition ---
@@ -116,7 +117,12 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     border: round $primary-lighten-2;
     background: $primary-background;
 }
+/* --- End of Sidebar Styling --- */
+/* ----------------------------- ************************* ----------------------------- */
 
+
+
+/* ----------------------------- ************************* ----------------------------- */
 /* --- Chat Window specific layouts --- */
 #chat-main-content {
     layout: vertical;
@@ -148,13 +154,79 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     margin-right: 1; /* Space before button */
     border: round $surface;
 }
+
 /* Send button styling (shared) */
 .send-button { /* Targets Button */
-    width: 5;
+    width: 2;
     height: 3; /* Fixed height for consistency */
     /* align-self: stretch; REMOVED */
     margin-top: 0;
+    padding: 0; /* No padding for button */
 }
+
+.stop-button {
+    width: 2;
+    height: 3;
+    margin-top: 0;
+}
+
+/* Save Chat Button in chat-right-sidebar in Chat Tab */
+.save-chat-button { /* Class used in character_sidebar.py */
+    margin-top: 2;   /* Add 1 cell/unit of space above the button */
+    /*width: 100%;      Optional: make it full width like other sidebar buttons */
+}
+
+/* chat-right-sidebar Specific Styles */
+#chat-right-sidebar #chat-conversation-title-input { /* Title input */
+    /* width: 100%; (from .sidebar-input) */
+    /* margin-bottom: 1; (from .sidebar-input) */
+}
+
+#chat-right-sidebar .chat-keywords-textarea { /* Keywords TextArea specific class */
+    height: 4;  /* Or 3 to 5, adjust as preferred */
+    /* width: 100%; (from .sidebar-textarea) */
+    /* border: round $surface; (from .sidebar-textarea) */
+    /* margin-bottom: 1; (from .sidebar-textarea) */
+}
+
+/* Styling for the new "Save Details" button */
+#chat-right-sidebar .save-details-button {
+    margin-top: 1; /* Space above this button */
+    /* width: 100%;    Make it full width */
+}
+
+/* Ensure the Save Current Chat button also has clear styling if needed */
+#chat-right-sidebar .save-chat-button {
+    margin-top: 1; /* Ensure it has some space if it's after keywords */
+    /* width: 100%; */
+}
+
+/* Chat Sidebar - Prompts Section */
+#chat-prompts-collapsible Input,
+#chat-prompts-collapsible ListView,
+#chat-prompts-collapsible Button {
+    margin-bottom: 1; /* Consistent spacing */
+}
+#chat-prompt-list-view { /* ID for the prompt list in chat sidebar */
+    height: 8; /* Adjust as needed */
+    border: round $surface;
+    margin-bottom: 1;
+}
+.loaded-prompt-area { /* Container for loaded prompt details in chat sidebar */
+    margin-top: 1;
+    padding: 0 1;        /* Padding for content inside */
+    background: $surface; /* Slightly different background to group elements */
+    /* To get rounded corners for the area itself, apply a border style */
+    border: round $primary-background-lighten-1; /* Example: round border with a light color */
+                                               /* Or use 'round $surface' if you want it less distinct */
+                                               /* Or 'none' if you only want background and no explicit border */
+}
+/* End of Character Sidebar Specific Styles */
+
+/* --- End of Chat Window specific layouts --- */
+/* ----------------------------- ************************* ----------------------------- */
+
+
 
 /* --- Conversations, Characters & Prompts Window specific layouts (previously Character Chat) --- */
 /* Main container for the three-pane layout */
@@ -184,6 +256,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     overflow-y: auto; /* For conversation history */
 }
 
+
 /* Right Pane Styling */
 .cc-right-pane {
     width: 25%; /* Keep 25% or 30% - adjust as needed */
@@ -205,7 +278,13 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     margin-bottom: 1;
     border: round $surface;
 }
-.cc-left-pane Button, .cc-right_pane Button { /* Typo Fixed */
+.cc-left-pane Button, .cc-right-pane Button { /* Typo in original was .cc-right_pane */
+    width: 100%;
+    margin-bottom: 1;
+}
+
+/* Ensure Select widgets in left and right panes also get full width */
+.cc-left-pane Select, .cc-right-pane Select {
     width: 100%;
     margin-bottom: 1;
 }
@@ -231,7 +310,6 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     margin-top: 2; /* Add some space above export options */
 }
 
-
 /* Old styles for #conv-char-main-content, #conv-char-top-area etc. are removed */
 /* as the structure within #conversations_characters_prompts-window is now different. */
 /* Portrait styling - if still needed, would be part of a specific pane's content now */
@@ -245,6 +323,124 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     align: center top;
 }
 
+/* Right Pane Styling */
+.cc-right-pane {
+    width: 25%; /* Keep 25% or 30% - adjust as needed */
+    min-width: 20; /* ADD a minimum width */
+    height: 100%;
+    background: $boost;
+    padding: 1;
+    border-left: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* ADD THIS: Collapsed state for the CCP tab's right pane */
+.cc-right-pane.collapsed {
+    width: 0 !important;
+    min-width: 0 !important;
+    border-left: none !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    display: none !important; /* Ensures it doesn't take space or grab focus */
+}
+
+/* Styles for the dynamic view areas within the CCP center pane */
+.ccp-view-area {
+    width: 100%;
+    height: auto; /* Allow height to be determined by content */
+    /* overflow: auto; /* If content within might overflow */
+}
+
+/* Add this class to hide elements */
+.ccp-view-area.hidden,
+.ccp-right-pane-section.hidden { /* For sections in the right pane */
+    display: none !important;
+}
+
+/* By default, let conversation messages be visible, and editor hidden */
+#ccp-conversation-messages-view {
+    /* display: block; /* or whatever its natural display is, usually block for Container */
+}
+#ccp-prompt-editor-view {
+    display: none; /* Initially hidden by CSS */
+}
+
+#ccp-character-card-view {
+    display: none; /* Initially hidden, to be shown by Python logic */
+}
+
+#ccp-character-editor-view {
+    display: none; /* Initially hidden, to be shown by Python logic */
+}
+
+/* Ensure the right pane sections also respect hidden class */
+#ccp-right-pane-llm-settings-container {
+    /* display: block; default */
+}
+#ccp-right-pane-llm-settings-container.hidden {
+    display: none !important;
+}
+
+/* Collapsible Sidebar Toggle Button For Character/Conversation Editing Page */
+.cc-sidebar-toggle-button { /* Applied to the "☰" button */
+    width: 5; /* Adjust width as needed */
+    height: 100%; /* Match parent Horizontal height, or set fixed e.g., 1 or 3 */
+    min-width: 0; /* Override other button styles if necessary */
+    border: none; /* Style as you like, e.g., remove border */
+    background: $surface-darken-1; /* Example background */
+    color: $text;
+}
+.cc-sidebar-toggle-button:hover {
+    background: $surface;
+}
+/* End of Collapsible Sidebar Toggle Button for character/conversation editing */
+
+/* --- Prompts Sidebar Vertical --- */
+.ccp-prompt-textarea { /* Specific class for prompt textareas if needed */
+    height: 10; /* Example height */
+    /* width: 100%; (from .sidebar-textarea) */
+    /* margin-bottom: 1; (from .sidebar-textarea) */
+}
+
+#ccp-prompts-listview { /* ID for the prompt list */
+    height: 10; /* Or 1fr if it's the main element in its collapsible */
+    border: round $surface;
+    margin-bottom: 1;
+}
+
+.ccp-prompt-action-buttons {
+    margin-top: 1; /* Add space above the button bar */
+    height: auto; /* Allow container height to fit buttons */
+    padding-bottom: 1; /* Add space below buttons before parent's padding */
+}
+
+.ccp-prompt-action-buttons Button {
+    width: 1fr; /* Make buttons share space */
+    margin: 0 1 0 0; /* Small right margin for all but last */
+    height: auto; /* Let button height fit its content (typically 1 line) */
+}
+.ccp-prompt-action-buttons Button:last-of-type { /* Corrected pseudo-class */
+    margin-right: 0;
+}
+
+/* Ensure Collapsible titles are clear */
+#conv-char-right-pane Collapsible > .collapsible--header {
+    background: $primary-background-darken-1; /* Example to differentiate */
+    color: $text;
+}
+
+#conv-char-right-pane Collapsible.-active > .collapsible--header { /* Optional: when expanded */
+    background: $primary-background;
+}
+/* --- End of Prompts Sidebar Vertical --- */
+/* --- End of Conversations, Characters & Prompts Window specific layouts --- */
+/* ----------------------------- ************************* ----------------------------- */
+
+
+
+/* ----------------------------- ************************* ----------------------------- */
+/* --- Logs Window --- */
 /* Logs Window adjustments */
 #logs-window {
     layout: vertical; /* Override .window's default horizontal layout for this specific window */
@@ -271,7 +467,12 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 /* old #logs-window { padding: 0; border: none; height: 100%; width: 100%; }
 #app-log-display { border: none; height: 1fr; width: 1fr; margin: 0; padding: 1; }
 */
+/* --- End of Logs Window --- */
+/* ----------------------------- ************************* ----------------------------- */
 
+
+
+/* ----------------------------- ************************* ----------------------------- */
 /* --- ChatMessage Styling --- */
 ChatMessage {
     width: 100%;
@@ -381,7 +582,11 @@ Collapsible > .collapsible--header {
     border: round $surface;
     margin-bottom: 1;
 }
+/* ----------------------------- ************************* ----------------------------- */
 
+
+
+/* ----------------------------- ************************* ----------------------------- */
 /* --- Notes Tab Window --- */
 /* (Assuming #notes-window has layout: horizontal; by default from .window or is set in Python) */
 
@@ -404,7 +609,12 @@ Collapsible > .collapsible--header {
     align: center middle; /* Aligns buttons horizontally if Horizontal container */
                            /* If this itself is a Vertical container, this might not do much */
 }
+/* --- End of Notes Tab Window --- */
+/* ----------------------------- ************************* ----------------------------- */
 
+
+
+/* ----------------------------- ************************* ----------------------------- */
 /* --- Metrics Screen Styling --- */
 MetricsScreen {
     padding: 1 2; /* Add some padding around the screen content */
@@ -456,141 +666,12 @@ MetricsScreen Label.-info-message {
     /* border: round $primary-lighten-1; /* Optional: border for info messages */
     text-style: italic;
 }
-
-
-/* Collapsible Sidebar Toggle Button For Character/Conversation Editing Page */
-.cc-sidebar-toggle-button { /* Applied to the "☰" button */
-    width: 5; /* Adjust width as needed */
-    height: 100%; /* Match parent Horizontal height, or set fixed e.g., 1 or 3 */
-    min-width: 0; /* Override other button styles if necessary */
-    border: none; /* Style as you like, e.g., remove border */
-    background: $surface-darken-1; /* Example background */
-    color: $text;
-}
-.cc-sidebar-toggle-button:hover {
-    background: $surface;
-}
-/* End of Collapsible Sidebar Toggle Button for character/conversation editing */
-
-
-/* Save Chat Button in Character Sidebar in Chat Tab */
-.save-chat-button { /* Class used in character_sidebar.py */
-    margin-top: 2;   /* Add 1 cell/unit of space above the button */
-    /*width: 100%;      Optional: make it full width like other sidebar buttons */
-}
+/* --- End of Metrics Screen Styling --- */
+/* ----------------------------- ************************* ----------------------------- */
 
 
 
-/* Character Sidebar Specific Styles */
-#chat-right-sidebar #chat-conversation-title-input { /* Title input */
-    /* width: 100%; (from .sidebar-input) */
-    /* margin-bottom: 1; (from .sidebar-input) */
-}
-
-#chat-right-sidebar .chat-keywords-textarea { /* Keywords TextArea specific class */
-    height: 4;  /* Or 3 to 5, adjust as preferred */
-    /* width: 100%; (from .sidebar-textarea) */
-    /* border: round $surface; (from .sidebar-textarea) */
-    /* margin-bottom: 1; (from .sidebar-textarea) */
-}
-
-/* Styling for the new "Save Details" button */
-#chat-right-sidebar .save-details-button {
-    margin-top: 1; /* Space above this button */
-    /* width: 100%;    Make it full width */
-}
-
-/* Ensure the Save Current Chat button also has clear styling if needed */
-#chat-right-sidebar .save-chat-button {
-    margin-top: 1; /* Ensure it has some space if it's after keywords */
-    /* width: 100%; */
-}
-/* End of Character Sidebar Specific Styles */
-
-
-/* --- Prompts Sidebar Vertical --- */
-.ccp-prompt-textarea { /* Specific class for prompt textareas if needed */
-    height: 5; /* Example height */
-    /* width: 100%; (from .sidebar-textarea) */
-    /* margin-bottom: 1; (from .sidebar-textarea) */
-}
-
-#ccp-prompts-listview { /* ID for the prompt list */
-    height: 10; /* Or 1fr if it's the main element in its collapsible */
-    border: round $surface;
-    margin-bottom: 1;
-}
-
-.ccp-prompt-action-buttons Button {
-    width: 1fr; /* Make buttons share space */
-    margin: 0 1 0 0; /* Small right margin, no top/bottom if already in Horizontal */
-}
-.ccp-prompt-action-buttons Button:last-of-type { /* Corrected pseudo-class */
-    margin-right: 0;
-}
-
-/* Ensure Collapsible titles are clear */
-#conv-char-right-pane Collapsible > .collapsible--header {
-    background: $primary-background-darken-1; /* Example to differentiate */
-    color: $text;
-}
-
-#conv-char-right-pane Collapsible.-active > .collapsible--header { /* Optional: when expanded */
-    background: $primary-background;
-}
-/* --- End of Prompts Sidebar Vertical --- */
-
-/* Right Pane Styling */
-.cc-right-pane {
-    width: 25%; /* Keep 25% or 30% - adjust as needed */
-    min-width: 20; /* ADD a minimum width */
-    height: 100%;
-    background: $boost;
-    padding: 1;
-    border-left: thick $background-darken-1;
-    overflow-y: auto;
-    overflow-x: hidden;
-}
-
-/* ADD THIS: Collapsed state for the CCP tab's right pane */
-.cc-right-pane.collapsed {
-    width: 0 !important;
-    min-width: 0 !important;
-    border-left: none !important;
-    padding: 0 !important;
-    overflow: hidden !important;
-    display: none !important; /* Ensures it doesn't take space or grab focus */
-}
-
-/* Styles for the dynamic view areas within the CCP center pane */
-.ccp-view-area {
-    width: 100%;
-    height: 100%;
-    /* overflow: auto; /* If content within might overflow */
-}
-
-/* Add this class to hide elements */
-.ccp-view-area.hidden,
-.ccp-right-pane-section.hidden { /* For sections in the right pane */
-    display: none !important;
-}
-
-/* By default, let conversation messages be visible, and editor hidden */
-#ccp-conversation-messages-view {
-    /* display: block; /* or whatever its natural display is, usually block for Container */
-}
-#ccp-prompt-editor-view {
-    display: none; /* Initially hidden by CSS */
-}
-
-/* Ensure the right pane sections also respect hidden class */
-#ccp-right-pane-llm-settings-container {
-    /* display: block; default */
-}
-#ccp-right-pane-llm-settings-container.hidden {
-    display: none !important;
-}
-
+/* ----------------------------- ************************* ----------------------------- */
 /* --- Tools & Settings Tab --- */
 #tools_settings-window { /* Matches TAB_TOOLS_SETTINGS */
     layout: horizontal; /* Main layout for this tab */
@@ -730,6 +811,64 @@ MetricsScreen Label.-info-message {
     /* border: round $primary; */
     /* padding: 2; */
 }
+.ingest-label {
+    margin-top: 1;
+    margin-bottom: 0;
+}
+.ingest-selected-files-list {
+    height: 5;
+    border: round $primary;
+    margin-bottom: 1;
+    background: $surface;
+}
+.ingest-preview-area {
+    height: 1fr;
+    border: round $primary-lighten-2;
+    padding: 1;
+    margin-bottom: 1;
+    background: $surface;
+}
+.ingest-preview-area > Static#ingest-prompts-preview-placeholder {
+    color: $text-muted;
+    width: 100%;
+    text-align: center;
+    padding: 2 0;
+}
+.ingest-status-area {
+    height: 8;
+    margin-top: 1;
+}
+
+.prompt-preview-item {
+    border: panel $background-lighten-2;
+    padding: 1;
+    margin-bottom: 1;
+}
+.prompt-preview-item .prompt-title {
+    text-style: bold;
+}
+.prompt-preview-item .prompt-field-label {
+    text-style: italic;
+    color: $text-muted;
+}
+.prompt-preview-item Markdown {
+    background: $surface-darken-1;
+    padding: 0 1;
+    margin-top: 1;
+    margin-bottom: 1;
+    border: solid $primary-darken-1; /* Use 'solid' instead of 'narrow' */
+    max-height: 10;
+    overflow-y: auto;
+}
+.prompt-preview-item .prompt-details-text {
+    max-height: 5;
+    overflow-y: auto;
+    background: $surface;
+    padding: 0 1;
+    border: dashed $primary-darken-2; /* Use 'dashed' instead of 'dotted' */
+    margin-bottom: 1;
+}
+/* --- END OF INTEGRATED NEW CSS --- */
 
 /* --- LLM Management Tab --- */
 #llm_management-window { /* Matches TAB_LLM ("llm_management") */
@@ -758,11 +897,11 @@ MetricsScreen Label.-info-message {
 .llm-nav-pane .llm-nav-button:hover {
     background: $accent 70%; /* Example hover */
 }
-/* Active state for selected llm nav button (optional) */
-/* .llm-nav-pane .llm-nav-button.-active-view {
+/* Active state for selected llm nav button */
+.llm-nav-pane .llm-nav-button.-active {
     background: $accent;
     color: $text;
-} */
+}
 
 .llm-content-pane { /* Style for the right content display area */
     width: 1fr;
@@ -774,8 +913,119 @@ MetricsScreen Label.-info-message {
 .llm-view-area { /* Common class for individual content areas */
     width: 100%;
     height: 100%; /* Or auto */
+    display: none; /* Initially hidden until activated */
 }
 
+
+/* Chat Sidebar Prompts Section Specific Styles */
+#chat-sidebar-prompts-collapsible { /* The collapsible container itself */
+    /* Add any specific styling for the collapsible if needed */
+}
+
+#chat-sidebar-prompt-search-input,
+#chat-sidebar-prompt-keyword-filter-input {
+    margin-bottom: 1; /* Add some space below these inputs */
+}
+
+#chat-sidebar-prompts-listview {
+    min-height: 5;
+    max-height: 15;
+    height: auto;
+    overflow-y: auto;
+    border: round $surface;
+    margin-bottom: 1;
+}
+
+#chat-sidebar-prompt-system-display,
+#chat-sidebar-prompt-user-display {
+    min-height: 5;
+    max-height: 15;
+    height: auto;
+    width: 100%; /* Ensure they take full width */
+    margin-bottom: 1;
+    border: round $surface; /* Standard border like other textareas */
+    /* read_only is set in Python, CSS cannot enforce it but can style */
+}
+
+#chat-sidebar-copy-system-prompt-button,
+#chat-sidebar-copy-user-prompt-button {
+    width: 100%; /* Make copy buttons full width */
+    margin-top: 0; /* Remove top margin if directly after TextArea */
+    margin-bottom: 1; /* Space after copy buttons */
+}
+/*
+
+/* LLM Management Tab Specific Styles */
+#llm_management-window .llm-view-area > VerticalScroll { /* Target the new VS inside each view */
+    height: 100%; /* Ensure the VerticalScroll takes full height of its parent view area */
+}
+
+#llamacpp-args-help-collapsible,
+#llamafile-args-help-collapsible,
+#vllm-args-help-collapsible { /* Style for the collapsible itself */
+    margin-top: 1;
+    margin-bottom: 1;
+    border: round $primary-lighten-1; /* Optional border for the collapsible */
+}
+
+#llamacpp-args-help-collapsible > .collapsible--header,
+#llamafile-args-help-collapsible > .collapsible--header,
+#vllm-args-help-collapsible > .collapsible--header { /* Style for the collapsible title */
+    background: $surface-darken-1; /* Slightly different background for the header */
+}
+
+.help-text-display {
+    height: 25; /* Or your desired fixed height for the scrollable help text */
+    width: 100%;
+    border: round $surface;
+    padding: 1;
+    margin-top: 1; /* Space between collapsible title and the content */
+    background: $panel; /* Background for the help text area */
+    overflow-y: scroll !important; /* Ensure vertical scrolling */
+}
+
+/* Ensure input fields for additional args are appropriately sized if they were TextAreas */
+/* If you changed #llamacpp-additional-args to Input, this might not be needed for it */
+#llamacpp-additional-args, /* This is now an Input, so this rule might be less relevant for it */
+#llamafile-additional-args,
+#vllm-additional-args {
+    height: 3; /* For single-line Input or small TextArea */
+    /* If it's a TextArea and you want more lines: */
+    /* min-height: 3; */
+    /* max-height: 7; */
+    /* height: auto; */
+}
+
+/* Optional: Style for the input_container if needed */
+.input_container {
+    layout: horizontal;
+    height: auto;
+    margin-bottom: 1;
+}
+.input_container Input {
+    width: 1fr; /* Input takes available space */
+    margin-right: 1; /* Space before browse button */
+}
+.input_container .browse_button {
+    width: auto; /* Let button size itself */
+    height: 100%;
+}
+
+.button_container {
+    layout: horizontal;
+    height: auto;
+    margin-top: 1;
+    align-horizontal: right; /* Align buttons to the right */
+}
+.button_container Button {
+    margin-left: 1; /* Space between buttons */
+}
+
+/* ----------------------------- ************************* ----------------------------- */
+
+
+
+/* ----------------------------- ************************* ----------------------------- */
 /* --- Media Tab --- */
 #media-window { /* Matches TAB_MEDIA */
     layout: horizontal; /* Main layout for this tab */
@@ -815,9 +1065,516 @@ MetricsScreen Label.-info-message {
     width: 100%;
     height: 100%; /* Or auto if content dictates height */
 }
+/* --- End of Media Tab --- */
+/* ----------------------------- ************************* ----------------------------- */
+
+
+
+/* ----------------------------- ************************* ----------------------------- */
+/* --- Search Tab (RAG/Embeddings) --- */
+#search-window { /* Matches TAB_SEARCH, .window class provides layout: horizontal */
+    /* No explicit layout needed here if .window handles it */
+}
+
+.search-nav-pane { /* Style for the left navigation pane in Search Tab */
+    dock: left;
+    width: 25%;
+    min-width: 25;
+    max-width: 60;
+    height: 100%;
+    background: $boost;
+    padding: 1;
+    border-right: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.search-nav-pane .search-nav-button { /* Style for navigation buttons in Search Tab */
+    width: 100%;
+    margin-bottom: 1;
+    border: none;
+    height: 3;
+}
+.search-nav-pane .search-nav-button:hover {
+    background: $accent 80%; /* Example: accent color with 80% opacity */
+}
+/* Active state for selected search nav button */
+.search-nav-pane .search-nav-button.-active-search-sub-view {
+    background: $accent;
+    color: $text;
+    text-style: bold;
+}
+
+.search-content-pane { /* Style for the right content display area in Search Tab */
+    width: 1fr;
+    height: 100%;
+    padding: 1 2;
+    overflow-y: auto;
+}
+
+.search-view-area { /* Common class for individual content areas in Search Tab */
+    width: 100%;
+    height: 100%;
+    /* display: none; /* All initially hidden, watcher will show one */
+    /* align: center middle; /* Useful if content is just a Static placeholder */
+}
+
+/* Center placeholder text inside view areas if they are simple Statics for now */
+.search-view-area Static {
+    width: 100%;
+    height: 100%;
+    align: center middle;
+}
+/* --- End of Search Tab --- */
+/* ----------------------------- ************************* ----------------------------- */
+
+
+
+/* ----------------------------- ************************* ----------------------------- */
+/* --- Evals Tab --- */
+#evals-window { /* Matches TAB_EVALS, .window class provides layout: horizontal */
+    /* layout: horizontal; /* Provided by .window by default */
+}
+
+#evals-sidebar {
+    dock: left;
+    width: 25%;
+    min-width: 20;
+    max-width: 50; /* Adjusted max-width */
+    height: 100%;
+    background: $boost;
+    padding: 1; /* Standard padding */
+    border-right: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+#evals-sidebar.collapsed {
+    width: 0 !important;
+    min-width: 0 !important;
+    border-right: none !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    display: none !important; /* Ensure it's hidden */
+}
+
+/* Styles for the main content area within the Evals tab */
+#evals-main-content-area {
+    width: 1fr; /* Takes remaining horizontal space */
+    height: 100%;
+    padding: 1 2; /* Padding for the content area */
+    /* border: round $primary; /* Optional: for visual debugging */
+}
+
+/* Styles for the sidebar toggle button in the Evals tab */
+#toggle-evals-sidebar {
+    /* Positioned by EvalsWindow's compose, next to the content area */
+    /* dock: left; is set in EvalsWindow.py's DEFAULT_CSS for the button */
+    width: auto; /* Small width, text will determine */
+    height: 3;   /* Standard button height */
+    min-width: 0; /* Allow it to be small */
+    margin: 0 1 0 0; /* Top, Right, Bottom, Left margin - space it from main content */
+    /* color: $text; */
+    /* background: $surface-darken-1; */
+    /* border: none; */
+}
+/* Hover state for the toggle button if needed, can inherit from general .sidebar-toggle if class is added */
+/* #toggle-evals-sidebar:hover { background: $surface; } */
+
+/* Common sidebar elements within EvalsSidebar (if not covered by global .sidebar-title etc.) */
+#evals-sidebar .sidebar-title { /* Already styled globally, but can be overridden */
+    /* text-style: bold underline; */
+    /* text-align: center; */
+    /* width: 100%; */
+    /* margin-bottom: 1; */
+}
+
+#evals-sidebar Collapsible {
+    margin-bottom: 1; /* Space between collapsibles */
+}
+
+#evals-sidebar .collapsible-content-placeholder { /* From EvalsSidebar.py */
+    padding: 1;
+    background: $panel-lighten-1;
+    border: round $surface;
+    color: $text-muted;
+    text-align: center; /* Center placeholder text */
+}
+/* --- End Evals Tab --- */
+/* ----------------------------- ************************* ----------------------------- */
+
+
+
+/* ----------------------------- ************************* ----------------------------- */
+/* --- Media Tab Specific Options --- */
+.ingest-form-scrollable {
+    height: 1fr; /* Allow scrolling within the form area */
+}
+
+.ingest-textarea-small {
+    height: 3;
+    margin-bottom: 1;
+}
+.ingest-textarea-medium {
+    height: 5;
+    margin-bottom: 1;
+}
+.ingest-form-row {
+    layout: horizontal;
+    width: 100%;
+    height: auto;
+    margin-bottom: 1;
+}
+.ingest-form-col {
+    width: 1fr;
+    padding: 0 1;
+}
+.ingest-form-col:first-of-type {
+    padding-left: 0;
+}
+.ingest-form-col:last-of-type {
+    padding-right: 0;
+}
+
+.ingest-submit-button {
+    width: 100%;
+    margin-top: 2;
+}
+
+.hidden {
+    display: none;
+}
+.tldw-api-media-specific-options { /* Common class for specific option blocks */
+    padding: 1;
+    border: round $surface;
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+/* --- End of Media Tab Specific Options --- */
+/* ----------------------------- ************************* ----------------------------- */
+
+
+
+/* ----------------------------- ************************* ----------------------------- */
+/* --- Conversations, Characters & Prompts Window specific layouts --- */
+#send-chat {
+    width: 12;
+    min-width: 12 !important;
+    max-width: 12vh !important; /* Using ch unit and important */
+    /* height: 3; /* Already set by .send-button class, but can be reiterated if needed */
+    /* margin-top: 0; /* Already set by .send-button class */
+}
+
+#stop-chat-generation {
+    width: 6;
+    min-width: 6 !important;
+    max-width: 6vh !important; /* Using ch unit and important */
+    margin: 0 1;
+    /* height: 3; /* Already set by .stop-button class, but can be reiterated if needed */
+    /* margin-top: 0; /* Already set by .stop-button class */
+}
+
+.suggest-button {
+    width: 8;
+    min-width: 8 !important;
+    max-width: 8vh !important; /* Using ch unit and important */
+    margin: 0 1;
+}
+/* --- End of Conversations, Characters & Prompts Window specific layouts --- */
+/* ----------------------------- ************************* ----------------------------- */
+
+
+
+/* ----------------------------- ************************* ----------------------------- */
+/* --- LLM Management Tab --- */
+
+.llm-view-area { /* Common class for individual content areas */
+    width: 100%;
+    height: 100%; /* Or auto */
+    display: none; /* Initially hidden until activated */
+}
+/* --- End of LLM Management Tab --- */
+/* ----------------------------- ************************* ----------------------------- */
+
+/* Custom Footer Status Bar */
+AppFooterStatus {
+    dock: bottom;
+    height: 1;
+    background: $primary-background-darken-1; /* Example color, adjust to theme */
+    width: 100%;
+    layout: horizontal; /* Ensures items inside flow horizontally */
+    /* align: right middle; /* This is now removed, children use dock */
+    padding: 0 1; /* Horizontal padding for the footer bar */
+}
+
+/* Styling for the children of AppFooterStatus is primarily handled by
+   AppFooterStatus.DEFAULT_CSS in its Python file.
+   The rule for AppFooterStatus > Static#internal-db-size-indicator previously here
+   is removed to defer to DEFAULT_CSS for internal component styling. */
     """
+#
+#
+#
+##########################################################################################################################
+
+##########################################################################################################################
+
+
+
+
+
+##########################################################################################################################
+
+
+
+##########################################################################################################################
+#
+#
+#
+LLAMA_CPP_SERVER_ARGS_HELP_TEXT = """
+[bold cyan]--- Server & Model Params ---[/]
+
+[bold]Simple 'Just Get Me Up And Running': -ngl 99 -fa -c 8192[/]
+
+[bold]-ngl, --gpu-layers, --n-gpu-layers N[/]
+  Number of layers to store in VRAM (e.g., [italic]--n-gpu-layers 35[/])
+  (env: LLAMA_ARG_N_GPU_LAYERS)
+
+[bold]-fa, --flash-attn[/]
+  Enable Flash Attention (default: disabled)
+  (env: LLAMA_ARG_FLASH_ATTN)
+
+[bold]-c, --ctx-size N[/]
+  Size of the prompt context (default: 4096, 0 = loaded from model)
+  (e.g., [italic]-c 2048[/])
+  (env: LLAMA_ARG_CTX_SIZE)
+
+[bold]-n, --predict, --n-predict N[/]
+  Number of tokens to predict (default: -1, -1 = infinity)
+  (e.g., [italic]-n 512[/])
+  (env: LLAMA_ARG_N_PREDICT)
+
+[bold]-m, --model FNAME[/]
+  Model path (Set via 'Model Path' field above)
+  (env: LLAMA_ARG_MODEL)
+
+[bold]-mu, --model-url MODEL_URL[/]
+  Model download URL (default: unused)
+  (env: LLAMA_ARG_MODEL_URL)
+
+[bold]-hf, -hfr, --hf-repo <user>/<model>[:quant][/]
+  Hugging Face model repository.
+  (e.g., [italic]--hf-repo unsloth/phi-3-mini-4k-instruct-gguf:Q4_K_M[/])
+  (env: LLAMA_ARG_HF_REPO)
+
+[bold]-hfd, -hfrd, --hf-repo-draft <user>/<model>[:quant][/]
+  Same as --hf-repo, but for the draft model.
+  (env: LLAMA_ARG_HFD_REPO)
+
+[bold]-hft, --hf-token TOKEN[/]
+  Hugging Face access token.
+  (env: HF_TOKEN)
+
+[bold]-t, --threads N[/]
+  Number of threads for generation (default: system dependent)
+  (e.g., [italic]-t 8[/])
+  (env: LLAMA_ARG_THREADS)
+
+[bold]-b, --batch-size N[/]
+  Logical maximum batch size (default: 2048)
+  (env: LLAMA_ARG_BATCH)
+
+[bold]-tb, --threads-batch N[/]
+  Number of threads for batch/prompt processing (default: same as --threads)
+  (env: LLAMA_ARG_THREADS_BATCH)
+
+[bold]-ub, --ubatch-size N[/]
+  Physical maximum batch size (default: 512)
+  (env: LLAMA_ARG_UBATCH)
+
+[bold]--keep N[/]
+  Tokens to keep from initial prompt (default: 0, -1 = all)
+
+[bold]-e, --escape[/]
+  Process escape sequences (default: true)
+
+[bold]--no-escape[/]
+  Do not process escape sequences
+
+[bold]--lora FNAME[/]
+  Path to LoRA adapter (repeatable)
+
+[bold]--lora-scaled FNAME SCALE[/]
+  Path to LoRA adapter with scaling (repeatable)
+
+[bold]--control-vector FNAME[/]
+  Add a control vector (repeatable)
+
+[bold]--control-vector-scaled FNAME SCALE[/]
+  Add a scaled control vector (repeatable)
+
+[bold]--control-vector-layer-range START END[/]
+  Layer range for control vector(s)
+
+[bold cyan]--- Sampling Params ---[/]
+
+[bold]--samplers SAMPLERS[/]
+  Samplers order, separated by ';' (default: see llama.cpp help)
+
+[bold]-s, --seed SEED[/]
+  RNG seed (default: -1, random)
+  (e.g., [italic]-s 1234[/])
+
+[bold]--temp N[/]
+  Temperature (default: 0.8)
+  (e.g., [italic]--temp 0.7[/])
+
+[bold]--top-k N[/]
+  Top-k sampling (default: 40, 0 = disabled)
+  (e.g., [italic]--top-k 50[/])
+
+[bold]--top-p N[/]
+  Top-p sampling (default: 0.9, 1.0 = disabled)
+  (e.g., [italic]--top-p 0.95[/])
+
+[bold]--min-p N[/]
+  Min-p sampling (default: 0.1, 0.0 = disabled)
+  (e.g., [italic]--min-p 0.05[/])
+
+[bold]--typical N[/]
+  Locally typical sampling (default: 1.0, 1.0 = disabled)
+
+[bold]--repeat-last-n N[/]
+  Last N tokens for penalty (default: 64, 0 = disabled)
+
+[bold]--repeat-penalty N[/]
+  Repeat penalty (default: 1.0, 1.0 = disabled)
+  (e.g., [italic]--repeat-penalty 1.1[/])
+
+[bold]--presence-penalty N[/]
+  Presence penalty (default: 0.0, 0.0 = disabled)
+
+[bold]--frequency-penalty N[/]
+  Frequency penalty (default: 0.0, 0.0 = disabled)
+
+[bold]--mirostat N[/]
+  Mirostat sampling (0=disabled, 1=Mirostat, 2=Mirostat 2.0)
+
+[bold]--mirostat-lr N[/]
+  Mirostat learning rate (default: 0.1)
+
+[bold]--mirostat-ent N[/]
+  Mirostat target entropy (default: 5.0)
+
+[bold]-l, --logit-bias TOKEN_ID(+/-)BIAS[/]
+  Modify token likelihood (e.g., [italic]--logit-bias 15043+1[/])
+
+[bold]--grammar GRAMMAR[/]
+  BNF-like grammar constraint
+
+[bold]--grammar-file FNAME[/]
+  File for grammar
+
+[bold]-j, --json-schema SCHEMA[/]
+  JSON schema constraint
+
+[bold]-jf, --json-schema-file FILE[/]
+  File for JSON schema
+
+[italic]Obtained from: https://github.com/ggml-org/llama.cpp/tree/master/tools/server[/]
+"""
+#
+#
+#
+##########################################################################################################################
+
+##########################################################################################################################
+
+
+
+
+
+##########################################################################################################################
+
+
+
+##########################################################################################################################
+#
+#
+#
+LLAMAFILE_SERVER_ARGS_HELP_TEXT = """
+[bold cyan]--- Server & Model Params ---[/]
+
+[bold]Simple 'Just Get Me Up And Running': -ngl 99 -fa -c 8192[/]
+
+--threads N, -t N: Set the number of threads to use during generation.
+
+-tb N, --threads-batch N: Set the number of threads to use during batch and prompt processing. If not specified, the number of threads will be set to the number of threads used for generation.
+
+-m FNAME, --model FNAME: Specify the path to the LLaMA model file (e.g., models/7B/ggml-model.gguf).
+
+-a ALIAS, --alias ALIAS: Set an alias for the model. The alias will be returned in API responses.
+
+-c N, --ctx-size N: Set the size of the prompt context. The default is 512, but LLaMA models were built with a context of 2048, which will provide better results for longer input/inference. The size may differ in other models, for example, baichuan models were build with a context of 4096.
+
+-ngl N, --n-gpu-layers N: When compiled with appropriate support (currently CLBlast or cuBLAS), this option allows offloading some layers to the GPU for computation. Generally results in increased performance.
+
+-mg i, --main-gpu i: When using multiple GPUs this option controls which GPU is used for small tensors for which the overhead of splitting the computation across all GPUs is not worthwhile. The GPU in question will use slightly more VRAM to store a scratch buffer for temporary results. By default GPU 0 is used. Requires cuBLAS.
+
+-ts SPLIT, --tensor-split SPLIT: When using multiple GPUs this option controls how large tensors should be split across all GPUs. SPLIT is a comma-separated list of non-negative values that assigns the proportion of data that each GPU should get in order. For example, "3,2" will assign 60% of the data to GPU 0 and 40% to GPU 1. By default the data is split in proportion to VRAM but this may not be optimal for performance. Requires cuBLAS.
+
+-b N, --batch-size N: Set the batch size for prompt processing. Default: 512.
+
+--memory-f32: Use 32-bit floats instead of 16-bit floats for memory key+value. Not recommended.
+
+--mlock: Lock the model in memory, preventing it from being swapped out when memory-mapped.
+
+--no-mmap: Do not memory-map the model. By default, models are mapped into memory, which allows the system to load only the necessary parts of the model as needed.
+
+--numa: Attempt optimizations that help on some NUMA systems.
+
+--lora FNAME: Apply a LoRA (Low-Rank Adaptation) adapter to the model (implies --no-mmap). This allows you to adapt the pretrained model to specific tasks or domains.
+
+--lora-base FNAME: Optional model to use as a base for the layers modified by the LoRA adapter. This flag is used in conjunction with the --lora flag, and specifies the base model for the adaptation.
+-to N, --timeout N: Server read/write timeout in seconds. Default 600.
+
+--host: Set the hostname or ip address to listen. Default 127.0.0.1.
+
+--port: Set the port to listen. Default: 8080.
+
+--path: path from which to serve static files (default examples/server/public)
+
+--api-key: Set an api key for request authorization. By default the server responds to every request. With an api key set, the requests must have the Authorization header set with the api key as Bearer token. May be used multiple times to enable multiple valid keys.
+
+--api-key-file: path to file containing api keys delimited by new lines. If set, requests must include one of the keys for access. May be used in conjunction with --api-key's.
+
+--embedding: Enable embedding extraction, Default: disabled.
+-np N, --parallel N: Set the number of slots for process requests (default: 1)
+
+-cb, --cont-batching: enable continuous batching (a.k.a dynamic batching) (default: disabled)
+
+-spf FNAME, --system-prompt-file FNAME Set a file to load "a system prompt (initial prompt of all slots), this is useful for chat applications. See more
+
+--mmproj MMPROJ_FILE: Path to a multimodal projector file for LLaVA.
+
+--grp-attn-n: Set the group attention factor to extend context size through self-extend(default: 1=disabled), used together with group attention width --grp-attn-w
+
+--grp-attn-w: Set the group attention width to extend context size through self-extend(default: 512), used together with group attention factor --grp-attn-n
+
+[italic]Obtained from: https://github.com/Mozilla-Ocho/llamafile/blob/main/llama.cpp/server/README.md[/]
+"""
+
+
+
+
+
+
+
+
 
 
 #
 # End of Constants.py
 ########################################################################################################################
+

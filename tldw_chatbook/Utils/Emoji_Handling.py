@@ -137,6 +137,8 @@ SPARKLES_FALLBACK = "*"
 EMOJI_STOP = "⏹️"  # Or "🛑"
 FALLBACK_STOP = "Stop"
 
+EMOJI_WRITE_FOR_ME = "💡"  # Suggestion button
+FALLBACK_WRITE_FOR_ME = "Suggest"
 
 def get_char(emoji_char: str, fallback_char: str) -> str:
     """Returns the emoji if supported, otherwise the fallback."""

@@ -1,17 +1,18 @@
+
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tldw_chatbook"
-version = "0.1.0" # Choose an initial version
+name = "tldw_chatbook" # This is the distribution name (what you pip install)
+version = "0.1.0"
 authors = [
   { name="Robert Musser", email="contact@rmusser.net" },
 ]
 description = "A Textual TUI for chatting with LLMs, and interacting with the tldw server."
-readme = "README.md"
+readme = "README.md" # Assumes README.md is in the project root
 requires-python = ">=3.11"
-license = { file="LICENSE" }
+license = { file="LICENSE" } # Assumes LICENSE file is in the project root
 keywords = ["tui", "cli", "llm", "textual", "ai", "chat"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -19,63 +20,68 @@ classifiers = [
     "Intended Audience :: End Users/Desktop",
     "Topic :: Utilities",
     "Topic :: Terminals",
-    "License :: OSI Approved :: AGPL License", # Choose your license
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)", # Corrected to AGPL
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
+    # "Programming Language :: Python :: 3.13", # Only list if you actively test/support it
     "Environment :: Console",
     "Operating System :: OS Independent",
 ]
 
-[dependency-groups]
-core =  [
+# --- Dependencies ---
+dependencies = [
     "chardet",
+    "httpx",
     "loguru",
-    "textual", # textual[dev] is for development, just textual for distribution
+    "textual>=3.3.0", # Specify a minimum Textual version if features depend on it
     "requests",
+     "rich", # Usually pulled in by Textual, but explicit is fine
     "Pillow",
     "PyYAML",
     "pydantic",
     "psutil",
-    "toml", # Even with tomllib, some parts of your code might still use toml for writing if needed. If only reading, and Python 3.11+, this can be omitted.
-    # rich is a dependency of textual, so usually not needed to list explicitly
-]
-inference = [
-    "placeholder"
-]
-ingestion = [
-    "placeholder"
-]
-rag = [
-    "placeholder"
-]
-voice = [
-    "Placeholder"
-]
-web = [
-    "placeholder"
+    # "toml", # Only if writing TOML. For reading in Python 3.11+, tomllib is built-in.
 ]
 
+# --- Optional Dependencies ---
+[project.optional-dependencies]
+vllm = ["vllm"]
+mlx = ["mlx-lm"]
+transformers = ["transformers"]
+# For groups like local_ingestion, local_rag, etc., if they have actual packages:
+# local_ingestion = ["some-ingestion-package"]
+# local_rag = ["some-rag-package"]
+dev = [ # Example for development dependencies
+    "pytest",
+    "textual-dev", # For Textual development tools
+]
+
+
 [project.urls]
-"Homepage" = "https://github.com/rmusser01/tldw_chatbook" # Replace with your repo
-"Bug Tracker" = "https://github.com/rmusser01/tldw_chatbook/issues" # Replace
+"Homepage" = "https://github.com/rmusser01/tldw_chatbook"
+"Bug Tracker" = "https://github.com/rmusser01/tldw_chatbook/issues"
 
 # This creates a command-line script called 'tldw-cli'
 [project.scripts]
-tldw-cli = "tldw_app.app:main_cli_runner"
+# Points to the main function in your tldw_chatbook package's app module.
+# Structure: project_root/tldw_chatbook/app.py, function main_cli_runner
+tldw-cli = "tldw_chatbook.app:main_cli_runner"
 
 [tool.setuptools.packages.find]
 where = ["."]  # Look for packages in the current directory (where pyproject.toml is)
-include = ["tldw_app*"]  # Include the tldw_app package and its submodules
-exclude = ["Tests*"]  # Example: exclude a tests directory if you have one
+# Include the 'tldw_chatbook' package and its submodules
+include = ["tldw_chatbook*"]
+exclude = ["Tests*", ".venv*"]
 
 [tool.setuptools.package-data]
-"tldw_app.css" = ["*.tcss"] # Include .tcss files in the tldw_app.css package
-# If you have other assets inside tldw_app (e.g., tldw_app/assets/), add them here:
-# "tldw_app.assets" = ["*"]
+# Include .tcss files in the tldw_chatbook.css package/submodule
+# This assumes your CSS is in project_root/tldw_chatbook/css/*.tcss
+"tldw_chatbook.css" = ["*.tcss"]
+# If you have other assets inside your tldw_chatbook package (e.g., tldw_chatbook/assets/), add them here:
+# "tldw_chatbook.assets" = ["*"]
 
-[pytest]
+[pytest] # This section is fine if you use pytest
 markers = [
-    "unit: marks tests as unit tests",
+ "unit: marks tests as unit tests",
 ]

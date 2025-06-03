@@ -2,6 +2,8 @@ from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.widgets import Static, Input, TextArea, Button, Collapsible
 
+#from ..Widgets.emoji_picker import
+
 
 class NotesSidebarRight(VerticalScroll):
     """A sidebar for displaying and editing note details."""
@@ -58,6 +60,11 @@ class NotesSidebarRight(VerticalScroll):
         yield Button("Save Note (from Editor)", id="notes-save-current-button",
                      variant="success")  # Or "Save Active Note"
         yield Button("Save Keywords", id="notes-save-keywords-button", variant="primary")
+
+        # New Collapsible for Emojis
+        with Collapsible(title="Emojis", collapsed=True):
+            #yield EmojiPicker(id="notes-emoji-picker")
+            pass  # Placeholder for EmojiPicker widget
 
         # Group export options
         with Collapsible(title="Export Options", collapsed=True):

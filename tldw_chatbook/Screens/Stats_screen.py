@@ -65,7 +65,7 @@ class StatsScreen(Static):
                 self.metrics = {"info": "Metrics file is empty or contains no valid data."}
 
         except FileNotFoundError:
-            logging.error("MetricsScreen: Log file not found at %s.", METRICS_LOG_PATH)
+            logging.error(f"MetricsScreen: Log file not found at {METRICS_LOG_PATH}.")
             self.metrics = {"error": f"Metrics log file not found: {METRICS_LOG_PATH.name}"}
         except Exception as e:
             logging.exception("MetricsScreen: An unexpected error occurred while loading metrics.")
@@ -73,7 +73,7 @@ class StatsScreen(Static):
 
     def compose(self):
         """Create child widgets for the screen based on loaded metrics."""
-        logging.info("MetricsScreen composing. Current metrics: %s", self.metrics)
+        logging.info(f"MetricsScreen composing. Current metrics: {self.metrics}")
         with VerticalScroll(id="metrics-container"):
             if not self.metrics: # Should not happen if load_metrics sets a message for empty/error
                 logging.warning("MetricsScreen compose: self.metrics is unexpectedly empty at compose time.")

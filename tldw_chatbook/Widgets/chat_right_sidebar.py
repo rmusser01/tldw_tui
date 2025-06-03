@@ -10,6 +10,8 @@ from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.widgets import Static, Collapsible, Placeholder, Select, Input, Label, TextArea, Button, Checkbox, ListView
 
+from tldw_chatbook.config import settings
+
 
 #
 # Local Imports
@@ -80,6 +82,15 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
                 classes="sidebar-button save-chat-button",
                 variant="success",
                 disabled=not initial_ephemeral_state # Enabled if ephemeral, disabled if already saved
+            )
+
+            # Retrieve initial value for strip_thinking_tags checkbox
+            initial_strip_value = settings.get("chat_defaults", {}).get("strip_thinking_tags", True)
+            yield Checkbox(
+                "Strip Thinking Tags",
+                value=initial_strip_value,
+                id=f"{id_prefix}-strip-thinking-tags-checkbox",
+                classes="sidebar-checkbox" # Add a class if specific styling is needed
             )
         # ===================================================================
         # Prompts (only for chat tab)

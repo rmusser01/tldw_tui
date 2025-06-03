@@ -14,7 +14,8 @@ if TYPE_CHECKING:
     from ..app import TldwCli  # pragma: no cover – runtime import only
 
 # Import the specific handler
-from .llm_management_events import handle_ollama_nav_button_pressed
+from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_ollama import handle_ollama_nav_button_pressed
+from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events import handle_mlx_lm_nav_button_pressed
 
 __all__ = [
     "handle_llm_nav_button_pressed",
@@ -71,6 +72,8 @@ async def handle_llm_nav_button_pressed(app: "TldwCli", button_id: str) -> None:
         # For now, let the specific handler do its job. The watcher will run if app.llm_active_view changes.
         # If handle_ollama_nav_button_pressed doesn't change app.llm_active_view, the watcher won't re-hide other views.
         # This seems acceptable.
+    elif button_id == "llm-nav-mlx-lm":
+        await handle_mlx_lm_nav_button_pressed(app)
     # Add other specific handlers here:
     # elif button_id == "llm-nav-another":
     #     await handle_another_llm_nav_button_pressed(app)

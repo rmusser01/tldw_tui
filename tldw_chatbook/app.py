@@ -4,78 +4,82 @@
 # Imports
 import logging
 import logging.handlers
+import re # Added import for regex
 import subprocess
-import sys
-from pathlib import Path
 import traceback
 from typing import Union, Optional, Any, Dict, List, Callable
 #
 # 3rd-Party Libraries
 from PIL import Image
-# --- Textual Imports ---
 from loguru import logger as loguru_logger, logger  # Keep if app.py uses it directly, or pass app.loguru_logger
 from rich.text import Text
 from textual import on
-# --- Textual Imports ---
 from textual.app import App, ComposeResult
-from textual.logging import TextualHandler
 from textual.widgets import (
-    Static, Button, Input, Header, Footer, RichLog, TextArea, Select, ListView, Checkbox, Collapsible, ListItem, Label
+    Static, Button, Input, Header, RichLog, TextArea, Select, ListView, Checkbox, Collapsible, ListItem, Label
 )
 from textual.containers import Horizontal, Container, HorizontalScroll, VerticalScroll
-# Import for escape_markup
-from rich.markup import escape as escape_markup
+
+from tldw_chatbook.Event_Handlers.Chat_Events.chat_streaming_events import handle_streaming_chunk, handle_stream_done
+from tldw_chatbook.Event_Handlers.worker_events import StreamingChunk, StreamDone
+from .Widgets.AppFooterStatus import AppFooterStatus
 from textual.reactive import reactive
-from textual.worker import Worker
+from textual.worker import Worker, WorkerState
 from textual.binding import Binding
 from textual.dom import DOMNode  # For type hinting if needed
 from textual.timer import Timer
-from textual.css.query import QueryError  # For specific error handling
-
-from tldw_chatbook.Event_Handlers.worker_events import StreamingChunk, StreamDone
+from textual.css.query import QueryError
+# Ensure Path is imported
+from pathlib import Path
 #
 # --- Local API library Imports ---
-from .UI.MediaWindow import MediaWindow, slugify as media_slugify
+from .Utils import Utils
+from .config import (
+    get_media_db_path,
+)
+from .Logging_Config import configure_application_logging
+from .UI.MediaWindow import slugify as media_slugify
 from tldw_chatbook.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, TAB_STATS, TAB_TOOLS_SETTINGS, \
-    TAB_INGEST, TAB_LLM, TAB_MEDIA, TAB_SEARCH, TAB_EVALS
+    TAB_INGEST, TAB_LLM, TAB_MEDIA, TAB_SEARCH, TAB_EVALS, LLAMA_CPP_SERVER_ARGS_HELP_TEXT, \
+    LLAMAFILE_SERVER_ARGS_HELP_TEXT, TAB_CODING
 from tldw_chatbook.DB.Client_Media_DB_v2 import MediaDatabase
-from tldw_chatbook.config import chachanotes_db as global_chachanotes_db_instance, get_media_db_path, CLI_APP_CLIENT_ID
+from tldw_chatbook.config import CLI_APP_CLIENT_ID
 from tldw_chatbook.Logging_Config import RichLogHandler
 from tldw_chatbook.Prompt_Management import Prompts_Interop as prompts_interop
 from tldw_chatbook.Utils.Emoji_Handling import get_char, EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN, EMOJI_TITLE_NOTE, \
-    FALLBACK_TITLE_NOTE, EMOJI_TITLE_SEARCH, FALLBACK_TITLE_SEARCH, EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE, \
-    EMOJI_SEND, FALLBACK_SEND, EMOJI_CHARACTER_ICON, FALLBACK_CHARACTER_ICON, supports_emoji
-from tldw_chatbook.Utils.Utils import safe_float, safe_int
+    FALLBACK_TITLE_NOTE, EMOJI_TITLE_SEARCH, FALLBACK_TITLE_SEARCH, supports_emoji
 from .config import (
     CONFIG_TOML_CONTENT,
     DEFAULT_CONFIG_PATH,
     load_settings,
     get_cli_setting,
-    get_cli_log_file_path,
     get_cli_providers_and_models,
     API_MODELS_BY_PROVIDER,
-    LOCAL_PROVIDERS, get_chachanotes_db_path, settings
-)
-from .Screens.Stats_screen import StatsScreen
+    LOCAL_PROVIDERS, )
 from .Event_Handlers import (
     app_lifecycle as app_lifecycle_handlers,
     tab_events as tab_handlers,
-    sidebar_events as sidebar_handlers,
     chat_events as chat_handlers,
+    chat_events,
     conv_char_events as ccp_handlers,
     media_events as media_handlers,
     notes_events as notes_handlers,
     worker_events as worker_handlers, worker_events, ingest_events,
     llm_nav_events as llm_handlers,
     # Explicit import for Ollama handler as per subtask, though current dispatch is generic
-    llm_management_events,
+    LLM_Management_Events,
 )
-from .Event_Handlers.llm_management_events import handle_llamacpp_browse_exec_button_pressed, handle_llamacpp_browse_model_button_pressed, handle_llamafile_browse_exec_button_pressed, handle_llamafile_browse_model_button_pressed, handle_vllm_browse_python_button_pressed, handle_vllm_browse_model_button_pressed
-from .Character_Chat import Character_Chat_Lib as ccl
+from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events import \
+    handle_llamacpp_browse_exec_button_pressed, \
+    handle_llamacpp_browse_model_button_pressed, handle_llamafile_browse_exec_button_pressed, \
+    handle_llamafile_browse_model_button_pressed, handle_start_mlx_server_button_pressed, \
+    handle_stop_mlx_server_button_pressed, handle_stop_llamafile_server_button_pressed, populate_llm_help_texts, \
+    handle_start_llamacpp_server_button_pressed, handle_stop_llamacpp_server_button_pressed, \
+    handle_start_llamafile_server_button_pressed
+from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_vllm import handle_vllm_browse_python_button_pressed, handle_vllm_browse_model_button_pressed, handle_start_vllm_server_button_pressed, handle_stop_vllm_server_button_pressed
 from .Notes.Notes_Library import NotesInteropService
-from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError, InputError
+from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
 from .Widgets.chat_message import ChatMessage
-from .Widgets.settings_sidebar import create_settings_sidebar
 from .Widgets.notes_sidebar_left import NotesSidebarLeft
 from .Widgets.notes_sidebar_right import NotesSidebarRight
 from .Widgets.titlebar import TitleBar
@@ -85,13 +89,11 @@ from .LLM_Calls.LLM_API_Calls import (
         chat_with_deepseek, chat_with_mistral, chat_with_google,
 )
 from .LLM_Calls.LLM_API_Calls_Local import (
-    # Add local API functions if they are in the same file
     chat_with_llama, chat_with_kobold, chat_with_oobabooga,
     chat_with_vllm, chat_with_tabbyapi, chat_with_aphrodite,
     chat_with_ollama, chat_with_custom_openai, chat_with_custom_openai_2, chat_with_local_llm
 )
 from tldw_chatbook.config import get_chachanotes_db_path, settings, chachanotes_db as global_db_instance
-# Import new UI window classes
 from .UI.Chat_Window import ChatWindow
 from .UI.Conv_Char_Window import CCPWindow
 from .UI.Notes_Window import NotesWindow
@@ -101,6 +103,7 @@ from .UI.Ingest_Window import IngestWindow
 from .UI.Tools_Settings_Window import ToolsSettingsWindow
 from .UI.LLM_Management_Window import LLMManagementWindow
 from .UI.Evals_Window import EvalsWindow # Added EvalsWindow
+from .UI.Coding_Window import CodingWindow
 from .UI.Tab_Bar import TabBar
 from .UI.MediaWindow import MediaWindow
 from .UI.SearchWindow import SearchWindow
@@ -181,7 +184,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     ALL_MAIN_WINDOW_IDS = [ # Assuming these are your main content window IDs
         "chat-window", "conversations_characters_prompts-window",
         "ingest-window", "tools_settings-window", "llm_management-window",
-        "media-window", "search-window", "logs-window", "evals-window" # Added "evals-window"
+        "media-window", "search-window", "logs-window", "evals-window", "coding-window"
     ]
 
     # Define reactive at class level with a placeholder default and type hint
@@ -190,6 +193,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
     # Add state to hold the currently streaming AI message widget
     current_ai_message_widget: Optional[ChatMessage] = None
+    current_chat_worker: Optional[Worker] = None
+    current_chat_is_streaming: bool = False
 
     # --- REACTIVES FOR PROVIDER SELECTS ---
     # Initialize with a dummy value or fetch default from config here
@@ -202,8 +207,12 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # Renamed character_api_provider_value to ccp_api_provider_value for clarity with TAB_CCP
     ccp_api_provider_value: reactive[Optional[str]] = reactive(_default_ccp_provider)
 
-    # DB Size checker
-    _db_size_status_widget: Optional[Static] = None
+    # --- Reactives for CCP Character EDITOR (Center Pane) ---
+    current_editing_character_id: reactive[Optional[str]] = reactive(None)
+    current_editing_character_data: reactive[Optional[Dict[str, Any]]] = reactive(None)
+
+    # DB Size checker - now using AppFooterStatus
+    _db_size_status_widget: Optional[AppFooterStatus] = None
     _db_size_update_timer: Optional[Timer] = None
 
     # Reactives for sidebar
@@ -303,7 +312,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # LLM Inference Tab
     llm_active_view: reactive[Optional[str]] = reactive(None)
     _initial_llm_view: Optional[str] = "llm-view-llama-cpp"
+    llamacpp_server_process: Optional[subprocess.Popen] = None
+    llamafile_server_process: Optional[subprocess.Popen] = None
     vllm_server_process: Optional[subprocess.Popen] = None
+
 
     # De-Bouncers
     _conv_char_search_timer: Optional[Timer] = None
@@ -341,6 +353,12 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         self.selected_notes_files_for_import = []
         self.parsed_notes_for_preview = [] # <<< INITIALIZATION for notes
         self.last_notes_import_dir = None
+        # Llama.cpp server process
+        self.llamacpp_server_process = None
+        # LlamaFile server process
+        self.llamafile_server_process = None
+        # vLLM server process
+        self.vllm_server_process = None
 
         # 1. Get the user name from the loaded settings
         # The fallback here should match what you expect if settings doesn't have it,
@@ -456,195 +474,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             logging.error("ChaChaNotesDB (CharactersRAGDB) instance not found/assigned in app.__init__.")
             self.chachanotes_db = None # Explicitly set to None
 
-
     def _setup_logging(self):
-        """Sets up all logging handlers, including Loguru integration."""
-        # FIXME - LOGGING MAY BRING BACK BLINKING
-        temp_handler = logging.StreamHandler(sys.stdout)
-        temp_handler.setLevel(logging.DEBUG)
-        logging.getLogger().addHandler(temp_handler)
-        # This first logging.info will go to the stderr handler from the initial basicConfig
-        logging.info("--- _setup_logging START ---")
-        logging.getLogger("requests").setLevel(logging.WARNING)
-        logging.getLogger("urllib3").setLevel(logging.WARNING)
-        logging.getLogger("httpx").setLevel(logging.WARNING)
-
-        # --- BEGIN LOGURU MANAGEMENT (Your existing code is mostly fine here) ---
-        try:
-            loguru_logger.remove()  # Good: removes Loguru's default stderr sink
-            logging.info("Loguru: All pre-existing sinks removed.")
-
-            def sink_to_standard_logging(message):
-                # ... (your existing sink_to_standard_logging function)
-                record = message.record
-                level_mapping = {
-                    "TRACE": logging.DEBUG, "DEBUG": logging.DEBUG, "INFO": logging.INFO,
-                    "SUCCESS": logging.INFO, "WARNING": logging.WARNING, "ERROR": logging.ERROR,
-                    "CRITICAL": logging.CRITICAL,
-                }
-                std_level = level_mapping.get(record["level"].name, logging.INFO)
-                std_logger = logging.getLogger(record["name"])
-                if record["exception"]:
-                    std_logger.log(std_level, record["message"], exc_info=record["exception"])
-                else:
-                    std_logger.log(std_level, record["message"])
-
-            loguru_logger.add(
-                sink_to_standard_logging,
-                format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
-                level="TRACE"
-            )
-            # This log message will also currently go to the initial basicConfig stderr handler
-            logging.info("Loguru: Configured to forward its messages to standard Python logging system.")
-        except Exception as e:
-            # This log message will also currently go to the initial basicConfig stderr handler
-            logging.error(f"Loguru: Error during Loguru reconfiguration: {e}", exc_info=True)
-        # --- END LOGURU MANAGEMENT ---
-
-        # --- CONFIGURE STANDARD PYTHON LOGGING ROOT LOGGER ---
-        root_logger = logging.getLogger()
-
-        # !!! IMPORTANT FIX: Remove all existing handlers from the root logger !!!
-        # This will get rid of the StreamHandler (to stderr) added by the initial
-        # global logging.basicConfig() call.
-        initial_handlers_removed_count = 0
-        for handler in root_logger.handlers[:]:  # Iterate over a copy
-            root_logger.removeHandler(handler)
-            if hasattr(handler, 'close') and callable(handler.close):
-                try:
-                    handler.close()
-                except Exception:
-                    pass  # Ignore errors during close of old handlers
-            initial_handlers_removed_count += 1
-
-        # Log this removal using Loguru, as standard logging has no handlers yet.
-        # This message will go to Loguru's sink (which forwards to std logging,
-        # but std logging has no handlers yet, so it might hit Python's "last resort" stderr).
-        # Or, better, print to stderr just for this one-off setup message if needed, then rely on proper handlers.
-        if initial_handlers_removed_count > 0:
-            # Using print here because logging state is actively being changed.
-            # This should be one of the last messages to hit raw stderr if setup is correct.
-            print(
-                f"INFO: _setup_logging: Removed {initial_handlers_removed_count} pre-existing handler(s) from root logger.",
-                file=sys.stderr)
-
-        # Now that root_logger is clean, set its overall level.
-        # This level acts as a filter before messages reach any of its handlers.
-        initial_log_level_str = self.app_config.get("general", {}).get("log_level", "INFO").upper()
-        initial_log_level = getattr(logging, initial_log_level_str, logging.INFO)
-        root_logger.setLevel(initial_log_level)
-        # (A temporary print to confirm, as logging to root_logger now might go to "last resort" until a handler is added)
-        print(f"INFO: _setup_logging: Root logger level set to {logging.getLevelName(root_logger.level)}",
-              file=sys.stderr)
-
-        # --- Add TextualHandler (to standard logging) ---
-        # (Your existing TextualHandler setup code is fine)
-        # Ensure it's added AFTER clearing old handlers and setting root level.
-        # ...
-        has_textual_handler = any(isinstance(h, TextualHandler) for h in root_logger.handlers)
-        if not has_textual_handler:
-            textual_console_handler = TextualHandler()
-            textual_console_handler.setLevel(initial_log_level)  # Respects app_config
-            console_formatter = logging.Formatter(
-                "%(asctime)s [%(levelname)-8s] %(name)s:%(lineno)d - %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S"
-            )
-            textual_console_handler.setFormatter(console_formatter)
-            root_logger.addHandler(textual_console_handler)
-            # Now, logging.info should go to Textual's dev console (and other handlers added below)
-            logging.info(
-                f"Standard Logging: Added TextualHandler (Level: {logging.getLevelName(textual_console_handler.level)}).")
-        else:
-            logging.info("Standard Logging: TextualHandler already exists.")
-
-        # Test Loguru message again. It should now go to TextualHandler (and others).
-        loguru_logger.info(
-            "Loguru Test: This message from Loguru should now appear in Textual dev console (and other configured handlers).")
-
-        # --- Setup RichLog Handler (to standard logging) ---
-        # (Your existing RichLogHandler setup code is fine, ensure it's added AFTER clearing)
-        # ...
-        try:
-            log_display_widget = self.query_one("#app-log-display", RichLog)
-            # Check if it's already added by a previous call (should not happen if _setup_logging is called once)
-            if not any(isinstance(h, RichLogHandler) and h.rich_log_widget is log_display_widget for h in
-                       root_logger.handlers):
-                if not self._rich_log_handler:  # Create if it doesn't exist
-                    self._rich_log_handler = RichLogHandler(log_display_widget)
-                # Configure and add
-                rich_log_handler_level_str = self.app_config.get("logging", {}).get("rich_log_level", "DEBUG").upper()
-                rich_log_handler_level = getattr(logging, rich_log_handler_level_str, logging.DEBUG)
-                self._rich_log_handler.setLevel(rich_log_handler_level)
-                root_logger.addHandler(self._rich_log_handler)
-                logging.info(
-                    f"Standard Logging: Added RichLogHandler (Level: {logging.getLevelName(self._rich_log_handler.level)}).")
-            else:
-                logging.info("Standard Logging: RichLogHandler already exists and is added.")
-        except QueryError:
-            logging.error("!!! ERROR: Failed to find #app-log-display widget for RichLogHandler setup.")
-            self._rich_log_handler = None
-        except Exception as e:
-            logging.error(f"!!! ERROR setting up RichLogHandler: {e}", exc_info=True)
-            self._rich_log_handler = None
-
-        # --- Setup File Logging (to standard logging) ---
-        # (Your existing FileHandler setup code is fine, ensure it's added AFTER clearing)
-        # ... (your existing code to add file_handler to root_logger) ...
-        try:
-            log_file_path = get_cli_log_file_path()
-            log_dir = log_file_path.parent
-            log_dir.mkdir(parents=True, exist_ok=True)
-
-            has_file_handler = any(
-                isinstance(h, logging.handlers.RotatingFileHandler) and h.baseFilename == str(log_file_path) for h in
-                root_logger.handlers)
-
-            if not has_file_handler:
-                max_bytes_default = 10485760
-                backup_count_default = 5
-                file_log_level_default_str = "INFO"
-                max_bytes = int(get_cli_setting("logging", "log_max_bytes", max_bytes_default))
-                backup_count = int(get_cli_setting("logging", "log_backup_count", backup_count_default))
-                file_log_level_str = get_cli_setting("logging", "file_log_level", file_log_level_default_str).upper()
-                file_log_level = getattr(logging, file_log_level_str, logging.INFO)
-
-                file_handler = logging.handlers.RotatingFileHandler(
-                    log_file_path, maxBytes=max_bytes, backupCount=backup_count, encoding='utf-8'
-                )
-                file_handler.setLevel(file_log_level)
-                file_formatter = logging.Formatter(
-                    "%(asctime)s [%(levelname)-8s] %(name)s:%(lineno)d - %(message)s",
-                    datefmt="%Y-%m-%d %H:%M:%S"
-                )
-                file_handler.setFormatter(file_formatter)
-                root_logger.addHandler(file_handler)
-                logging.info(
-                    f"Standard Logging: Added RotatingFileHandler (File: '{log_file_path}', Level: {logging.getLevelName(file_log_level)}).")
-            else:
-                logging.info("Standard Logging: RotatingFileHandler already exists for this file path.")
-        except Exception as e:
-            logging.warning(f"!!! ERROR setting up file logging: {e}", exc_info=True)
-
-        # Re-evaluate lowest level for standard logging root logger
-        # (Your existing logic for this is fine)
-        all_std_handlers = root_logger.handlers
-        if all_std_handlers:
-            handler_levels = [h.level for h in all_std_handlers if h.level > 0]
-            if handler_levels:
-                lowest_effective_level = min(handler_levels)
-                current_root_level = root_logger.level
-                # Only adjust root logger level if it's currently *less* verbose (higher numeric value)
-                # than the most verbose handler.
-                if current_root_level > lowest_effective_level:
-                    logging.info(
-                        f"Standard Logging: Adjusting root logger level from {logging.getLevelName(current_root_level)} to {logging.getLevelName(lowest_effective_level)} to match most verbose handler.")
-                    root_logger.setLevel(lowest_effective_level)
-            logging.info(f"Standard Logging: Final Root logger level is: {logging.getLevelName(root_logger.level)}")
-        else:
-            logging.warning("Standard Logging: No handlers found on root logger after setup!")
-
-        logging.info("Logging setup complete.")
-        logging.info("--- _setup_logging END ---")
+        configure_application_logging(self)
 
     def compose(self) -> ComposeResult:
         logging.debug("App composing UI...")
@@ -660,8 +491,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         yield from self.compose_content_area() # Call refactored content area composer
 
-        with Footer():
-            yield Static(id="db-size-indicator", markup=False) # markup=False to display text literally
+        # Yield the new AppFooterStatus widget instead of the old Footer
+        yield AppFooterStatus(id="app-footer-status")
         logging.debug("App compose finished.")
 
     def compose_tabs(self) -> ComposeResult:
@@ -724,6 +555,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
             yield from _yield_and_track(SearchWindow(self, id="search-window", classes="window"), TAB_SEARCH, "search-window")
             yield from _yield_and_track(EvalsWindow(self, id="evals-window", classes="window"), TAB_EVALS, "evals-window") # Added EvalsWindow
+            yield from _yield_and_track(CodingWindow(self, id="coding-window", classes="window"), TAB_CODING, "coding-window")
 
             self.loguru_logger.info(f"Finished yielding concrete windows. Composed IDs: {composed_window_ids}")
 
@@ -881,6 +713,41 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             loguru_logger.error("CCP right pane (#conv-char-right-pane) not found for collapse toggle.")
         except Exception as e:
             loguru_logger.error(f"Error toggling CCP right pane: {e}", exc_info=True)
+
+    # ###################################################################
+    # --- Helper methods for Local LLM Inference logging ---
+    # ###################################################################
+    def _update_llamacpp_log(self, message: str) -> None:
+        """Helper to write messages to the Llama.cpp log widget."""
+        try:
+            log_widget = self.query_one("#llamacpp-log-output", RichLog)
+            log_widget.write(message)
+        except QueryError:
+            self.loguru_logger.error("Failed to query #llamacpp-log-output to write message.")
+        except Exception as e:  # pylint: disable=broad-except
+            self.loguru_logger.error(f"Error writing to Llama.cpp log: {e}", exc_info=True)
+
+    def _update_llamafile_log(self, message: str) -> None:
+        """Helper to write messages to the Llamafile log widget."""
+        try:
+            log_widget = self.query_one("#llamafile-log-output", RichLog)
+            log_widget.write(message)
+        except QueryError:
+            self.loguru_logger.error("Failed to query #llamafile-log-output to write message.")
+        except Exception as e:
+            self.loguru_logger.error(f"Error writing to Llamafile log: {e}", exc_info=True)
+
+    def _update_vllm_log(self, message: str) -> None:
+        try:
+            log_widget = self.query_one("#vllm-log-output", RichLog)
+            log_widget.write(message)
+        except QueryError:
+            self.loguru_logger.error("Failed to query #vllm-log-output to write message.")
+        except Exception as e:
+            self.loguru_logger.error(f"Error writing to vLLM log: {e}", exc_info=True)
+    # ###################################################################
+    # --- End of Helper methods for Local LLM Inference logging ---
+    # ###################################################################
 
     # --- Modify _clear_prompt_fields and _load_prompt_for_editing ---
     def _clear_prompt_fields(self) -> None:
@@ -1127,10 +994,41 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 view_to_show = content_pane.query_one(target_view_id_selector, Container)
                 view_to_show.styles.display = "block"
                 self.loguru_logger.info(f"Switched LLM Management view to: {new_view}")
-                # Optional: Focus
-                # try:
-                #     view_to_show.query(Input, Button)[0].focus()
-                # except IndexError: pass
+                # Populate help text when view becomes active
+                if new_view == "llm-view-llama-cpp":
+                    try:
+                        help_widget = view_to_show.query_one("#llamacpp-args-help-display", RichLog)
+                        # Check if help_widget has any lines. RichLog.lines is a list of segments.
+                        # A simple check is if it has any children (lines are added as children internally).
+                        # Or, more robustly, we can set a flag or check if the first line matches our help text.
+                        # For simplicity, let's assume if it has children, it's been populated.
+                        # A more direct way: RichLog stores its lines in a deque called 'lines'.
+                        if not help_widget.lines: # Check if the internal lines deque is empty
+                            self.loguru_logger.debug(f"Populating Llama.cpp help text in {new_view} as it's empty.")
+                            help_widget.clear() # Ensure it's clear before writing
+                            help_widget.write(LLAMA_CPP_SERVER_ARGS_HELP_TEXT)
+                        else:
+                            self.loguru_logger.debug(f"Llama.cpp help text in {new_view} already populated or not empty.")
+                    except QueryError:
+                        self.loguru_logger.warning(f"Help display widget #llamacpp-args-help-display not found in {new_view} during view switch.")
+                    except Exception as e_help_populate:
+                        self.loguru_logger.error(f"Error ensuring Llama.cpp help text in {new_view}: {e_help_populate}", exc_info=True)
+                elif new_view == "llm-view-llamafile":
+                    try:
+                        help_widget = view_to_show.query_one("#llamafile-args-help-display", RichLog)
+                        help_widget.clear()  # Clear and rewrite when tab becomes active
+                        help_widget.write(LLAMAFILE_SERVER_ARGS_HELP_TEXT)
+                        self.loguru_logger.debug(f"Ensured Llamafile help text in {new_view}.")
+                    except QueryError:
+                        self.loguru_logger.warning(
+                            f"Help display widget for Llamafile not found in {new_view} during view switch.")
+                # Add similar for other views like llamafile, vllm if they have help sections
+                # elif new_view == "llm-view-llamafile":
+                #     try:
+                #         help_widget = view_to_show.query_one("#llamafile-args-help-display", RichLog)
+                #         if not help_widget.document.strip():
+                #             help_widget.write(LLAMAFILE_ARGS_HELP_TEXT)
+                #     except QueryError: pass
             except QueryError as e:
                 self.loguru_logger.error(f"UI component '{new_view}' not found in #llm-content-pane: {e}",
                                          exc_info=True)
@@ -1235,6 +1133,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     async def _post_mount_setup(self) -> None:
         """Operations to perform after the main UI is expected to be fully mounted."""
         self.loguru_logger.info("App _post_mount_setup: Binding Select widgets and populating dynamic content...")
+        # Populate LLM help texts
+        self.call_later(populate_llm_help_texts, self)
 
         try:
             chat_select = self.query_one(f"#{TAB_CHAT}-api-provider", Select)
@@ -1260,7 +1160,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         # Populate dynamic selects and lists
         # These also might rely on the main tab windows being fully composed.
-        self.call_later(self._populate_chat_conversation_character_filter_select)
+        self.call_later(chat_handlers.populate_chat_conversation_character_filter_select, self)
         self.call_later(ccp_handlers.populate_ccp_character_select, self)
         self.call_later(ccp_handlers.populate_ccp_prompts_list_view, self)
 
@@ -1276,7 +1176,62 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         #    self.call_later(ccp_handlers.perform_ccp_conversation_search, self)
         self.current_tab = self._initial_tab_value
         self.loguru_logger.info(f"Initial tab set to: {self.current_tab}")
+
+        # --- DB Size Indicator Setup ---
+        try:
+            # Query for the AppFooterStatus widget instance
+            self._db_size_status_widget = self.query_one(AppFooterStatus)
+            # Or use ID: self._db_size_status_widget = self.query_one("#app-footer-status", AppFooterStatus)
+            self.loguru_logger.info("AppFooterStatus widget instance acquired.")
+
+            await self.update_db_sizes()  # Initial population
+            self._db_size_update_timer = self.set_interval(60, self.update_db_sizes) # Periodic updates
+            self.loguru_logger.info("DB size update timer started for AppFooterStatus.")
+        except QueryError:
+            self.loguru_logger.error("Failed to find AppFooterStatus widget for DB size display.")
+        except Exception as e_db_size:
+            self.loguru_logger.error(f"Error setting up DB size indicator with AppFooterStatus: {e_db_size}", exc_info=True)
+        # --- End DB Size Indicator Setup ---
+
         self.loguru_logger.info("App _post_mount_setup: Post-mount setup completed.")
+
+
+    async def update_db_sizes(self) -> None:
+        """Updates the database size information in the AppFooterStatus widget."""
+        self.loguru_logger.debug("Attempting to update DB sizes in AppFooterStatus.")
+        if not self._db_size_status_widget:
+            self.loguru_logger.warning("_db_size_status_widget (AppFooterStatus) is None, cannot update DB sizes.")
+            return
+
+        try:
+            # Prompts DB
+            prompts_db_path_str = get_cli_setting("database", "prompts_db_path", str(Path.home() / ".local/share/tldw_cli/tldw_cli_prompts_v2.db"))
+            prompts_db_file = Path(prompts_db_path_str).expanduser().resolve()
+            prompts_size_str = Utils.get_formatted_file_size(prompts_db_file)
+            if prompts_size_str is None:
+                prompts_size_str = "N/A"
+
+            # ChaChaNotes DB
+            chachanotes_db_file = get_chachanotes_db_path()
+            chachanotes_size_str = Utils.get_formatted_file_size(chachanotes_db_file)
+            if chachanotes_size_str is None:
+                chachanotes_size_str = "N/A"
+
+            # Media DB
+            media_db_file = get_media_db_path()
+            media_size_str = Utils.get_formatted_file_size(media_db_file)
+            if media_size_str is None:
+                media_size_str = "N/A"
+
+            status_string = f"Prompts DB: {prompts_size_str}  |  Chats/Notes DB: {chachanotes_size_str}  |  Media DB: {media_size_str}"
+            self.loguru_logger.debug(f"DB size status string to display in AppFooterStatus: '{status_string}'")
+            # Call the custom update method on the AppFooterStatus widget
+            self._db_size_status_widget.update_db_sizes_display(status_string)
+            self.loguru_logger.info(f"Successfully updated DB sizes in AppFooterStatus: {status_string}")
+        except Exception as e:
+            self.loguru_logger.error(f"Error updating DB sizes in AppFooterStatus: {e}", exc_info=True)
+            if self._db_size_status_widget: # Check again in case it became None somehow
+                self._db_size_status_widget.update_db_sizes_display("Error loading DB sizes")
 
 
     async def on_shutdown_request(self) -> None:  # Use the imported ShutdownRequest
@@ -1285,6 +1240,12 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             await self._rich_log_handler.stop_processor()
             logging.info("RichLogHandler processor stopped.")
 
+        # --- Stop DB Size Update Timer ---
+        if self._db_size_update_timer:
+            self._db_size_update_timer.stop()
+            self.loguru_logger.info("DB size update timer stopped.")
+        # --- End Stop DB Size Update Timer ---
+
     async def on_unmount(self) -> None:
         """Clean up logging resources on application exit."""
         logging.info("--- App Unmounting ---")
@@ -1292,6 +1253,12 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         if self._rich_log_handler: # Ensure it's removed if it exists
             logging.getLogger().removeHandler(self._rich_log_handler)
             logging.info("RichLogHandler removed.")
+
+        # Stop DB size update timer on unmount as well, if not already handled by shutdown_request
+        if self._db_size_update_timer: # Removed .is_running check
+            self._db_size_update_timer.stop()
+            self.loguru_logger.info("DB size update timer stopped during unmount.")
+
         # Find and remove file handler (more robustly)
         root_logger = logging.getLogger()
         for handler in root_logger.handlers[:]:
@@ -2034,29 +2001,72 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         if current_active_tab == TAB_CHAT:
             action_widget = self._get_chat_message_widget_from_button(button)
             if action_widget:
+                # Specific buttons within ChatMessage take precedence
+                if button_id == "continue-response-button":
+                    self.loguru_logger.info(f"Continue Response button ({button_id}) pressed in ChatMessage. Calling handler.")
+                    self.call_later(chat_events.handle_continue_response_button_pressed, self, button, action_widget) # Corrected call_later
+                    return
+                # Fallback to generic action button handler for other buttons in ChatMessage
                 self.loguru_logger.debug(
-                    f"Button (ID: {button_id}, Label: '{button.label}') identified as part of ChatMessage. Delegating to chat_actions.")
+                    f"Button (ID: {button_id}, Label: '{button.label}') identified as part of ChatMessage. Delegating to generic chat_actions.")
                 await chat_handlers.handle_chat_action_button_pressed(self, button, action_widget)
                 return
-            if button_id == "send-chat": await chat_handlers.handle_chat_send_button_pressed(self, TAB_CHAT)
-            elif button_id == "chat-new-conversation-button": await chat_handlers.handle_chat_new_conversation_button_pressed(self)
-            elif button_id == "chat-new-temp-chat-button": await chat_handlers.handle_chat_new_conversation_button_pressed(self) # Reuses existing handler
-            elif button_id == "chat-save-current-chat-button": await chat_handlers.handle_chat_save_current_chat_button_pressed(self)
-            elif button_id == "chat-save-conversation-details-button": await chat_handlers.handle_chat_save_details_button_pressed(self)
-            elif button_id == "chat-conversation-load-selected-button": await chat_handlers.handle_chat_load_selected_button_pressed(self)
-            elif button_id == "chat-prompt-load-selected-button": await chat_handlers.handle_chat_view_selected_prompt_button_pressed(self)
-            elif button_id == "chat-prompt-copy-system-button": await chat_handlers.handle_chat_copy_system_prompt_button_pressed(self)
-            elif button_id == "chat-prompt-copy-user-button": await chat_handlers.handle_chat_copy_user_prompt_button_pressed(self)
-            elif button_id == "chat-load-character-button": await chat_handlers.handle_chat_load_character_button_pressed(self, event) # Pass event if needed by handler
-            elif button_id == "chat-clear-active-character-button": # Ensure this exact line exists
+
+            # Buttons directly in the ChatWindow, not inside a ChatMessage
+            if button_id == "send-chat":
+                await chat_handlers.handle_chat_send_button_pressed(self, TAB_CHAT)
+                return
+            elif button_id == "respond-for-me-button": # New handler for Respond For Me
+                self.loguru_logger.info(f"Respond For Me button ({button_id}) pressed. Calling handler.")
+                self.call_later(chat_events.handle_respond_for_me_button_pressed, self) # Corrected call_later usage
+                return
+            elif button_id == "chat-new-conversation-button":
+                await chat_handlers.handle_chat_new_conversation_button_pressed(self)
+                return
+            elif button_id == "chat-new-temp-chat-button":
+                await chat_handlers.handle_chat_new_conversation_button_pressed(self) # Reuses existing handler
+                return
+            elif button_id == "chat-save-current-chat-button":
+                await chat_handlers.handle_chat_save_current_chat_button_pressed(self)
+                return
+            elif button_id == "chat-save-conversation-details-button":
+                await chat_handlers.handle_chat_save_details_button_pressed(self)
+                return
+            elif button_id == "chat-conversation-load-selected-button":
+                await chat_handlers.handle_chat_load_selected_button_pressed(self)
+                return
+            elif button_id == "chat-prompt-load-selected-button":
+                await chat_handlers.handle_chat_view_selected_prompt_button_pressed(self)
+                return
+            elif button_id == "chat-prompt-copy-system-button":
+                await chat_handlers.handle_chat_copy_system_prompt_button_pressed(self)
+                return
+            elif button_id == "chat-prompt-copy-user-button":
+                await chat_handlers.handle_chat_copy_user_prompt_button_pressed(self)
+                return
+            elif button_id == "chat-load-character-button":
+                await chat_handlers.handle_chat_load_character_button_pressed(self, event) # Pass event if needed by handler
+                return
+            elif button_id == "chat-clear-active-character-button":
                 await chat_handlers.handle_chat_clear_active_character_button_pressed(self)
+                return
             # --- Chat Tab Notes Sidebar Buttons ---
             # These are handled by @on decorators, so we just acknowledge them here to prevent "unhandled" warnings.
-            elif button_id == "chat-notes-create-new-button": self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
-            elif button_id == "chat-notes-search-button": self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
-            elif button_id == "chat-notes-load-button": self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
-            elif button_id == "chat-notes-save-button": self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
+            elif button_id == "chat-notes-create-new-button":
+                self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
+                return # Assuming @on handles it fully
+            elif button_id == "chat-notes-search-button":
+                self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
+                return # Assuming @on handles it fully
+            elif button_id == "chat-notes-load-button":
+                self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
+                return # Assuming @on handles it fully
+            elif button_id == "chat-notes-save-button":
+                self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
+                return # Assuming @on handles it fully
+            # No return after the final else, so it can fall through to the generic unhandled warning
             else: self.loguru_logger.warning(f"Unhandled button on CHAT tab -> ID: {button_id}, Label: '{button.label}'")
+            # No return here, let it fall through if it was an unhandled button on CHAT tab
 
         elif current_active_tab == TAB_CCP:
             # ---- First, try to identify if it's an action button within a ChatMessage (if CCP tab uses them) ----
@@ -2068,6 +2078,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 return
             if button_id == "conv-char-conversation-search-button": await ccp_handlers.handle_ccp_conversation_search_button_pressed(self)
             elif button_id == "ccp-import-character-button": await ccp_handlers.handle_ccp_import_character_button_pressed(self)
+            elif button_id == "ccp-card-edit-button": await ccp_handlers.handle_ccp_card_edit_button_pressed(self)
             elif button_id == "conv-char-load-button": await ccp_handlers.handle_ccp_load_conversation_button_pressed(self)
             elif button_id == "conv-char-save-details-button": await ccp_handlers.handle_ccp_save_conversation_details_button_pressed(self)
             elif button_id == "ccp-import-prompt-button": await ccp_handlers.handle_ccp_import_prompt_button_pressed(self)
@@ -2161,24 +2172,24 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
                 if active_ingest_sub_view == "ingest-view-prompts":
                     if button_id == "ingest-prompts-select-file-button":
-                        await ingest_events.handle_ingest_prompts_select_file_button_pressed(self);
+                        await ingest_events.handle_ingest_prompts_select_file_button_pressed(self)
                         return
                     elif button_id == "ingest-prompts-clear-files-button":
-                        await ingest_events.handle_ingest_prompts_clear_files_button_pressed(self);
+                        await ingest_events.handle_ingest_prompts_clear_files_button_pressed(self)
                         return
                     elif button_id == "ingest-prompts-import-now-button":
-                        await ingest_events.handle_ingest_prompts_import_now_button_pressed(self);
+                        await ingest_events.handle_ingest_prompts_import_now_button_pressed(self)
                         return
 
                 elif active_ingest_sub_view == "ingest-view-characters":
                     if button_id == "ingest-characters-select-file-button":
-                        await ingest_events.handle_ingest_characters_select_file_button_pressed(self);
+                        await ingest_events.handle_ingest_characters_select_file_button_pressed(self)
                         return
                     elif button_id == "ingest-characters-clear-files-button":
-                        await ingest_events.handle_ingest_characters_clear_files_button_pressed(self);
+                        await ingest_events.handle_ingest_characters_clear_files_button_pressed(self)
                         return
                     elif button_id == "ingest-characters-import-now-button":
-                        await ingest_events.handle_ingest_characters_import_now_button_pressed(self);
+                        await ingest_events.handle_ingest_characters_import_now_button_pressed(self)
                         return
 
                 # Add other sub-views like ingest-view-notes here
@@ -2212,16 +2223,32 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 await handle_llamacpp_browse_exec_button_pressed(self)
             elif button_id == "llamacpp-browse-model-button":
                 await handle_llamacpp_browse_model_button_pressed(self)
-            # Add these new conditions for Llamafile:
+            elif button_id == "llamacpp-start-server-button":
+                await handle_start_llamacpp_server_button_pressed(self)
+            elif button_id == "llamacpp-stop-server-button":
+                await handle_stop_llamacpp_server_button_pressed(self)
             elif button_id == "llamafile-browse-exec-button":
                 await handle_llamafile_browse_exec_button_pressed(self)
             elif button_id == "llamafile-browse-model-button":
                 await handle_llamafile_browse_model_button_pressed(self)
+            elif button_id == "llamafile-start-server-button":
+                await handle_start_llamafile_server_button_pressed(self)
+            elif button_id == "llamafile-stop-server-button":
+                await handle_stop_llamafile_server_button_pressed(self)
             # Add these new conditions for vLLM:
             elif button_id == "vllm-browse-python-button":
                 await handle_vllm_browse_python_button_pressed(self)
             elif button_id == "vllm-browse-model-button":
                 await handle_vllm_browse_model_button_pressed(self)
+            elif button_id == "vllm-start-server-button":
+                await handle_start_vllm_server_button_pressed(self)
+            elif button_id == "vllm-stop-server-button":
+                await handle_stop_vllm_server_button_pressed(self)
+            # MLX Server Buttons
+            elif button_id == "mlx-start-server-button":
+                await handle_start_mlx_server_button_pressed(self)
+            elif button_id == "mlx-stop-server-button":
+                await handle_stop_mlx_server_button_pressed(self)
             else:
                 self.loguru_logger.warning(
                     f"Unhandled button on LLM MANAGEMENT tab: ID:{button_id}, Label:'{button.label}'")
@@ -2357,192 +2384,362 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         elif select_id == "tldw-api-media-type" and current_active_tab == TAB_INGEST:
             await ingest_events.handle_tldw_api_media_type_changed(self, str(event.value))
 
-    async def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
-        # Delegate all worker state changes to the central handler
-        await worker_handlers.handle_api_call_worker_state_changed(self, event)
-
+    ##################################################################
+    # --- Event Handlers for Streaming and Worker State Changes ---
+    ##################################################################
+    @on(StreamingChunk)
     async def on_streaming_chunk(self, event: StreamingChunk) -> None:
-        """Handles incoming chunks of text during streaming."""
-        logger = getattr(self, 'loguru_logger', logging)
-        if self.current_ai_message_widget and self.current_ai_message_widget.is_mounted:
-            try:
-                # The thinking placeholder should have been cleared when the worker started.
-                # The role and header should also have been set at the start of the AI turn.
-                static_text_widget = self.current_ai_message_widget.query_one(".message-text", Static)
+        await handle_streaming_chunk(self, event)
 
-                # Append the clean text chunk
-                self.current_ai_message_widget.message_text += event.text_chunk
-
-                # Update the display with the accumulated, escaped text
-                static_text_widget.update(escape_markup(self.current_ai_message_widget.message_text))
-
-                # Scroll the chat log to the end
-                # Determine the correct chat log container based on the active tab
-                chat_log_id_to_query = ""
-                if self.current_tab == TAB_CHAT:
-                    chat_log_id_to_query = "#chat-log"
-                elif self.current_tab == TAB_CCP:
-                    chat_log_id_to_query = "#ccp-conversation-log" # Assuming this is the ID in CCPWindow
-
-                if chat_log_id_to_query:
-                    chat_log_container = self.query_one(chat_log_id_to_query, VerticalScroll)
-                    chat_log_container.scroll_end(animate=False, duration=0.05) # Fast scroll
-                else:
-                    logger.warning(f"on_streaming_chunk: Could not determine chat log container for tab {self.current_tab}")
-
-            except QueryError as e:
-                logger.error(f"Error accessing UI components during streaming chunk update: {e}", exc_info=True)
-            except Exception as e_chunk: # Catch any other unexpected error
-                logger.error(f"Unexpected error processing streaming chunk: {e_chunk}", exc_info=True)
-        else:
-            logger.warning("Received StreamingChunk but no current_ai_message_widget is active/mounted or tab is not Chat/CCP.")
-
+    @on(StreamDone)
     async def on_stream_done(self, event: StreamDone) -> None:
-        """Handles the end of a stream, including errors and successful completion."""
-        logger = getattr(self, 'loguru_logger', logging)
-        logger.info(f"StreamDone received. Final text length: {len(event.full_text)}. Error: '{event.error}'")
+        await handle_stream_done(self, event)
 
-        ai_widget = self.current_ai_message_widget # Use a local variable for clarity
+    @on(Checkbox.Changed, "#chat-strip-thinking-tags-checkbox")
+    async def handle_strip_thinking_tags_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """Handles changes to the 'Strip Thinking Tags' checkbox."""
+        new_value = event.value
+        self.loguru_logger.info(f"'Strip Thinking Tags' checkbox changed to: {new_value}")
 
-        if not ai_widget or not ai_widget.is_mounted:
-            logger.warning("Received StreamDone but current_ai_message_widget is missing or not mounted.")
-            if event.error: # If there was an error, at least notify the user
-                self.notify(f"Stream error (display widget missing): {event.error}", severity="error", timeout=10)
-            # Ensure current_ai_message_widget is None even if it was already None or unmounted
-            self.current_ai_message_widget = None
-            # Attempt to focus input if possible as a fallback
-            try:
-                if self.current_tab == TAB_CHAT:
-                    self.query_one("#chat-input", TextArea).focus()
-                elif self.current_tab == TAB_CCP: # Assuming similar input ID convention
-                    self.query_one("#ccp-chat-input", TextArea).focus() # Adjust if ID is different
-            except QueryError: pass # Ignore if input not found
-            return
+        if "chat_defaults" not in self.app_config:
+            self.app_config["chat_defaults"] = {}
+        self.app_config["chat_defaults"]["strip_thinking_tags"] = new_value
 
+        # Persist the change
         try:
-            static_text_widget = ai_widget.query_one(".message-text", Static)
+            save_setting_to_cli_config("chat_defaults", "strip_thinking_tags", new_value)
+            self.notify(f"Thinking tag stripping {'enabled' if new_value else 'disabled'}.", timeout=2)
+        except Exception as e:
+            self.loguru_logger.error(f"Failed to save 'strip_thinking_tags' setting: {e}", exc_info=True)
+            self.notify("Error saving thinking tag setting.", severity="error", timeout=4)
+    #####################################################################
+    # --- End of Chat Event Handlers for Streaming & thinking tags ---
+    #####################################################################
 
-            if event.error:
-                logger.error(f"Stream completed with error: {event.error}")
-                # If full_text has content, it means some chunks were received before the error.
-                # Display partial text along with the error.
-                error_message_content = event.full_text + f"\n\n[bold red]Stream Error:[/]\n{escape_markup(event.error)}"
 
-                ai_widget.message_text = event.full_text + f"\nStream Error: {event.error}" # Update internal raw text
-                static_text_widget.update(Text.from_markup(error_message_content))
-                ai_widget.role = "System" # Change role to "System" or "Error"
+    #####################################################################
+    # --- Event Handlers for Worker State Changes ---
+    #####################################################################
+    async def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        worker_name_attr = event.worker.name
+        worker_group = event.worker.group
+        worker_state = event.state
+        worker_description = event.worker.description  # For more informative logging
+
+        self.loguru_logger.debug(
+            f"on_worker_state_changed: Worker NameAttr='{worker_name_attr}' (Type: {type(worker_name_attr)}), "
+            f"Group='{worker_group}', State='{worker_state}', Desc='{worker_description}'"
+        )
+
+        # --- Handle Chat-related API Calls (e.g., API_Call_chat, API_Call_ccp, respond_for_me_worker) ---
+        # This section addresses the logic that was causing the crash.
+        if isinstance(worker_name_attr, str) and \
+                (worker_name_attr.startswith("API_Call_chat") or
+                 worker_name_attr.startswith("API_Call_ccp") or
+                 worker_name_attr == "respond_for_me_worker"):
+
+            self.loguru_logger.debug(f"Chat-related worker '{worker_name_attr}' detected. State: {worker_state}.")
+
+            # Log RUNNING state as indicated by the original traceback context
+            if worker_state == WorkerState.RUNNING:
+                self.loguru_logger.info(f"Chat-related worker '{worker_name_attr}' is RUNNING.")
+                # Any specific UI updates for the RUNNING state of a chat worker would go here.
+                # (e.g., showing a thinking indicator, disabling input)
+                # This is often handled when the worker is initially started.
+
+            # For SUCCESS or ERROR states, the logic is complex (updating UI, DB, etc.).
+            # Delegate to the specialized handler in worker_events.py.
+            if worker_state == WorkerState.SUCCESS or worker_state == WorkerState.ERROR:
+                self.loguru_logger.debug(
+                    f"Delegating state {worker_state} for chat-related worker '{worker_name_attr}' to worker_handlers."
+                )
+                await worker_handlers.handle_api_call_worker_state_changed(self, event)
+
+            # If there are other states (like PENDING, CANCELLED) to handle directly for chat workers:
+            # elif worker_state == WorkerState.PENDING:
+            #     self.loguru_logger.debug(f"Chat-related worker '{worker_name_attr}' is PENDING.")
+            # else:
+            #     self.loguru_logger.debug(f"Chat-related worker '{worker_name_attr}' in unhandled state: {worker_state}")
+
+        # --- Handle Llama.cpp Server Worker (identified by group) ---
+        # This handles the case where worker_name_attr was a list.
+        elif worker_group == "llamacpp_server":
+            self.loguru_logger.info(
+                f"Llama.cpp server worker (Group: '{worker_group}') state changed to {worker_state}."
+            )
+            actual_start_button_id = "#llamacpp-start-server-button"
+            actual_stop_button_id = "#llamacpp-stop-server-button"
+
+            if worker_state == WorkerState.PENDING:
+                self.loguru_logger.debug("Llama.cpp server worker is PENDING.")
+                # You might disable the start button here as well, or show a "starting..." status
                 try:
-                    header_label = ai_widget.query_one(".message-header", Label)
-                    header_label.update("System Error") # Update header
+                    self.query_one(actual_start_button_id, Button).disabled = True
+                    self.query_one(actual_stop_button_id, Button).disabled = True  # Disable stop until fully running
                 except QueryError:
-                    logger.warning("Could not update AI message header for stream error display.")
-                # Do NOT save to database if there was an error.
-            else: # No error, stream completed successfully
-                logger.info("Stream completed successfully.")
-                ai_widget.message_text = event.full_text # Ensure internal state has the final, complete text
-                static_text_widget.update(escape_markup(event.full_text)) # Update display with final, escaped text
+                    self.loguru_logger.warning("Could not find Llama.cpp server buttons to update for PENDING state.")
 
-                # Determine sender name for DB (already set on widget by handle_api_call_worker_state_changed)
-                # This is just to ensure the correct name is used for DB saving if needed.
-                ai_sender_name_for_db = ai_widget.role # Role should be correctly set by now
-
-                # Save to DB if applicable (not ephemeral, not empty, and DB available)
-                if self.chachanotes_db and self.current_chat_conversation_id and \
-                   not self.current_chat_is_ephemeral and event.full_text.strip():
-                    try:
-                        logger.debug(f"Attempting to save streamed AI message to DB. ConvID: {self.current_chat_conversation_id}, Sender: {ai_sender_name_for_db}")
-                        ai_msg_db_id = ccl.add_message_to_conversation(
-                            self.chachanotes_db,
-                            self.current_chat_conversation_id,
-                            ai_sender_name_for_db,
-                            event.full_text # Save the clean, full text
-                        )
-                        if ai_msg_db_id:
-                            saved_ai_msg_details = self.chachanotes_db.get_message_by_id(ai_msg_db_id)
-                            if saved_ai_msg_details:
-                                ai_widget.message_id_internal = saved_ai_msg_details.get('id')
-                                ai_widget.message_version_internal = saved_ai_msg_details.get('version')
-                                logger.info(f"Streamed AI message saved to DB. ConvID: {self.current_chat_conversation_id}, MsgID: {saved_ai_msg_details.get('id')}")
-                            else:
-                                logger.error(f"Failed to retrieve saved streamed AI message details (ID: {ai_msg_db_id}) from DB.")
-                        else:
-                            logger.error("Failed to save streamed AI message to DB (no ID returned).")
-                    except (CharactersRAGDBError, InputError) as e_save_ai_stream:
-                        logger.error(f"DB Error saving streamed AI message: {e_save_ai_stream}", exc_info=True)
-                        self.notify(f"DB error saving message: {e_save_ai_stream}", severity="error")
-                    except Exception as e_save_unexp:
-                        logger.error(f"Unexpected error saving streamed AI message: {e_save_unexp}", exc_info=True)
-                        self.notify("Unexpected error saving message.", severity="error")
-                elif not event.full_text.strip() and not event.error:
-                    logger.info("Stream finished with no error but content was empty/whitespace. Not saving to DB.")
-
-
-            ai_widget.mark_generation_complete() # Mark as complete in both error/success cases if widget exists
-
-        except QueryError as e:
-            logger.error(f"QueryError during StreamDone UI update (event.error='{event.error}'): {e}", exc_info=True)
-            if event.error: # If there was an underlying stream error, make sure user sees it
-                 self.notify(f"Stream Error (UI issue): {event.error}", severity="error", timeout=10)
-            else: # If stream was fine, but UI update failed
-                 self.notify("Error finalizing AI message display.", severity="error")
-        except Exception as e_done_unexp: # Catch any other unexpected error during the try block
-            logger.error(f"Unexpected error in on_stream_done (event.error='{event.error}'): {e_done_unexp}", exc_info=True)
-            self.notify("Internal error finalizing stream.", severity="error")
-        finally:
-            # This block executes regardless of exceptions in the try block above.
-            # Crucial for resetting state and UI.
-            self.current_ai_message_widget = None # Clear the reference to the AI message widget
-            logger.debug("Cleared current_ai_message_widget in on_stream_done's finally block.")
-
-            # Focus the appropriate input based on the current tab
-            input_id_to_focus = None
-            if self.current_tab == TAB_CHAT:
-                input_id_to_focus = "#chat-input"
-            elif self.current_tab == TAB_CCP:
-                input_id_to_focus = "#ccp-chat-input" # Adjust if ID is different for CCP tab's input
-
-            if input_id_to_focus:
+            elif worker_state == WorkerState.RUNNING:
+                self.loguru_logger.info("Llama.cpp server worker is RUNNING (subprocess launched).")
                 try:
-                    input_widget = self.query_one(input_id_to_focus, TextArea)
-                    input_widget.focus()
-                    logger.debug(f"Focused input '{input_id_to_focus}' in on_stream_done.")
+                    self.query_one(actual_start_button_id, Button).disabled = True
+                    self.query_one(actual_stop_button_id, Button).disabled = False  # Enable stop when running
+                    self.notify("Llama.cpp server process starting...", title="Server Status")
                 except QueryError:
-                    logger.warning(f"Could not focus input '{input_id_to_focus}' in on_stream_done (widget not found).")
-                except Exception as e_focus_final:
-                    logger.error(f"Error focusing input '{input_id_to_focus}' in on_stream_done: {e_focus_final}", exc_info=True)
-            else:
-                logger.debug(f"No specific input to focus for tab {self.current_tab} in on_stream_done.")
+                    self.loguru_logger.warning("Could not find Llama.cpp server buttons to update for RUNNING state.")
 
-    # --- Helper methods that remain in app.py (mostly for UI orchestration or complex state) ---
-    def _safe_float(self, value: str, default: float, name: str) -> float:
-        return safe_float(value, default, name) # Delegate to imported helper
+            elif worker_state == WorkerState.SUCCESS:
+                self.loguru_logger.info(f"Llama.cpp server worker finished successfully (Textual worker perspective).")
+                # Define result_message and is_actual_server_error *inside* this block
+                result_message = str(
+                    event.worker.result).strip() if event.worker.result else "Worker completed with no specific result message."
+                self.loguru_logger.info(f"Llama.cpp worker result message: '{result_message}'")
 
-    def _safe_int(self, value: str, default: Optional[int], name: str) -> Optional[int]:
-        return safe_int(value, default, name) # Delegate to imported helper
+                is_actual_server_error = "exited quickly with error code" in result_message.lower() or \
+                                         "exited with non-zero code" in result_message.lower() or \
+                                         "error:" in result_message.lower()  # Broader check
 
-    def _get_api_name(self, provider: str, endpoints: dict) -> Optional[str]:
-        if not self._ui_ready:
-            return None
-        provider_key_map = { "llama_cpp": "llama_cpp", "Ollama": "Ollama", "Oobabooga": "Oobabooga", "koboldcpp": "koboldcpp", "vllm": "vllm", "Custom": "Custom", "Custom-2": "Custom_2", }
-        endpoint_key = provider_key_map.get(provider)
-        if endpoint_key:
-            url = endpoints.get(endpoint_key)
-            if url: return url
-            else: logging.warning(f"URL key '{endpoint_key}' for provider '{provider}' missing in config [api_endpoints].")
-        return None
+                if is_actual_server_error:
+                    self.notify(f"Llama.cpp server process reported an error. Check logs.", title="Server Status",
+                                severity="error", timeout=10)
+                elif "exited quickly with code: 0" in result_message.lower():
+                    self.notify(
+                        f"Llama.cpp server exited quickly (but successfully). Check logs if this was unexpected.",
+                        title="Server Status", severity="warning", timeout=10)
+                else:
+                    self.notify("Llama.cpp server process finished.", title="Server Status")
 
+                # Worker has finished, so the process it was managing should be gone or is now orphaned.
+                # The worker's 'finally' block should have cleared self.llamacpp_server_process.
+                # We double-check here.
+                if self.llamacpp_server_process is not None:
+                    self.loguru_logger.warning(f"Llama.cpp worker SUCCEEDED, but app.llamacpp_server_process was not None. Clearing it now.")
+                    self.llamacpp_server_process = None
+
+                try:
+                    self.query_one(actual_start_button_id, Button).disabled = False
+                    self.query_one(actual_stop_button_id, Button).disabled = True
+                except QueryError:
+                    self.loguru_logger.warning("Could not find Llama.cpp server buttons to update for SUCCESS state.")
+
+            elif worker_state == WorkerState.ERROR:
+                self.loguru_logger.error(f"Llama.cpp server worker itself failed with an exception: {event.worker.error}")
+                self.notify(f"Llama.cpp worker error: {str(event.worker.error)[:100]}", title="Server Worker Error", severity="error")
+
+                # Worker failed, so the process it was managing might be in an indeterminate state or already gone.
+                # The worker's 'finally' block should attempt cleanup and clear self.llamacpp_server_process.
+                if self.llamacpp_server_process is not None:
+                    self.loguru_logger.warning(f"Llama.cpp worker ERRORED, but app.llamacpp_server_process was not None. Clearing it now.")
+                    self.llamacpp_server_process = None
+
+                try:
+                    self.query_one(actual_start_button_id, Button).disabled = False
+                    self.query_one(actual_stop_button_id, Button).disabled = True
+                except QueryError:
+                    self.loguru_logger.warning("Could not find Llama.cpp server buttons to update for ERROR state.")
+
+        # --- Handle Llamafile Server Worker (identified by group) ---
+        elif worker_group == "llamafile_server":  # Add this new elif block
+            self.loguru_logger.info(
+                f"Llamafile server worker (Group: '{worker_group}') state changed to {worker_state}."
+            )
+            actual_start_button_id = "#llamafile-start-server-button"
+            actual_stop_button_id = "#llamafile-stop-server-button"  # Assuming you have one
+
+            if worker_state == WorkerState.PENDING:
+                self.loguru_logger.debug("Llamafile server worker is PENDING.")
+                try:
+                    self.query_one(actual_start_button_id, Button).disabled = True
+                    if self.query_one(actual_stop_button_id, Button):  # Check if stop button exists
+                        self.query_one(actual_stop_button_id, Button).disabled = True
+                except QueryError:
+                    self.loguru_logger.warning("Could not find Llamafile server buttons for PENDING state.")
+
+            elif worker_state == WorkerState.RUNNING:
+                self.loguru_logger.info("Llamafile server worker is RUNNING.")
+                try:
+                    self.query_one(actual_start_button_id, Button).disabled = True
+                    if self.query_one(actual_stop_button_id, Button):
+                        self.query_one(actual_stop_button_id, Button).disabled = False
+                    self.notify("Llamafile server process is running.", title="Server Status")
+                except QueryError:
+                    self.loguru_logger.warning("Could not find Llamafile server buttons for RUNNING state.")
+
+            elif worker_state == WorkerState.SUCCESS:
+                self.loguru_logger.info(f"Llamafile server worker finished successfully.")
+                result_message = str(event.worker.result).strip() if event.worker.result else "Worker completed."
+                self.loguru_logger.info(f"Llamafile worker result: '{result_message}'")
+
+                is_server_error = "non-zero code" in result_message.lower() or "error" in result_message.lower()
+                if is_server_error:
+                    self.notify(f"Llamafile server process ended with an issue. Check logs.", title="Server Status",
+                                severity="error")
+                else:
+                    self.notify("Llamafile server process finished.", title="Server Status")
+
+                # if self.llamafile_server_process is not None: # If managing process
+                #     self.llamafile_server_process = None
+
+                try:
+                    self.query_one(actual_start_button_id, Button).disabled = False
+                    if self.query_one(actual_stop_button_id, Button):
+                        self.query_one(actual_stop_button_id, Button).disabled = True
+                except QueryError:
+                    self.loguru_logger.warning("Could not find Llamafile server buttons for SUCCESS state.")
+
+            elif worker_state == WorkerState.ERROR:
+                self.loguru_logger.error(f"Llamafile server worker failed: {event.worker.error}")
+                self.notify(f"Llamafile worker error: {str(event.worker.error)[:100]}", title="Server Worker Error",
+                            severity="error")
+                # if self.llamafile_server_process is not None: # If managing process
+                #     self.llamafile_server_process = None
+                try:
+                    self.query_one(actual_start_button_id, Button).disabled = False
+                    if self.query_one(actual_stop_button_id, Button):
+                        self.query_one(actual_stop_button_id, Button).disabled = True
+                except QueryError:
+                    self.loguru_logger.warning("Could not find Llamafile server buttons for ERROR state.")
+
+        # --- Handle vLLM Server Worker (identified by group) ---
+        elif worker_group == "vllm_server":
+            self.loguru_logger.info(
+                f"vLLM server worker (Group: '{worker_group}', NameAttr: '{worker_name_attr}') state changed to {worker_state}."
+            )
+            if worker_state == WorkerState.RUNNING:
+                self.loguru_logger.info("vLLM server is RUNNING.")
+                try:
+                    self.query_one("#vllm-start-server-button", Button).disabled = True
+                    self.query_one("#vllm-stop-server-button", Button).disabled = False
+                    self.vllm_server_process = event.worker._worker_thread._target_args[
+                        1]  # Accessing underlying process if needed, BE CAREFUL
+                    self.notify("vLLM server started.", title="Server Status")
+                except QueryError:
+                    self.loguru_logger.warning("Could not find vLLM server buttons to update state for RUNNING.")
+                except (AttributeError, IndexError):
+                    self.loguru_logger.warning("Could not retrieve vLLM process object from worker.")
+
+            elif worker_state == WorkerState.SUCCESS or worker_state == WorkerState.ERROR:
+                status_message = "successfully" if worker_state == WorkerState.SUCCESS else "with an error"
+                self.loguru_logger.info(
+                    f"vLLM server process finished {status_message}. Final output handled by 'done' callback.")
+                try:
+                    self.query_one("#vllm-start-server-button", Button).disabled = False
+                    self.query_one("#vllm-stop-server-button", Button).disabled = True
+                    self.vllm_server_process = None  # Clear process reference
+                    self.notify(f"vLLM server stopped {status_message}.", title="Server Status",
+                                severity="information" if worker_state == WorkerState.SUCCESS else "error")
+                except QueryError:
+                    self.loguru_logger.warning("Could not find vLLM server buttons to update state for STOPPED/ERROR.")
+
+        # --- Handle Llamafile Server Worker (identified by group) ---
+        elif worker_group == "llamafile_server":
+            self.loguru_logger.info(
+                f"Llamafile server worker (Group: '{worker_group}', NameAttr: '{worker_name_attr}') state changed to {worker_state}."
+            )
+            if worker_state == WorkerState.RUNNING:
+                self.loguru_logger.info("Llamafile server is RUNNING.")
+                try:
+                    self.query_one("#llamafile-start-server-button", Button).disabled = True
+                    # Assuming you have a stop button:
+                    # self.query_one("#llamafile-stop-server-button", Button).disabled = False
+                    self.notify("Llamafile server started.", title="Server Status")
+                except QueryError:
+                    self.loguru_logger.warning("Could not find Llamafile server buttons to update state for RUNNING.")
+
+            elif worker_state == WorkerState.SUCCESS or worker_state == WorkerState.ERROR:
+                status_message = "successfully" if worker_state == WorkerState.SUCCESS else "with an error"
+                self.loguru_logger.info(
+                    f"Llamafile server process finished {status_message}. Final output handled by 'done' callback.")
+                try:
+                    self.query_one("#llamafile-start-server-button", Button).disabled = False
+                    # self.query_one("#llamafile-stop-server-button", Button).disabled = True
+                    self.notify(f"Llamafile server stopped {status_message}.", title="Server Status",
+                                severity="information" if worker_state == WorkerState.SUCCESS else "error")
+                except QueryError:
+                    self.loguru_logger.warning(
+                        "Could not find Llamafile server buttons to update state for STOPPED/ERROR.")
+
+        # --- Handle Model Download Worker (identified by group) ---
+        elif worker_group == "model_download":
+            self.loguru_logger.info(
+                f"Model Download worker (Group: '{worker_group}', NameAttr: '{worker_name_attr}') state changed to {worker_state}."
+            )
+            # The 'done' callback (stream_worker_output_to_log) handles the detailed log output.
+            if worker_state == WorkerState.SUCCESS:
+                self.notify("Model download completed successfully.", title="Download Status")
+            elif worker_state == WorkerState.ERROR:
+                self.notify("Model download failed. Check logs for details.", title="Download Status", severity="error")
+
+            # Re-enable the download button regardless of success or failure
+            try:
+                # Ensure this ID matches your actual "Start Download" button in LLM_Management_Window.py
+                # The provided LLM_Management_Window.py doesn't show a model download section yet.
+                # If it's added, ensure the button ID is correct here.
+                # For now, this is a placeholder ID.
+                download_button = self.query_one("#model-download-start-button", Button)  # Placeholder ID
+                download_button.disabled = False
+            except QueryError:
+                self.loguru_logger.warning(
+                    "Could not find model download button to re-enable (ID might be incorrect or view not present).")
+
+        # --- Fallback for any other workers not explicitly handled above ---
+        else:
+            # This branch handles workers that are not chat-related and not one of the explicitly grouped servers.
+            # It also catches the case where worker_name_attr was a list but not for a known group.
+            name_for_log = worker_name_attr if isinstance(worker_name_attr,
+                                                          str) else f"[List Name for Group: {worker_group}]"
+            self.loguru_logger.debug(
+                f"Unhandled worker type or state in on_worker_state_changed: "
+                f"Name='{name_for_log}', Group='{worker_group}', State='{worker_state}', Desc='{worker_description}'"
+            )
+
+            # Generic handling for workers that might have output but no specific 'done' callback
+            # or if their 'done' callback isn't comprehensive for all states.
+            if worker_state == WorkerState.SUCCESS or worker_state == WorkerState.ERROR:
+                final_message_parts = []
+                try:
+                    # Check if worker.output is available and is an async iterable
+                    if hasattr(event.worker, 'output') and event.worker.output is not None:
+                        async for item in event.worker.output:  # type: ignore
+                            final_message_parts.append(str(item))
+
+                    final_message = "".join(final_message_parts)
+                    if final_message.strip():
+                        self.loguru_logger.info(
+                            f"Final output from unhandled worker '{name_for_log}' (Group: {worker_group}): {final_message.strip()}")
+                        # self.notify(f"Worker '{name_for_log}' finished: {final_message.strip()[:70]}...", title="Worker Update") # Optional notification
+                    elif worker_state == WorkerState.SUCCESS:
+                        self.loguru_logger.info(
+                            f"Unhandled worker '{name_for_log}' (Group: {worker_group}) completed successfully with no final message.")
+                        # self.notify(f"Worker '{name_for_log}' completed.", title="Worker Update") # Optional
+                    elif worker_state == WorkerState.ERROR:
+                        self.loguru_logger.error(
+                            f"Unhandled worker '{name_for_log}' (Group: {worker_group}) failed with no specific final message. Error: {event.worker.error}")
+                        # self.notify(f"Worker '{name_for_log}' failed. Error: {str(event.worker.error)[:70]}...", title="Worker Error", severity="error") # Optional
+
+                except Exception as e_output:
+                    self.loguru_logger.error(
+                        f"Error reading output from unhandled worker '{name_for_log}' (Group: {worker_group}): {e_output}",
+                        exc_info=True)
+    ######################################################
+    # --- End of Worker State Change Handlers ---
+    ######################################################
+
+
+    ######################################################
     # --- Watchers for chat sidebar prompt display ---
+    ######################################################
     def watch_chat_sidebar_selected_prompt_system(self, new_system_prompt: Optional[str]) -> None:
         try:
-            self.query_one("#chat-sidebar-prompt-system-display", TextArea).load_text(new_system_prompt or "")
+            self.query_one("#chat-prompt-system-display", TextArea).load_text(new_system_prompt or "")
         except QueryError:
-            self.loguru_logger.error("Chat sidebar system prompt display area not found.")
+            self.loguru_logger.error("Chat sidebar system prompt display area (#chat-prompt-system-display) not found.")
 
     def watch_chat_sidebar_selected_prompt_user(self, new_user_prompt: Optional[str]) -> None:
         try:
-            self.query_one("#chat-sidebar-prompt-user-display", TextArea).load_text(new_user_prompt or "")
+            self.query_one("#chat-prompt-user-display", TextArea).load_text(new_user_prompt or "")
         except QueryError:
-            self.loguru_logger.error("Chat sidebar user prompt display area not found.")
+            self.loguru_logger.error("Chat sidebar user prompt display area (#chat-prompt-user-display) not found.")
 
     def _clear_chat_sidebar_prompt_display(self) -> None:
         """Clears the prompt display TextAreas in the chat sidebar."""
@@ -2555,7 +2752,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.query_one("#chat-sidebar-prompts-listview", ListView).clear()
         except QueryError:
             pass # If not found, it's fine
-
 
     def watch_chat_api_provider_value(self, new_value: Optional[str]) -> None:
         if not hasattr(self, "app") or not self.app:  # Check if app is ready
@@ -2606,44 +2802,18 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         except Exception as e_set_options:
              logging.error(f"Helper ERROR setting options/value for {model_select_id}: {e_set_options}")
 
-
-    async def _populate_chat_conversation_character_filter_select(self) -> None:
-        """Populates the character filter select in the Chat tab's conversation search."""
-        # ... (Keep original implementation as is) ...
-        logging.info("Attempting to populate #chat-conversation-search-character-filter-select.")
-        if not self.notes_service:
-            logging.error("Notes service not available for char filter select (Chat Tab).")
-            # Optionally update the select to show an error state
-            try:
-                char_filter_select_err = self.query_one("#chat-conversation-search-character-filter-select", Select)
-                char_filter_select_err.set_options([("Service Offline", Select.BLANK)])
-            except QueryError: pass
-            return
-        try:
-            db = self.notes_service._get_db(self.notes_user_id)
-            character_cards = db.list_character_cards(limit=1000)
-            options = [(char['name'], char['id']) for char in character_cards if char.get('name') and char.get('id')]
-
-            char_filter_select = self.query_one("#chat-conversation-search-character-filter-select", Select)
-            char_filter_select.set_options(options if options else [("No characters", Select.BLANK)])
-            # Default to BLANK, user must explicitly choose or use "All Characters" checkbox
-            char_filter_select.value = Select.BLANK
-            logging.info(f"Populated #chat-conversation-search-character-filter-select with {len(options)} chars.")
-        except QueryError as e_q:
-            logging.error(f"Failed to find #chat-conversation-search-character-filter-select: {e_q}", exc_info=True)
-        except CharactersRAGDBError as e_db: # Catch specific DB error
-            logging.error(f"DB error populating char filter select (Chat Tab): {e_db}", exc_info=True)
-        except Exception as e_unexp:
-            logging.error(f"Unexpected error populating char filter select (Chat Tab): {e_unexp}", exc_info=True)
-
-    def chat_wrapper(self, **kwargs: Any) -> Any:
+    def chat_wrapper(self, strip_thinking_tags: bool = True, **kwargs: Any) -> Any:
         """
         Delegates to the actual worker target function in worker_events.py.
         This method is called by app.run_worker.
         """
         # All necessary parameters (message, history, api_endpoint, model, etc.)
         # are passed via kwargs from the calling event handler (e.g., handle_chat_send_button_pressed).
-        return worker_events.chat_wrapper_function(self, **kwargs) # Pass self as 'app_instance'
+        return worker_events.chat_wrapper_function(self, strip_thinking_tags=strip_thinking_tags, **kwargs) # Pass self as 'app_instance'
+
+    ########################################################
+    # --- End of Watchers and Helper Methods ---
+    # ######################################################
 
 # --- Main execution block ---
 if __name__ == "__main__":

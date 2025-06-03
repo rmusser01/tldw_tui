@@ -41,7 +41,7 @@ from tldw_chatbook.LLM_Calls.LLM_API_Calls import chat_with_openai, chat_with_an
     chat_with_groq, chat_with_openrouter, chat_with_deepseek, chat_with_mistral, chat_with_huggingface, chat_with_google
 from tldw_chatbook.LLM_Calls.LLM_API_Calls_Local import chat_with_aphrodite, chat_with_local_llm, chat_with_ollama, \
     chat_with_kobold, chat_with_llama, chat_with_oobabooga, chat_with_tabbyapi, chat_with_vllm, chat_with_custom_openai, \
-    chat_with_custom_openai_2
+    chat_with_custom_openai_2, chat_with_mlx_lm
 from tldw_chatbook.Utils.Utils import generate_unique_filename, logging
 from tldw_chatbook.Metrics.metrics_logger import log_counter, log_histogram
 from tldw_chatbook.config import load_settings
@@ -93,6 +93,7 @@ API_CALL_HANDLERS = {
     'aphrodite': chat_with_aphrodite,
     'custom-openai-api': chat_with_custom_openai,
     'custom-openai-api-2': chat_with_custom_openai_2,
+    'mlx_lm': chat_with_mlx_lm,
 }
 """
 A dispatch table mapping API endpoint names (e.g., 'openai') to their
@@ -450,6 +451,35 @@ PROVIDER_PARAM_MAP = {
         'logprobs': 'logprobs',
         'top_logprobs': 'top_logprobs',
     },
+    'mlx_lm': {
+        'api_key': 'api_key', # chat_with_mlx_lm doesn't use it, but map for consistency if passed via chat_api_call
+        'messages_payload': 'input_data',
+        'prompt': 'custom_prompt_arg', # This would be caught by **kwargs in chat_with_mlx_lm if passed
+        'temp': 'temp',
+        'system_message': 'system_message',
+        'streaming': 'streaming',
+        'model': 'model', # In chat_with_mlx_lm, 'model' parameter is the model_path
+        'max_tokens': 'max_tokens',
+        # chat_api_call uses 'topp', 'topk', 'minp' as its generic names.
+        # chat_with_mlx_lm (via _chat_with_openai_compatible_local_server) expects 'top_p', 'top_k', 'min_p'.
+        'topp': 'top_p',
+        'topk': 'top_k',
+        'minp': 'min_p',
+        'stop': 'stop',
+        'seed': 'seed',
+        'response_format': 'response_format',
+        'n': 'n',
+        'presence_penalty': 'presence_penalty',
+        'frequency_penalty': 'frequency_penalty',
+        'logit_bias': 'logit_bias',
+        'logprobs': 'logprobs',
+        'top_logprobs': 'top_logprobs',
+        'user_identifier': 'user_identifier',
+        'tools': 'tools',
+        'tool_choice': 'tool_choice',
+        # api_url is a direct kwarg to chat_with_mlx_lm, not typically mapped from these generic chat_api_call args.
+        # It's usually derived from config within the function itself or passed via UI directly to server start.
+    },
     # Add other providers here
 }
 """
@@ -699,7 +729,8 @@ def chat(
     llm_frequency_penalty: Optional[float] = None,
     llm_tools: Optional[List[Dict[str, Any]]] = None,
     llm_tool_choice: Optional[Union[str, Dict[str, Any]]] = None,
-    llm_fixed_tokens_kobold: Optional[bool] = False # Added
+    llm_fixed_tokens_kobold: Optional[bool] = False, # Added
+    strip_thinking_tags: bool = True # Added for thinking tag stripping
 ) -> Union[str, Any]: # Any for streaming generator
     """
     Orchestrates a chat interaction with an LLM, handling message processing,
@@ -1025,6 +1056,29 @@ def chat(
                         logging.error(f"Error during post-generation replacement: {e_post_gen}", exc_info=True)
                 else:
                     logging.warning("Post-gen replacement enabled but dict file not found/configured.")
+            # For non-streaming, apply stripping logic if enabled
+            if not streaming and isinstance(response, str) and strip_thinking_tags:
+                # Regex to find all <think>...</think> blocks, non-greedy
+                think_blocks = list(re.finditer(r"<think>.*?</think>", response, re.DOTALL))
+
+                if len(think_blocks) > 1:
+                    logging.debug(f"Processing thinking tags for non-streaming. Found {len(think_blocks)} blocks.")
+                    # Keep only the last think block
+                    text_parts = []
+                    last_kept_block_end = 0
+                    for i, block in enumerate(think_blocks):
+                        if i < len(think_blocks) - 1: # This is a block to remove
+                            text_parts.append(response[last_kept_block_end:block.start()]) # Text before this block
+                            last_kept_block_end = block.end() # Skip this block
+                    # Add the text after the last removed block, which includes the final think block and any subsequent text
+                    text_parts.append(response[last_kept_block_end:])
+                    response = "".join(text_parts)
+                    logging.debug(f"Response after stripping all but last think block: {response[:200]}...")
+                elif think_blocks: # Only one block, or stripping not needed / done
+                    logging.debug(f"Thinking tags: {len(think_blocks)} block(s) found, no stripping needed or already processed if only one.")
+
+            # For streaming=True, stripping logic should be applied by the receiver
+            # of the stream (e.g., in app.py's on_stream_done event handler).
             return response
 
     except Exception as e:

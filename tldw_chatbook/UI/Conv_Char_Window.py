@@ -12,6 +12,9 @@ from textual.widgets import Static, Button, Input, ListView, Select, Collapsible
 #
 # Local Imports
 from ..Utils.Emoji_Handling import get_char, EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE
+from ..Widgets.settings_sidebar import create_settings_sidebar
+from ..Constants import TAB_CCP
+
 if TYPE_CHECKING:
     from ..app import TldwCli
 #
@@ -36,7 +39,7 @@ class CCPWindow(Container):
                 yield Button("Import Character Card", id="ccp-import-character-button",
                              classes="sidebar-button")
                 yield Select([], prompt="Select Character...", allow_blank=True, id="conv-char-character-select")
-                yield Button("Load Selected Character", id="ccp-left-load-character-button", classes="sidebar-button")
+                yield Button("Load Character", id="ccp-right-pane-load-character-button", classes="sidebar-button")
             with Collapsible(title="Conversations", id="conv-char-conversations-collapsible"):
                 yield Button("Import Conversation", id="ccp-import-conversation-button",
                              classes="sidebar-button")
@@ -77,6 +80,7 @@ class CCPWindow(Container):
                 yield Label("First Message:")
                 yield TextArea(id="ccp-card-first-message-display", classes="ccp-card-textarea")
                 with Horizontal(classes="ccp-card-action-buttons"): # Added a class for potential styling
+                    yield Button("Edit this Character", id="ccp-card-edit-button", variant="default")
                     yield Button("Save Changes", id="ccp-card-save-button", variant="success") # Added variant
                     yield Button("Clone Character", id="ccp-card-clone-button", variant="primary") # Added variant
 
@@ -117,11 +121,6 @@ class CCPWindow(Container):
         with VerticalScroll(id="conv-char-right-pane", classes="cc-right-pane"):
             yield Static("Details & Settings", classes="sidebar-title") # This title is for the whole pane
 
-            # REMOVE or COMMENT OUT the LLM settings container and its contents:
-            # with Container(id="ccp-right-pane-llm-settings-container"):
-            #     # yield from create_settings_sidebar(TAB_CCP, self.app_instance.app_config) # <<< REMOVE THIS LINE
-            #     pass
-
             # Conversation Details Collapsible
             with Collapsible(title="Conversation Details", id="ccp-conversation-details-collapsible",
                              collapsed=False):  # Start expanded
@@ -136,7 +135,7 @@ class CCPWindow(Container):
 
             # Characters Collapsible
             with Collapsible(title="Characters", id="ccp-characters-collapsible", collapsed=True):
-                yield Button("Load Character", id="ccp-right-pane-load-character-button", classes="sidebar-button")
+                pass
                 # Add other character related widgets here if needed in the future
 
             # Prompt Details Collapsible (for the right-pane prompt editor)

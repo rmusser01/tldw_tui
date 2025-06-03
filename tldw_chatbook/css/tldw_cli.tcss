@@ -837,6 +837,7 @@ MetricsScreen Label.-info-message {
 }
 /* --- END OF INTEGRATED NEW CSS --- */
 
+/* ----------------------------- ************************* ----------------------------- */
 /* --- LLM Management Tab --- */
 #llm_management-window { /* Matches TAB_LLM ("llm_management") */
     layout: horizontal;
@@ -920,7 +921,188 @@ MetricsScreen Label.-info-message {
     margin-top: 0; /* Remove top margin if directly after TextArea */
     margin-bottom: 1; /* Space after copy buttons */
 }
-/* -
+/*
+
+/* LLM Management Tab Specific Styles */
+#llm_management-window .llm-view-area > VerticalScroll { /* Target the new VS inside each view */
+    height: 100%; /* Ensure the VerticalScroll takes full height of its parent view area */
+}
+
+#llamacpp-args-help-collapsible,
+#llamafile-args-help-collapsible,
+#vllm-args-help-collapsible { /* Style for the collapsible itself */
+    margin-top: 1;
+    margin-bottom: 1;
+    border: round $primary-lighten-1; /* Optional border for the collapsible */
+}
+
+#llamacpp-args-help-collapsible > .collapsible--header,
+#llamafile-args-help-collapsible > .collapsible--header,
+#vllm-args-help-collapsible > .collapsible--header { /* Style for the collapsible title */
+    background: $surface-darken-1; /* Slightly different background for the header */
+}
+
+.help-text-display {
+    height: 25; /* Or your desired fixed height for the scrollable help text */
+    width: 100%;
+    border: round $surface;
+    padding: 1;
+    margin-top: 1; /* Space between collapsible title and the content */
+    background: $panel; /* Background for the help text area */
+    overflow-y: scroll !important; /* Ensure vertical scrolling */
+}
+
+/* Ensure input fields for additional args are appropriately sized if they were TextAreas */
+/* If you changed #llamacpp-additional-args to Input, this might not be needed for it */
+#llamacpp-additional-args, /* This is now an Input, so this rule might be less relevant for it */
+#llamafile-additional-args,
+#vllm-additional-args {
+    height: 3; /* For single-line Input or small TextArea */
+    /* If it's a TextArea and you want more lines: */
+    /* min-height: 3; */
+    /* max-height: 7; */
+    /* height: auto; */
+}
+
+/* Optional: Style for the input_container if needed */
+.input_container {
+    layout: horizontal;
+    height: auto;
+    margin-bottom: 1;
+}
+.input_container Input {
+    width: 1fr; /* Input takes available space */
+    margin-right: 1; /* Space before browse button */
+}
+.input_container .browse_button {
+    width: auto; /* Let button size itself */
+    height: 100%;
+}
+
+.button_container {
+    layout: horizontal;
+    height: auto;
+    margin-top: 1;
+    align-horizontal: right; /* Align buttons to the right */
+}
+.button_container Button {
+    margin-left: 1; /* Space between buttons */
+}
+/* Ollama Specific Styles within #llm-view-ollama */
+#llm-view-ollama VerticalScroll { /* Ensure the VerticalScroll takes up space */
+    height: 100%;
+}
+
+#llm-view-ollama .label { /* General label styling if not already covered */
+    margin-top: 1;
+    margin-bottom: 0; /* Tighten space below label if input is right after */
+    text-style: bold;
+}
+#llm-view-ollama .section_label { /* For labels that act as section headers */
+    margin-top: 2; /* More space above section labels */
+    padding: 1 0;
+    border: ascii $primary-background-lighten-1; /* Optional: add a border or background */
+    text-align: center;
+    width: 100%;
+}
+
+#llm-view-ollama .input_field,
+#llm-view-ollama .input_field_short,
+#llm-view-ollama .input_field_long {
+    margin-bottom: 1; /* Space after input fields */
+}
+#llm-view-ollama .input_field_long { /* For paths or longer inputs */
+    width: 100%;
+}
+
+#llm-view-ollama .input_action_container { /* For Input + Button on same line */
+    layout: horizontal;
+    height: auto; /* Fit content */
+    margin-bottom: 0; /* Status/Output will provide margin */
+}
+#llm-view-ollama .input_action_container .input_field_short {
+    width: 1fr; /* Input takes most space */
+    margin-right: 1;
+    margin-bottom: 0; /* No bottom margin if button is next to it */
+}
+#llm-view-ollama .input_action_container .action_button_short {
+    width: auto; /* Let button size itself */
+    min-width: 10; /* Ensure it's not too small */
+    height: 100%; /* Match input height */
+}
+#llm-view-ollama .input_action_container .browse_button_short {
+    width: auto;
+    min-width: 15;
+    height: 100%;
+}
+
+
+#llm-view-ollama .action_container { /* For standalone buttons */
+    width: 100%;
+    height: auto;
+    margin-bottom: 0;
+}
+#llm-view-ollama .action_button { /* For buttons that take full width or are main actions */
+    width: 100%;
+    margin-top: 1; /* If it's after a section label or input */
+}
+#llm-view-ollama .full_width_button {
+    width: 100%;
+    margin-top: 1;
+}
+
+
+#llm-view-ollama .delete_button Button { /* Specific styling for delete button if needed */
+    background: $error-darken-1;
+    color: $text;
+}
+#llm-view-ollama .delete_button Button:hover {
+    background: $error;
+}
+
+/* New Status TextArea */
+.ollama-status-textarea {
+    width: 100%;
+    height: 3; /* Small, 1-2 lines of text */
+    border: round $primary-darken-1;
+    background: $surface;
+    margin-top: 1; /* Space above status */
+    margin-bottom: 1; /* Space below status, before main output or next section */
+    padding: 0 1;
+    color: $text-muted; /* Subdued text color for status */
+}
+
+/* Output TextAreas */
+#llm-view-ollama .output_textarea_medium { /* For JSON lists, model info */
+    width: 100%;
+    height: 10; /* Or adjust as needed */
+    border: round $primary;
+    background: $panel;
+    margin-bottom: 1; /* Space before next element/spacer */
+}
+#llm-view-ollama .output_textarea_small { /* For embeddings */
+    width: 100%;
+    height: 6;
+    border: round $primary;
+    background: $panel;
+    margin-bottom: 1;
+}
+
+/* Main RichLog for streaming */
+#llm-view-ollama .log_output_large { /* Renamed from .log_output for specificity */
+    width: 100%;
+    height: 15; /* Make it taller */
+    border: panel $primary-darken-2;
+    background: $background-darken-1; /* Darker background for log */
+}
+
+/* Spacer element */
+.ollama-spacer {
+    height: 1; /* Creates 1 cell of vertical space */
+    width: 100%;
+}
+
+/* --- End of LLM Management Tab --- */
 /* ----------------------------- ************************* ----------------------------- */
 
 
@@ -1159,19 +1341,27 @@ MetricsScreen Label.-info-message {
 /* ----------------------------- ************************* ----------------------------- */
 /* --- Conversations, Characters & Prompts Window specific layouts --- */
 #send-chat {
-    width: 20;
-    min-width: 20 !important;
-    max-width: 20vh !important; /* Using ch unit and important */
+    width: 12;
+    min-width: 12 !important;
+    max-width: 12vh !important; /* Using ch unit and important */
     /* height: 3; /* Already set by .send-button class, but can be reiterated if needed */
     /* margin-top: 0; /* Already set by .send-button class */
 }
 
 #stop-chat-generation {
-    width: 10;
-    min-width: 10 !important;
-    max-width: 10vh !important; /* Using ch unit and important */
+    width: 6;
+    min-width: 6 !important;
+    max-width: 6vh !important; /* Using ch unit and important */
+    margin: 0 1;
     /* height: 3; /* Already set by .stop-button class, but can be reiterated if needed */
     /* margin-top: 0; /* Already set by .stop-button class */
+}
+
+.suggest-button {
+    width: 8;
+    min-width: 8 !important;
+    max-width: 8vh !important; /* Using ch unit and important */
+    margin: 0 1;
 }
 /* --- End of Conversations, Characters & Prompts Window specific layouts --- */
 /* ----------------------------- ************************* ----------------------------- */
@@ -1188,3 +1378,51 @@ MetricsScreen Label.-info-message {
 }
 /* --- End of LLM Management Tab --- */
 /* ----------------------------- ************************* ----------------------------- */
+
+
+
+/* ----------------------------- ************************* ----------------------------- */
+/* --- Window Footer Widget --- */
+
+AppFooterStatus {
+    dock: bottom;
+    height: 1;
+    background: $primary-background-darken-1;
+    width: 100%;
+    layout: horizontal;
+    padding: 0 1;
+    /* Removed align: right middle; from parent, will control children individually */
+}
+
+#footer-key-palette {
+    width: auto;
+    padding: 0 1; /* Padding around each key binding */
+    color: $text-muted;
+    dock: left; /* Dock key bindings to the left */
+    visibility: visible;
+    display: initial;
+}
+
+#footer-key-quit {
+    width: auto;
+    padding: 0 1; /* Padding around each key binding */
+    color: $text-muted;
+    dock: left; /* Dock key bindings to the left */
+}
+
+#footer-spacer {
+    width: 1fr; /* Takes up remaining space in the middle */
+}
+
+#internal-db-size-indicator { /* This is for the DB sizes */
+    width: auto;
+    /* content-align: right; Textual doesn't have content-align for Static directly */
+    /* dock: right; Docking within Horizontal might be tricky, align on parent is better */
+    color: $text-muted;
+    dock: right; /* Dock DB sizes to the right */
+    padding: 0 1; /* Add padding to the right of DB sizes as well */
+    margin-left: 2; /* Add buffer before DB status */
+}
+/* --- End of Window Footer Widget --- */
+/* ----------------------------- ************************* ----------------------------- */
+

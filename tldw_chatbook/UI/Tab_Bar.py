@@ -13,7 +13,7 @@ from textual.widgets import Button
 if TYPE_CHECKING:
     from ..app import TldwCli  # Not strictly needed for compose but good for context
 
-from ..Constants import TAB_CCP, TAB_TOOLS_SETTINGS, TAB_INGEST, TAB_LLM, TAB_EVALS # Added import
+from ..Constants import TAB_CCP, TAB_TOOLS_SETTINGS, TAB_INGEST, TAB_LLM, TAB_EVALS, TAB_CODING # Added import
 #
 #######################################################################################################################
 #
@@ -42,8 +42,10 @@ class TabBar(Horizontal):  # The outer container for the tab bar
                     label_text = "Ingest Content"
                 elif tab_id_loop == TAB_LLM:
                     label_text = "LLM Management"
-                elif tab_id_loop == TAB_EVALS: # Added this condition
+                elif tab_id_loop == TAB_EVALS:
                     label_text = "Evals"
+                elif tab_id_loop == TAB_CODING:
+                    label_text = "Coding"
                 else:
                     label_text = tab_id_loop.replace('_', ' ').capitalize()
 

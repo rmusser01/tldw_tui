@@ -7,14 +7,13 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Any, List, Dict, Union
-
+from typing import TYPE_CHECKING, Optional, Any, List, Dict, cast
 import yaml
 #
 # 3rd-Party Imports
 from loguru import logger as loguru_logger
 from textual.widgets import (
-    Input, ListView, TextArea, Label, Collapsible, Select, Button, Static, ListItem
+    Input, ListView, TextArea, Label, Collapsible, Select, Static, ListItem
 )
 from textual.containers import VerticalScroll
 from textual.css.query import QueryError
@@ -29,7 +28,6 @@ from ..DB.ChaChaNotes_DB import ConflictError, CharactersRAGDBError # For specif
 #
 if TYPE_CHECKING:
     from ..app import TldwCli
-    # from ..app import API_IMPORTS_SUCCESSFUL # If needed directly
 #
 ########################################################################################################################
 #
@@ -365,43 +363,48 @@ async def handle_ccp_left_load_character_button_pressed(app: 'TldwCli') -> None:
 
 async def handle_ccp_card_save_button_pressed(app: 'TldwCli') -> None:
     """Handles the Save Changes button press on the CCP Character Card view."""
-    logger = getattr(app, 'loguru_logger', loguru_logger) # Use loguru_logger if available
+    logger = getattr(app, 'loguru_logger', loguru_logger)
     logger.info("CCP Card Save Character button pressed.")
 
-    if not app.notes_service:
+    if not app.notes_service: # This should be app.chachanotes_db for character ops
         app.notify("Database service not available.", severity="error")
-        logger.error("Notes service not available for saving character card.")
+        logger.error("ChaChaNotes DB (via notes_service or direct) not available for saving character card.")
         return
 
-    if not app.current_ccp_character_details:
+    # Use cast to help the type checker understand the type of the reactive's value
+    current_details_value = cast(Optional[Dict[str, Any]], app.current_ccp_character_details)
+
+    if not current_details_value:
         app.notify("No character loaded or details missing. Cannot save.", severity="warning")
-        logger.warning("Save Character Card: app.current_ccp_character_details is None or empty.")
+        logger.warning("Save Character Card: app.current_ccp_character_details value is None or empty dict.")
         return
 
-    char_id = app.current_ccp_character_details.get("id")
-    char_version = app.current_ccp_character_details.get("version")
+    char_id = current_details_value.get("id")
+    char_version = current_details_value.get("version")
 
-    if not char_id or char_version is None: # version can be 0, so check for None explicitly
+    if not char_id or char_version is None:
         app.notify("Character ID or version missing from loaded details. Cannot save.", severity="warning")
         logger.warning(f"Save Character Card: ID ({char_id}) or Version ({char_version}) is missing.")
         return
 
     try:
         name_input = app.query_one("#ccp-card-name-input", Input)
+        # For TextAreas on the card view, if they are read-only, their values
+        # should reflect app.current_ccp_character_details. If they are editable,
+        # then reading from them is correct. Assuming they are editable for this "Save" action.
         description_textarea = app.query_one("#ccp-card-description-display", TextArea)
         personality_textarea = app.query_one("#ccp-card-personality-display", TextArea)
         scenario_textarea = app.query_one("#ccp-card-scenario-display", TextArea)
         first_message_textarea = app.query_one("#ccp-card-first-message-display", TextArea)
 
-        original_name = app.current_ccp_character_details.get("name", "")
+        original_name = current_details_value.get("name", "") # Use the casted value
 
-        update_data = {
+        update_data: Dict[str, Any] = { # Ensure type hint for update_data
             "name": name_input.value.strip(),
             "description": description_textarea.text.strip(),
             "personality": personality_textarea.text.strip(),
             "scenario": scenario_textarea.text.strip(),
             "first_message": first_message_textarea.text.strip(),
-            # Add other fields here if they become editable on the card view
         }
 
         if not update_data["name"]:
@@ -409,40 +412,39 @@ async def handle_ccp_card_save_button_pressed(app: 'TldwCli') -> None:
             name_input.focus()
             return
 
-        db = app.notes_service._get_db(app.notes_user_id)
+        # db = app.notes_service._get_db(app.notes_user_id) # Old way
+        if not app.chachanotes_db:
+            app.notify("Character database not properly initialized.", severity="error")
+            logger.error("app.chachanotes_db is not initialized for save.")
+            return
+        db = app.chachanotes_db
 
-        # Assuming db.update_character_card returns the updated character data (dict) or raises error
+
         updated_character_data = db.update_character_card(
-            character_id=char_id,
+            character_id=char_id, # Must be str
             update_data=update_data,
-            expected_version=char_version
+            expected_version=char_version # Must be int
         )
 
         if updated_character_data:
             app.notify(f"Character '{update_data['name']}' updated successfully.", severity="information")
             logger.info(f"Character ID {char_id} updated successfully. New version: {updated_character_data.get('version')}")
-
-            # Update app.current_ccp_character_details with the new data from DB
-            # This is crucial for version tracking and reflecting any DB-side modifications.
             app.current_ccp_character_details = updated_character_data
-
-            # If the image was also updatable and changed, handle app.current_ccp_character_image here.
 
             if original_name != update_data["name"]:
                 logger.info(f"Character name changed from '{original_name}' to '{update_data['name']}'. Refreshing dropdown.")
-                await populate_ccp_character_select(app)
+                await populate_ccp_character_select(app) # Ensure this is imported/defined
         else:
-            # This case might occur if db.update_character_card returns None/False on non-exception failure
             app.notify("Failed to update character. DB operation did not confirm success.", severity="error")
             logger.error(f"Update for character ID {char_id} did not return updated data or confirmation.")
 
     except ConflictError as e_conflict:
         logger.warning(f"ConflictError saving character ID {char_id}: {e_conflict}", exc_info=True)
-        app.notify("Save conflict: Data has been modified elsewhere. Please reload the character and try again.", severity="error", timeout=7)
+        app.notify("Save conflict: Data has been modified elsewhere. Please reload and try again.", severity="error", timeout=7)
     except QueryError as e_query:
         logger.error(f"UI component not found during save character card: {e_query}", exc_info=True)
         app.notify("Error: UI component missing for saving character.", severity="error")
-    except CharactersRAGDBError as e_db: # Covers DB-specific errors like InputError, etc.
+    except CharactersRAGDBError as e_db:
         logger.error(f"CharactersRAGDBError saving character ID {char_id}: {e_db}", exc_info=True)
         app.notify(f"Error saving character: {type(e_db).__name__}. Check logs.", severity="error")
     except Exception as e_unexp:
@@ -455,97 +457,108 @@ async def handle_ccp_card_clone_button_pressed(app: 'TldwCli') -> None:
     logger = getattr(app, 'loguru_logger', loguru_logger)
     logger.info("CCP Card Clone Character button pressed.")
 
-    if not app.notes_service:
+    if not app.chachanotes_db:  # Check the correct DB instance
         app.notify("Database service not available.", severity="error")
-        logger.error("Notes service not available for cloning character card.")
+        logger.error("ChaChaNotes DB (via app.chachanotes_db) not available for cloning character card.")
         return
 
-    if not app.current_ccp_character_details:
+    current_details_value = cast(Optional[Dict[str, Any]], app.current_ccp_character_details)
+
+    if not current_details_value:
         app.notify("No character loaded to clone.", severity="warning")
-        logger.warning("Clone Character Card: app.current_ccp_character_details is None.")
+        logger.warning("Clone Character Card: app.current_ccp_character_details value is None.")
         return
 
     try:
         # Get current data from UI fields to capture any unsaved edits for the clone
-        name_input = app.query_one("#ccp-card-name-input", Input)
-        description_textarea = app.query_one("#ccp-card-description-display", TextArea)
-        personality_textarea = app.query_one("#ccp-card-personality-display", TextArea)
-        scenario_textarea = app.query_one("#ccp-card-scenario-display", TextArea)
-        first_message_textarea = app.query_one("#ccp-card-first-message-display", TextArea)
+        # These UI elements are part of the "Character Card View"
+        name_input_val = app.query_one("#ccp-card-name-display", Static).renderable  # If it's a Static for display
+        # If #ccp-card-name-input is an Input field for editing on the card:
+        # name_input_val = app.query_one("#ccp-card-name-input", Input).value
 
-        original_name = name_input.value.strip()
-        if not original_name: # Should not happen if a character is loaded, but as a safeguard
+        # Check if name_input_val is Text or str for Static, or just str for Input
+        original_name_from_ui = ""
+        if isinstance(name_input_val, Text):
+            original_name_from_ui = str(name_input_val).strip()
+        elif isinstance(name_input_val, str):
+            original_name_from_ui = name_input_val.strip()
+        else:  # Fallback if it's neither, though unlikely for these widgets
+            original_name_from_ui = str(current_details_value.get("name", "Unnamed")).strip()
+
+        description_from_ui = app.query_one("#ccp-card-description-display", TextArea).text.strip()
+        personality_from_ui = app.query_one("#ccp-card-personality-display", TextArea).text.strip()
+        scenario_from_ui = app.query_one("#ccp-card-scenario-display", TextArea).text.strip()
+        first_message_from_ui = app.query_one("#ccp-card-first-message-display", TextArea).text.strip()
+
+        if not original_name_from_ui:
             app.notify("Original character name is empty. Cannot clone.", severity="error")
-            name_input.focus()
+            # app.query_one("#ccp-card-name-input", Input).focus() # If it's an Input
             return
 
-        cloned_name = f"{original_name} Clone {datetime.now().strftime('%Y%m%d%H%M%S')}"
+        cloned_name = f"{original_name_from_ui} Clone {datetime.now().strftime('%Y%m%d%H%M%S')}"
 
-        # Base data from UI (captures unsaved edits)
-        cloned_character_data = {
+        # Base data from UI (captures unsaved edits if card view is editable)
+        cloned_character_data: Dict[str, Any] = {
             "name": cloned_name,
-            "description": description_textarea.text.strip(),
-            "personality": personality_textarea.text.strip(),
-            "scenario": scenario_textarea.text.strip(),
-            "first_message": first_message_textarea.text.strip(),
+            "description": description_from_ui,
+            "personality": personality_from_ui,
+            "scenario": scenario_from_ui,
+            "first_message": first_message_from_ui,
         }
 
-        # Copy other fields from the currently loaded character details
+        # Copy other fields from the currently loaded character details (current_details_value)
         # These fields are not directly editable on the card view, so use stored values.
-        fields_to_copy = [
+        fields_to_copy_from_original = [
             'creator_notes', 'system_prompt', 'post_history_instructions',
             'alternate_greetings', 'tags', 'creator', 'character_version',
-            'extensions', 'image' # 'image' should be raw bytes if stored in current_ccp_character_details
+            # character_version might be reset by DB on add
+            'extensions',  # 'image' needs special handling if it's bytes
         ]
-        for field in fields_to_copy:
-            if field in app.current_ccp_character_details:
-                cloned_character_data[field] = app.current_ccp_character_details[field]
 
-        # Ensure lists and dicts are new copies if they are mutable
-        if 'alternate_greetings' in cloned_character_data:
-            cloned_character_data['alternate_greetings'] = list(cloned_character_data['alternate_greetings'])
-        if 'tags' in cloned_character_data:
-            cloned_character_data['tags'] = list(cloned_character_data['tags'])
-        if 'extensions' in cloned_character_data:
-            cloned_character_data['extensions'] = dict(cloned_character_data['extensions'])
+        for field in fields_to_copy_from_original:
+            if field in current_details_value:
+                original_field_value = current_details_value[field]
+                # Deep copy for mutable types, direct assignment for immutable
+                if isinstance(original_field_value, list):
+                    cloned_character_data[field] = list(original_field_value)
+                elif isinstance(original_field_value, dict):
+                    cloned_character_data[field] = dict(original_field_value)
+                else:
+                    cloned_character_data[field] = original_field_value
 
+        # Handle 'image' field separately if it exists and is bytes
+        if 'image' in current_details_value and isinstance(current_details_value['image'], bytes):
+            cloned_character_data['image'] = current_details_value['image']  # Bytes are immutable enough for this copy
 
-        db = app.notes_service._get_db(app.notes_user_id)
+        db = app.chachanotes_db  # Already checked it's not None
 
-        # db.add_character_card is expected to return the new character's ID or full details
-        # For consistency with other handlers, let's assume it returns full details (dict)
         new_character_details = db.add_character_card(cloned_character_data)
 
         if new_character_details and new_character_details.get("id"):
             new_char_id = new_character_details.get("id")
             app.notify(f"Character cloned as '{cloned_name}' successfully (ID: {new_char_id}).", severity="information")
-            logger.info(f"Character cloned from ID {app.current_ccp_character_details.get('id')} to new ID {new_char_id} with name '{cloned_name}'.")
+            logger.info(
+                f"Character cloned from ID {current_details_value.get('id')} to new ID {new_char_id} with name '{cloned_name}'.")
 
-            await populate_ccp_character_select(app)
-
-            # Optional: Load the new clone into the view.
-            # For now, the user can select it from the dropdown.
-            # If you want to auto-load:
-            # await app._display_character_card(new_char_id) # Assuming such a method exists and works for card view
-            # Or, if it should load into the editor view:
-            # await app._load_character_for_editing(new_char_id)
-            # app.ccp_active_view = "character_editor_view" # or "character_card_view"
+            await populate_ccp_character_select(app)  # Ensure this is imported/defined
         else:
-            app.notify(f"Failed to clone character '{original_name}'. DB operation did not confirm success.", severity="error")
-            logger.error(f"Cloning character '{original_name}' did not return new character details or ID.")
+            app.notify(f"Failed to clone character '{original_name_from_ui}'. DB operation did not confirm success.",
+                       severity="error")
+            logger.error(f"Cloning character '{original_name_from_ui}' did not return new character details or ID.")
 
-    except ConflictError as e_conflict: # Unlikely for clone with timestamp, but good practice
-        logger.warning(f"ConflictError cloning character '{original_name}': {e_conflict}", exc_info=True)
+    except ConflictError as e_conflict:
+        logger.warning(f"ConflictError cloning character '{original_name_from_ui}': {e_conflict}", exc_info=True)
         app.notify(f"Save conflict while cloning: {e_conflict}. Please try again.", severity="error", timeout=7)
     except QueryError as e_query:
         logger.error(f"UI component not found during clone character card: {e_query}", exc_info=True)
         app.notify("Error: UI component missing for cloning character.", severity="error")
     except CharactersRAGDBError as e_db:
-        logger.error(f"CharactersRAGDBError cloning character '{original_name}': {e_db}", exc_info=True)
+        logger.error(f"CharactersRAGDBError cloning character '{original_name_from_ui}': {e_db}", exc_info=True)
         app.notify(f"Error cloning character: {type(e_db).__name__}. Check logs.", severity="error")
     except Exception as e_unexp:
-        logger.error(f"Unexpected error cloning character '{original_name}': {e_unexp}", exc_info=True)
-        app.notify(f"An unexpected error occurred while cloning: {type(e_unexp).__name__}. Check logs.", severity="error")
+        logger.error(f"Unexpected error cloning character '{original_name_from_ui}': {e_unexp}", exc_info=True)
+        app.notify(f"An unexpected error occurred while cloning: {type(e_unexp).__name__}. Check logs.",
+                   severity="error")
 
 
 async def handle_ccp_right_delete_character_button_pressed(app: 'TldwCli') -> None:
@@ -767,6 +780,7 @@ async def handle_ccp_load_conversation_button_pressed(app: 'TldwCli') -> None:
             await center_pane.mount(Static("Error: Notes service unavailable for messages."))
             return
 
+        # FIXME/TODO - Conversation Branching
         await app._load_branched_conversation_history(loaded_conversation_id, center_pane)
 
         center_pane.scroll_end(animate=False)
@@ -1499,152 +1513,253 @@ async def handle_ccp_editor_prompt_delete_button_pressed(app: 'TldwCli') -> None
 # --- CCP Center Pane Editor Button Handlers End ---
 # ##############################################################
 
+
+# ##############################################################
+# --- CCP Center Pane Editor Clearance ---
+# ##############################################################
+async def _helper_ccp_clear_center_pane_character_editor_fields(app: 'TldwCli') -> None:
+    """Clears character input fields in the CCP CENTER PANE editor."""
+    try:
+        # Assuming these are the IDs for the CENTER PANE character editor
+        app.query_one("#ccp-editor-char-name-input", Input).value = ""
+        app.query_one("#ccp-editor-char-description-textarea", TextArea).text = ""
+        app.query_one("#ccp-editor-char-personality-textarea", TextArea).text = ""
+        app.query_one("#ccp-editor-char-scenario-textarea", TextArea).text = ""
+        app.query_one("#ccp-editor-char-first-message-textarea", TextArea).text = ""
+        # Add other fields if they exist in the center pane editor
+        # e.g., app.query_one("#ccp-editor-char-system-prompt-textarea", TextArea).text = ""
+
+        loguru_logger.debug("Cleared character editor fields in CCP center pane.")
+    except QueryError as e:
+        loguru_logger.error(f"Error clearing CCP center pane character editor fields: {e}")
+    except Exception as e_clear:
+        loguru_logger.error(f"Unexpected error clearing CCP center pane character editor fields: {e_clear}", exc_info=True)
+
+async def _helper_ccp_load_character_into_center_pane_editor(app: 'TldwCli', character_id: str) -> None:
+    """Loads character details into the CCP CENTER PANE editor and updates app state."""
+    if not app.chachanotes_db: # Use the correct DB instance
+        app.notify("Character database service not available.", severity="error")
+        loguru_logger.error("ChaChaNotes DB not available for loading character into editor.")
+        return
+
+    # Ensure the Character Editor view in the center pane is active
+    app.ccp_active_view = "character_editor_view" # This triggers the watcher in app.py
+
+    try:
+        # Use ccl (Character_Chat_Lib) to load the character data
+        char_data, _, char_image_pil = ccl.load_character_and_image(
+            app.chachanotes_db,
+            character_id,
+            app.notes_user_id # Assuming this is the correct user context
+        )
+
+        if char_data:
+            app.current_editing_character_id = char_data.get("id")
+            app.current_editing_character_data = char_data
+            # app.current_ccp_character_image = char_image_pil # If you want to display the image in the editor too
+
+            # Populate UI elements in the CENTER PANE character editor
+            app.query_one("#ccp-editor-char-name-input", Input).value = char_data.get("name", "")
+            app.query_one("#ccp-editor-char-description-textarea", TextArea).text = char_data.get("description", "")
+            app.query_one("#ccp-editor-char-personality-textarea", TextArea).text = char_data.get("personality", "")
+            app.query_one("#ccp-editor-char-scenario-textarea", TextArea).text = char_data.get("scenario", "")
+            app.query_one("#ccp-editor-char-first-message-textarea", TextArea).text = char_data.get("first_message", char_data.get("first_mes","")) # check common key names
+            # Add other fields if present in your editor UI:
+            # e.g., app.query_one("#ccp-editor-char-system-prompt-textarea", TextArea).text = char_data.get("system_prompt", "")
+
+            # Optional: Handle image display if your editor has an image area
+            # try:
+            #     editor_image_placeholder = app.query_one("#ccp-editor-char-image-placeholder", Static) # Example ID
+            #     if char_image_pil:
+            #         editor_image_placeholder.update("Character image loaded (editor display not shown).")
+            #     else:
+            #         editor_image_placeholder.update("No image available for editor.")
+            # except QueryError:
+            #     loguru_logger.warning("No image placeholder found in CCP character editor.")
+
+
+            app.query_one("#ccp-editor-char-name-input", Input).focus()
+            app.notify(f"Character '{char_data.get('name', 'Unknown')}' loaded into center editor.", severity="information")
+            loguru_logger.info(f"Loaded character '{char_data.get('name', 'Unknown')}' into CCP center editor.")
+        else:
+            app.notify(f"Failed to load character details for ID: {character_id} into editor.", severity="error")
+            await _helper_ccp_clear_center_pane_character_editor_fields(app)
+            app.current_editing_character_id = None
+            app.current_editing_character_data = None
+            loguru_logger.warning(f"Character details not found for ID {character_id} for editor.")
+
+    except CharactersRAGDBError as e_db:
+        loguru_logger.error(f"Database error loading character for CCP editing (ID: {character_id}): {e_db}", exc_info=True)
+        app.notify(f"Database error loading character: {type(e_db).__name__}", severity="error")
+        await _helper_ccp_clear_center_pane_character_editor_fields(app)
+        app.current_editing_character_id = None
+        app.current_editing_character_data = None
+    except QueryError as e_query:
+        loguru_logger.error(f"UI component error loading character for CCP editing (ID: {character_id}): {e_query}", exc_info=True)
+        app.notify("UI Error: Could not populate character editor fields.", severity="error")
+    except Exception as e:
+        loguru_logger.error(f"Unexpected error loading character for CCP editing (ID: {character_id}): {e}", exc_info=True)
+        app.notify(f"Error loading character into editor: {type(e).__name__}", severity="error")
+        await _helper_ccp_clear_center_pane_character_editor_fields(app)
+        app.current_editing_character_id = None
+        app.current_editing_character_data = None
+
 async def handle_ccp_editor_char_save_button_pressed(app: 'TldwCli') -> None:
-    logger = getattr(app, 'loguru_logger', logging)
+    logger = getattr(app, 'loguru_logger', loguru_logger) # Use loguru_logger if available
     logger.info("CCP Editor: Save Character button pressed.")
 
-    if not app.notes_service:
+    if not app.chachanotes_db: # Check the correct DB instance
         app.notify("Database service not available.", severity="error")
-        logger.error("Notes service not available for saving character.")
+        logger.error("ChaChaNotes DB not available for saving character.")
         return
 
     try:
-        # Retrieve data from UI fields
+        # Retrieve data from CENTER PANE UI fields
         name = app.query_one("#ccp-editor-char-name-input", Input).value.strip()
         description = app.query_one("#ccp-editor-char-description-textarea", TextArea).text.strip()
         personality = app.query_one("#ccp-editor-char-personality-textarea", TextArea).text.strip()
         scenario = app.query_one("#ccp-editor-char-scenario-textarea", TextArea).text.strip()
         first_message = app.query_one("#ccp-editor-char-first-message-textarea", TextArea).text.strip()
-        # Add other fields here if they were added to the UI, e.g., keywords
+        # system_prompt = app.query_one("#ccp-editor-char-system-prompt-textarea", TextArea).text.strip() # If you add this field
 
         if not name:
             app.notify("Character Name is required.", severity="error", timeout=4)
             app.query_one("#ccp-editor-char-name-input", Input).focus()
             return
 
-        character_data = {
+        character_data_for_db_op: Dict[str, Any] = {
             "name": name,
-            "description": description, # Assuming 'description' is the DB key
+            "description": description,
             "personality": personality,
             "scenario": scenario,
-            "first_mes": first_message, # Assuming 'first_mes' is the DB key
-            # "keywords": [], # Example if keywords were added
-            # "system_prompt": "", # Example if a system prompt field for characters was added
+            "first_message": first_message, # Ensure DB schema uses "first_message" or "first_mes"
+            # "system_prompt": system_prompt, # If added
         }
 
         saved_character_details: Optional[Dict[str, Any]] = None
+        db = app.chachanotes_db # Use the correct instance
 
-        if app.current_editing_character_id is None: # New character
-            logger.info(f"Attempting to add new character: {name}")
-            # Ensure add_character_card exists and handles these fields.
-            # It should return the full character data, including new ID and version.
-            # The user_id is passed as the first argument as per typical service methods.
-            saved_character_details = app.notes_service.add_character_card(
-                user_id=app.notes_user_id,
-                character_data=character_data
+        # Use app.current_editing_character_id to determine if it's a new or existing character
+        current_editing_id = app.current_editing_character_id
+        current_editing_data_value = cast(Optional[Dict[str, Any]], app.current_editing_character_data)
+
+
+        if current_editing_id is None: # New character
+            logger.info(f"Attempting to add new character from editor: {name}")
+            # add_character_card does not take user_id directly in CharactersRAGDB
+            # It's usually handled by the service layer or implied by the DB connection.
+            # Assuming your db.add_character_card from CharactersRAGDB takes only character_data
+            saved_character_details = db.add_character_card(
+                character_data=character_data_for_db_op
             )
             if saved_character_details and saved_character_details.get("id"):
                 logger.info(f"New character added successfully. ID: {saved_character_details['id']}")
                 app.notify(f"Character '{name}' saved successfully.", severity="information")
             else:
-                logger.error(f"Failed to save new character '{name}'. Service returned: {saved_character_details}")
+                logger.error(f"Failed to save new character '{name}'. DB returned: {saved_character_details}")
                 app.notify(f"Failed to save new character '{name}'.", severity="error")
-                return # Stop if save failed
+                return
 
         else: # Existing character
-            logger.info(f"Attempting to update character ID: {app.current_editing_character_id}")
-            current_version = app.current_editing_character_data.get("version") if app.current_editing_character_data else None
+            logger.info(f"Attempting to update character ID from editor: {current_editing_id}")
+            # Get expected_version from app.current_editing_character_data
+            current_version = current_editing_data_value.get("version") if current_editing_data_value else None
 
-            # Ensure update_character_card exists and handles versioning.
-            # It should return the full updated character data.
-            saved_character_details = app.notes_service.update_character_card(
-                character_id=app.current_editing_character_id,
-                user_id=app.notes_user_id,
-                update_data=character_data,
-                expected_version=current_version
+            if current_version is None:
+                logger.error(f"Cannot update character {current_editing_id}: version is missing from loaded data.")
+                app.notify("Cannot update: Character version is missing. Please reload.", severity="error")
+                return
+
+            saved_character_details = db.update_character_card(
+                character_id=current_editing_id, # Must be str
+                update_data=character_data_for_db_op,
+                expected_version=current_version # Must be int
             )
             if saved_character_details:
-                logger.info(f"Character {app.current_editing_character_id} updated successfully.")
+                logger.info(f"Character {current_editing_id} updated successfully.")
                 app.notify(f"Character '{name}' updated successfully.", severity="information")
             else:
-                logger.error(f"Failed to update character '{name}'. Service returned: {saved_character_details}")
+                logger.error(f"Failed to update character '{name}'. DB returned: {saved_character_details}")
                 app.notify(f"Failed to update character '{name}'.", severity="error")
-                return # Stop if update failed
+                return
 
-        # If save or update was successful and returned details
         if saved_character_details and saved_character_details.get("id"):
-            # Reload into editor to reflect any DB-side changes (new ID, version, cleaned data)
-            await app._load_character_for_editing(saved_character_details["id"])
-            await populate_ccp_character_select(app) # Refresh dropdown
+            # Reload into editor to reflect any DB-side changes (new ID, version)
+            await _helper_ccp_load_character_into_center_pane_editor(app, saved_character_details["id"])
+            await populate_ccp_character_select(app)
         else:
-            # This case might be redundant if errors are caught above, but as a fallback:
             logger.warning("Save/Update operation completed but no valid character details returned.")
-            # Optionally, try to reload with current_editing_character_id if it exists
-            if app.current_editing_character_id:
-                await app._load_character_for_editing(app.current_editing_character_id)
-
+            if current_editing_id:
+                await _helper_ccp_load_character_into_center_pane_editor(app, current_editing_id)
 
     except ConflictError as e_conflict:
         logger.error(f"Conflict saving character: {e_conflict}", exc_info=True)
         app.notify(f"Save conflict: {e_conflict}. Please reload and try again.", severity="error", timeout=7)
-        # Optionally, reload the conflicting version:
-        # if app.current_editing_character_id:
-        #    await app._load_character_for_editing(app.current_editing_character_id)
+        if app.current_editing_character_id: # Check before trying to reload
+           await _helper_ccp_load_character_into_center_pane_editor(app, app.current_editing_character_id)
     except CharactersRAGDBError as e_db:
         logger.error(f"Database error saving character: {e_db}", exc_info=True)
         app.notify(f"Database error: {type(e_db).__name__}", severity="error")
     except QueryError as e_query:
-        logger.error(f"UI component error saving character: {e_query}", exc_info=True)
-        app.notify("UI Error: Could not retrieve character data from fields.", severity="error")
+        logger.error(f"UI component error saving character from editor: {e_query}", exc_info=True)
+        app.notify("UI Error: Could not retrieve character data from editor fields.", severity="error")
     except Exception as e_unexp:
-        logger.error(f"Unexpected error saving character: {e_unexp}", exc_info=True)
+        logger.error(f"Unexpected error saving character from editor: {e_unexp}", exc_info=True)
         app.notify(f"Unexpected error: {type(e_unexp).__name__}", severity="error")
 
 
 async def handle_ccp_editor_char_clone_button_pressed(app: 'TldwCli') -> None:
-    logger = getattr(app, 'loguru_logger', logging)
+    logger = getattr(app, 'loguru_logger', loguru_logger)
     logger.info("CCP Editor: Clone Character button pressed.")
 
-    if not app.notes_service:
+    if not app.chachanotes_db:
         app.notify("Database service not available.", severity="error")
-        logger.error("Notes service not available for cloning character.")
+        logger.error("ChaChaNotes DB not available for cloning character.")
         return
 
-    if app.current_editing_character_id is None or app.current_editing_character_data is None:
-        app.notify("No character loaded or unsaved changes. Please load or save a character before cloning.", severity="warning", timeout=7)
-        logger.warning("Clone Character: No character data loaded in editor.")
+    # Use the reactive for the character currently in the EDITOR
+    current_editing_id = app.current_editing_character_id
+    current_editing_data_value = cast(Optional[Dict[str, Any]], app.current_editing_character_data)
+
+
+    if current_editing_id is None or current_editing_data_value is None:
+        app.notify("No character loaded in editor to clone. Please load a character first.", severity="warning", timeout=7)
+        logger.warning("Clone Character from editor: No character data loaded in editor's state.")
         return
 
     try:
-        # Get current data from app state (which should reflect the editor)
-        # It's generally better to use app.current_editing_character_data if it's kept in sync,
-        # or query UI fields if there's a chance they are more up-to-date than reactives before a save.
-        # For cloning, using the reactive `app.current_editing_character_data` is safer if it's accurate.
-        # If not, query all fields like in the save handler. Let's assume `app.current_editing_character_data` is reliable here.
+        # Data for cloning should come from the current state of app.current_editing_character_data,
+        # which should reflect what's loaded in the editor.
+        # If you want to clone based on potentially unsaved UI changes in the editor,
+        # then you'd query the UI fields like in the save handler.
+        # For simplicity, let's assume we clone the *saved* state held in current_editing_character_data.
 
-        original_data = app.current_editing_character_data
+        original_data = current_editing_data_value # This is already Optional[Dict[str, Any]]
 
         original_name = original_data.get("name", "Character")
         timestamp = datetime.now().strftime('%y%m%d-%H%M%S')
-        cloned_name = f"{original_name} Clone {timestamp}"[:255] # Ensure name length fits DB schema
+        cloned_name = f"{original_name} Clone {timestamp}"[:255]
 
-        cloned_character_data = {
-            "name": cloned_name,
-            "description": original_data.get("description", original_data.get("details", "")),
-            "personality": original_data.get("personality", ""),
-            "scenario": original_data.get("scenario", ""),
-            "first_mes": original_data.get("first_mes", original_data.get("greeting", "")),
-            # Copy other relevant fields, ensure not to copy 'id' or 'version'
-            # "keywords": original_data.get("keywords", []),
-            # "system_prompt": original_data.get("system_prompt", ""),
+        # Prepare data for the new character, excluding 'id' and 'version'
+        cloned_character_data_for_db: Dict[str, Any] = {
+            key: value for key, value in original_data.items() if key not in ['id', 'version', 'uuid', 'created_at', 'last_modified']
         }
+        cloned_character_data_for_db["name"] = cloned_name # Set the new name
 
-        logger.info(f"Attempting to clone character '{original_name}' as '{cloned_name}'.")
+        # Deep copy mutable fields if they exist
+        if 'alternate_greetings' in cloned_character_data_for_db and isinstance(cloned_character_data_for_db['alternate_greetings'], list):
+            cloned_character_data_for_db['alternate_greetings'] = list(cloned_character_data_for_db['alternate_greetings'])
+        if 'tags' in cloned_character_data_for_db and isinstance(cloned_character_data_for_db['tags'], list):
+            cloned_character_data_for_db['tags'] = list(cloned_character_data_for_db['tags'])
+        if 'extensions' in cloned_character_data_for_db and isinstance(cloned_character_data_for_db['extensions'], dict):
+            cloned_character_data_for_db['extensions'] = dict(cloned_character_data_for_db['extensions'])
 
-        # Call add_character_card to save the cloned data as a new character
-        saved_clone_details = app.notes_service.add_character_card(
-            user_id=app.notes_user_id,
-            character_data=cloned_character_data
+
+        logger.info(f"Attempting to clone character '{original_name}' as '{cloned_name}' from editor state.")
+        db = app.chachanotes_db # Already checked
+
+        saved_clone_details = db.add_character_card(
+            character_data=cloned_character_data_for_db
         )
 
         if saved_clone_details and saved_clone_details.get("id"):
@@ -1652,83 +1767,70 @@ async def handle_ccp_editor_char_clone_button_pressed(app: 'TldwCli') -> None:
             logger.info(f"Character cloned successfully. New ID: {new_cloned_char_id}")
             app.notify(f"Character cloned as '{cloned_name}'.", severity="information")
 
-            # Load the newly cloned character into the editor
-            await app._load_character_for_editing(new_cloned_char_id)
-            await populate_ccp_character_select(app) # Refresh dropdown
+            await _helper_ccp_load_character_into_center_pane_editor(app, new_cloned_char_id)
+            await populate_ccp_character_select(app)
         else:
-            logger.error(f"Failed to save cloned character '{cloned_name}'. Service returned: {saved_clone_details}")
+            logger.error(f"Failed to save cloned character '{cloned_name}'. DB returned: {saved_clone_details}")
             app.notify(f"Failed to clone character '{original_name}'.", severity="error")
 
     except CharactersRAGDBError as e_db:
-        logger.error(f"Database error cloning character: {e_db}", exc_info=True)
+        logger.error(f"Database error cloning character from editor: {e_db}", exc_info=True)
         app.notify(f"Database error cloning: {type(e_db).__name__}", severity="error")
-    # QueryError might occur if we were reading directly from UI and a field was missing.
-    # Since we're primarily using app.current_editing_character_data, it's less likely here.
-    except QueryError as e_query:
-        logger.error(f"UI component error during clone (should not happen if using reactive data): {e_query}", exc_info=True)
-        app.notify("UI Error during clone operation.", severity="error")
     except Exception as e_unexp:
-        logger.error(f"Unexpected error cloning character: {e_unexp}", exc_info=True)
+        logger.error(f"Unexpected error cloning character from editor: {e_unexp}", exc_info=True)
         app.notify(f"Unexpected error cloning: {type(e_unexp).__name__}", severity="error")
 
 
 async def handle_ccp_editor_char_delete_button_pressed(app: 'TldwCli') -> None:
-    logger = getattr(app, 'loguru_logger', logging)
+    logger = getattr(app, 'loguru_logger', loguru_logger)
     logger.info("CCP Editor: Delete Character button pressed.")
 
-    if not app.notes_service:
+    if not app.chachanotes_db:
         app.notify("Database service not available.", severity="error")
-        logger.error("Notes service not available for deleting character.")
+        logger.error("ChaChaNotes DB not available for deleting character.")
         return
 
     character_id_to_delete = app.current_editing_character_id
-    character_name_to_delete = app.current_editing_character_data.get("name", "the loaded character") if app.current_editing_character_data else "the loaded character"
-
+    current_editing_data_value = cast(Optional[Dict[str, Any]], app.current_editing_character_data)
+    character_name_to_delete = current_editing_data_value.get("name", "the loaded character") if current_editing_data_value else "the loaded character"
 
     if character_id_to_delete is None:
         app.notify("No character loaded in the editor to delete.", severity="warning")
-        logger.warning("Delete Character: No character ID loaded.")
+        logger.warning("Delete Character from editor: No character ID loaded.")
         return
 
-    # Optional: Implement a confirmation dialog here in the future.
-    # For now, deletion is direct upon button press.
-
     try:
-        logger.info(f"Attempting to delete character ID: {character_id_to_delete} (Name: '{character_name_to_delete}').")
+        logger.info(f"Attempting to delete character ID from editor: {character_id_to_delete} (Name: '{character_name_to_delete}').")
+        db = app.chachanotes_db # Already checked
 
-        # Assuming delete_character_card returns True on success, False otherwise,
-        # or raises an exception for specific failures.
-        success = app.notes_service.delete_character_card(
-            character_id=character_id_to_delete,
-            user_id=app.notes_user_id
-        )
+        success = db.delete_character_card(character_id=character_id_to_delete) # delete_character_card expects string ID
 
         if success:
-            logger.info(f"Character {character_id_to_delete} deleted successfully.")
+            logger.info(f"Character {character_id_to_delete} deleted successfully from editor.")
             app.notify(f"Character '{character_name_to_delete}' deleted.", severity="information")
 
-            await app._clear_character_fields() # Clear the editor
-            app.ccp_active_view = "conversation_details_view" # Switch to a default view
-            await populate_ccp_character_select(app) # Refresh dropdown
+            await _helper_ccp_clear_center_pane_character_editor_fields(app)
+            app.current_editing_character_id = None # Reset reactives
+            app.current_editing_character_data = None
+            app.ccp_active_view = "conversation_messages_view"
+            await populate_ccp_character_select(app)
         else:
-            # This path might be taken if the DB method returns False for "not found" or "already deleted"
-            # without raising an exception.
-            logger.error(f"Failed to delete character '{character_name_to_delete}' (ID: {character_id_to_delete}). Service returned False.")
-            app.notify(f"Failed to delete character '{character_name_to_delete}'. It might have been already deleted or an issue occurred.", severity="error", timeout=7)
-            # Refresh list anyway to ensure UI consistency if it was a "not found" type of issue.
+            logger.error(f"Failed to delete character '{character_name_to_delete}' (ID: {character_id_to_delete}) from editor. DB returned False.")
+            app.notify(f"Failed to delete character '{character_name_to_delete}'. It might have already been deleted.", severity="error", timeout=7)
             await populate_ccp_character_select(app)
 
-
-    except ConflictError as e_conflict: # If delete_character_card can raise this (e.g., if used by other data)
-        logger.error(f"Conflict error deleting character {character_id_to_delete}: {e_conflict}", exc_info=True)
+    except ConflictError as e_conflict:
+        logger.error(f"Conflict error deleting character {character_id_to_delete} from editor: {e_conflict}", exc_info=True)
         app.notify(f"Conflict deleting character: {e_conflict}", severity="error")
-        await populate_ccp_character_select(app) # Refresh list
+        await populate_ccp_character_select(app)
     except CharactersRAGDBError as e_db:
-        logger.error(f"Database error deleting character {character_id_to_delete}: {e_db}", exc_info=True)
+        logger.error(f"Database error deleting character {character_id_to_delete} from editor: {e_db}", exc_info=True)
         app.notify(f"Database error deleting: {type(e_db).__name__}", severity="error")
     except Exception as e_unexp:
-        logger.error(f"Unexpected error deleting character {character_id_to_delete}: {e_unexp}", exc_info=True)
+        logger.error(f"Unexpected error deleting character {character_id_to_delete} from editor: {e_unexp}", exc_info=True)
         app.notify(f"Unexpected error deleting: {type(e_unexp).__name__}", severity="error")
+
+
 
 # ##############################################################
 # --- CCP Right Pane Editor Button Handlers ---
@@ -1745,6 +1847,25 @@ async def handle_ccp_tab_sidebar_toggle(app: 'TldwCli', button_id: str) -> None:
     else:
         logger.warning(f"Unhandled sidebar toggle button ID '{button_id}' in CCP tab handler.")
 
+
+async def handle_ccp_card_edit_button_pressed(app: 'TldwCli') -> None:
+    logger = getattr(app, 'loguru_logger', loguru_logger)
+    logger.info("CCP Card Edit Character button pressed.")
+
+    current_card_details = cast(Optional[Dict[str, Any]], app.current_ccp_character_details)
+    if not current_card_details or not current_card_details.get("id"):
+        app.notify("No character loaded on the card to edit.", severity="warning")
+        return
+
+    character_id_to_edit = current_card_details.get("id")
+    if not character_id_to_edit:
+         app.notify("Character ID missing from card details.", severity="error")
+         return
+
+    logger.info(f"Requesting to load character ID {character_id_to_edit} into editor.")
+    await _helper_ccp_load_character_into_center_pane_editor(app, character_id_to_edit)
+    # This helper will set app.current_editing_character_id, app.current_editing_character_data,
+    # and app.ccp_active_view = "character_editor_view"
 
 #
 # End of conv_char_events.py
