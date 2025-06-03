@@ -2549,6 +2549,35 @@ async def handle_stop_chat_generation_pressed(app: 'TldwCli') -> None:
     except QueryError:
         loguru_logger.error("Could not find 'stop-chat-generation-button' to disable it directly from handler.")
 
+async def populate_chat_conversation_character_filter_select(app: 'TldwCli') -> None:
+    """Populates the character filter select in the Chat tab's conversation search."""
+    # ... (Keep original implementation as is) ...
+    logging.info("Attempting to populate #chat-conversation-search-character-filter-select.")
+    if not app.notes_service:
+        logging.error("Notes service not available for char filter select (Chat Tab).")
+        # Optionally update the select to show an error state
+        try:
+            char_filter_select_err = app.query_one("#chat-conversation-search-character-filter-select", Select)
+            char_filter_select_err.set_options([("Service Offline", Select.BLANK)])
+        except QueryError: pass
+        return
+    try:
+        db = app.notes_service._get_db(app.notes_user_id)
+        character_cards = db.list_character_cards(limit=1000)
+        options = [(char['name'], char['id']) for char in character_cards if char.get('name') and char.get('id')]
+
+        char_filter_select = app.query_one("#chat-conversation-search-character-filter-select", Select)
+        char_filter_select.set_options(options if options else [("No characters", Select.BLANK)])
+        # Default to BLANK, user must explicitly choose or use "All Characters" checkbox
+        char_filter_select.value = Select.BLANK
+        logging.info(f"Populated #chat-conversation-search-character-filter-select with {len(options)} chars.")
+    except QueryError as e_q:
+        logging.error(f"Failed to find #chat-conversation-search-character-filter-select: {e_q}", exc_info=True)
+    except CharactersRAGDBError as e_db: # Catch specific DB error
+        logging.error(f"DB error populating char filter select (Chat Tab): {e_db}", exc_info=True)
+    except Exception as e_unexp:
+        logging.error(f"Unexpected error populating char filter select (Chat Tab): {e_unexp}", exc_info=True)
+
 #
 # End of chat_events.py
 ########################################################################################################################

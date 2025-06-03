@@ -1165,7 +1165,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         # Populate dynamic selects and lists
         # These also might rely on the main tab windows being fully composed.
-        self.call_later(self._populate_chat_conversation_character_filter_select)
+        self.call_later(chat_handlers.populate_chat_conversation_character_filter_select, self)
         self.call_later(ccp_handlers.populate_ccp_character_select, self)
         self.call_later(ccp_handlers.populate_ccp_prompts_list_view, self)
 
@@ -2961,36 +2961,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             logging.error(f"Helper ERROR: Cannot find model select '{model_select_id}'")
         except Exception as e_set_options:
              logging.error(f"Helper ERROR setting options/value for {model_select_id}: {e_set_options}")
-
-
-    async def _populate_chat_conversation_character_filter_select(self) -> None:
-        """Populates the character filter select in the Chat tab's conversation search."""
-        # ... (Keep original implementation as is) ...
-        logging.info("Attempting to populate #chat-conversation-search-character-filter-select.")
-        if not self.notes_service:
-            logging.error("Notes service not available for char filter select (Chat Tab).")
-            # Optionally update the select to show an error state
-            try:
-                char_filter_select_err = self.query_one("#chat-conversation-search-character-filter-select", Select)
-                char_filter_select_err.set_options([("Service Offline", Select.BLANK)])
-            except QueryError: pass
-            return
-        try:
-            db = self.notes_service._get_db(self.notes_user_id)
-            character_cards = db.list_character_cards(limit=1000)
-            options = [(char['name'], char['id']) for char in character_cards if char.get('name') and char.get('id')]
-
-            char_filter_select = self.query_one("#chat-conversation-search-character-filter-select", Select)
-            char_filter_select.set_options(options if options else [("No characters", Select.BLANK)])
-            # Default to BLANK, user must explicitly choose or use "All Characters" checkbox
-            char_filter_select.value = Select.BLANK
-            logging.info(f"Populated #chat-conversation-search-character-filter-select with {len(options)} chars.")
-        except QueryError as e_q:
-            logging.error(f"Failed to find #chat-conversation-search-character-filter-select: {e_q}", exc_info=True)
-        except CharactersRAGDBError as e_db: # Catch specific DB error
-            logging.error(f"DB error populating char filter select (Chat Tab): {e_db}", exc_info=True)
-        except Exception as e_unexp:
-            logging.error(f"Unexpected error populating char filter select (Chat Tab): {e_unexp}", exc_info=True)
 
     def chat_wrapper(self, strip_thinking_tags: bool = True, **kwargs: Any) -> Any:
         """
