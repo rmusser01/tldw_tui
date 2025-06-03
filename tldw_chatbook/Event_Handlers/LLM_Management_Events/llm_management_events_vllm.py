@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 #
 # Local Imports
 # Imports for shared functions from the original events file
-from tldw_chatbook.Event_Handlers.llm_management_events.llm_management_events import _make_path_update_callback, _stream_process, stream_worker_output_to_log
+from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events import _make_path_update_callback, _stream_process, stream_worker_output_to_log
 from tldw_chatbook.Third_Party.textual_fspicker import FileOpen, Filters
 #
 #

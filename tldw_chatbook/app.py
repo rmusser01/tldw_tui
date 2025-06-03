@@ -11,46 +11,39 @@ from typing import Union, Optional, Any, Dict, List, Callable
 #
 # 3rd-Party Libraries
 from PIL import Image
-# --- Textual Imports ---
 from loguru import logger as loguru_logger, logger  # Keep if app.py uses it directly, or pass app.loguru_logger
 from rich.text import Text
 from textual import on
-# --- Textual Imports ---
 from textual.app import App, ComposeResult
 from textual.widgets import (
     Static, Button, Input, Header, RichLog, TextArea, Select, ListView, Checkbox, Collapsible, ListItem, Label
 )
 from textual.containers import Horizontal, Container, HorizontalScroll, VerticalScroll
-# Import the new AppFooterStatus widget
+
+from tldw_chatbook.Event_Handlers.Chat_Events.chat_streaming_events import handle_streaming_chunk, handle_stream_done
+from tldw_chatbook.Event_Handlers.worker_events import StreamingChunk, StreamDone
 from .Widgets.AppFooterStatus import AppFooterStatus
-# Import for escape_markup
-from rich.markup import escape as escape_markup
 from textual.reactive import reactive
 from textual.worker import Worker, WorkerState
 from textual.binding import Binding
 from textual.dom import DOMNode  # For type hinting if needed
 from textual.timer import Timer
-from textual.css.query import QueryError  # For specific error handling
-
+from textual.css.query import QueryError
 # Ensure Path is imported
 from pathlib import Path
-# Ensure Utils is imported for get_formatted_file_size
-from .Utils import Utils
-# Ensure config functions are imported
-from .config import (
-    get_media_db_path,
-    # Keep existing imports from .config below
-)
 #
 # --- Local API library Imports ---
+from .Utils import Utils
+from .config import (
+    get_media_db_path,
+)
 from .Logging_Config import configure_application_logging
-from tldw_chatbook.Event_Handlers.worker_events import StreamingChunk, StreamDone
 from .UI.MediaWindow import slugify as media_slugify
 from tldw_chatbook.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, TAB_STATS, TAB_TOOLS_SETTINGS, \
     TAB_INGEST, TAB_LLM, TAB_MEDIA, TAB_SEARCH, TAB_EVALS, LLAMA_CPP_SERVER_ARGS_HELP_TEXT, \
     LLAMAFILE_SERVER_ARGS_HELP_TEXT, TAB_CODING
 from tldw_chatbook.DB.Client_Media_DB_v2 import MediaDatabase
-from tldw_chatbook.config import CLI_APP_CLIENT_ID # get_media_db_path is now imported above
+from tldw_chatbook.config import CLI_APP_CLIENT_ID
 from tldw_chatbook.Logging_Config import RichLogHandler
 from tldw_chatbook.Prompt_Management import Prompts_Interop as prompts_interop
 from tldw_chatbook.Utils.Emoji_Handling import get_char, EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN, EMOJI_TITLE_NOTE, \
@@ -74,18 +67,18 @@ from .Event_Handlers import (
     worker_events as worker_handlers, worker_events, ingest_events,
     llm_nav_events as llm_handlers,
     # Explicit import for Ollama handler as per subtask, though current dispatch is generic
-    llm_management_events,
-
+    LLM_Management_Events,
 )
-from tldw_chatbook.Event_Handlers.llm_management_events.llm_management_events import \
+from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events import \
     handle_llamacpp_browse_exec_button_pressed, \
     handle_llamacpp_browse_model_button_pressed, handle_llamafile_browse_exec_button_pressed, \
     handle_llamafile_browse_model_button_pressed, handle_start_mlx_server_button_pressed, \
-    handle_stop_mlx_server_button_pressed, handle_stop_llamafile_server_button_pressed, populate_llm_help_texts
-from tldw_chatbook.Event_Handlers.llm_management_events.llm_management_events_vllm import handle_vllm_browse_python_button_pressed, handle_vllm_browse_model_button_pressed, handle_start_vllm_server_button_pressed, handle_stop_vllm_server_button_pressed
-from .Character_Chat import Character_Chat_Lib as ccl
+    handle_stop_mlx_server_button_pressed, handle_stop_llamafile_server_button_pressed, populate_llm_help_texts, \
+    handle_start_llamacpp_server_button_pressed, handle_stop_llamacpp_server_button_pressed, \
+    handle_start_llamafile_server_button_pressed
+from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_vllm import handle_vllm_browse_python_button_pressed, handle_vllm_browse_model_button_pressed, handle_start_vllm_server_button_pressed, handle_stop_vllm_server_button_pressed
 from .Notes.Notes_Library import NotesInteropService
-from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError, InputError
+from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
 from .Widgets.chat_message import ChatMessage
 from .Widgets.notes_sidebar_left import NotesSidebarLeft
 from .Widgets.notes_sidebar_right import NotesSidebarRight
@@ -96,13 +89,11 @@ from .LLM_Calls.LLM_API_Calls import (
         chat_with_deepseek, chat_with_mistral, chat_with_google,
 )
 from .LLM_Calls.LLM_API_Calls_Local import (
-    # Add local API functions if they are in the same file
     chat_with_llama, chat_with_kobold, chat_with_oobabooga,
     chat_with_vllm, chat_with_tabbyapi, chat_with_aphrodite,
     chat_with_ollama, chat_with_custom_openai, chat_with_custom_openai_2, chat_with_local_llm
 )
 from tldw_chatbook.config import get_chachanotes_db_path, settings, chachanotes_db as global_db_instance
-# Import new UI window classes
 from .UI.Chat_Window import ChatWindow
 from .UI.Conv_Char_Window import CCPWindow
 from .UI.Notes_Window import NotesWindow
@@ -2228,15 +2219,15 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             elif button_id == "llamacpp-browse-model-button":
                 await handle_llamacpp_browse_model_button_pressed(self)
             elif button_id == "llamacpp-start-server-button":
-                await llm_management_events.handle_start_llamacpp_server_button_pressed(self)
+                await handle_start_llamacpp_server_button_pressed(self)
             elif button_id == "llamacpp-stop-server-button":
-                await llm_management_events.handle_stop_llamacpp_server_button_pressed(self)
+                await handle_stop_llamacpp_server_button_pressed(self)
             elif button_id == "llamafile-browse-exec-button":
                 await handle_llamafile_browse_exec_button_pressed(self)
             elif button_id == "llamafile-browse-model-button":
                 await handle_llamafile_browse_model_button_pressed(self)
             elif button_id == "llamafile-start-server-button":
-                await llm_management_events.handle_start_llamafile_server_button_pressed(self)
+                await handle_start_llamafile_server_button_pressed(self)
             elif button_id == "llamafile-stop-server-button":
                 await handle_stop_llamafile_server_button_pressed(self)
             # Add these new conditions for vLLM:
@@ -2388,6 +2379,17 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         elif select_id == "tldw-api-media-type" and current_active_tab == TAB_INGEST:
             await ingest_events.handle_tldw_api_media_type_changed(self, str(event.value))
 
+    ##################################################################
+    # --- Event Handlers for Streaming and Worker State Changes ---
+    ##################################################################
+    @on(StreamingChunk)
+    async def on_streaming_chunk(self, event: StreamingChunk) -> None:
+        await handle_streaming_chunk(self, event)
+
+    @on(StreamDone)
+    async def on_stream_done(self, event: StreamDone) -> None:
+        await handle_stream_done(self, event)
+
     @on(Checkbox.Changed, "#chat-strip-thinking-tags-checkbox")
     async def handle_strip_thinking_tags_checkbox_changed(self, event: Checkbox.Changed) -> None:
         """Handles changes to the 'Strip Thinking Tags' checkbox."""
@@ -2405,7 +2407,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         except Exception as e:
             self.loguru_logger.error(f"Failed to save 'strip_thinking_tags' setting: {e}", exc_info=True)
             self.notify("Error saving thinking tag setting.", severity="error", timeout=4)
+    #####################################################################
+    # --- End of Chat Event Handlers for Streaming & thinking tags ---
+    #####################################################################
 
+
+    #####################################################################
+    # --- Event Handlers for Worker State Changes ---
+    #####################################################################
     async def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         worker_name_attr = event.worker.name
         worker_group = event.worker.group
@@ -2707,187 +2716,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     self.loguru_logger.error(
                         f"Error reading output from unhandled worker '{name_for_log}' (Group: {worker_group}): {e_output}",
                         exc_info=True)
+    ######################################################
+    # --- End of Worker State Change Handlers ---
+    ######################################################
 
 
-    async def on_streaming_chunk(self, event: StreamingChunk) -> None:
-        """Handles incoming chunks of text during streaming."""
-        logger = getattr(self, 'loguru_logger', logging)
-        if self.current_ai_message_widget and self.current_ai_message_widget.is_mounted:
-            try:
-                # The thinking placeholder should have been cleared when the worker started.
-                # The role and header should also have been set at the start of the AI turn.
-                static_text_widget = self.current_ai_message_widget.query_one(".message-text", Static)
-
-                # Append the clean text chunk
-                self.current_ai_message_widget.message_text += event.text_chunk
-
-                # Update the display with the accumulated, escaped text
-                static_text_widget.update(escape_markup(self.current_ai_message_widget.message_text))
-
-                # Scroll the chat log to the end, conditionally
-                chat_log_id_to_query = None
-                if self.current_tab == TAB_CHAT:
-                    chat_log_id_to_query = "#chat-log"
-                elif self.current_tab == TAB_CCP:
-                    chat_log_id_to_query = "#ccp-conversation-log" # Ensure this is the correct ID for CCP tab's log
-
-                if chat_log_id_to_query:
-                    try:
-                        chat_log_container = self.query_one(chat_log_id_to_query, VerticalScroll)
-                        chat_log_container.scroll_end(animate=False, duration=0.05)
-                    except QueryError:
-                        # This path should ideally not be hit if current_tab is Chat or CCP and their logs exist
-                        logger.warning(f"on_streaming_chunk: Could not find chat log container '{chat_log_id_to_query}' even when tab is {self.current_tab}")
-                else:
-                    # This else block will be hit if current_tab is not CHAT or CCP
-                    logger.debug(f"on_streaming_chunk: Current tab is {self.current_tab}, not attempting to scroll chat log.")
-
-            except QueryError as e:
-                logger.error(f"Error accessing UI components during streaming chunk update: {e}", exc_info=True)
-            except Exception as e_chunk: # Catch any other unexpected error
-                logger.error(f"Unexpected error processing streaming chunk: {e_chunk}", exc_info=True)
-        else:
-            logger.warning("Received StreamingChunk but no current_ai_message_widget is active/mounted or tab is not Chat/CCP.")
-
-    async def on_stream_done(self, event: StreamDone) -> None:
-        """Handles the end of a stream, including errors and successful completion."""
-        logger = getattr(self, 'loguru_logger', logging)
-        logger.info(f"StreamDone received. Final text length: {len(event.full_text)}. Error: '{event.error}'")
-
-        ai_widget = self.current_ai_message_widget # Use a local variable for clarity
-
-        if not ai_widget or not ai_widget.is_mounted:
-            logger.warning("Received StreamDone but current_ai_message_widget is missing or not mounted.")
-            if event.error: # If there was an error, at least notify the user
-                self.notify(f"Stream error (display widget missing): {event.error}", severity="error", timeout=10)
-            # Ensure current_ai_message_widget is None even if it was already None or unmounted
-            self.current_ai_message_widget = None
-            # Attempt to focus input if possible as a fallback
-            try:
-                if self.current_tab == TAB_CHAT:
-                    self.query_one("#chat-input", TextArea).focus()
-                elif self.current_tab == TAB_CCP: # Assuming similar input ID convention
-                    self.query_one("#ccp-chat-input", TextArea).focus() # Adjust if ID is different
-            except QueryError: pass # Ignore if input not found
-            return
-
-        try:
-            static_text_widget = ai_widget.query_one(".message-text", Static)
-
-            if event.error:
-                logger.error(f"Stream completed with error: {event.error}")
-                # If full_text has content, it means some chunks were received before the error.
-                # Display partial text along with the error.
-                error_message_content = event.full_text + f"\n\n[bold red]Stream Error:[/]\n{escape_markup(event.error)}"
-
-                ai_widget.message_text = event.full_text + f"\nStream Error: {event.error}" # Update internal raw text
-                static_text_widget.update(Text.from_markup(error_message_content))
-                ai_widget.role = "System" # Change role to "System" or "Error"
-                try:
-                    header_label = ai_widget.query_one(".message-header", Label)
-                    header_label.update("System Error") # Update header
-                except QueryError:
-                    logger.warning("Could not update AI message header for stream error display.")
-                # Do NOT save to database if there was an error.
-            else: # No error, stream completed successfully
-                logger.info("Stream completed successfully.")
-
-                # Apply thinking tag stripping if enabled
-                if event.full_text: # Check if there's any text to process
-                    strip_tags_setting = self.app_config.get("chat_defaults", {}).get("strip_thinking_tags", True)
-                    if strip_tags_setting:
-                        think_blocks = list(re.finditer(r"<think>.*?</think>", event.full_text, re.DOTALL))
-                        if len(think_blocks) > 1:
-                            self.loguru_logger.debug(f"Stripping thinking tags from streamed response. Found {len(think_blocks)} blocks.")
-                            text_parts = []
-                            last_kept_block_end = 0
-                            for i, block in enumerate(think_blocks):
-                                if i < len(think_blocks) - 1: # This is a block to remove
-                                    text_parts.append(event.full_text[last_kept_block_end:block.start()])
-                                    last_kept_block_end = block.end()
-                            text_parts.append(event.full_text[last_kept_block_end:])
-                            event.full_text = "".join(text_parts) # Modify the event's full_text
-                            self.loguru_logger.debug(f"Streamed response after stripping: {event.full_text[:200]}...")
-                        else:
-                            self.loguru_logger.debug(f"Not stripping tags from stream: {len(think_blocks)} block(s) found (need >1), setting is {strip_tags_setting}.")
-                    else:
-                        self.loguru_logger.debug("Not stripping tags from stream: strip_thinking_tags setting is disabled.")
-
-                ai_widget.message_text = event.full_text # Ensure internal state has the final, complete text
-                static_text_widget.update(escape_markup(event.full_text)) # Update display with final, escaped text
-
-                # Determine sender name for DB (already set on widget by handle_api_call_worker_state_changed)
-                # This is just to ensure the correct name is used for DB saving if needed.
-                ai_sender_name_for_db = ai_widget.role # Role should be correctly set by now
-
-                # Save to DB if applicable (not ephemeral, not empty, and DB available)
-                if self.chachanotes_db and self.current_chat_conversation_id and \
-                   not self.current_chat_is_ephemeral and event.full_text.strip():
-                    try:
-                        logger.debug(f"Attempting to save streamed AI message to DB. ConvID: {self.current_chat_conversation_id}, Sender: {ai_sender_name_for_db}")
-                        ai_msg_db_id = ccl.add_message_to_conversation(
-                            self.chachanotes_db,
-                            self.current_chat_conversation_id,
-                            ai_sender_name_for_db,
-                            event.full_text # Save the clean, full text
-                        )
-                        if ai_msg_db_id:
-                            saved_ai_msg_details = self.chachanotes_db.get_message_by_id(ai_msg_db_id)
-                            if saved_ai_msg_details:
-                                ai_widget.message_id_internal = saved_ai_msg_details.get('id')
-                                ai_widget.message_version_internal = saved_ai_msg_details.get('version')
-                                logger.info(f"Streamed AI message saved to DB. ConvID: {self.current_chat_conversation_id}, MsgID: {saved_ai_msg_details.get('id')}")
-                            else:
-                                logger.error(f"Failed to retrieve saved streamed AI message details (ID: {ai_msg_db_id}) from DB.")
-                        else:
-                            logger.error("Failed to save streamed AI message to DB (no ID returned).")
-                    except (CharactersRAGDBError, InputError) as e_save_ai_stream:
-                        logger.error(f"DB Error saving streamed AI message: {e_save_ai_stream}", exc_info=True)
-                        self.notify(f"DB error saving message: {e_save_ai_stream}", severity="error")
-                    except Exception as e_save_unexp:
-                        logger.error(f"Unexpected error saving streamed AI message: {e_save_unexp}", exc_info=True)
-                        self.notify("Unexpected error saving message.", severity="error")
-                elif not event.full_text.strip() and not event.error:
-                    logger.info("Stream finished with no error but content was empty/whitespace. Not saving to DB.")
-
-
-            ai_widget.mark_generation_complete() # Mark as complete in both error/success cases if widget exists
-
-        except QueryError as e:
-            logger.error(f"QueryError during StreamDone UI update (event.error='{event.error}'): {e}", exc_info=True)
-            if event.error: # If there was an underlying stream error, make sure user sees it
-                 self.notify(f"Stream Error (UI issue): {event.error}", severity="error", timeout=10)
-            else: # If stream was fine, but UI update failed
-                 self.notify("Error finalizing AI message display.", severity="error")
-        except Exception as e_done_unexp: # Catch any other unexpected error during the try block
-            logger.error(f"Unexpected error in on_stream_done (event.error='{event.error}'): {e_done_unexp}", exc_info=True)
-            self.notify("Internal error finalizing stream.", severity="error")
-        finally:
-            # This block executes regardless of exceptions in the try block above.
-            # Crucial for resetting state and UI.
-            self.current_ai_message_widget = None # Clear the reference to the AI message widget
-            logger.debug("Cleared current_ai_message_widget in on_stream_done's finally block.")
-
-            # Focus the appropriate input based on the current tab
-            input_id_to_focus = None
-            if self.current_tab == TAB_CHAT:
-                input_id_to_focus = "#chat-input"
-            elif self.current_tab == TAB_CCP:
-                input_id_to_focus = "#ccp-chat-input" # Adjust if ID is different for CCP tab's input
-
-            if input_id_to_focus:
-                try:
-                    input_widget = self.query_one(input_id_to_focus, TextArea)
-                    input_widget.focus()
-                    logger.debug(f"Focused input '{input_id_to_focus}' in on_stream_done.")
-                except QueryError:
-                    logger.warning(f"Could not focus input '{input_id_to_focus}' in on_stream_done (widget not found).")
-                except Exception as e_focus_final:
-                    logger.error(f"Error focusing input '{input_id_to_focus}' in on_stream_done: {e_focus_final}", exc_info=True)
-            else:
-                logger.debug(f"No specific input to focus for tab {self.current_tab} in on_stream_done.")
-
+    ######################################################
     # --- Watchers for chat sidebar prompt display ---
+    ######################################################
     def watch_chat_sidebar_selected_prompt_system(self, new_system_prompt: Optional[str]) -> None:
         try:
             self.query_one("#chat-prompt-system-display", TextArea).load_text(new_system_prompt or "")
@@ -2911,7 +2747,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.query_one("#chat-sidebar-prompts-listview", ListView).clear()
         except QueryError:
             pass # If not found, it's fine
-
 
     def watch_chat_api_provider_value(self, new_value: Optional[str]) -> None:
         if not hasattr(self, "app") or not self.app:  # Check if app is ready
@@ -2970,6 +2805,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         # All necessary parameters (message, history, api_endpoint, model, etc.)
         # are passed via kwargs from the calling event handler (e.g., handle_chat_send_button_pressed).
         return worker_events.chat_wrapper_function(self, strip_thinking_tags=strip_thinking_tags, **kwargs) # Pass self as 'app_instance'
+
+    ########################################################
+    # --- End of Watchers and Helper Methods ---
+    # ######################################################
 
 # --- Main execution block ---
 if __name__ == "__main__":

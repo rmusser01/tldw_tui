@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from textual.widgets import Input, RichLog
 
-from tldw_chatbook.Event_Handlers.llm_management_events.llm_management_events import handle_start_llamacpp_server_button_pressed
+from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events import handle_start_llamacpp_server_button_pressed
 from tldw_chatbook.app import TldwCli  # Assuming TldwCli is the app class
 
 # Mark all tests in this file as asyncio
