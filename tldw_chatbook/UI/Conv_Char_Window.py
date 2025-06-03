@@ -39,7 +39,7 @@ class CCPWindow(Container):
                 yield Button("Import Character Card", id="ccp-import-character-button",
                              classes="sidebar-button")
                 yield Select([], prompt="Select Character...", allow_blank=True, id="conv-char-character-select")
-                yield Button("Load Selected Character", id="ccp-left-load-character-button", classes="sidebar-button")
+                yield Button("Load Character", id="ccp-right-pane-load-character-button", classes="sidebar-button")
             with Collapsible(title="Conversations", id="conv-char-conversations-collapsible"):
                 yield Button("Import Conversation", id="ccp-import-conversation-button",
                              classes="sidebar-button")
@@ -139,7 +139,7 @@ class CCPWindow(Container):
 
             # Characters Collapsible
             with Collapsible(title="Characters", id="ccp-characters-collapsible", collapsed=True):
-                yield Button("Load Character", id="ccp-right-pane-load-character-button", classes="sidebar-button")
+                pass
                 # Add other character related widgets here if needed in the future
 
             # Prompt Details Collapsible (for the right-pane prompt editor)
