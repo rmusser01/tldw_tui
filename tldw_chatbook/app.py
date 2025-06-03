@@ -6,8 +6,6 @@ import logging
 import logging.handlers
 import re # Added import for regex
 import subprocess
-import sys
-from pathlib import Path
 import traceback
 from typing import Union, Optional, Any, Dict, List, Callable
 #
@@ -19,9 +17,8 @@ from rich.text import Text
 from textual import on
 # --- Textual Imports ---
 from textual.app import App, ComposeResult
-from textual.logging import TextualHandler
 from textual.widgets import (
-    Static, Button, Input, Header, Footer, RichLog, TextArea, Select, ListView, Checkbox, Collapsible, ListItem, Label
+    Static, Button, Input, Header, RichLog, TextArea, Select, ListView, Checkbox, Collapsible, ListItem, Label
 )
 from textual.containers import Horizontal, Container, HorizontalScroll, VerticalScroll
 # Import the new AppFooterStatus widget
@@ -41,44 +38,34 @@ from pathlib import Path
 from .Utils import Utils
 # Ensure config functions are imported
 from .config import (
-    get_cli_setting,
-    get_chachanotes_db_path,
     get_media_db_path,
     # Keep existing imports from .config below
-    CONFIG_TOML_CONTENT,
-    DEFAULT_CONFIG_PATH,
 )
 #
 # --- Local API library Imports ---
 from .Logging_Config import configure_application_logging
 from tldw_chatbook.Event_Handlers.worker_events import StreamingChunk, StreamDone
-from .UI.MediaWindow import MediaWindow, slugify as media_slugify
+from .UI.MediaWindow import slugify as media_slugify
 from tldw_chatbook.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, TAB_STATS, TAB_TOOLS_SETTINGS, \
     TAB_INGEST, TAB_LLM, TAB_MEDIA, TAB_SEARCH, TAB_EVALS, LLAMA_CPP_SERVER_ARGS_HELP_TEXT, \
     LLAMAFILE_SERVER_ARGS_HELP_TEXT, TAB_CODING
 from tldw_chatbook.DB.Client_Media_DB_v2 import MediaDatabase
-from tldw_chatbook.config import chachanotes_db as global_chachanotes_db_instance, CLI_APP_CLIENT_ID # get_media_db_path is now imported above
+from tldw_chatbook.config import CLI_APP_CLIENT_ID # get_media_db_path is now imported above
 from tldw_chatbook.Logging_Config import RichLogHandler
 from tldw_chatbook.Prompt_Management import Prompts_Interop as prompts_interop
 from tldw_chatbook.Utils.Emoji_Handling import get_char, EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN, EMOJI_TITLE_NOTE, \
-    FALLBACK_TITLE_NOTE, EMOJI_TITLE_SEARCH, FALLBACK_TITLE_SEARCH, EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE, \
-    EMOJI_SEND, FALLBACK_SEND, EMOJI_CHARACTER_ICON, FALLBACK_CHARACTER_ICON, supports_emoji
-from tldw_chatbook.Utils.Utils import safe_float, safe_int
+    FALLBACK_TITLE_NOTE, EMOJI_TITLE_SEARCH, FALLBACK_TITLE_SEARCH, supports_emoji
 from .config import (
     CONFIG_TOML_CONTENT,
     DEFAULT_CONFIG_PATH,
     load_settings,
     get_cli_setting,
-    get_cli_log_file_path,
     get_cli_providers_and_models,
     API_MODELS_BY_PROVIDER,
-    LOCAL_PROVIDERS, get_chachanotes_db_path, settings,
-)
-from .Screens.Stats_screen import StatsScreen
+    LOCAL_PROVIDERS, )
 from .Event_Handlers import (
     app_lifecycle as app_lifecycle_handlers,
     tab_events as tab_handlers,
-    sidebar_events as sidebar_handlers,
     chat_events as chat_handlers,
     chat_events,
     conv_char_events as ccp_handlers,
@@ -90,16 +77,16 @@ from .Event_Handlers import (
     llm_management_events,
 
 )
-from .Event_Handlers.llm_management_events import handle_llamacpp_browse_exec_button_pressed, \
+from tldw_chatbook.Event_Handlers.llm_management_events.llm_management_events import \
+    handle_llamacpp_browse_exec_button_pressed, \
     handle_llamacpp_browse_model_button_pressed, handle_llamafile_browse_exec_button_pressed, \
     handle_llamafile_browse_model_button_pressed, handle_start_mlx_server_button_pressed, \
-    handle_stop_mlx_server_button_pressed, handle_stop_llamafile_server_button_pressed
-from .Event_Handlers.llm_management_events_vllm import handle_vllm_browse_python_button_pressed, handle_vllm_browse_model_button_pressed, handle_start_vllm_server_button_pressed, handle_stop_vllm_server_button_pressed
+    handle_stop_mlx_server_button_pressed, handle_stop_llamafile_server_button_pressed, populate_llm_help_texts
+from tldw_chatbook.Event_Handlers.llm_management_events.llm_management_events_vllm import handle_vllm_browse_python_button_pressed, handle_vllm_browse_model_button_pressed, handle_start_vllm_server_button_pressed, handle_stop_vllm_server_button_pressed
 from .Character_Chat import Character_Chat_Lib as ccl
 from .Notes.Notes_Library import NotesInteropService
 from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError, InputError
 from .Widgets.chat_message import ChatMessage
-from .Widgets.settings_sidebar import create_settings_sidebar
 from .Widgets.notes_sidebar_left import NotesSidebarLeft
 from .Widgets.notes_sidebar_right import NotesSidebarRight
 from .Widgets.titlebar import TitleBar
@@ -1152,7 +1139,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         """Operations to perform after the main UI is expected to be fully mounted."""
         self.loguru_logger.info("App _post_mount_setup: Binding Select widgets and populating dynamic content...")
         # Populate LLM help texts
-        self.call_later(self._populate_llm_help_texts)
+        self.call_later(populate_llm_help_texts, self)
 
         try:
             chat_select = self.query_one(f"#{TAB_CHAT}-api-provider", Select)
@@ -1213,28 +1200,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         self.loguru_logger.info("App _post_mount_setup: Post-mount setup completed.")
 
-    async def _populate_llm_help_texts(self) -> None:
-        """Populates the RichLog widgets with help text for LLM arguments."""
-        self.loguru_logger.info("Populating LLM argument help texts...")
-        try:
-            # Llama.cpp
-            llamacpp_help_widget = self.query_one("#llamacpp-args-help-display", RichLog)
-            llamacpp_help_widget.clear()  # Clear any old content
-            llamacpp_help_widget.write(LLAMA_CPP_SERVER_ARGS_HELP_TEXT)
-            self.loguru_logger.debug("Populated Llama.cpp args help.")
-        except QueryError:
-            self.loguru_logger.error("Failed to find #llamacpp-args-help-display widget.")
-        except Exception as e:
-            self.loguru_logger.error(f"Error populating Llama.cpp help: {e}", exc_info=True)
-        try:
-            llamafile_help_widget = self.query_one("#llamafile-args-help-display", RichLog)
-            llamafile_help_widget.clear()  # Clear existing content
-            llamafile_help_widget.write(LLAMAFILE_SERVER_ARGS_HELP_TEXT)  # Write new content
-            self.loguru_logger.debug("Populated Llamafile args help.")
-        except QueryError:
-            self.loguru_logger.error("Failed to find #llamafile-args-help-display widget.")
-        except Exception as e:
-            self.loguru_logger.error(f"Error populating Llamafile help: {e}", exc_info=True)
 
     async def update_db_sizes(self) -> None:
         """Updates the database size information in the AppFooterStatus widget."""

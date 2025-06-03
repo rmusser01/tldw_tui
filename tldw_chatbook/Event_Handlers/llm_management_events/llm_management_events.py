@@ -19,13 +19,16 @@ from textual.containers import Container
 from textual.css.query import QueryError
 from textual.worker import Worker, WorkerState
 from textual.widgets import Input, RichLog, TextArea, Button
+
+from tldw_chatbook.Constants import LLAMA_CPP_SERVER_ARGS_HELP_TEXT, LLAMAFILE_SERVER_ARGS_HELP_TEXT
+
 #
 # Local Imports
 if TYPE_CHECKING:
-    from ..app import TldwCli  # pragma: no cover – runtime import only
-from ..Local_Inference.mlx_lm_inference_local import start_mlx_lm_server, stop_mlx_lm_server
+    from tldw_chatbook.app import TldwCli  # pragma: no cover – runtime import only
+from tldw_chatbook.Local_Inference.mlx_lm_inference_local import start_mlx_lm_server, stop_mlx_lm_server
 # subprocess already imported
-from ..Third_Party.textual_fspicker import FileOpen, Filters
+from tldw_chatbook.Third_Party.textual_fspicker import FileOpen, Filters
 #
 ########################################################################################################################
 #
@@ -1191,6 +1194,31 @@ async def handle_stop_mlx_server_button_pressed(app: "TldwCli") -> None:
         if start_button: start_button.disabled = False
         if stop_button: stop_button.disabled = True
 
+
+
+
+async def populate_llm_help_texts(app: 'TldwCli') -> None:
+    """Populates the RichLog widgets with help text for LLM arguments."""
+    app.loguru_logger.info("Populating LLM argument help texts...")
+    try:
+        # Llama.cpp
+        llamacpp_help_widget = app.query_one("#llamacpp-args-help-display", RichLog)
+        llamacpp_help_widget.clear()  # Clear any old content
+        llamacpp_help_widget.write(LLAMA_CPP_SERVER_ARGS_HELP_TEXT)
+        app.loguru_logger.debug("Populated Llama.cpp args help.")
+    except QueryError:
+        app.loguru_logger.error("Failed to find #llamacpp-args-help-display widget.")
+    except Exception as e:
+        app.loguru_logger.error(f"Error populating Llama.cpp help: {e}", exc_info=True)
+    try:
+        llamafile_help_widget = app.query_one("#llamafile-args-help-display", RichLog)
+        llamafile_help_widget.clear()  # Clear existing content
+        llamafile_help_widget.write(LLAMAFILE_SERVER_ARGS_HELP_TEXT)  # Write new content
+        app.loguru_logger.debug("Populated Llamafile args help.")
+    except QueryError:
+        app.loguru_logger.error("Failed to find #llamafile-args-help-display widget.")
+    except Exception as e:
+        app.loguru_logger.error(f"Error populating Llamafile help: {e}", exc_info=True)
 
 #
 # End of llm_management_events.py

@@ -1730,6 +1730,8 @@ async def handle_ccp_editor_char_delete_button_pressed(app: 'TldwCli') -> None:
         logger.error(f"Unexpected error deleting character {character_id_to_delete}: {e_unexp}", exc_info=True)
         app.notify(f"Unexpected error deleting: {type(e_unexp).__name__}", severity="error")
 
+
+
 # ##############################################################
 # --- CCP Right Pane Editor Button Handlers ---
 # ##############################################################
@@ -1744,6 +1746,7 @@ async def handle_ccp_tab_sidebar_toggle(app: 'TldwCli', button_id: str) -> None:
         logger.debug("CCP right sidebar now %s", "collapsed" if app.conv_char_sidebar_right_collapsed else "expanded")
     else:
         logger.warning(f"Unhandled sidebar toggle button ID '{button_id}' in CCP tab handler.")
+
 
 
 #

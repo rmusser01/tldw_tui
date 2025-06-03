@@ -22,14 +22,14 @@ from typing import TYPE_CHECKING, List, Optional
 # Third-party Libraries
 from textual.widgets import Input, RichLog, TextArea
 if TYPE_CHECKING:
-    from ..app import TldwCli
+    from tldw_chatbook.app import TldwCli
     # Assuming LLMManagementWindow might be needed for type hints if methods are complex
     # from ..UI.LLM_Management_Window import LLMManagementWindow
 #
 # Local Imports
 # Imports for shared functions from the original events file
-from .llm_management_events import _make_path_update_callback, _stream_process, stream_worker_output_to_log
-from ..Third_Party.textual_fspicker import FileOpen, Filters
+from tldw_chatbook.Event_Handlers.llm_management_events.llm_management_events import _make_path_update_callback, _stream_process, stream_worker_output_to_log
+from tldw_chatbook.Third_Party.textual_fspicker import FileOpen, Filters
 #
 #
 ########################################################################################################################

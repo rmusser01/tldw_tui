@@ -656,7 +656,7 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
         temperature_regen = safe_float(temp_widget_regen.value, 0.7, "temperature")
         top_p_regen = safe_float(top_p_widget_regen.value, 0.95, "top_p")
         min_p_regen = safe_float(min_p_widget_regen.value, 0.05, "min_p")
-        top_k_regen = app._safe_int(top_k_widget_regen.value, 50, "top_k")
+        top_k_regen = safe_int(top_k_widget_regen.value, 50, "top_k")
 
         # --- Integration of Active Character Data & Streaming Config for REGENERATION ---
         active_char_data_regen = app.current_chat_active_character_data
@@ -684,17 +684,17 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
             loguru_logger.debug("No provider selected for REGENERATION, streaming defaults to False.")
         # --- End of Integration & Streaming Config for REGENERATION ---
 
-        llm_max_tokens_value_regen = app._safe_int(llm_max_tokens_widget_regen.value, 1024, "llm_max_tokens")
-        llm_seed_value_regen = app._safe_int(llm_seed_widget_regen.value, None, "llm_seed")
+        llm_max_tokens_value_regen = safe_int(llm_max_tokens_widget_regen.value, 1024, "llm_max_tokens")
+        llm_seed_value_regen = safe_int(llm_seed_widget_regen.value, None, "llm_seed")
         llm_stop_value_regen = [s.strip() for s in
                                 llm_stop_widget_regen.value.split(',')] if llm_stop_widget_regen.value.strip() else None
         llm_response_format_value_regen = {"type": str(
             llm_response_format_widget_regen.value)} if llm_response_format_widget_regen.value != Select.BLANK else {
             "type": "text"}
-        llm_n_value_regen = app._safe_int(llm_n_widget_regen.value, 1, "llm_n")
+        llm_n_value_regen = safe_int(llm_n_widget_regen.value, 1, "llm_n")
         llm_user_identifier_value_regen = llm_user_identifier_widget_regen.value.strip() or None
         llm_logprobs_value_regen = llm_logprobs_widget_regen.value
-        llm_top_logprobs_value_regen = app._safe_int(llm_top_logprobs_widget_regen.value, 0,
+        llm_top_logprobs_value_regen = safe_int(llm_top_logprobs_widget_regen.value, 0,
                                                      "llm_top_logprobs") if llm_logprobs_value_regen else 0
         llm_presence_penalty_value_regen = safe_float(llm_presence_penalty_widget_regen.value, 0.0,
                                                            "llm_presence_penalty")

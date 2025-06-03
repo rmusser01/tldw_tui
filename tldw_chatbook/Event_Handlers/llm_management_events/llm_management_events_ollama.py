@@ -17,14 +17,14 @@ from textual.containers import Container
 from textual.css.query import QueryError
 from textual.widgets import Input, TextArea, RichLog
 
-from .llm_management_events import _make_path_update_callback
-from ..Local_Inference.ollama_model_mgmt import ollama_list_local_models, ollama_model_info, ollama_delete_model, \
+from tldw_chatbook.Event_Handlers.llm_management_events.llm_management_events import _make_path_update_callback
+from tldw_chatbook.Local_Inference.ollama_model_mgmt import ollama_list_local_models, ollama_model_info, ollama_delete_model, \
     ollama_copy_model, ollama_create_model, ollama_push_model, ollama_pull_model, ollama_list_running_models, \
     ollama_generate_embeddings
-from ..Third_Party.textual_fspicker import FileOpen, Filters
+from tldw_chatbook.Third_Party.textual_fspicker import FileOpen, Filters
 
 if TYPE_CHECKING:
-    from ..app import TldwCli
+    from tldw_chatbook.app import TldwCli
 
 __all__ = [
     # ─── Ollama ───────────────────────────────────────────────────────────────
