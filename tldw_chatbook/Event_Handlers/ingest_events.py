@@ -2,7 +2,6 @@
 #
 #
 # Imports
-import logging
 import json
 import yaml  # Add yaml import if not already there
 from pathlib import Path
@@ -10,7 +9,7 @@ from typing import TYPE_CHECKING, Optional, List, Any, Dict, Callable
 #
 # 3rd-party Libraries
 from loguru import logger
-from textual.widgets import Select, Input, TextArea, Checkbox, RadioSet, RadioButton, Label, Static, Markdown, ListItem, \
+from textual.widgets import Select, Input, TextArea, Checkbox, Label, Static, Markdown, ListItem, \
     ListView, Collapsible
 from textual.css.query import QueryError
 from textual.containers import Container, VerticalScroll
@@ -18,14 +17,13 @@ from textual.containers import Container, VerticalScroll
 # Local Imports
 import tldw_chatbook.Event_Handlers.conv_char_events as ccp_handlers
 from . import chat_events as chat_handlers
+from .chat_events import populate_chat_conversation_character_filter_select
 from ..tldw_api import (
     TLDWAPIClient, ProcessVideoRequest, ProcessAudioRequest,
     APIConnectionError, APIRequestError, APIResponseError, AuthenticationError,
     MediaItemProcessResult, ProcessedMediaWikiPage  # Assuming BatchMediaProcessResponse contains this
 )
 # Prompts Interop (existing)
-from ..Prompt_Management.Prompts_Interop import is_initialized, _get_file_type
-from ..Third_Party.textual_fspicker import Filters
 from ..Prompt_Management.Prompts_Interop import (
     parse_yaml_prompts_from_content, parse_json_prompts_from_content,
     parse_markdown_prompts_from_content, parse_txt_prompts_from_content,
@@ -423,7 +421,7 @@ async def handle_ingest_characters_import_now_button_pressed(app: 'TldwCli') -> 
         app.notify(f"Character import finished. Success: {successful_imports}, Failed: {failed_imports}", timeout=8)
         logger.info(summary)
 
-        app.call_later(app._populate_chat_conversation_character_filter_select)
+        app.call_later(populate_chat_conversation_character_filter_select, app)
         app.call_later(ccp_handlers.populate_ccp_character_select, app)
 
     def on_import_failure_char(error: Exception):
@@ -506,7 +504,7 @@ async def _update_prompt_preview_display(app: 'TldwCli') -> None:
 
 def _parse_single_prompt_file_for_preview(file_path: Path, app_ref: 'TldwCli') -> List[Dict[str, Any]]:
     """Parses a single prompt file and returns a list of prompt data dicts."""
-    file_type = _get_file_type(file_path)  # Use helper from interop
+    file_type = _get_prompt_file_type(file_path)  # Use helper from interop
     if not file_type:
         logger.warning(f"Unsupported file type for preview: {file_path}")
         return [{"name": f"Error: Unsupported type {file_path.name}",
