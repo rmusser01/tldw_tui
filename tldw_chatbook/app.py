@@ -207,6 +207,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # Renamed character_api_provider_value to ccp_api_provider_value for clarity with TAB_CCP
     ccp_api_provider_value: reactive[Optional[str]] = reactive(_default_ccp_provider)
 
+    # --- Reactives for CCP Character EDITOR (Center Pane) ---
+    current_editing_character_id: reactive[Optional[str]] = reactive(None)
+    current_editing_character_data: reactive[Optional[Dict[str, Any]]] = reactive(None)
+
     # DB Size checker - now using AppFooterStatus
     _db_size_status_widget: Optional[AppFooterStatus] = None
     _db_size_update_timer: Optional[Timer] = None
@@ -2074,6 +2078,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 return
             if button_id == "conv-char-conversation-search-button": await ccp_handlers.handle_ccp_conversation_search_button_pressed(self)
             elif button_id == "ccp-import-character-button": await ccp_handlers.handle_ccp_import_character_button_pressed(self)
+            elif button_id == "ccp-card-edit-button": await ccp_handlers.handle_ccp_card_edit_button_pressed(self)
             elif button_id == "conv-char-load-button": await ccp_handlers.handle_ccp_load_conversation_button_pressed(self)
             elif button_id == "conv-char-save-details-button": await ccp_handlers.handle_ccp_save_conversation_details_button_pressed(self)
             elif button_id == "ccp-import-prompt-button": await ccp_handlers.handle_ccp_import_prompt_button_pressed(self)
