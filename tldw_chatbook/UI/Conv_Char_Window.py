@@ -133,17 +133,16 @@ class CCPWindow(Container):
                 yield Button("Export as Text", id="conv-char-export-text-button", classes="sidebar-button")
                 yield Button("Export as JSON", id="conv-char-export-json-button", classes="sidebar-button")
 
-            # Characters Collapsible
-            with Collapsible(title="Characters", id="ccp-characters-collapsible", collapsed=True):
-                pass
-                # Add other character related widgets here if needed in the future
-
             # Prompt Details Collapsible (for the right-pane prompt editor)
             with Collapsible(title="Prompt Options", id="ccp-prompt-details-collapsible", collapsed=True):
                 yield Static("Prompt metadata or non-editor actions will appear here.", classes="sidebar-label")
             with Collapsible(title="Prompt Deletion", id="ccp-prompt-details-collapsible-2", collapsed=True):
                 yield Button("Delete Prompt", id="ccp-editor-prompt-delete-button", variant="error",
                              classes="sidebar-button")
+            # Characters Collapsible
+            with Collapsible(title="Delete Character", id="ccp-characters-collapsible", collapsed=True):
+                yield Button("Delete Character", id="ccp-character-delete-button", variant="error",)
+                # Add other character related widgets here if needed in the future
 
 #
 # End of Conv_Char_Window.py
