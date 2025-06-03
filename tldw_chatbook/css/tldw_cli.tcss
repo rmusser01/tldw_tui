@@ -837,6 +837,7 @@ MetricsScreen Label.-info-message {
 }
 /* --- END OF INTEGRATED NEW CSS --- */
 
+/* ----------------------------- ************************* ----------------------------- */
 /* --- LLM Management Tab --- */
 #llm_management-window { /* Matches TAB_LLM ("llm_management") */
     layout: horizontal;
@@ -987,7 +988,121 @@ MetricsScreen Label.-info-message {
 .button_container Button {
     margin-left: 1; /* Space between buttons */
 }
+/* Ollama Specific Styles within #llm-view-ollama */
+#llm-view-ollama VerticalScroll { /* Ensure the VerticalScroll takes up space */
+    height: 100%;
+}
 
+#llm-view-ollama .label { /* General label styling if not already covered */
+    margin-top: 1;
+    margin-bottom: 0; /* Tighten space below label if input is right after */
+    text-style: bold;
+}
+#llm-view-ollama .section_label { /* For labels that act as section headers */
+    margin-top: 2; /* More space above section labels */
+    padding: 1 0;
+    border: ascii $primary-background-lighten-1; /* Optional: add a border or background */
+    text-align: center;
+    width: 100%;
+}
+
+#llm-view-ollama .input_field,
+#llm-view-ollama .input_field_short,
+#llm-view-ollama .input_field_long {
+    margin-bottom: 1; /* Space after input fields */
+}
+#llm-view-ollama .input_field_long { /* For paths or longer inputs */
+    width: 100%;
+}
+
+#llm-view-ollama .input_action_container { /* For Input + Button on same line */
+    layout: horizontal;
+    height: auto; /* Fit content */
+    margin-bottom: 0; /* Status/Output will provide margin */
+}
+#llm-view-ollama .input_action_container .input_field_short {
+    width: 1fr; /* Input takes most space */
+    margin-right: 1;
+    margin-bottom: 0; /* No bottom margin if button is next to it */
+}
+#llm-view-ollama .input_action_container .action_button_short {
+    width: auto; /* Let button size itself */
+    min-width: 10; /* Ensure it's not too small */
+    height: 100%; /* Match input height */
+}
+#llm-view-ollama .input_action_container .browse_button_short {
+    width: auto;
+    min-width: 15;
+    height: 100%;
+}
+
+
+#llm-view-ollama .action_container { /* For standalone buttons */
+    width: 100%;
+    height: auto;
+    margin-bottom: 0;
+}
+#llm-view-ollama .action_button { /* For buttons that take full width or are main actions */
+    width: 100%;
+    margin-top: 1; /* If it's after a section label or input */
+}
+#llm-view-ollama .full_width_button {
+    width: 100%;
+    margin-top: 1;
+}
+
+
+#llm-view-ollama .delete_button Button { /* Specific styling for delete button if needed */
+    background: $error-darken-1;
+    color: $text;
+}
+#llm-view-ollama .delete_button Button:hover {
+    background: $error;
+}
+
+/* New Status TextArea */
+.ollama-status-textarea {
+    width: 100%;
+    height: 3; /* Small, 1-2 lines of text */
+    border: round $primary-darken-1;
+    background: $surface;
+    margin-top: 1; /* Space above status */
+    margin-bottom: 1; /* Space below status, before main output or next section */
+    padding: 0 1;
+    color: $text-muted; /* Subdued text color for status */
+}
+
+/* Output TextAreas */
+#llm-view-ollama .output_textarea_medium { /* For JSON lists, model info */
+    width: 100%;
+    height: 10; /* Or adjust as needed */
+    border: round $primary;
+    background: $panel;
+    margin-bottom: 1; /* Space before next element/spacer */
+}
+#llm-view-ollama .output_textarea_small { /* For embeddings */
+    width: 100%;
+    height: 6;
+    border: round $primary;
+    background: $panel;
+    margin-bottom: 1;
+}
+
+/* Main RichLog for streaming */
+#llm-view-ollama .log_output_large { /* Renamed from .log_output for specificity */
+    width: 100%;
+    height: 15; /* Make it taller */
+    border: panel $primary-darken-2;
+    background: $background-darken-1; /* Darker background for log */
+}
+
+/* Spacer element */
+.ollama-spacer {
+    height: 1; /* Creates 1 cell of vertical space */
+    width: 100%;
+}
+
+/* --- End of LLM Management Tab --- */
 /* ----------------------------- ************************* ----------------------------- */
 
 
@@ -1264,18 +1379,50 @@ MetricsScreen Label.-info-message {
 /* --- End of LLM Management Tab --- */
 /* ----------------------------- ************************* ----------------------------- */
 
-/* Custom Footer Status Bar */
+
+
+/* ----------------------------- ************************* ----------------------------- */
+/* --- Window Footer Widget --- */
+
 AppFooterStatus {
     dock: bottom;
     height: 1;
-    background: $primary-background-darken-1; /* Example color, adjust to theme */
+    background: $primary-background-darken-1;
     width: 100%;
-    layout: horizontal; /* Ensures items inside flow horizontally */
-    /* align: right middle; /* This is now removed, children use dock */
-    padding: 0 1; /* Horizontal padding for the footer bar */
+    layout: horizontal;
+    padding: 0 1;
+    /* Removed align: right middle; from parent, will control children individually */
 }
 
-/* Styling for the children of AppFooterStatus is primarily handled by
-   AppFooterStatus.DEFAULT_CSS in its Python file.
-   The rule for AppFooterStatus > Static#internal-db-size-indicator previously here
-   is removed to defer to DEFAULT_CSS for internal component styling. */
+#footer-key-palette {
+    width: auto;
+    padding: 0 1; /* Padding around each key binding */
+    color: $text-muted;
+    dock: left; /* Dock key bindings to the left */
+    visibility: visible;
+    display: initial;
+}
+
+#footer-key-quit {
+    width: auto;
+    padding: 0 1; /* Padding around each key binding */
+    color: $text-muted;
+    dock: left; /* Dock key bindings to the left */
+}
+
+#footer-spacer {
+    width: 1fr; /* Takes up remaining space in the middle */
+}
+
+#internal-db-size-indicator { /* This is for the DB sizes */
+    width: auto;
+    /* content-align: right; Textual doesn't have content-align for Static directly */
+    /* dock: right; Docking within Horizontal might be tricky, align on parent is better */
+    color: $text-muted;
+    dock: right; /* Dock DB sizes to the right */
+    padding: 0 1; /* Add padding to the right of DB sizes as well */
+    margin-left: 2; /* Add buffer before DB status */
+}
+/* --- End of Window Footer Widget --- */
+/* ----------------------------- ************************* ----------------------------- */
+

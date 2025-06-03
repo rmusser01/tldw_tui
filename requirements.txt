@@ -18,7 +18,7 @@ httpx
 #scikit-learn
 # LLM
 #vllm
-# transformers
+#transformers
 #mlx-lm
 #
 # Audio

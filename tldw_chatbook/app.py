@@ -941,6 +941,15 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.loguru_logger.error("Failed to query #llamafile-log-output to write message.")
         except Exception as e:
             self.loguru_logger.error(f"Error writing to Llamafile log: {e}", exc_info=True)
+
+    def _update_vllm_log(self, message: str) -> None:
+        try:
+            log_widget = self.query_one("#vllm-log-output", RichLog)
+            log_widget.write(message)
+        except QueryError:
+            self.loguru_logger.error("Failed to query #vllm-log-output to write message.")
+        except Exception as e:
+            self.loguru_logger.error(f"Error writing to vLLM log: {e}", exc_info=True)
     # ###################################################################
     # --- End of Helper methods for Local LLM Inference logging ---
     # ###################################################################

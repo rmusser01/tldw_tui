@@ -6,6 +6,7 @@ from __future__ import annotations
 import functools
 #
 import logging
+import os
 import shlex
 import subprocess
 import sys
@@ -177,14 +178,23 @@ def _set_llamafile_process_on_app(app_instance: "TldwCli", process: Optional[sub
 def run_llamafile_server_worker(app_instance: "TldwCli", command: List[str]) -> str:
     logger = getattr(app_instance, "loguru_logger", logging.getLogger(__name__))
     quoted_command = ' '.join(shlex.quote(c) for c in command)
-    logger.info(f"Llamafile WORKER (persistent stream) starting with command: {quoted_command}")
+    logger.info(f"Llamafile WORKER (diag v2) starting with command: {quoted_command}")
 
     process: Optional[subprocess.Popen] = None
-    final_status_message = f"Llamafile WORKER (persistent stream): Default status for {quoted_command}"
+    final_status_message = f"Llamafile WORKER (diag v2): Default status for {quoted_command}"
     pid_str = "N/A"
 
+    # --- Determine the directory of the llamafile executable ---
+    llamafile_executable_path = Path(command[0])
+    llamafile_dir = llamafile_executable_path.parent
+    logger.info(f"Llamafile WORKER: CWD will be: {llamafile_dir}")
+
+    # Log a snippet of the current PATH for comparison
+    current_env_path = os.environ.get("PATH", "PATH not found in os.environ")
+    logger.debug(f"Llamafile WORKER: Python's current PATH (first 200 chars): {current_env_path[:200]}")
+
     try:
-        logger.debug("Llamafile WORKER (persistent stream): Attempting to start subprocess...")
+        logger.debug("Llamafile WORKER (diag v2): Attempting to start subprocess...")
         process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
@@ -192,20 +202,55 @@ def run_llamafile_server_worker(app_instance: "TldwCli", command: List[str]) -> 
             text=True,
             universal_newlines=True,
             bufsize=1,
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+            cwd=llamafile_dir,
+            env=os.environ.copy() # Pass a copy of the current environment
         )
         pid_str = str(process.pid) if process and process.pid else "UnknownPID"
-        logger.info(f"Llamafile WORKER (persistent stream): Subprocess launched, PID: {pid_str}")
+        logger.info(f"Llamafile WORKER (diag v2): Subprocess launched, PID: {pid_str}, CWD: {llamafile_dir}")
+
         app_instance.call_from_thread(_set_llamafile_process_on_app, app_instance, process)
+        app_instance.call_from_thread(app_instance._update_llamafile_log, f"[PID:{pid_str}] Llamafile server attempting to start (diag v2)...\n")
 
-        # Store the process object on the app instance (optional, but good for a stop button)
-        # app_instance.call_from_thread(_set_llamafile_process_on_app, app_instance, process)
+        # --- DIAGNOSTIC: Use communicate() with a short timeout for initial output ---
+        initial_stdout = ""
+        initial_stderr = ""
+        quick_exit_code = None
+        try:
+            logger.debug(f"Llamafile WORKER (PID:{pid_str}): Attempting immediate communicate(timeout=5s)...")
+            # This will block until process terminates OR timeout
+            initial_stdout, initial_stderr = process.communicate(timeout=5)
+            quick_exit_code = process.returncode
+            logger.info(f"Llamafile WORKER (PID:{pid_str}): communicate() completed. Exit code: {quick_exit_code}")
+            if initial_stdout:
+                logger.info(f"Llamafile WORKER (PID:{pid_str}) Initial STDOUT:\n{initial_stdout.strip()}")
+                app_instance.call_from_thread(app_instance._update_llamafile_log, f"--- Initial STDOUT (PID:{pid_str}) ---\n{initial_stdout.strip()}\n")
+            if initial_stderr:
+                logger.error(f"Llamafile WORKER (PID:{pid_str}) Initial STDERR:\n{initial_stderr.strip()}")
+                app_instance.call_from_thread(app_instance._update_llamafile_log, f"--- Initial STDERR (PID:{pid_str}) ---\n[bold red]{initial_stderr.strip()}[/]\n")
 
-        # Ensure _update_llamafile_log method exists in TldwCli (app.py)
-        app_instance.call_from_thread(app_instance._update_llamafile_log,
-                                      f"[PID:{pid_str}] Llamafile server starting...\n")
+            if quick_exit_code is not None: # Process terminated within timeout
+                if quick_exit_code != 0:
+                    final_status_message = f"Llamafile server (PID:{pid_str}) EXITED QUICKLY with ERROR code: {quick_exit_code}."
+                    if initial_stderr: final_status_message += f"\nInitial STDERR: {initial_stderr.strip()}"
+                else:
+                    final_status_message = f"Llamafile server (PID:{pid_str}) EXITED QUICKLY with code: {quick_exit_code} (SUCCESS)."
+                    if initial_stdout: final_status_message += f"\nInitial STDOUT: {initial_stdout.strip()}"
+                logger.info(final_status_message)
+                app_instance.call_from_thread(app_instance._update_llamafile_log, f"{final_status_message}\n")
+                return final_status_message # Worker is done if process exited quickly
 
-        while True:
+        except subprocess.TimeoutExpired:
+            logger.info(f"Llamafile WORKER (PID:{pid_str}): communicate(timeout=5s) EXPIRED. Server is likely running (this is expected for a server).")
+            app_instance.call_from_thread(app_instance._update_llamafile_log, f"[PID:{pid_str}] Server running after 5s. Switching to streaming...\n")
+            # If it timed out, the server is running. Now proceed to the normal streaming loop.
+            # The process object is still valid.
+        # --- END DIAGNOSTIC ---
+
+        # If communicate() timed out, the process is still running. Proceed with streaming.
+        logger.info(f"Llamafile WORKER (PID:{pid_str}): Proceeding to continuous streaming as server is running...")
+        stderr_lines_captured = []
+        while True: # Streaming loop
             output_received_in_iteration = False
             if process.poll() is not None:
                 logger.info(f"Llamafile WORKER (PID:{pid_str}): Process terminated. Exit code: {process.returncode}")
@@ -233,8 +278,8 @@ def run_llamafile_server_worker(app_instance: "TldwCli", command: List[str]) -> 
                         line = line.strip()
                         if line:
                             logger.error(f"Llamafile WORKER STDERR (PID:{pid_str}): {line}")
-                            app_instance.call_from_thread(app_instance._update_llamafile_log,
-                                                          f"[STDERR] [bold red]{line}[/]\n")
+                            stderr_lines_captured.append(line) # Capture for final message
+                            app_instance.call_from_thread(app_instance._update_llamafile_log, f"[STDERR] [bold red]{line}[/]\n")
                             output_received_in_iteration = True
                     elif process.poll() is not None:
                         break
@@ -259,15 +304,16 @@ def run_llamafile_server_worker(app_instance: "TldwCli", command: List[str]) -> 
         try:
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            logger.warning(f"Llamafile WORKER (PID:{pid_str}): Timeout on final wait.")
+             logger.warning(f"Llamafile WORKER (PID:{pid_str}): Timeout on final wait post-streaming.")
 
         exit_code = process.returncode if process.returncode is not None else -1
-        logger.info(f"Llamafile WORKER (PID:{pid_str}): Subprocess finally exited with code: {exit_code}")
+        logger.info(f"Llamafile WORKER (PID:{pid_str}): Subprocess finally exited post-streaming with code: {exit_code}")
 
         if exit_code != 0:
-            final_status_message = f"Llamafile server (PID:{pid_str}) exited with non-zero code: {exit_code}."
+            final_status_message = f"Llamafile server (PID:{pid_str}) exited post-streaming with non-zero code: {exit_code}."
+            if stderr_lines_captured: final_status_message += "\nSTDERR:\n" + "\n".join(stderr_lines_captured)
         else:
-            final_status_message = f"Llamafile server (PID:{pid_str}) exited successfully (code: {exit_code})."
+            final_status_message = f"Llamafile server (PID:{pid_str}) exited post-streaming successfully (code: {exit_code})."
 
         app_instance.call_from_thread(app_instance._update_llamafile_log, f"{final_status_message}\n")
         return final_status_message
