@@ -1326,11 +1326,15 @@ MetricsScreen Label.-info-message {
 }
 
 .ingest-textarea-small {
-    height: 3;
+    height: auto;
+    max-height: 10;
+    overflow-y: hidden;
     margin-bottom: 1;
 }
 .ingest-textarea-medium {
-    height: 5;
+    height: auto;
+    max-height: 15;
+    overflow-y: hidden;
     margin-bottom: 1;
 }
 .ingest-form-row {

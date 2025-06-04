@@ -145,6 +145,67 @@ class IngestWindow(Container):
             # --- Media-Type Specific Option Containers have been removed from this common method ---
             # They will be added to the media-type specific views/containers directly.
 
+            # --- Inserted Media-Type Specific Options ---
+            if media_type == "video":
+                with Container(id=TLDW_API_VIDEO_OPTIONS_ID, classes="tldw-api-media-specific-options"): # ID of container itself is fine
+                    yield Static("Video Specific Options", classes="sidebar-title")
+                    yield Label("Transcription Model:")
+                    yield Input("deepdml/faster-whisper-large-v3-turbo-ct2", id=f"tldw-api-video-transcription-model-{media_type}")
+                    yield Label("Transcription Language (e.g., 'en'):")
+                    yield Input("en", id=f"tldw-api-video-transcription-language-{media_type}")
+                    yield Checkbox("Enable Speaker Diarization", False, id=f"tldw-api-video-diarize-{media_type}")
+                    yield Checkbox("Include Timestamps in Transcription", True, id=f"tldw-api-video-timestamp-{media_type}")
+                    yield Checkbox("Enable VAD (Voice Activity Detection)", False, id=f"tldw-api-video-vad-{media_type}")
+                    yield Checkbox("Perform Confabulation Check of Analysis", False, id=f"tldw-api-video-confab-check-{media_type}")
+                    with Horizontal(classes="ingest-form-row"):
+                        with Vertical(classes="ingest-form-col"):
+                            yield Label("Start Time (HH:MM:SS or secs):")
+                            yield Input(id=f"tldw-api-video-start-time-{media_type}", placeholder="Optional")
+                        with Vertical(classes="ingest-form-col"):
+                            yield Label("End Time (HH:MM:SS or secs):")
+                            yield Input(id=f"tldw-api-video-end-time-{media_type}", placeholder="Optional")
+            elif media_type == "audio":
+                with Container(id=TLDW_API_AUDIO_OPTIONS_ID, classes="tldw-api-media-specific-options"):
+                    yield Static("Audio Specific Options", classes="sidebar-title")
+                    yield Label("Transcription Model:")
+                    yield Input("deepdml/faster-distil-whisper-large-v3.5", id=f"tldw-api-audio-transcription-model-{media_type}")
+                    yield Label("Transcription Language (e.g., 'en'):")
+                    yield Input("en", id=f"tldw-api-audio-transcription-language-{media_type}")
+                    yield Checkbox("Enable Speaker Diarization", False, id=f"tldw-api-audio-diarize-{media_type}")
+                    yield Checkbox("Include Timestamps in Transcription", True, id=f"tldw-api-audio-timestamp-{media_type}")
+                    yield Checkbox("Enable VAD (Voice Activity Detection)", False, id=f"tldw-api-audio-vad-{media_type}")
+                    # TODO: Add other audio specific fields from ProcessAudioRequest: confab (e.g. id=f"tldw-api-audio-confab-check-{media_type}")
+            elif media_type == "pdf":
+                pdf_engine_options = [(engine, engine) for engine in PdfEngine.__args__]
+                with Container(id=TLDW_API_PDF_OPTIONS_ID, classes="tldw-api-media-specific-options"):
+                    yield Static("PDF Specific Options", classes="sidebar-title")
+                    yield Label("PDF Parsing Engine:")
+                    yield Select(pdf_engine_options, id=f"tldw-api-pdf-engine-{media_type}", value="pymupdf4llm")
+            elif media_type == "ebook":
+                ebook_extraction_options = [("filtered", "filtered"), ("markdown", "markdown"), ("basic", "basic")]
+                with Container(id=TLDW_API_EBOOK_OPTIONS_ID, classes="tldw-api-media-specific-options"):
+                    yield Static("Ebook Specific Options", classes="sidebar-title")
+                    yield Label("Ebook Extraction Method:")
+                    yield Select(ebook_extraction_options, id=f"tldw-api-ebook-extraction-method-{media_type}", value="filtered")
+            elif media_type == "document":
+                with Container(id=TLDW_API_DOCUMENT_OPTIONS_ID, classes="tldw-api-media-specific-options"):
+                    yield Static("Document Specific Options", classes="sidebar-title")
+                    # yield Label("Note: Document specific options are minimal beyond common settings.") # Placeholder - can be removed or made more specific if needed
+                    # If adding specific fields, ensure their IDs are dynamic e.g. id=f"tldw-api-doc-some-option-{media_type}"
+            elif media_type == "xml":
+                with Container(id=TLDW_API_XML_OPTIONS_ID, classes="tldw-api-media-specific-options"):
+                    yield Static("XML Specific Options (Note: Only one local file at a time)", classes="sidebar-title")
+                    yield Checkbox("Auto Summarize XML Content", False, id=f"tldw-api-xml-auto-summarize-{media_type}")
+            elif media_type == "mediawiki_dump":
+                with Container(id=TLDW_API_MEDIAWIKI_OPTIONS_ID, classes="tldw-api-media-specific-options"):
+                    yield Static("MediaWiki Dump Specific Options (Note: Only one local file at a time)", classes="sidebar-title")
+                    yield Label("Wiki Name (for identification):")
+                    yield Input(id=f"tldw-api-mediawiki-wiki-name-{media_type}", placeholder="e.g., my_wiki_backup")
+                    yield Label("Namespaces (comma-sep IDs, optional):")
+                    yield Input(id=f"tldw-api-mediawiki-namespaces-{media_type}", placeholder="e.g., 0,14")
+                    yield Checkbox("Skip Redirect Pages (recommended)", True, id=f"tldw-api-mediawiki-skip-redirects-{media_type}")
+            # --- End of Inserted Media-Type Specific Options ---
+
             yield Static("Local Database Options", classes="sidebar-title")
             yield Checkbox("Overwrite if media exists in local DB", False, id=f"tldw-api-overwrite-db-{media_type}")
 
@@ -240,66 +301,6 @@ class IngestWindow(Container):
                     # or decide if one generic form is enough and it's just the nav that changes.
                     # For now, we assume compose_tldw_api_form is generic enough or will be adapted.
                     yield from self.compose_tldw_api_form(media_type=media_type)
-
-                    # Add media-specific options here
-                    if media_type == "video":
-                        with Container(id=TLDW_API_VIDEO_OPTIONS_ID, classes="tldw-api-media-specific-options"): # ID of container itself is fine
-                            yield Static("Video Specific Options", classes="sidebar-title")
-                            yield Label("Transcription Model:")
-                            yield Input("deepdml/faster-whisper-large-v3-turbo-ct2", id=f"tldw-api-video-transcription-model-{media_type}")
-                            yield Label("Transcription Language (e.g., 'en'):")
-                            yield Input("en", id=f"tldw-api-video-transcription-language-{media_type}")
-                            yield Checkbox("Enable Speaker Diarization", False, id=f"tldw-api-video-diarize-{media_type}")
-                            yield Checkbox("Include Timestamps in Transcription", True, id=f"tldw-api-video-timestamp-{media_type}")
-                            yield Checkbox("Enable VAD (Voice Activity Detection)", False, id=f"tldw-api-video-vad-{media_type}")
-                            yield Checkbox("Perform Confabulation Check of Analysis", False, id=f"tldw-api-video-confab-check-{media_type}")
-                            with Horizontal(classes="ingest-form-row"):
-                                with Vertical(classes="ingest-form-col"):
-                                    yield Label("Start Time (HH:MM:SS or secs):")
-                                    yield Input(id=f"tldw-api-video-start-time-{media_type}", placeholder="Optional")
-                                with Vertical(classes="ingest-form-col"):
-                                    yield Label("End Time (HH:MM:SS or secs):")
-                                    yield Input(id=f"tldw-api-video-end-time-{media_type}", placeholder="Optional")
-                    elif media_type == "audio":
-                        with Container(id=TLDW_API_AUDIO_OPTIONS_ID, classes="tldw-api-media-specific-options"):
-                            yield Static("Audio Specific Options", classes="sidebar-title")
-                            yield Label("Transcription Model:")
-                            yield Input("deepdml/faster-distil-whisper-large-v3.5", id=f"tldw-api-audio-transcription-model-{media_type}")
-                            yield Label("Transcription Language (e.g., 'en'):")
-                            yield Input("en", id=f"tldw-api-audio-transcription-language-{media_type}")
-                            yield Checkbox("Enable Speaker Diarization", False, id=f"tldw-api-audio-diarize-{media_type}")
-                            yield Checkbox("Include Timestamps in Transcription", True, id=f"tldw-api-audio-timestamp-{media_type}")
-                            yield Checkbox("Enable VAD (Voice Activity Detection)", False, id=f"tldw-api-audio-vad-{media_type}")
-                            # TODO: Add other audio specific fields from ProcessAudioRequest: confab (e.g. id=f"tldw-api-audio-confab-check-{media_type}")
-                    elif media_type == "pdf":
-                        pdf_engine_options = [(engine, engine) for engine in PdfEngine.__args__]
-                        with Container(id=TLDW_API_PDF_OPTIONS_ID, classes="tldw-api-media-specific-options"):
-                            yield Static("PDF Specific Options", classes="sidebar-title")
-                            yield Label("PDF Parsing Engine:")
-                            yield Select(pdf_engine_options, id=f"tldw-api-pdf-engine-{media_type}", value="pymupdf4llm")
-                    elif media_type == "ebook":
-                        ebook_extraction_options = [("filtered", "filtered"), ("markdown", "markdown"), ("basic", "basic")]
-                        with Container(id=TLDW_API_EBOOK_OPTIONS_ID, classes="tldw-api-media-specific-options"):
-                            yield Static("Ebook Specific Options", classes="sidebar-title")
-                            yield Label("Ebook Extraction Method:")
-                            yield Select(ebook_extraction_options, id=f"tldw-api-ebook-extraction-method-{media_type}", value="filtered")
-                    elif media_type == "document":
-                        with Container(id=TLDW_API_DOCUMENT_OPTIONS_ID, classes="tldw-api-media-specific-options"):
-                            yield Static("Document Specific Options", classes="sidebar-title")
-                            # yield Label("Note: Document specific options are minimal beyond common settings.") # Placeholder - can be removed or made more specific if needed
-                            # If adding specific fields, ensure their IDs are dynamic e.g. id=f"tldw-api-doc-some-option-{media_type}"
-                    elif media_type == "xml":
-                        with Container(id=TLDW_API_XML_OPTIONS_ID, classes="tldw-api-media-specific-options"):
-                            yield Static("XML Specific Options (Note: Only one local file at a time)", classes="sidebar-title")
-                            yield Checkbox("Auto Summarize XML Content", False, id=f"tldw-api-xml-auto-summarize-{media_type}")
-                    elif media_type == "mediawiki_dump":
-                        with Container(id=TLDW_API_MEDIAWIKI_OPTIONS_ID, classes="tldw-api-media-specific-options"):
-                            yield Static("MediaWiki Dump Specific Options (Note: Only one local file at a time)", classes="sidebar-title")
-                            yield Label("Wiki Name (for identification):")
-                            yield Input(id=f"tldw-api-mediawiki-wiki-name-{media_type}", placeholder="e.g., my_wiki_backup")
-                            yield Label("Namespaces (comma-sep IDs, optional):")
-                            yield Input(id=f"tldw-api-mediawiki-namespaces-{media_type}", placeholder="e.g., 0,14")
-                            yield Checkbox("Skip Redirect Pages (recommended)", True, id=f"tldw-api-mediawiki-skip-redirects-{media_type}")
 
 
 
