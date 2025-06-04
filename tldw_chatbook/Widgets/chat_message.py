@@ -4,10 +4,12 @@
 # Imports
 #
 # 3rd-party Libraries
+import logging
 from typing import Optional
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
+from textual.css.query import QueryError
 from textual.widget import Widget
 from textual.widgets import Static, Button, Label # Added Label
 from textual.reactive import reactive
@@ -83,8 +85,9 @@ class ChatMessage(Widget):
 
     # Store the raw text content
     message_text = reactive("", repaint=True)
-    role = reactive("User", repaint=True) # "User" or "AI"
-    generation_complete = reactive(True) # Used for AI messages to show actions
+    role = reactive("User", repaint=True)
+    # Use an internal reactive to manage generation status and trigger UI updates
+    _generation_complete_internal = reactive(True)
 
     # -- Internal state for message metadata ---
     message_id_internal: reactive[Optional[str]] = reactive(None)
@@ -108,7 +111,7 @@ class ChatMessage(Widget):
         super().__init__(**kwargs)
         self.message_text = message
         self.role = role
-        self.generation_complete = generation_complete
+        self._generation_complete_internal = generation_complete
 
         self.message_id_internal = message_id
         self.message_version_internal = message_version
@@ -124,6 +127,11 @@ class ChatMessage(Widget):
         else: # Any role other than "user" (e.g., "AI", "Default Assistant", "Character Name") gets the -ai style
             self.add_class("-ai")
 
+    @property
+    def generation_complete(self) -> bool:
+        """Public property to access the generation status."""
+        return self._generation_complete_internal
+
     def compose(self) -> ComposeResult:
         with Vertical():
             yield Label(f"{self.role}", classes="message-header")
@@ -133,7 +141,9 @@ class ChatMessage(Widget):
             # This should only apply if it's an AI message AND generation is not complete
             if self.has_class("-ai") and not self.generation_complete:
                 actions_class += " -generating"
-            with Horizontal(classes=actions_class):
+
+            with Horizontal(classes=actions_class) as actions_bar:
+                actions_bar.id = f"actions-bar-{self.id or self.message_id_internal or 'new'}"
                 # Common buttons
                 yield Button("Edit", classes="action-button edit-button")
                 yield Button("📋", classes="action-button copy-button", id="copy") # Emoji for copy
@@ -144,25 +154,67 @@ class ChatMessage(Widget):
                     yield Button("👍", classes="action-button thumb-up-button", id="thumb-up")
                     yield Button("👎", classes="action-button thumb-down-button", id="thumb-down")
                     yield Button("🔄", classes="action-button regenerate-button", id="regenerate") # Emoji for regenerate
-                    if self.generation_complete: # Only show continue if generation is complete
-                        yield Button("↪️", id="continue-response-button", classes="action-button continue-button")
+                    # FIXME For some reason, the entire UI freezes when clicked...
+                    #yield Button("↪️", id="continue-response-button", classes="action-button continue-button")
 
                 # Add delete button for all messages at very end
                 yield Button("🗑️", classes="action-button delete-button")  # Emoji for delete ; Label: Delete, Class: delete-button
 
-    def update_message_chunk(self, chunk: str):
+    def watch__generation_complete_internal(self, complete: bool) -> None:
+        """
+        Watcher for the internal generation status.
+        Updates the actions bar visibility and the continue button visibility for AI messages.
+        """
         if self.has_class("-ai"):
-            self.query_one(".message-text", Static).update(self.message_text + chunk)
-            self.message_text += chunk
+            try:
+                actions_container = self.query_one(".message-actions")
+                continue_button = self.query_one("#continue-response-button", Button)
+
+                if complete:
+                    actions_container.remove_class("-generating") # Makes the bar visible via CSS
+                    actions_container.styles.display = "block"    # Ensures bar is visible
+                    continue_button.display = True                # Makes continue button visible
+                else:
+                    # This state typically occurs during initialization if generation_complete=False
+                    actions_container.add_class("-generating") # Hides the bar via CSS
+                    # actions_container.styles.display = "none" # CSS rule should handle this
+                    continue_button.display = False           # Hides continue button
+            except QueryError as qe:
+                # This might happen if the query runs before the widget is fully composed or if it's being removed.
+                logging.debug(f"ChatMessage (ID: {self.id}, Role: {self.role}): QueryError in watch__generation_complete_internal: {qe}. Widget might not be fully ready or is not an AI message with these components.")
+            except Exception as e:
+                logging.error(f"Error in watch__generation_complete_internal for ChatMessage (ID: {self.id}): {e}", exc_info=True)
+        else: # Not an AI message
+            try: # Ensure continue button is hidden for non-AI messages if it somehow got queried
+                continue_button = self.query_one("#continue-response-button", Button)
+                continue_button.display = False
+            except QueryError:
+                pass # Expected for non-AI messages as the button isn't composed.
+
 
     def mark_generation_complete(self):
+        """
+        Marks the AI message generation as complete.
+        This will trigger the watcher for _generation_complete_internal to update UI.
+        """
         if self.has_class("-ai"):
-            self.generation_complete = True
-            actions_container = self.query_one(".message-actions")
-            actions_container.remove_class("-generating")
-            # Ensure it's displayed if CSS might still hide it via other means,
-            # though removing '-generating' should be enough if the CSS is specific.
-            actions_container.styles.display = "block" # or "flex" if it's a flex container
+            self._generation_complete_internal = True
+
+    def on_mount(self) -> None:
+        """Ensure initial state of continue button and actions bar is correct after mounting."""
+        # Trigger the watcher logic based on the initial state.
+        self.watch__generation_complete_internal(self._generation_complete_internal)
+
+    def update_message_chunk(self, chunk: str):
+        """Appends a chunk of text to an AI message during streaming."""
+        # This method is called by handle_streaming_chunk.
+        # The _generation_complete_internal should be False during streaming.
+        if self.has_class("-ai") and not self._generation_complete_internal:
+            # The static_text_widget.update is handled in handle_streaming_chunk
+            # This method primarily updates the internal message_text.
+            self.message_text += chunk
+        # If called at other times, ensure it doesn't break if static_text_widget not found.
+        # For streaming, handle_streaming_chunk updates the Static widget directly.
 
 #
 #
