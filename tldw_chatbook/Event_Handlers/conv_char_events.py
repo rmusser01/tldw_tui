@@ -1791,35 +1791,85 @@ async def handle_ccp_editor_char_cancel_button_pressed(app: 'TldwCli') -> None:
     logger.info("CCP Editor: Cancel Character Edit button pressed.")
 
     try:
-        try:
-            cancel_button = app.query_one("#ccp-editor-char-cancel-button", Button)
-            cancel_button.add_class("hidden")
-        except QueryError:
-            logger.error("Failed to find #ccp-editor-char-cancel-button to add 'hidden' class.")
+        cancel_button = app.query_one("#ccp-editor-char-cancel-button", Button)
+        cancel_button.add_class("hidden")
 
         if app.current_editing_character_id is not None:
-            # An existing character was being edited, restore its original data.
+            # An existing character was being edited. Restore card view with original data.
             stored_character_id = app.current_editing_character_id
-            logger.info(f"Cancelling edit for existing character ID: {stored_character_id}. Restoring original data.")
-            # Clear fields first to avoid brief flash of unsaved content if load is slow
-            await _helper_ccp_clear_center_pane_character_editor_fields(app)
-            await _helper_ccp_load_character_into_center_pane_editor(app, stored_character_id)
-            app.notify("Character editing cancelled. Original data restored.", severity="information")
+            logger.info(f"Cancelling edit for existing character ID: {stored_character_id}. Restoring card view.")
+
+            if not app.chachanotes_db:
+                app.notify("Database service not available to restore character.", severity="error")
+                logger.error("ChaChaNotes DB not available to restore character for card view.")
+                # Attempt to clear editor and switch to a neutral view anyway
+                await _helper_ccp_clear_center_pane_character_editor_fields(app)
+                app.current_editing_character_id = None
+                app.current_editing_character_data = None
+                app.ccp_active_view = "conversation_messages_view" # Fallback view
+                return
+
+            try:
+                # Fetch the original, unmodified character data for the card view
+                original_char_data, _, original_char_image_pil = ccl.load_character_and_image(
+                    app.chachanotes_db,
+                    stored_character_id,
+                    app.notes_user_id # Assuming this is the correct user context
+                )
+
+                if original_char_data:
+                    # Update the state for the character card view
+                    app.current_ccp_character_details = original_char_data
+                    app.current_ccp_character_image = original_char_image_pil
+
+                    # Switch view to the character card display
+                    app.ccp_active_view = "character_card_view"
+                    app.notify("Character editing cancelled. Displaying original card.", severity="information")
+                else:
+                    # Failed to reload original data, fallback to clearing editor and neutral view
+                    app.notify("Could not reload original character data. Clearing editor.", severity="warning")
+                    logger.warning(f"Failed to reload original data for char ID {stored_character_id} on cancel.")
+                    await _helper_ccp_clear_center_pane_character_editor_fields(app)
+                    app.ccp_active_view = "conversation_messages_view" # Fallback
+
+            except Exception as e_load:
+                logger.error(f"Error reloading original character data (ID: {stored_character_id}) on cancel: {e_load}", exc_info=True)
+                app.notify("Error restoring character view. Clearing editor.", severity="error")
+                await _helper_ccp_clear_center_pane_character_editor_fields(app)
+                app.ccp_active_view = "conversation_messages_view" # Fallback
+
+            # Clear the editor's specific state
+            app.current_editing_character_id = None
+            app.current_editing_character_data = None
+            # Optionally, explicitly clear editor fields if not already done in error paths
+            # await _helper_ccp_clear_center_pane_character_editor_fields(app) # This might be redundant if view always changes
+
         else:
             # A new character form was being edited. Clear fields and switch view.
             logger.info("Cancelling creation of new character. Clearing fields and switching view.")
             await _helper_ccp_clear_center_pane_character_editor_fields(app)
             # Ensure state reflects no character is being edited
             app.current_editing_character_id = None
-            app.current_editing_character_data = None # Should be a dict or None
-            app.ccp_active_view = "conversation_messages_view" # Or another default view like "character_card_view" if preferred
+            app.current_editing_character_data = None
+            # Switch to a view that makes sense, e.g., where the user might have come from
+            # If there was a previously viewed card, character_card_view might be okay,
+            # otherwise, conversation_messages_view is a general default.
+            if app.current_ccp_character_details and app.current_ccp_character_details.get("id"):
+                app.ccp_active_view = "character_card_view" # Show previous card if one was loaded
+            else:
+                app.ccp_active_view = "conversation_messages_view" # General fallback
             app.notify("New character creation cancelled.", severity="information")
-    except QueryError as e_query: # Should be caught by helpers, but as a fallback
-        logger.error(f"UI component error during cancel character edit: {e_query}", exc_info=True)
+
+    except QueryError as e_query:
+        logger.error(f"UI component error during cancel character edit (querying cancel button): {e_query}", exc_info=True)
         app.notify("UI Error: Could not properly cancel character edit.", severity="error")
+        # Attempt to recover by switching to a default view
+        app.ccp_active_view = "conversation_messages_view"
     except Exception as e_unexp:
         logger.error(f"Unexpected error during cancel character edit: {e_unexp}", exc_info=True)
         app.notify(f"An unexpected error occurred: {type(e_unexp).__name__}", severity="error")
+        # Attempt to recover
+        app.ccp_active_view = "conversation_messages_view"
 
 
 async def handle_ccp_editor_char_delete_button_pressed(app: 'TldwCli') -> None:
