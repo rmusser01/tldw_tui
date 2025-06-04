@@ -99,7 +99,7 @@ from .UI.Conv_Char_Window import CCPWindow
 from .UI.Notes_Window import NotesWindow
 from .UI.Logs_Window import LogsWindow
 from .UI.Stats_Window import StatsWindow
-from .UI.Ingest_Window import IngestWindow
+from .UI.Ingest_Window import IngestWindow, INGEST_VIEW_IDS, INGEST_NAV_BUTTON_IDS
 from .UI.Tools_Settings_Window import ToolsSettingsWindow
 from .UI.LLM_Management_Window import LLMManagementWindow
 from .UI.Evals_Window import EvalsWindow # Added EvalsWindow
@@ -1982,8 +1982,12 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     self.show_ingest_view("ingest-view-media")
                 elif button_id == "ingest-nav-notes":
                     self.show_ingest_view("ingest-view-notes")
-                elif button_id == "ingest-nav-tldw-api":
-                    self.show_ingest_view("ingest-view-tldw-api")
+                elif button_id.startswith("ingest-nav-tldw-api-"): # Handle new dynamic TLDW API nav buttons
+                    view_to_activate_nav = button_id.replace("ingest-nav-", "ingest-view-")
+                    self.loguru_logger.info(
+                        f"Ingest TLDW API nav button '{button_id}' pressed. Activating view '{view_to_activate_nav}'.")
+                    self.ingest_active_view = view_to_activate_nav # This should trigger the watcher
+                    return # Nav button handled
 
                 # --- Buttons within ingest-view-prompts ---
                 # Ensure these handlers are only called if the ingest-view-prompts is active
@@ -2134,44 +2138,47 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         # --- Ingestion Tab ---
         elif current_active_tab == TAB_INGEST:
-            # Navigation buttons within the Ingest tab's left pane
-            if button_id and button_id.startswith("ingest-nav-"):
-                view_to_activate_nav = button_id.replace("ingest-nav-", "ingest-view-")
-                self.loguru_logger.info(
-                    f"Ingest nav button '{button_id}' pressed. Activating view '{view_to_activate_nav}'.")
-                self.ingest_active_view = view_to_activate_nav
+                # Check if it's one of the main ingest navigation buttons
+                if button_id in INGEST_NAV_BUTTON_IDS: # INGEST_NAV_BUTTON_IDS now includes tldw-api ones
+                    self.loguru_logger.info(f"Ingest navigation button pressed: {button_id}")
+                    # Determine the target view ID
+                    # This covers "ingest-nav-prompts" -> "ingest-view-prompts"
+                    # and "ingest-nav-tldw-api-video" -> "ingest-view-tldw-api-video"
+                    target_view_id = button_id.replace("ingest-nav-", "ingest-view-")
 
-                if view_to_activate_nav == "ingest-view-prompts":
-                    try:
-                        selected_list_view = self.query_one("#ingest-prompts-selected-files-list", ListView)
-                        if not selected_list_view.children:
-                            await selected_list_view.clear()
-                            await selected_list_view.append(ListItem(Label("No files selected.")))
-                        preview_area = self.query_one("#ingest-prompts-preview-area", VerticalScroll)
-                        if not preview_area.children:
-                            await preview_area.mount(
-                                Static("Select files to see a preview.", id="ingest-prompts-preview-placeholder"))
-                    except QueryError:
-                        self.loguru_logger.warning(
-                            "Failed to initialize prompts list/preview elements on nav click to prompts.")
-                elif view_to_activate_nav == "ingest-view-characters":
-                    try:
-                        selected_list_view = self.query_one("#ingest-characters-selected-files-list", ListView)
-                        if not selected_list_view.children:
-                            await selected_list_view.clear()
-                            await selected_list_view.append(ListItem(Label("No files selected.")))
-                        preview_area = self.query_one("#ingest-characters-preview-area", VerticalScroll)
-                        if not preview_area.children:
-                            await preview_area.mount(
-                                Static("Select files to see a preview.", id="ingest-characters-preview-placeholder"))
-                    except QueryError:
-                        self.loguru_logger.warning(
-                            "Failed to initialize characters list/preview for ingest-view-characters on nav click.")
-                    return  # Nav button handled
-                return
+                    self.ingest_active_view = target_view_id # This will trigger the watcher
 
-            # ELSE, if not a nav button, it must be a button within an active sub-view
-            else:
+                    # Initialize UI elements if necessary (e.g., for prompts or characters view)
+                    if target_view_id == "ingest-view-prompts":
+                        try:
+                            selected_list_view = self.query_one("#ingest-prompts-selected-files-list", ListView)
+                            if not selected_list_view.children:
+                                await selected_list_view.clear()
+                                await selected_list_view.append(ListItem(Label("No files selected.")))
+                            preview_area = self.query_one("#ingest-prompts-preview-area", VerticalScroll)
+                            if not preview_area.children:
+                                await preview_area.mount(
+                                    Static("Select files to see a preview.", id="ingest-prompts-preview-placeholder"))
+                        except QueryError:
+                            self.loguru_logger.warning(
+                                "Failed to initialize prompts list/preview elements on nav click to prompts.")
+                    elif target_view_id == "ingest-view-characters":
+                        try:
+                            selected_list_view = self.query_one("#ingest-characters-selected-files-list", ListView)
+                            if not selected_list_view.children:
+                                await selected_list_view.clear()
+                                await selected_list_view.append(ListItem(Label("No files selected.")))
+                            preview_area = self.query_one("#ingest-characters-preview-area", VerticalScroll)
+                            if not preview_area.children:
+                                await preview_area.mount(
+                                    Static("Select files to see a preview.", id="ingest-characters-preview-placeholder"))
+                        except QueryError:
+                            self.loguru_logger.warning(
+                                "Failed to initialize characters list/preview for ingest-view-characters on nav click.")
+                    # Add similar initializations for other static ingest views if needed
+                    return # Navigation handled
+
+                # If not a main nav button, it might be a button within an active sub-view
                 active_ingest_sub_view = self.ingest_active_view
 
                 if active_ingest_sub_view == "ingest-view-prompts":
@@ -2183,7 +2190,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                         return
                     elif button_id == "ingest-prompts-import-now-button":
                         await ingest_events.handle_ingest_prompts_import_now_button_pressed(self)
-                        return
+                    else: self.loguru_logger.warning(f"Unhandled button on INGEST (Prompts) sub-view: {button_id}")
+                    return
 
                 elif active_ingest_sub_view == "ingest-view-characters":
                     if button_id == "ingest-characters-select-file-button":
@@ -2194,14 +2202,30 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                         return
                     elif button_id == "ingest-characters-import-now-button":
                         await ingest_events.handle_ingest_characters_import_now_button_pressed(self)
-                        return
+                    else: self.loguru_logger.warning(f"Unhandled button on INGEST (Characters) sub-view: {button_id}")
+                    return
 
-                # Add other sub-views like ingest-view-notes here
-                # elif active_ingest_sub_view == "ingest-view-notes":
-                #     # ... handle buttons for notes ingest ...
-                #     pass # Remember to return if handled
+                elif active_ingest_sub_view == "ingest-view-notes":
+                    if button_id == "ingest-notes-select-file-button":
+                        await ingest_events.handle_ingest_notes_select_file_button_pressed(self)
+                    elif button_id == "ingest-notes-clear-files-button":
+                        await ingest_events.handle_ingest_notes_clear_files_button_pressed(self)
+                    elif button_id == "ingest-notes-import-now-button":
+                        await ingest_events.handle_ingest_notes_import_now_button_pressed(self)
+                    else: self.loguru_logger.warning(f"Unhandled button on INGEST (Notes) sub-view: {button_id}")
+                    return
 
-                # If no sub-view button matched after checking the active sub-view:
+                # Handle TLDW API form submissions (dynamic IDs)
+                elif active_ingest_sub_view and active_ingest_sub_view.startswith("ingest-view-tldw-api-"):
+                    # The button ID itself will be like "tldw-api-submit-{media_type}"
+                    # The active_ingest_sub_view is "ingest-view-tldw-api-{media_type}"
+                    # The event handler ingest_events.handle_tldw_api_submit_button_pressed now extracts media_type from button_id
+                    if button_id.startswith("tldw-api-submit-"):
+                         await ingest_events.handle_tldw_api_submit_button_pressed(self, event) # Pass the full event
+                    else: self.loguru_logger.warning(f"Unhandled button on INGEST (TLDW API - {active_ingest_sub_view}) sub-view: {button_id}")
+                    return
+
+                # Fallback for unhandled buttons on Ingest tab
                 self.loguru_logger.warning(
                     f"Unhandled button on INGEST tab: ID:{button_id}, Label:'{event.button.label}' (Active Ingest View: {active_ingest_sub_view})")
                 return  # Return after logging unhandled Ingest tab button

@@ -811,186 +811,212 @@ async def handle_tldw_api_media_type_changed(app: 'TldwCli', event_value: str) -
     except Exception as ex:
         logger.error(f"Unexpected error handling media type change: {ex}", exc_info=True)
 
-
-def _collect_common_form_data(app: 'TldwCli') -> Dict[str, Any]:
-    """Collects common data fields from the TLDW API form."""
+def _collect_common_form_data(app: 'TldwCli', media_type: str) -> Dict[str, Any]:
+    """Collects common data fields from the TLDW API form for a given media_type."""
     data = {}
-    current_field_id_for_error = "Unknown Field" # Keep track of which field was being processed
+    # Keep track of which field was being processed for better error messages
+    # The f-string will be used in the actual query_one call.
+    current_field_template_for_error = "Unknown Field-{media_type}"
     try:
-        current_field_id_for_error = "#tldw-api-urls"
-        data["urls"] = [url.strip() for url in app.query_one("#tldw-api-urls", TextArea).text.splitlines() if url.strip()]
+        current_field_template_for_error = f"#tldw-api-urls-{media_type}"
+        data["urls"] = [url.strip() for url in app.query_one(f"#tldw-api-urls-{media_type}", TextArea).text.splitlines() if url.strip()]
 
-        current_field_id_for_error = "#tldw-api-local-files"
-        data["local_files"] = [fp.strip() for fp in app.query_one("#tldw-api-local-files", TextArea).text.splitlines() if fp.strip()]
+        current_field_template_for_error = f"#tldw-api-local-files-{media_type}"
+        data["local_files"] = [fp.strip() for fp in app.query_one(f"#tldw-api-local-files-{media_type}", TextArea).text.splitlines() if fp.strip()]
 
-        current_field_id_for_error = "#tldw-api-title"
-        data["title"] = app.query_one("#tldw-api-title", Input).value or None
+        current_field_template_for_error = f"#tldw-api-title-{media_type}"
+        data["title"] = app.query_one(f"#tldw-api-title-{media_type}", Input).value or None
 
-        current_field_id_for_error = "#tldw-api-author"
-        data["author"] = app.query_one("#tldw-api-author", Input).value or None
+        current_field_template_for_error = f"#tldw-api-author-{media_type}"
+        data["author"] = app.query_one(f"#tldw-api-author-{media_type}", Input).value or None
 
-        current_field_id_for_error = "#tldw-api-keywords"
-        data["keywords_str"] = app.query_one("#tldw-api-keywords", TextArea).text
+        current_field_template_for_error = f"#tldw-api-keywords-{media_type}"
+        data["keywords_str"] = app.query_one(f"#tldw-api-keywords-{media_type}", TextArea).text
 
-        current_field_id_for_error = "#tldw-api-custom-prompt"
-        data["custom_prompt"] = app.query_one("#tldw-api-custom-prompt", TextArea).text or None
+        current_field_template_for_error = f"#tldw-api-custom-prompt-{media_type}"
+        data["custom_prompt"] = app.query_one(f"#tldw-api-custom-prompt-{media_type}", TextArea).text or None
 
-        current_field_id_for_error = "#tldw-api-system-prompt"
-        data["system_prompt"] = app.query_one("#tldw-api-system-prompt", TextArea).text or None
+        current_field_template_for_error = f"#tldw-api-system-prompt-{media_type}"
+        data["system_prompt"] = app.query_one(f"#tldw-api-system-prompt-{media_type}", TextArea).text or None
 
-        current_field_id_for_error = "#tldw-api-perform-analysis"
-        data["perform_analysis"] = app.query_one("#tldw-api-perform-analysis", Checkbox).value
+        current_field_template_for_error = f"#tldw-api-perform-analysis-{media_type}"
+        data["perform_analysis"] = app.query_one(f"#tldw-api-perform-analysis-{media_type}", Checkbox).value
 
-        current_field_id_for_error = "#tldw-api-overwrite-db"
-        data["overwrite_existing_db"] = app.query_one("#tldw-api-overwrite-db", Checkbox).value
+        current_field_template_for_error = f"#tldw-api-overwrite-db-{media_type}"
+        data["overwrite_existing_db"] = app.query_one(f"#tldw-api-overwrite-db-{media_type}", Checkbox).value
 
-        current_field_id_for_error = "#tldw-api-perform-chunking"
-        data["perform_chunking"] = app.query_one("#tldw-api-perform-chunking", Checkbox).value
+        current_field_template_for_error = f"#tldw-api-perform-chunking-{media_type}"
+        data["perform_chunking"] = app.query_one(f"#tldw-api-perform-chunking-{media_type}", Checkbox).value
 
-        current_field_id_for_error = "#tldw-api-chunk-method"
-        chunk_method_select = app.query_one("#tldw-api-chunk-method", Select)
+        current_field_template_for_error = f"#tldw-api-chunk-method-{media_type}"
+        chunk_method_select = app.query_one(f"#tldw-api-chunk-method-{media_type}", Select)
         data["chunk_method"] = chunk_method_select.value if chunk_method_select.value != Select.BLANK else None
 
-        current_field_id_for_error = "#tldw-api-chunk-size"
-        data["chunk_size"] = int(app.query_one("#tldw-api-chunk-size", Input).value or "500")
+        current_field_template_for_error = f"#tldw-api-chunk-size-{media_type}"
+        data["chunk_size"] = int(app.query_one(f"#tldw-api-chunk-size-{media_type}", Input).value or "500")
 
-        current_field_id_for_error = "#tldw-api-chunk-overlap"
-        data["chunk_overlap"] = int(app.query_one("#tldw-api-chunk-overlap", Input).value or "200")
+        current_field_template_for_error = f"#tldw-api-chunk-overlap-{media_type}"
+        data["chunk_overlap"] = int(app.query_one(f"#tldw-api-chunk-overlap-{media_type}", Input).value or "200")
 
-        current_field_id_for_error = "#tldw-api-chunk-lang"
-        data["chunk_language"] = app.query_one("#tldw-api-chunk-lang", Input).value or None
+        current_field_template_for_error = f"#tldw-api-chunk-lang-{media_type}"
+        data["chunk_language"] = app.query_one(f"#tldw-api-chunk-lang-{media_type}", Input).value or None
 
-        current_field_id_for_error = "#tldw-api-adaptive-chunking"
-        data["use_adaptive_chunking"] = app.query_one("#tldw-api-adaptive-chunking", Checkbox).value
+        current_field_template_for_error = f"#tldw-api-adaptive-chunking-{media_type}"
+        data["use_adaptive_chunking"] = app.query_one(f"#tldw-api-adaptive-chunking-{media_type}", Checkbox).value
 
-        current_field_id_for_error = "#tldw-api-multi-level-chunking"
-        data["use_multi_level_chunking"] = app.query_one("#tldw-api-multi-level-chunking", Checkbox).value
+        current_field_template_for_error = f"#tldw-api-multi-level-chunking-{media_type}"
+        data["use_multi_level_chunking"] = app.query_one(f"#tldw-api-multi-level-chunking-{media_type}", Checkbox).value
 
-        current_field_id_for_error = "#tldw-api-custom-chapter-pattern"
-        data["custom_chapter_pattern"] = app.query_one("#tldw-api-custom-chapter-pattern", Input).value or None
+        current_field_template_for_error = f"#tldw-api-custom-chapter-pattern-{media_type}"
+        data["custom_chapter_pattern"] = app.query_one(f"#tldw-api-custom-chapter-pattern-{media_type}", Input).value or None
 
-        current_field_id_for_error = "#tldw-api-analysis-api-name"
-        analysis_api_select = app.query_one("#tldw-api-analysis-api-name", Select)
+        current_field_template_for_error = f"#tldw-api-analysis-api-name-{media_type}"
+        analysis_api_select = app.query_one(f"#tldw-api-analysis-api-name-{media_type}", Select)
         data["api_name"] = analysis_api_select.value if analysis_api_select.value != Select.BLANK else None
 
-        current_field_id_for_error = "#tldw-api-summarize-recursively"
-        data["summarize_recursively"] = app.query_one("#tldw-api-summarize-recursively", Checkbox).value
+        current_field_template_for_error = f"#tldw-api-summarize-recursively-{media_type}"
+        data["summarize_recursively"] = app.query_one(f"#tldw-api-summarize-recursively-{media_type}", Checkbox).value
 
-        current_field_id_for_error = "#tldw-api-perform-rolling-summarization"
-        data["perform_rolling_summarization"] = app.query_one("#tldw-api-perform-rolling-summarization", Checkbox).value
+        current_field_template_for_error = f"#tldw-api-perform-rolling-summarization-{media_type}"
+        data["perform_rolling_summarization"] = app.query_one(f"#tldw-api-perform-rolling-summarization-{media_type}", Checkbox).value
 
     except QueryError as e:
         # Log the specific query that failed if possible, or the last attempted field ID
-        logger.error(f"Error querying TLDW API form field (around {current_field_id_for_error}): {e}")
-        # The QueryError 'e' itself will contain the selector string that failed.
+        logger.error(f"Error querying TLDW API form field (around {current_field_template_for_error.format(media_type=media_type)}): {e}")
         app.notify(f"Error: Missing form field. Details: {e}", severity="error")
         raise # Re-raise to stop further processing
     except ValueError as e: # For int() conversion errors
-        logger.error(f"Error converting TLDW API form field value (around {current_field_id_for_error}): {e}")
-        app.notify(f"Error: Invalid value in form field (around {current_field_id_for_error}). Check numbers.", severity="error")
+        logger.error(f"Error converting TLDW API form field value (around {current_field_template_for_error.format(media_type=media_type)}): {e}")
+        app.notify(f"Error: Invalid value in form field (around {current_field_template_for_error.format(media_type=media_type)}). Check numbers.", severity="error")
         raise # Re-raise
     return data
 
 
-def _collect_video_specific_data(app: 'TldwCli', common_data: Dict[str, Any]) -> ProcessVideoRequest:
-    current_field_id_for_error = "Unknown Video Field"
+def _collect_video_specific_data(app: 'TldwCli', common_data: Dict[str, Any], media_type: str) -> ProcessVideoRequest:
+    current_field_template_for_error = "Unknown Video Field-{media_type}"
     try:
-        current_field_id_for_error = "#tldw-api-video-transcription-model"
-        common_data["transcription_model"] = app.query_one("#tldw-api-video-transcription-model",
+        current_field_template_for_error = f"#tldw-api-video-transcription-model-{media_type}"
+        common_data["transcription_model"] = app.query_one(f"#tldw-api-video-transcription-model-{media_type}",
                                                            Input).value or "deepdml/faster-whisper-large-v3-turbo-ct2"
 
-        current_field_id_for_error = "#tldw-api-video-transcription-language"
-        common_data["transcription_language"] = app.query_one("#tldw-api-video-transcription-language",
+        current_field_template_for_error = f"#tldw-api-video-transcription-language-{media_type}"
+        common_data["transcription_language"] = app.query_one(f"#tldw-api-video-transcription-language-{media_type}",
                                                               Input).value or "en"
 
-        current_field_id_for_error = "#tldw-api-video-diarize"
-        common_data["diarize"] = app.query_one("#tldw-api-video-diarize", Checkbox).value
+        current_field_template_for_error = f"#tldw-api-video-diarize-{media_type}"
+        common_data["diarize"] = app.query_one(f"#tldw-api-video-diarize-{media_type}", Checkbox).value
 
-        current_field_id_for_error = "#tldw-api-video-timestamp"
-        common_data["timestamp_option"] = app.query_one("#tldw-api-video-timestamp", Checkbox).value
+        current_field_template_for_error = f"#tldw-api-video-timestamp-{media_type}"
+        common_data["timestamp_option"] = app.query_one(f"#tldw-api-video-timestamp-{media_type}", Checkbox).value
 
-        current_field_id_for_error = "#tldw-api-video-vad"
-        common_data["vad_use"] = app.query_one("#tldw-api-video-vad", Checkbox).value
+        current_field_template_for_error = f"#tldw-api-video-vad-{media_type}"
+        common_data["vad_use"] = app.query_one(f"#tldw-api-video-vad-{media_type}", Checkbox).value
 
-        current_field_id_for_error = "#tldw-api-video-confab-check"
-        common_data["perform_confabulation_check_of_analysis"] = app.query_one("#tldw-api-video-confab-check",
+        current_field_template_for_error = f"#tldw-api-video-confab-check-{media_type}"
+        common_data["perform_confabulation_check_of_analysis"] = app.query_one(f"#tldw-api-video-confab-check-{media_type}",
                                                                                Checkbox).value
 
-        current_field_id_for_error = "#tldw-api-video-start-time"
-        common_data["start_time"] = app.query_one("#tldw-api-video-start-time", Input).value or None
+        current_field_template_for_error = f"#tldw-api-video-start-time-{media_type}"
+        common_data["start_time"] = app.query_one(f"#tldw-api-video-start-time-{media_type}", Input).value or None
 
-        current_field_id_for_error = "#tldw-api-video-end-time"
-        common_data["end_time"] = app.query_one("#tldw-api-video-end-time", Input).value or None
+        current_field_template_for_error = f"#tldw-api-video-end-time-{media_type}"
+        common_data["end_time"] = app.query_one(f"#tldw-api-video-end-time-{media_type}", Input).value or None
 
         common_data["keywords"] = [k.strip() for k in common_data.pop("keywords_str", "").split(',') if k.strip()]
 
         return ProcessVideoRequest(**common_data)
     except QueryError as e:
-        logger.error(f"Error querying video-specific TLDW API form field (around {current_field_id_for_error}): {e}")
+        logger.error(f"Error querying video-specific TLDW API form field (around {current_field_template_for_error.format(media_type=media_type)}): {e}")
         app.notify(f"Error: Missing video form field. Details: {e}", severity="error")
         raise
-    except ValueError as e:
+    except ValueError as e: # For Pydantic validation or other conversion errors
         logger.error(
-            f"Error converting video-specific TLDW API form field value (around {current_field_id_for_error}): {e}")
-        app.notify(f"Error: Invalid value in video form field (around {current_field_id_for_error}).", severity="error")
+            f"Error converting video-specific TLDW API form field value or creating request model (around {current_field_template_for_error.format(media_type=media_type)}): {e}")
+        app.notify(f"Error: Invalid value in video form field (around {current_field_template_for_error.format(media_type=media_type)}).", severity="error")
         raise
 
-def _collect_audio_specific_data(app: 'TldwCli', common_data: Dict[str, Any]) -> ProcessAudioRequest:
-    current_field_id_for_error = "Unknown Audio Field"
+def _collect_audio_specific_data(app: 'TldwCli', common_data: Dict[str, Any], media_type: str) -> ProcessAudioRequest:
+    current_field_template_for_error = "Unknown Audio Field-{media_type}"
     try:
-        current_field_id_for_error = "#tldw-api-audio-transcription-model"
-        common_data["transcription_model"] = app.query_one("#tldw-api-audio-transcription-model", Input).value or "deepdml/faster-distil-whisper-large-v3.5"
-        # other audio specific fields...
+        current_field_template_for_error = f"#tldw-api-audio-transcription-model-{media_type}"
+        common_data["transcription_model"] = app.query_one(f"#tldw-api-audio-transcription-model-{media_type}", Input).value or "deepdml/faster-distil-whisper-large-v3.5"
+
+        current_field_template_for_error = f"#tldw-api-audio-transcription-language-{media_type}"
+        common_data["transcription_language"] = app.query_one(f"#tldw-api-audio-transcription-language-{media_type}", Input).value or "en"
+
+        current_field_template_for_error = f"#tldw-api-audio-diarize-{media_type}"
+        common_data["diarize"] = app.query_one(f"#tldw-api-audio-diarize-{media_type}", Checkbox).value
+
+        current_field_template_for_error = f"#tldw-api-audio-timestamp-{media_type}"
+        common_data["timestamp_option"] = app.query_one(f"#tldw-api-audio-timestamp-{media_type}", Checkbox).value
+
+        current_field_template_for_error = f"#tldw-api-audio-vad-{media_type}"
+        common_data["vad_use"] = app.query_one(f"#tldw-api-audio-vad-{media_type}", Checkbox).value
+        # TODO: Add confab check if UI element is added: id=f"tldw-api-audio-confab-check-{media_type}"
+
         common_data["keywords"] = [k.strip() for k in common_data.pop("keywords_str", "").split(',') if k.strip()]
         return ProcessAudioRequest(**common_data)
     except QueryError as e:
-        logger.error(f"Error querying audio-specific TLDW API form field (around {current_field_id_for_error}): {e}")
+        logger.error(f"Error querying audio-specific TLDW API form field (around {current_field_template_for_error.format(media_type=media_type)}): {e}")
         app.notify(f"Error: Missing audio form field. Details: {e}", severity="error")
+        raise
+    except ValueError as e: # For Pydantic validation or other conversion errors
+        logger.error(
+            f"Error converting audio-specific TLDW API form field value or creating request model (around {current_field_template_for_error.format(media_type=media_type)}): {e}")
+        app.notify(f"Error: Invalid value in audio form field (around {current_field_template_for_error.format(media_type=media_type)}).", severity="error")
         raise
 
 
-def _collect_pdf_specific_data(app: 'TldwCli', common_data: Dict[str, Any]) -> ProcessPDFRequest:
-    current_field_id_for_error = "Unknown PDF Field"
+def _collect_pdf_specific_data(app: 'TldwCli', common_data: Dict[str, Any], media_type: str) -> ProcessPDFRequest:
+    current_field_template_for_error = "Unknown PDF Field-{media_type}"
     try:
-        current_field_id_for_error = "#tldw-api-pdf-engine"
-        pdf_engine_select = app.query_one("#tldw-api-pdf-engine", Select)
+        current_field_template_for_error = f"#tldw-api-pdf-engine-{media_type}"
+        pdf_engine_select = app.query_one(f"#tldw-api-pdf-engine-{media_type}", Select)
         common_data["pdf_parsing_engine"] = pdf_engine_select.value if pdf_engine_select.value != Select.BLANK else "pymupdf4llm"
 
         common_data["keywords"] = [k.strip() for k in common_data.pop("keywords_str", "").split(',') if k.strip()]
         return ProcessPDFRequest(**common_data)
     except QueryError as e:
-        logger.error(f"Error querying PDF-specific TLDW API form field (around {current_field_id_for_error}): {e}")
+        logger.error(f"Error querying PDF-specific TLDW API form field (around {current_field_template_for_error.format(media_type=media_type)}): {e}")
         app.notify(f"Error: Missing PDF form field. Details: {e}", severity="error")
         raise
+    except ValueError as e:
+        logger.error(f"Error creating PDF request model (around {current_field_template_for_error.format(media_type=media_type)}): {e}")
+        app.notify(f"Error: Invalid value in PDF form field (around {current_field_template_for_error.format(media_type=media_type)}).", severity="error")
+        raise
 
-def _collect_ebook_specific_data(app: 'TldwCli', common_data: Dict[str, Any]) -> ProcessEbookRequest:
-    current_field_id_for_error = "Unknown Ebook Field"
+def _collect_ebook_specific_data(app: 'TldwCli', common_data: Dict[str, Any], media_type: str) -> ProcessEbookRequest:
+    current_field_template_for_error = "Unknown Ebook Field-{media_type}"
     try:
-        current_field_id_for_error = "#tldw-api-ebook-extraction-method"
-        extraction_method_select = app.query_one("#tldw-api-ebook-extraction-method", Select)
+        current_field_template_for_error = f"#tldw-api-ebook-extraction-method-{media_type}"
+        extraction_method_select = app.query_one(f"#tldw-api-ebook-extraction-method-{media_type}", Select)
         common_data["extraction_method"] = extraction_method_select.value if extraction_method_select.value != Select.BLANK else "filtered"
 
         common_data["keywords"] = [k.strip() for k in common_data.pop("keywords_str", "").split(',') if k.strip()]
         return ProcessEbookRequest(**common_data)
     except QueryError as e:
-        logger.error(f"Error querying Ebook-specific TLDW API form field (around {current_field_id_for_error}): {e}")
+        logger.error(f"Error querying Ebook-specific TLDW API form field (around {current_field_template_for_error.format(media_type=media_type)}): {e}")
         app.notify(f"Error: Missing Ebook form field. Details: {e}", severity="error")
         raise
+    except ValueError as e:
+        logger.error(f"Error creating Ebook request model (around {current_field_template_for_error.format(media_type=media_type)}): {e}")
+        app.notify(f"Error: Invalid value in Ebook form field (around {current_field_template_for_error.format(media_type=media_type)}).", severity="error")
+        raise
 
-def _collect_document_specific_data(app: 'TldwCli', common_data: Dict[str, Any]) -> ProcessDocumentRequest:
+def _collect_document_specific_data(app: 'TldwCli', common_data: Dict[str, Any], media_type: str) -> ProcessDocumentRequest:
     # No document-specific fields in UI yet, so it's just converting common_data
     try:
         common_data["keywords"] = [k.strip() for k in common_data.pop("keywords_str", "").split(',') if k.strip()]
+        # Add any document-specific fields here if they are added to the UI, using f"...-{media_type}"
         return ProcessDocumentRequest(**common_data)
-    except Exception as e: # Catch potential Pydantic validation errors if common_data is bad
-        logger.error(f"Error creating ProcessDocumentRequest: {e}")
+    except Exception as e: # Catch potential Pydantic validation errors
+        logger.error(f"Error creating ProcessDocumentRequest for media_type {media_type}: {e}")
         app.notify("Error: Could not prepare document request data.", severity="error")
         raise
 
-def _collect_xml_specific_data(app: 'TldwCli', common_api_data: Dict[str, Any]) -> ProcessXMLRequest:
-    # XML request model is different, collects specific fields ignoring most common_data
+def _collect_xml_specific_data(app: 'TldwCli', common_api_data: Dict[str, Any], media_type: str) -> ProcessXMLRequest:
     data = {}
-    current_field_id_for_error = "Unknown XML Field"
+    current_field_template_for_error = "Unknown XML Field-{media_type}"
     try:
         data["title"] = common_api_data.get("title")
         data["author"] = common_api_data.get("author")
@@ -998,55 +1024,64 @@ def _collect_xml_specific_data(app: 'TldwCli', common_api_data: Dict[str, Any]) 
         data["system_prompt"] = common_api_data.get("system_prompt")
         data["custom_prompt"] = common_api_data.get("custom_prompt")
         data["api_name"] = common_api_data.get("api_name")
-        data["api_key"] = common_api_data.get("api_key") # From auth_token
+        data["api_key"] = common_api_data.get("api_key")
 
-        current_field_id_for_error = "#tldw-api-xml-auto-summarize"
-        data["auto_summarize"] = app.query_one("#tldw-api-xml-auto-summarize", Checkbox).value
+        current_field_template_for_error = f"#tldw-api-xml-auto-summarize-{media_type}"
+        data["auto_summarize"] = app.query_one(f"#tldw-api-xml-auto-summarize-{media_type}", Checkbox).value
         return ProcessXMLRequest(**data)
     except QueryError as e:
-        logger.error(f"Error querying XML-specific TLDW API form field (around {current_field_id_for_error}): {e}")
+        logger.error(f"Error querying XML-specific TLDW API form field (around {current_field_template_for_error.format(media_type=media_type)}): {e}")
         app.notify(f"Error: Missing XML form field. Details: {e}", severity="error")
         raise
+    except ValueError as e:
+        logger.error(f"Error creating XML request model (around {current_field_template_for_error.format(media_type=media_type)}): {e}")
+        app.notify(f"Error: Invalid value in XML form field (around {current_field_template_for_error.format(media_type=media_type)}).", severity="error")
+        raise
 
-def _collect_mediawiki_specific_data(app: 'TldwCli', common_api_data: Dict[str, Any]) -> ProcessMediaWikiRequest:
+def _collect_mediawiki_specific_data(app: 'TldwCli', common_api_data: Dict[str, Any], media_type: str) -> ProcessMediaWikiRequest:
     data = {}
-    current_field_id_for_error = "Unknown MediaWiki Field"
+    current_field_template_for_error = "Unknown MediaWiki Field-{media_type}"
     try:
-        current_field_id_for_error = "#tldw-api-mediawiki-wiki-name"
-        data["wiki_name"] = app.query_one("#tldw-api-mediawiki-wiki-name", Input).value or "default_wiki"
-        current_field_id_for_error = "#tldw-api-mediawiki-namespaces"
-        data["namespaces_str"] = app.query_one("#tldw-api-mediawiki-namespaces", Input).value or None
-        current_field_id_for_error = "#tldw-api-mediawiki-skip-redirects"
-        data["skip_redirects"] = app.query_one("#tldw-api-mediawiki-skip-redirects", Checkbox).value
-        data["chunk_max_size"] = common_api_data.get("chunk_size", 1000) # Use common chunk size
-        # api_name_vector_db and api_key_vector_db are not collected from UI for now
+        current_field_template_for_error = f"#tldw-api-mediawiki-wiki-name-{media_type}"
+        data["wiki_name"] = app.query_one(f"#tldw-api-mediawiki-wiki-name-{media_type}", Input).value or "default_wiki"
+        current_field_template_for_error = f"#tldw-api-mediawiki-namespaces-{media_type}"
+        data["namespaces_str"] = app.query_one(f"#tldw-api-mediawiki-namespaces-{media_type}", Input).value or None
+        current_field_template_for_error = f"#tldw-api-mediawiki-skip-redirects-{media_type}"
+        data["skip_redirects"] = app.query_one(f"#tldw-api-mediawiki-skip-redirects-{media_type}", Checkbox).value
+        data["chunk_max_size"] = common_api_data.get("chunk_size", 1000)
         return ProcessMediaWikiRequest(**data)
     except QueryError as e:
-        logger.error(f"Error querying MediaWiki-specific TLDW API form field (around {current_field_id_for_error}): {e}")
+        logger.error(f"Error querying MediaWiki-specific TLDW API form field (around {current_field_template_for_error.format(media_type=media_type)}): {e}")
         app.notify(f"Error: Missing MediaWiki form field. Details: {e}", severity="error")
         raise
 
 
-async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
-    logger.info("TLDW API Submit button pressed.")
-    app.notify("Processing request via tldw API...")
+async def handle_tldw_api_submit_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
+    if not event.button.id:
+        logger.error("Submit button pressed but has no ID. Cannot determine media_type.")
+        app.notify("Critical error: Submit button has no ID.", severity="error")
+        return
 
-    # 1. Get Endpoint URL and Auth
+    logger.info(f"TLDW API Submit button pressed: {event.button.id}")
+
+    selected_media_type = event.button.id.replace("tldw-api-submit-", "")
+    logger.info(f"Extracted media_type: {selected_media_type} from button ID.")
+
+    app.notify(f"Processing {selected_media_type} request via tldw API...")
+
     try:
-        loading_indicator = app.query_one("#tldw-api-loading-indicator", LoadingIndicator)
-        status_area = app.query_one("#tldw-api-status-area", TextArea)
-        submit_button = app.query_one("#tldw-api-submit", Button)
-        endpoint_url_input = app.query_one("#tldw-api-endpoint-url", Input)
-        auth_method_select = app.query_one("#tldw-api-auth-method", Select)
-        media_type_select = app.query_one("#tldw-api-media-type", Select)
+        loading_indicator = app.query_one(f"#tldw-api-loading-indicator-{selected_media_type}", LoadingIndicator)
+        status_area = app.query_one(f"#tldw-api-status-area-{selected_media_type}", TextArea)
+        submit_button = event.button # This is already the correct button
+        endpoint_url_input = app.query_one(f"#tldw-api-endpoint-url-{selected_media_type}", Input)
+        auth_method_select = app.query_one(f"#tldw-api-auth-method-{selected_media_type}", Select)
     except QueryError as e:
-        logger.error(f"Critical UI component missing: {e}")
-        app.notify(f"Error: UI component missing: {e.widget.id if e.widget else 'Unknown'}. Cannot proceed.", severity="error")
+        logger.error(f"Critical UI component missing for media_type '{selected_media_type}': {e}")
+        app.notify(f"Error: UI component missing for {selected_media_type}: {e.widget.id if hasattr(e, 'widget') and e.widget else 'Unknown'}. Cannot proceed.", severity="error")
         return
 
     endpoint_url = endpoint_url_input.value.strip()
-    auth_method = auth_method_select.value
-    selected_media_type = media_type_select.value
+    auth_method = str(auth_method_select.value) # Ensure it's a string
 
     # --- Input Validation ---
     if not endpoint_url:
@@ -1061,31 +1096,24 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
         # No need to revert UI state
         return
 
-    if auth_method == Select.BLANK:
+    if auth_method == str(Select.BLANK):
         app.notify("Please select an Authentication Method.", severity="error")
         auth_method_select.focus()
-        # No need to revert UI state
-        return
-
-    if selected_media_type == Select.BLANK:
-        app.notify("Please select a Media Type to process.", severity="error")
-        media_type_select.focus()
-        # No need to revert UI state
         return
 
     # --- Set UI to Loading State ---
     loading_indicator.display = True
     status_area.clear()
-    status_area.load_text("Validating inputs and preparing request...") # Updated message
+    status_area.load_text("Validating inputs and preparing request...")
     status_area.display = True
     submit_button.disabled = True
-    app.notify("Processing request via tldw API...")
+    # app.notify is already called at the start of the function
 
     # --- Get Auth Token (after basic validations pass) ---
     auth_token: Optional[str] = None
     try:
         if auth_method == "custom_token":
-            custom_token_input = app.query_one("#tldw-api-custom-token", Input)
+            custom_token_input = app.query_one(f"#tldw-api-custom-token-{selected_media_type}", Input)
             auth_token = custom_token_input.value.strip()
             if not auth_token:
                 app.notify("Custom Auth Token is required for selected method.", severity="error")
@@ -1104,96 +1132,89 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
                 submit_button.disabled = False
                 status_area.load_text("Config token missing. Submission halted.")
                 return
-        # Add more auth methods like ENV VAR here if needed
-    except QueryError as e: # Should not happen if initial query was successful
-        logger.error(f"UI component not found for TLDW API auth token: {e}")
-        app.notify(f"Error: Missing UI field for auth: {e.widget.id if e.widget else 'Unknown'}", severity="error")
+    except QueryError as e:
+        logger.error(f"UI component not found for TLDW API auth token for {selected_media_type}: {e}")
+        app.notify(f"Error: Missing UI field for auth for {selected_media_type}: {e.widget.id if hasattr(e, 'widget') and e.widget else 'Unknown'}", severity="error")
         loading_indicator.display = False
         submit_button.disabled = False
         status_area.load_text("Error accessing auth fields. Submission halted.")
         return
 
-    # 2. Collect Form Data and Create Request Model
-    status_area.load_text("Collecting form data and building request...") # Update status
+    status_area.load_text("Collecting form data and building request...")
     request_model: Optional[Any] = None
-    local_file_paths: Optional[List[str]] = None # Defined here for broader scope
+    local_file_paths: Optional[List[str]] = None
     try:
-        common_data = _collect_common_form_data(app)
+        common_data = _collect_common_form_data(app, selected_media_type) # Pass selected_media_type
         local_file_paths = common_data.pop("local_files", [])
         common_data["api_key"] = auth_token
 
         if selected_media_type == "video":
-            request_model = _collect_video_specific_data(app, common_data)
+            request_model = _collect_video_specific_data(app, common_data, selected_media_type)
         elif selected_media_type == "audio":
-            request_model = _collect_audio_specific_data(app, common_data)
+            request_model = _collect_audio_specific_data(app, common_data, selected_media_type)
         elif selected_media_type == "pdf":
-            request_model = _collect_pdf_specific_data(app, common_data)
+            request_model = _collect_pdf_specific_data(app, common_data, selected_media_type)
         elif selected_media_type == "ebook":
-            request_model = _collect_ebook_specific_data(app, common_data)
+            request_model = _collect_ebook_specific_data(app, common_data, selected_media_type)
         elif selected_media_type == "document":
-            request_model = _collect_document_specific_data(app, common_data)
+            request_model = _collect_document_specific_data(app, common_data, selected_media_type)
         elif selected_media_type == "xml":
-            # XML has a different request structure, pass common_data for it to pick relevant fields
-            request_model = _collect_xml_specific_data(app, common_data)
+            request_model = _collect_xml_specific_data(app, common_data, selected_media_type)
         elif selected_media_type == "mediawiki_dump":
-            # MediaWiki also has a different request structure
-            request_model = _collect_mediawiki_specific_data(app, common_data)
-        # Add elif for ProcessPDFRequest, ProcessEbookRequest, etc.
-        # Example for PDF:
-        # elif selected_media_type == "pdf":
-        #     specific_pdf_data = {} # Collect PDF specific fields
-        #     request_model = ProcessPDFRequest(**common_data, **specific_pdf_data)
+            request_model = _collect_mediawiki_specific_data(app, common_data, selected_media_type)
         else:
             app.notify(f"Media type '{selected_media_type}' not yet supported by this client form.", severity="warning")
-            loading_indicator.display = False # Revert UI
+            loading_indicator.display = False
             submit_button.disabled = False
             status_area.load_text("Unsupported media type selected. Submission halted.")
             return
-    except (QueryError, ValueError) as e: # Catch errors from collector functions
-        # Collector functions should ideally notify, but we catch here as a fallback
-        logger.error(f"Error collecting form data: {e}", exc_info=True)
-        app.notify(f"Error in form data: {str(e)[:100]}. Please check fields.", severity="error")
-        loading_indicator.display = False # Revert UI
+    except (QueryError, ValueError) as e:
+        logger.error(f"Error collecting form data for {selected_media_type}: {e}", exc_info=True)
+        app.notify(f"Error in form data for {selected_media_type}: {str(e)[:100]}. Please check fields.", severity="error")
+        loading_indicator.display = False
         submit_button.disabled = False
         status_area.load_text(f"Error processing form data: {str(e)[:100]}. Submission halted.")
         return
     except Exception as e:
-        logger.error(f"Unexpected error preparing request model for TLDW API: {e}", exc_info=True)
+        logger.error(f"Unexpected error preparing request model for TLDW API ({selected_media_type}): {e}", exc_info=True)
         app.notify("Error: Could not prepare data for API request.", severity="error")
-        loading_indicator.display = False # Revert UI
+        loading_indicator.display = False
         submit_button.disabled = False
         status_area.load_text("Unexpected error preparing request. Submission halted.")
         return
 
     if not request_model:
-        app.notify("Failed to create request model (should not happen if collectors are correct).", severity="error")
-        loading_indicator.display = False # Revert UI
+        app.notify("Failed to create request model.", severity="error")
+        loading_indicator.display = False
         submit_button.disabled = False
         status_area.load_text("Internal error: Failed to create request model. Submission halted.")
         return
 
+    # URL/Local file validation (adjust for XML/MediaWiki which primarily use local_file_paths)
     if not getattr(request_model, 'urls', None) and not local_file_paths:
         # This check might be specific to certain request models, adjust if necessary
         # For XML and MediaWiki, local_file_paths is primary and urls might not exist on model
         is_xml_or_mediawiki = selected_media_type in ["xml", "mediawiki_dump"]
-        if not is_xml_or_mediawiki or (is_xml_or_mediawiki and not local_file_paths) :
+        if not is_xml_or_mediawiki or (is_xml_or_mediawiki and not local_file_paths):
             app.notify("Please provide at least one URL or one local file path.", severity="warning")
             try:
-                app.query_one("#tldw-api-urls", TextArea).focus()
+                app.query_one(f"#tldw-api-urls-{selected_media_type}", TextArea).focus()
             except QueryError: pass
-            loading_indicator.display = False # Revert UI
+            loading_indicator.display = False
             submit_button.disabled = False
             status_area.load_text("Missing URL or local file. Submission halted.")
             return
 
-
-    # 3. Initialize API Client and Run Worker
-    status_area.load_text("Connecting to TLDW API and sending request...") # Update status
+    status_area.load_text("Connecting to TLDW API and sending request...")
     api_client = TLDWAPIClient(base_url=endpoint_url, token=auth_token)
-    overwrite_db = common_data.get("overwrite_existing_db", False)
+    overwrite_db = common_data.get("overwrite_existing_db", False) # From common_data
 
-    async def process_media_worker():
-        nonlocal request_model # Allow modification for XML/MediaWiki
+    # Worker and callbacks remain largely the same but need to use the correct UI element IDs for this tab
+    # The on_worker_success and on_worker_failure need to know which loading_indicator/submit_button/status_area to update.
+    # This is implicitly handled as they are queried again using the selected_media_type.
+
+    async def process_media_worker(): # This worker is fine
+        nonlocal request_model
         try:
             if selected_media_type == "video":
                 return await api_client.process_video(request_model, local_file_paths)
@@ -1207,45 +1228,45 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
                 return await api_client.process_document(request_model, local_file_paths)
             elif selected_media_type == "xml":
                 if not local_file_paths: raise ValueError("XML processing requires a local file path.")
-                return await api_client.process_xml(request_model, local_file_paths[0])  # XML takes single path
+                return await api_client.process_xml(request_model, local_file_paths[0])
             elif selected_media_type == "mediawiki_dump":
                 if not local_file_paths: raise ValueError("MediaWiki processing requires a local file path.")
                 # For streaming, the worker should yield, not return directly.
                 # This example shows how to initiate and collect, actual handling of stream in on_success would differ.
                 results = []
-                async for item in api_client.process_mediawiki_dump(request_model, local_file_paths[
-                    0]):  # request_model is ProcessMediaWikiRequest
-                    results.append(item)  # Collect all streamed items
-                return results  # Return collected list for on_success
+                async for item in api_client.process_mediawiki_dump(request_model, local_file_paths[0]):
+                    results.append(item)
+                return results
             else:
                 raise NotImplementedError(f"Client-side processing for {selected_media_type} not implemented.")
         finally:
             await api_client.close()
 
-    def on_worker_success(response_data: Any): # Type hint can be Union of BatchMediaProcessResponse, etc.
+    def on_worker_success(response_data: Any):
+        # Query the specific UI elements for this tab
         try:
-            loading_indicator = app.query_one("#tldw-api-loading-indicator", LoadingIndicator)
-            loading_indicator.display = False
-            submit_button = app.query_one("#tldw-api-submit", Button)
-            submit_button.disabled = False
-        except QueryError as e:
-            logger.error(f"UI component not found in on_worker_success: {e}")
+            current_loading_indicator = app.query_one(f"#tldw-api-loading-indicator-{selected_media_type}", LoadingIndicator)
+            current_loading_indicator.display = False
+            # current_submit_button = app.query_one(f"#tldw-api-submit-{selected_media_type}", Button) # Button instance is already event.button
+            submit_button.disabled = False # submit_button is already defined from event.button
+        except QueryError as e_ui:
+            logger.error(f"UI component not found in on_worker_success for {selected_media_type}: {e_ui}")
 
-        app.notify("TLDW API request successful. Processing results...", timeout=2) # Brief notify
-        logger.info(f"TLDW API Response: {response_data}")
+        app.notify(f"TLDW API request for {selected_media_type} successful. Processing results...", timeout=2)
+        logger.info(f"TLDW API Response for {selected_media_type}: {response_data}")
 
-        # This status_area will be updated more comprehensively later
-        # For now, we ensure it's cleared before detailed message construction
         try:
-            status_area_widget = app.query_one("#tldw-api-status-area", TextArea)
-            status_area_widget.clear()
+            current_status_area = app.query_one(f"#tldw-api-status-area-{selected_media_type}", TextArea)
+            current_status_area.clear()
         except QueryError:
-            logger.error("Could not find #tldw-api-status-area for initial clear in on_worker_success.")
-            # Not returning, as other processing might still be valuable.
+            logger.error(f"Could not find status_area for {selected_media_type} in on_worker_success.")
+            return # Cannot display results
+
 
         if not app.media_db:
             logger.error("Media_DB_v2 not initialized. Cannot ingest API results.")
             app.notify("Error: Local media database not available.", severity="error")
+            current_status_area.load_text("## Error\n\nLocal media database not available.")
             return
 
         processed_count = 0
@@ -1254,11 +1275,10 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
 
         # Handle different response types
         results_to_ingest: List[MediaItemProcessResult] = []
-        if isinstance(response_data, BatchMediaProcessResponse):  # Pydantic model
+        if isinstance(response_data, BatchMediaProcessResponse):
             results_to_ingest = response_data.results
-        elif isinstance(response_data, dict) and "results" in response_data:  # Raw dict from XML perhaps
-            # This handles BatchProcessXMLResponse implicitly if results are compatible
-            if "processed_count" in response_data:  # Looks like BatchMediaProcessResponse or BatchProcessXMLResponse
+        elif isinstance(response_data, dict) and "results" in response_data:
+            if "processed_count" in response_data:
                 raw_results = response_data.get("results", [])
                 for item_dict in raw_results:
                     # Try to coerce into MediaItemProcessResult, might need specific mapping for XML
@@ -1283,13 +1303,9 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
                     chunks=[{"text": chunk.get("text", ""), "metadata": chunk.get("metadata", {})} for chunk in mw_page.chunks] if mw_page.chunks else None,
                 ))
         else:
-            logger.error(f"Unexpected TLDW API response data type: {type(response_data)}. Cannot display detailed summary.")
-            try:
-                status_area_widget = app.query_one("#tldw-api-status-area", TextArea)
-                status_area_widget.load_text(f"## API Request Processed\n\nUnexpected response format received from API.\nRaw response logged. Please check logs for details.")
-                status_area_widget.display = True
-            except QueryError:
-                logger.error("Could not find #tldw-api-status-area to show unexpected format message.")
+            logger.error(f"Unexpected TLDW API response data type for {selected_media_type}: {type(response_data)}.")
+            current_status_area.load_text(f"## API Request Processed\n\nUnexpected response format. Raw response logged.")
+            current_status_area.display = True
             app.notify("Error: Received unexpected data format from API.", severity="error")
             return
         # Add elif for XML if it returns a single ProcessXMLResponseItem or similar
@@ -1340,14 +1356,14 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
                         chunks=unvectorized_chunks_to_save # Pass prepared chunks
                     )
                     if media_id:
-                        logger.info(f"Successfully ingested '{item_result.input_ref}' into local DB. Media ID: {media_id}. Message: {msg}")
+                        logger.info(f"Successfully ingested '{item_result.input_ref}' into local DB for {selected_media_type}. Media ID: {media_id}. Message: {msg}")
                         processed_count += 1
                         media_id_ingested = media_id # Store the ID
                     else:
-                        logger.error(f"Failed to ingest '{item_result.input_ref}' into local DB. Message: {msg}")
+                        logger.error(f"Failed to ingest '{item_result.input_ref}' into local DB for {selected_media_type}. Message: {msg}")
                         error_count += 1
                 except Exception as e_ingest:
-                    logger.error(f"Error ingesting item '{item_result.input_ref}' into local DB: {e_ingest}", exc_info=True)
+                    logger.error(f"Error ingesting item '{item_result.input_ref}' for {selected_media_type} into local DB: {e_ingest}", exc_info=True)
                     error_count += 1
 
                 if media_id_ingested: # Only add to details if successfully ingested
@@ -1357,21 +1373,21 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
                         "media_type": item_result.media_type,
                         "db_id": media_id_ingested
                     })
-            else: # item_result.status != "Success"
-                logger.error(f"API processing error for '{item_result.input_ref}': {item_result.error}")
+            else:
+                logger.error(f"API processing error for '{item_result.input_ref}' ({selected_media_type}): {item_result.error}")
                 error_count += 1
 
-        # --- Construct Markdown Summary ---
-        summary_parts = ["## TLDW API Request Successful\n\n"]
+        summary_parts = [f"## TLDW API Request Successful ({selected_media_type.title()})\n\n"]
+        # ... (rest of summary construction similar to before) ...
         if processed_count == 0 and error_count == 0 and not results_to_ingest:
              summary_parts.append("API request successful, but no items were provided or found for processing.\n")
         elif processed_count == 0 and error_count > 0:
             summary_parts.append(f"API request successful, but no new items were ingested due to errors.\n")
-            summary_parts.append(f"- Successfully processed items: {processed_count}\n")
-            summary_parts.append(f"- Items with errors during API processing or ingestion: {error_count}\n")
+            summary_parts.append(f"- Successfully processed items by API: {processed_count}\n") # This might be confusing if API said success but ingest failed
+            summary_parts.append(f"- Items with errors during API processing or local ingestion: {error_count}\n")
         else:
             summary_parts.append(f"- Successfully processed and ingested items: {processed_count}\n")
-            summary_parts.append(f"- Items with errors during API processing or ingestion: {error_count}\n\n")
+            summary_parts.append(f"- Items with errors during API processing or local ingestion: {error_count}\n\n")
 
         if error_count > 0:
             summary_parts.append("**Please check the application logs for details on any errors.**\n\n")
@@ -1381,7 +1397,7 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
                 summary_parts.append("### Successfully Ingested Items:\n")
                 for detail in successful_ingestions_details:
                     title_str = f" (Title: {detail['title']})" if detail['title'] != 'N/A' else ""
-                    summary_parts.append(f"- **Input:** {detail['input_ref']}`{title_str}\n")
+                    summary_parts.append(f"- **Input:** `{detail['input_ref']}`{title_str}\n") # Use backticks for input ref
                     summary_parts.append(f"  - **Type:** {detail['media_type']}, **DB ID:** {detail['db_id']}\n")
             else:
                 summary_parts.append(f"Details for {len(successful_ingestions_details)} successfully ingested items are available in the logs.\n")
@@ -1389,40 +1405,34 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
              summary_parts.append("Successfully processed items, but details are unavailable.\n")
 
 
-        try:
-            status_area_widget = app.query_one("#tldw-api-status-area", TextArea)
-            status_area_widget.load_text("".join(summary_parts))
-            status_area_widget.display = True
-            status_area_widget.scroll_home(animate=False)
-        except QueryError:
-            logger.error("Could not find #tldw-api-status-area to display success summary.")
+        current_status_area.load_text("".join(summary_parts))
+        current_status_area.display = True
+        current_status_area.scroll_home(animate=False)
 
-        # Update the brief app notification
-        notify_msg = f"Ingestion complete. Processed: {processed_count}, Errors: {error_count}."
+        notify_msg = f"{selected_media_type.title()} Ingestion: {processed_count} done, {error_count} errors."
         app.notify(notify_msg, severity="information" if error_count == 0 and processed_count > 0 else "warning", timeout=6)
 
 
     def on_worker_failure(error: Exception):
         try:
-            loading_indicator = app.query_one("#tldw-api-loading-indicator", LoadingIndicator)
-            loading_indicator.display = False
-            submit_button = app.query_one("#tldw-api-submit", Button)
-            submit_button.disabled = False
-        except QueryError as e:
-            logger.error(f"UI component not found in on_worker_failure: {e}")
+            current_loading_indicator = app.query_one(f"#tldw-api-loading-indicator-{selected_media_type}", LoadingIndicator)
+            current_loading_indicator.display = False
+            # current_submit_button = app.query_one(f"#tldw-api-submit-{selected_media_type}", Button)
+            submit_button.disabled = False # submit_button is already defined from event.button
+        except QueryError as e_ui:
+            logger.error(f"UI component not found in on_worker_failure for {selected_media_type}: {e_ui}")
 
-        logger.error(f"TLDW API request worker failed: {error}", exc_info=True)
+        logger.error(f"TLDW API request worker failed for {selected_media_type}: {error}", exc_info=True)
 
-        error_message_parts = ["## API Request Failed!\n\n"]
-        brief_notify_message = "API Request Failed."
-
+        error_message_parts = [f"## API Request Failed! ({selected_media_type.title()})\n\n"]
+        # ... (rest of error message construction as before) ...
+        brief_notify_message = f"{selected_media_type.title()} API Request Failed."
         if isinstance(error, APIResponseError):
             error_type = "API Error"
-            error_message_parts.append(f"**Type:** {error_type}\n")
-            error_message_parts.append(f"**Status Code:** {error.status_code}\n")
-            error_message_parts.append(f"**Message:** `{str(error)}`\n")
+            error_message_parts.append(f"**Type:** API Error\n**Status Code:** {error.status_code}\n**Message:** `{str(error)}`\n")
             if error.detail:
                 error_message_parts.append(f"**Details:**\n```\n{error.detail}\n```\n")
+            brief_notify_message = f"{selected_media_type.title()} API Error {error.status_code}: {str(error)[:50]}"
             if error.response_data:
                 try:
                     # Try to pretty-print if it's JSON, otherwise just str
@@ -1453,15 +1463,14 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
             brief_notify_message = f"Processing failed: {str(error)[:100]}"
 
         try:
-            status_area = app.query_one("#tldw-api-status-area", TextArea)
-            status_area.clear()
-            status_area.load_text("".join(error_message_parts))
-            status_area.display = True # Make it visible
-            status_area.scroll_home(animate=False)
+            current_status_area = app.query_one(f"#tldw-api-status-area-{selected_media_type}", TextArea)
+            current_status_area.clear()
+            current_status_area.load_text("".join(error_message_parts))
+            current_status_area.display = True
+            current_status_area.scroll_home(animate=False)
         except QueryError:
-            logger.error("Could not find #tldw-api-status-area to display error.")
-            # Fallback if status_area isn't available for some reason
-            app.notify(f"Critical: Status area not found. Error: {brief_notify_message}", severity="error", timeout=10)
+            logger.error(f"Could not find status_area for {selected_media_type} to display error.")
+            app.notify(f"Critical: Status area for {selected_media_type} not found. Error: {brief_notify_message}", severity="error", timeout=10)
             return
 
         app.notify(brief_notify_message, severity="error", timeout=8)
@@ -1469,9 +1478,9 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
 
     app.run_worker(
         process_media_worker,
-        name="tldw_api_media_processing",
+        name=f"tldw_api_processing_{selected_media_type}", # Unique worker name per tab
         group="api_calls",
-        description="Processing media via TLDW API"
+        description=f"Processing {selected_media_type} media via TLDW API"
     )
 
 
