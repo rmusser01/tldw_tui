@@ -3,7 +3,7 @@ from typing import List, Optional, Dict, Any, Literal
 from pydantic import BaseModel, Field, HttpUrl
 
 # Enum-like Literals from API schema
-MediaType = Literal['video', 'audio', 'document', 'pdf', 'ebook', 'xml', 'mediawiki_dump'] # Added xml, mediawiki
+MediaType = Literal['video', 'audio', 'document', 'pdf', 'ebook', 'xml', 'mediawiki_dump']
 ChunkMethod = Literal['semantic', 'tokens', 'paragraphs', 'sentences', 'words', 'ebook_chapters', 'json']
 PdfEngine = Literal['pymupdf4llm', 'pymupdf', 'docling']
 ScrapeMethod = Literal["individual", "sitemap", "url_level", "recursive_scraping"]

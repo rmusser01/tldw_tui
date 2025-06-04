@@ -1917,9 +1917,12 @@ class MediaDatabase:
                     # --- Handle Unvectorized Chunks ---
                     if chunks is not None:  # chunks argument was provided (could be empty or list of dicts)
                         if action == "updated":
-                            # Hard delete old chunks for this media_id if updating
-                            logging.debug(f"Hard deleting existing UnvectorizedMediaChunks for updated media_id {media_id}.")
-                            conn.execute("DELETE FROM UnvectorizedMediaChunks WHERE media_id = ?", (media_id,))
+                            # If overwriting and new chunks are provided, clear old ones.
+                            # If `chunks` is an empty list, it also means clear old ones.
+                            if overwrite:  # Only delete if overwrite is true
+                                logging.debug(
+                                    f"Hard deleting existing UnvectorizedMediaChunks for updated media_id {media_id} due to overwrite and new chunks being provided.")
+                                conn.execute("DELETE FROM UnvectorizedMediaChunks WHERE media_id = ?", (media_id,))
 
                         num_chunks_saved = 0
                         if chunks:  # If chunks list is not empty
@@ -1980,9 +1983,18 @@ class MediaDatabase:
                                     raise DatabaseError(f"Failed to save chunk {i} due to integrity constraint: {e}") from e
                             logging.info(f"Saved {num_chunks_saved} unvectorized chunks for media_id {media_id}.")
 
-                        # Update Media chunking_status to 'completed' as chunk processing is done (even if 0 chunks were provided)
-                        conn.execute("UPDATE Media SET chunking_status = 'completed' WHERE id = ?", (media_id,))
-                        logging.debug(f"Updated Media chunking_status to 'completed' for media_id {media_id} after chunk processing.")
+                            # Update Media chunking_status
+                            # If chunks were provided (even an empty list, meaning "clear existing and add these (none)"),
+                            # then chunking is considered 'completed' from the perspective of this operation.
+                            # If `chunks` was None (meaning "don't touch existing chunks"), status remains as is or 'pending'.
+                            final_chunking_status_for_media = 'completed'  # if chunks is not None
+                            # If the main `perform_chunking` flag (from request, not DB field) was false,
+                            # then perhaps status should be different. For now, if chunks data is passed, it's 'completed'.
+                            # This might need more nuanced logic based on the `perform_chunking` flag from the original request.
+                            conn.execute("UPDATE Media SET chunking_status = ? WHERE id = ?",
+                                         (final_chunking_status_for_media, media_id,))
+                            logging.debug(
+                                f"Updated Media chunking_status to '{final_chunking_status_for_media}' for media_id {media_id} after chunk processing.")
 
                     # Original chunk_options placeholder log
                     if chunk_options:

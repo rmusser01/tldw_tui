@@ -188,17 +188,17 @@ class IngestWindow(Container):
 
             # XML Options
             with Container(id=TLDW_API_XML_OPTIONS_ID, classes="tldw-api-media-specific-options hidden"):
-                yield Static("XML Specific Options", classes="sidebar-title")
+                yield Static("XML Specific Options (Note: Only one local file at a time)", classes="sidebar-title")
                 yield Checkbox("Auto Summarize XML Content", False, id="tldw-api-xml-auto-summarize")
 
             # MediaWiki Dump Options
             with Container(id=TLDW_API_MEDIAWIKI_OPTIONS_ID, classes="tldw-api-media-specific-options hidden"):
-                yield Static("MediaWiki Dump Specific Options", classes="sidebar-title")
+                yield Static("MediaWiki Dump Specific Options (Note: Only one local file at a time)", classes="sidebar-title")
                 yield Label("Wiki Name (for identification):")
                 yield Input(id="tldw-api-mediawiki-wiki-name", placeholder="e.g., my_wiki_backup")
                 yield Label("Namespaces (comma-sep IDs, optional):")
                 yield Input(id="tldw-api-mediawiki-namespaces", placeholder="e.g., 0,14")
-                yield Checkbox("Skip Redirect Pages", True, id="tldw-api-mediawiki-skip-redirects")
+                yield Checkbox("Skip Redirect Pages (recommended)", True, id="tldw-api-mediawiki-skip-redirects")
 
             yield Static("Local Database Options", classes="sidebar-title")
             yield Checkbox("Overwrite if media exists in local DB", False, id="tldw-api-overwrite-db")

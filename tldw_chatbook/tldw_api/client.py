@@ -183,7 +183,7 @@ class TLDWAPIClient:
             )
              return BatchProcessXMLResponse(
                 processed_count=1 if single_item_result.status not in ["Error"] else 0,
-                errors_count=1 if single_item_result.status == "Error" else 0,
+                errors_count=1 if single_item_result.status == "Error" or single_item_result.error else 0,
                 errors=[single_item_result.error] if single_item_result.error else [],
                 results=[single_item_result]
             )

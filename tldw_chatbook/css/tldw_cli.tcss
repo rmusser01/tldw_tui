@@ -753,6 +753,19 @@ MetricsScreen Label.-info-message {
 #ingest-window { /* Matches TAB_INGEST */
     layout: horizontal;
 }
+.tldw-api-media-specific-options { /* Common class for specific option blocks */
+    padding: 1;
+    border: round $surface;
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+/* Added to ensure initially hidden specific options are indeed hidden */
+.tldw-api-media-specific-options.hidden {
+     padding: 1;
+     border: round $surface;
+     margin-top: 1;
+}
 
 .ingest-nav-pane { /* Style for the left navigation pane */
     dock: left;

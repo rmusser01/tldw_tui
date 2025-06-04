@@ -21,7 +21,9 @@ from .chat_events import populate_chat_conversation_character_filter_select
 from ..tldw_api import (
     TLDWAPIClient, ProcessVideoRequest, ProcessAudioRequest,
     APIConnectionError, APIRequestError, APIResponseError, AuthenticationError,
-    MediaItemProcessResult, ProcessedMediaWikiPage  # Assuming BatchMediaProcessResponse contains this
+    MediaItemProcessResult, ProcessedMediaWikiPage, BatchMediaProcessResponse,
+    ProcessPDFRequest, ProcessEbookRequest, ProcessDocumentRequest,
+    ProcessXMLRequest, ProcessMediaWikiRequest
 )
 # Prompts Interop (existing)
 from ..Prompt_Management.Prompts_Interop import (
@@ -947,6 +949,84 @@ def _collect_audio_specific_data(app: 'TldwCli', common_data: Dict[str, Any]) ->
         raise
 
 
+def _collect_pdf_specific_data(app: 'TldwCli', common_data: Dict[str, Any]) -> ProcessPDFRequest:
+    current_field_id_for_error = "Unknown PDF Field"
+    try:
+        current_field_id_for_error = "#tldw-api-pdf-engine"
+        pdf_engine_select = app.query_one("#tldw-api-pdf-engine", Select)
+        common_data["pdf_parsing_engine"] = pdf_engine_select.value if pdf_engine_select.value != Select.BLANK else "pymupdf4llm"
+
+        common_data["keywords"] = [k.strip() for k in common_data.pop("keywords_str", "").split(',') if k.strip()]
+        return ProcessPDFRequest(**common_data)
+    except QueryError as e:
+        logger.error(f"Error querying PDF-specific TLDW API form field (around {current_field_id_for_error}): {e}")
+        app.notify(f"Error: Missing PDF form field. Details: {e}", severity="error")
+        raise
+
+def _collect_ebook_specific_data(app: 'TldwCli', common_data: Dict[str, Any]) -> ProcessEbookRequest:
+    current_field_id_for_error = "Unknown Ebook Field"
+    try:
+        current_field_id_for_error = "#tldw-api-ebook-extraction-method"
+        extraction_method_select = app.query_one("#tldw-api-ebook-extraction-method", Select)
+        common_data["extraction_method"] = extraction_method_select.value if extraction_method_select.value != Select.BLANK else "filtered"
+
+        common_data["keywords"] = [k.strip() for k in common_data.pop("keywords_str", "").split(',') if k.strip()]
+        return ProcessEbookRequest(**common_data)
+    except QueryError as e:
+        logger.error(f"Error querying Ebook-specific TLDW API form field (around {current_field_id_for_error}): {e}")
+        app.notify(f"Error: Missing Ebook form field. Details: {e}", severity="error")
+        raise
+
+def _collect_document_specific_data(app: 'TldwCli', common_data: Dict[str, Any]) -> ProcessDocumentRequest:
+    # No document-specific fields in UI yet, so it's just converting common_data
+    try:
+        common_data["keywords"] = [k.strip() for k in common_data.pop("keywords_str", "").split(',') if k.strip()]
+        return ProcessDocumentRequest(**common_data)
+    except Exception as e: # Catch potential Pydantic validation errors if common_data is bad
+        logger.error(f"Error creating ProcessDocumentRequest: {e}")
+        app.notify("Error: Could not prepare document request data.", severity="error")
+        raise
+
+def _collect_xml_specific_data(app: 'TldwCli', common_api_data: Dict[str, Any]) -> ProcessXMLRequest:
+    # XML request model is different, collects specific fields ignoring most common_data
+    data = {}
+    current_field_id_for_error = "Unknown XML Field"
+    try:
+        data["title"] = common_api_data.get("title")
+        data["author"] = common_api_data.get("author")
+        data["keywords"] = [k.strip() for k in common_api_data.get("keywords_str", "").split(',') if k.strip()]
+        data["system_prompt"] = common_api_data.get("system_prompt")
+        data["custom_prompt"] = common_api_data.get("custom_prompt")
+        data["api_name"] = common_api_data.get("api_name")
+        data["api_key"] = common_api_data.get("api_key") # From auth_token
+
+        current_field_id_for_error = "#tldw-api-xml-auto-summarize"
+        data["auto_summarize"] = app.query_one("#tldw-api-xml-auto-summarize", Checkbox).value
+        return ProcessXMLRequest(**data)
+    except QueryError as e:
+        logger.error(f"Error querying XML-specific TLDW API form field (around {current_field_id_for_error}): {e}")
+        app.notify(f"Error: Missing XML form field. Details: {e}", severity="error")
+        raise
+
+def _collect_mediawiki_specific_data(app: 'TldwCli', common_api_data: Dict[str, Any]) -> ProcessMediaWikiRequest:
+    data = {}
+    current_field_id_for_error = "Unknown MediaWiki Field"
+    try:
+        current_field_id_for_error = "#tldw-api-mediawiki-wiki-name"
+        data["wiki_name"] = app.query_one("#tldw-api-mediawiki-wiki-name", Input).value or "default_wiki"
+        current_field_id_for_error = "#tldw-api-mediawiki-namespaces"
+        data["namespaces_str"] = app.query_one("#tldw-api-mediawiki-namespaces", Input).value or None
+        current_field_id_for_error = "#tldw-api-mediawiki-skip-redirects"
+        data["skip_redirects"] = app.query_one("#tldw-api-mediawiki-skip-redirects", Checkbox).value
+        data["chunk_max_size"] = common_api_data.get("chunk_size", 1000) # Use common chunk size
+        # api_name_vector_db and api_key_vector_db are not collected from UI for now
+        return ProcessMediaWikiRequest(**data)
+    except QueryError as e:
+        logger.error(f"Error querying MediaWiki-specific TLDW API form field (around {current_field_id_for_error}): {e}")
+        app.notify(f"Error: Missing MediaWiki form field. Details: {e}", severity="error")
+        raise
+
+
 async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
     logger.info("TLDW API Submit button pressed.")
     app.notify("Processing request via tldw API...")
@@ -1006,6 +1086,18 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
             request_model = _collect_video_specific_data(app, common_data)
         elif selected_media_type == "audio":
             request_model = _collect_audio_specific_data(app, common_data)
+        elif selected_media_type == "pdf":
+            request_model = _collect_pdf_specific_data(app, common_data)
+        elif selected_media_type == "ebook":
+            request_model = _collect_ebook_specific_data(app, common_data)
+        elif selected_media_type == "document":
+            request_model = _collect_document_specific_data(app, common_data)
+        elif selected_media_type == "xml":
+            # XML has a different request structure, pass common_data for it to pick relevant fields
+            request_model = _collect_xml_specific_data(app, common_data)
+        elif selected_media_type == "mediawiki_dump":
+            # MediaWiki also has a different request structure
+            request_model = _collect_mediawiki_specific_data(app, common_data)
         # Add elif for ProcessPDFRequest, ProcessEbookRequest, etc.
         # Example for PDF:
         # elif selected_media_type == "pdf":
@@ -1048,18 +1140,24 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
                 return await api_client.process_video(request_model, local_file_paths)
             elif selected_media_type == "audio":
                 return await api_client.process_audio(request_model, local_file_paths)
-            # Add elif for other types...
-            # elif selected_media_type == "xml":
-            #    if not local_file_paths: raise ValueError("XML processing requires a local file path.")
-            #    return await api_client.process_xml(request_model, local_file_paths[0]) # XML takes single path
-            # elif selected_media_type == "mediawiki_dump":
-            #    if not local_file_paths: raise ValueError("MediaWiki processing requires a local file path.")
-            #    # For streaming, the worker should yield, not return directly.
-            #    # This example shows how to initiate and collect, actual handling of stream in on_success would differ.
-            #    results = []
-            #    async for item in api_client.process_mediawiki_dump(request_model, local_file_paths[0]):
-            #        results.append(item) # Collect all streamed items
-            #    return results # Return collected list for on_success
+            elif selected_media_type == "pdf":
+                return await api_client.process_pdf(request_model, local_file_paths)
+            elif selected_media_type == "ebook":
+                return await api_client.process_ebook(request_model, local_file_paths)
+            elif selected_media_type == "document":
+                return await api_client.process_document(request_model, local_file_paths)
+            elif selected_media_type == "xml":
+                if not local_file_paths: raise ValueError("XML processing requires a local file path.")
+                return await api_client.process_xml(request_model, local_file_paths[0])  # XML takes single path
+            elif selected_media_type == "mediawiki_dump":
+                if not local_file_paths: raise ValueError("MediaWiki processing requires a local file path.")
+                # For streaming, the worker should yield, not return directly.
+                # This example shows how to initiate and collect, actual handling of stream in on_success would differ.
+                results = []
+                async for item in api_client.process_mediawiki_dump(request_model, local_file_paths[
+                    0]):  # request_model is ProcessMediaWikiRequest
+                    results.append(item)  # Collect all streamed items
+                return results  # Return collected list for on_success
             else:
                 raise NotImplementedError(f"Client-side processing for {selected_media_type} not implemented.")
         finally:
@@ -1079,9 +1177,16 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
 
         # Handle different response types
         results_to_ingest: List[MediaItemProcessResult] = []
-        if isinstance(response_data, dict) and "results" in response_data and "processed_count" in response_data: # Standard BatchMediaProcessResponse
-            typed_response = response_data # It's already a dict here, Pydantic parsing happened in client
-            results_to_ingest = [MediaItemProcessResult(**item) for item in typed_response.get("results", [])]
+        if isinstance(response_data, BatchMediaProcessResponse):  # Pydantic model
+            results_to_ingest = response_data.results
+        elif isinstance(response_data, dict) and "results" in response_data:  # Raw dict from XML perhaps
+            # This handles BatchProcessXMLResponse implicitly if results are compatible
+            if "processed_count" in response_data:  # Looks like BatchMediaProcessResponse or BatchProcessXMLResponse
+                raw_results = response_data.get("results", [])
+                for item_dict in raw_results:
+                    # Try to coerce into MediaItemProcessResult, might need specific mapping for XML
+                    # For now, assume XML result items can be mostly mapped.
+                    results_to_ingest.append(MediaItemProcessResult(**item_dict))
 
         elif isinstance(response_data, list) and all(isinstance(item, ProcessedMediaWikiPage) for item in response_data):
             # MediaWiki dump (if collected into a list by worker)
@@ -1101,6 +1206,10 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
                     chunks=[{"text": chunk.get("text", ""), "metadata": chunk.get("metadata", {})} for chunk in mw_page.chunks] if mw_page.chunks else None, # Simplified chunk adaptation
                     # analysis, summary, etc. might not be directly available from MediaWiki processing
                 ))
+        else:
+            logger.error(f"Unexpected TLDW API response data type: {type(response_data)}. Cannot ingest.")
+            app.notify("Error: Received unexpected data format from API.", severity="error")
+            return
         # Add elif for XML if it returns a single ProcessXMLResponseItem or similar
 
         for item_result in results_to_ingest:
