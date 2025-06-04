@@ -123,7 +123,7 @@ class CCPWindow(Container):
 
             # Conversation Details Collapsible
             with Collapsible(title="Conversation Details", id="ccp-conversation-details-collapsible",
-                             collapsed=False):  # Start expanded
+                             collapsed=True):
                 yield Static("Title:", classes="sidebar-label")
                 yield Input(id="conv-char-title-input", placeholder="Conversation title...", classes="sidebar-input")
                 yield Static("Keywords:", classes="sidebar-label")
