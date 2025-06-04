@@ -2091,6 +2091,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             elif button_id == "ccp-editor-prompt-save-button": await ccp_handlers.handle_ccp_editor_prompt_save_button_pressed(self)
             elif button_id == "ccp-editor-prompt-clone-button": await ccp_handlers.handle_ccp_editor_prompt_clone_button_pressed(self)
             elif button_id == "ccp-editor-prompt-delete-button": await ccp_handlers.handle_ccp_editor_prompt_delete_button_pressed(self)
+            # Buttons for CENTER PANE CHARACTER editor
+            elif button_id == "ccp-editor-char-save-button": await ccp_handlers.handle_ccp_editor_char_save_button_pressed(self)
+            elif button_id == "ccp-editor-char-cancel-button": await ccp_handlers.handle_ccp_editor_char_cancel_button_pressed(self)
+            # Other CCP buttons
             elif button_id == "ccp-import-conversation-button": await ccp_handlers.handle_ccp_import_conversation_button_pressed(self)
             elif button_id == "ccp-right-pane-load-character-button":
                 self.loguru_logger.info(f"CCP Right Pane Load Character button pressed: {button_id}")

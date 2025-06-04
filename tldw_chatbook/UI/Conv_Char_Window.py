@@ -104,6 +104,7 @@ class CCPWindow(Container):
                 with Horizontal(classes="ccp-prompt-action-buttons"):
                     yield Button("Save Character", id="ccp-editor-char-save-button", variant="success", classes="sidebar-button")
                     yield Button("Clone Character", id="ccp-editor-char-clone-button", classes="sidebar-button")
+                    yield Button("Cancel Edit", id="ccp-editor-char-cancel-button", variant="error", classes="sidebar-button")
 
             # Container for prompt editing UI (initially hidden by CSS)
             with Container(id="ccp-prompt-editor-view", classes="ccp-view-area"):
