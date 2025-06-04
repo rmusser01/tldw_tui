@@ -2581,7 +2581,6 @@ async def handle_stop_chat_generation_pressed(app: 'TldwCli') -> None:
                 loguru_logger.info("Cancellation for a streaming chat request initiated. Worker will handle stream termination.")
                 # For streaming, the worker itself should detect cancellation and stop sending StreamChunks.
                 # The on_stream_done event (with error or cancellation status) will then handle UI finalization.
-                # The on_worker_state_changed in app.py will also disable the button.
 
         except Exception as e_cancel:
             loguru_logger.error(f"Error during worker cancellation or UI update: {e_cancel}", exc_info=True)
@@ -2598,11 +2597,12 @@ async def handle_stop_chat_generation_pressed(app: 'TldwCli') -> None:
     # The on_worker_state_changed handler will also try to disable it when the worker eventually stops.
     # This provides immediate visual feedback.
     try:
-        stop_button = app.query_one("#stop-chat-generation-button", Button)
+        stop_button = app.query_one("#stop-chat-generation", Button) # MODIFIED ID HERE
         stop_button.disabled = True
-        loguru_logger.debug("Attempted to disable 'stop-chat-generation' button from handler.")
+        loguru_logger.debug("Attempted to disable '#stop-chat-generation' button from handler.")
     except QueryError:
-        loguru_logger.error("Could not find 'stop-chat-generation-button' to disable it directly from handler.")
+        loguru_logger.error("Could not find '#stop-chat-generation' button to disable it directly from handler.") # MODIFIED ID IN LOG
+
 
 async def populate_chat_conversation_character_filter_select(app: 'TldwCli') -> None:
     """Populates the character filter select in the Chat tab's conversation search."""

@@ -2431,35 +2431,72 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             f"Group='{worker_group}', State='{worker_state}', Desc='{worker_description}'"
         )
 
-        # --- Handle Chat-related API Calls (e.g., API_Call_chat, API_Call_ccp, respond_for_me_worker) ---
-        # This section addresses the logic that was causing the crash.
+        # --- Handle Chat-related API Calls ---
         if isinstance(worker_name_attr, str) and \
                 (worker_name_attr.startswith("API_Call_chat") or
                  worker_name_attr.startswith("API_Call_ccp") or
                  worker_name_attr == "respond_for_me_worker"):
 
             self.loguru_logger.debug(f"Chat-related worker '{worker_name_attr}' detected. State: {worker_state}.")
+            stop_button_id_selector = "#stop-chat-generation"  # Correct ID selector
 
-            # Log RUNNING state as indicated by the original traceback context
             if worker_state == WorkerState.RUNNING:
                 self.loguru_logger.info(f"Chat-related worker '{worker_name_attr}' is RUNNING.")
-                # Any specific UI updates for the RUNNING state of a chat worker would go here.
-                # (e.g., showing a thinking indicator, disabling input)
-                # This is often handled when the worker is initially started.
+                try:
+                    # Enable the stop button
+                    stop_button_widget = self.query_one(stop_button_id_selector, Button)
+                    stop_button_widget.disabled = False
+                    self.loguru_logger.info(f"Button '{stop_button_id_selector}' ENABLED.")
+                except QueryError:
+                    self.loguru_logger.error(f"Could not find button '{stop_button_id_selector}' to enable it.")
+                # Note: The original code delegated SUCCESS/ERROR states.
+                # RUNNING state for chat workers was not explicitly handled here for the stop button.
 
-            # For SUCCESS or ERROR states, the logic is complex (updating UI, DB, etc.).
-            # Delegate to the specialized handler in worker_events.py.
-            if worker_state == WorkerState.SUCCESS or worker_state == WorkerState.ERROR:
-                self.loguru_logger.debug(
-                    f"Delegating state {worker_state} for chat-related worker '{worker_name_attr}' to worker_handlers."
-                )
-                await worker_handlers.handle_api_call_worker_state_changed(self, event)
+            elif worker_state in [WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED]:
+                self.loguru_logger.info(f"Chat-related worker '{worker_name_attr}' finished with state {worker_state}.")
+                try:
+                    # Disable the stop button
+                    stop_button_widget = self.query_one(stop_button_id_selector, Button)
+                    stop_button_widget.disabled = True
+                    self.loguru_logger.info(f"Button '{stop_button_id_selector}' DISABLED.")
+                except QueryError:
+                    self.loguru_logger.error(f"Could not find button '{stop_button_id_selector}' to disable it.")
 
-            # If there are other states (like PENDING, CANCELLED) to handle directly for chat workers:
-            # elif worker_state == WorkerState.PENDING:
-            #     self.loguru_logger.debug(f"Chat-related worker '{worker_name_attr}' is PENDING.")
-            # else:
-            #     self.loguru_logger.debug(f"Chat-related worker '{worker_name_attr}' in unhandled state: {worker_state}")
+                # Existing delegation for SUCCESS/ERROR, which might update UI based on worker result.
+                # The worker_handlers.handle_api_call_worker_state_changed should focus on
+                # processing the worker's result/error, not managing the stop button's disabled state,
+                # as we are now handling it directly here.
+                if worker_state == WorkerState.SUCCESS or worker_state == WorkerState.ERROR:
+                    self.loguru_logger.debug(
+                        f"Delegating state {worker_state} for chat-related worker '{worker_name_attr}' to worker_handlers for result processing."
+                    )
+                    # This handler is responsible for updating the ChatMessage widget with the final response or error.
+                    await worker_handlers.handle_api_call_worker_state_changed(self, event)
+
+                elif worker_state == WorkerState.CANCELLED:
+                    self.loguru_logger.info(f"Worker '{worker_name_attr}' was cancelled.")
+                    # The StreamDone event (if streaming) or the handle_stop_chat_generation_pressed
+                    # (if non-streaming) should handle updating the AI message widget UI.
+                    # We've already disabled the stop button above.
+                    # If the StreamDone event doesn't appropriately update the current_ai_message_widget display
+                    # for cancellations, some finalization logic might be needed here too.
+                    # For now, assuming StreamDone or the stop handler manage the message UI.
+                    if self.current_ai_message_widget and not self.current_ai_message_widget.generation_complete:
+                        self.loguru_logger.debug("Finalizing AI message widget UI due to worker CANCELLED state.")
+                        # Attempt to update the message UI to reflect cancellation if not already handled by StreamDone
+                        try:
+                            static_text_widget = self.current_ai_message_widget.query_one(".message-text", Static)
+                            # Check if already updated by handle_stop_chat_generation_pressed for non-streaming
+                            if "[italic]Chat generation cancelled by user.[/]" not in self.current_ai_message_widget.message_text:
+                                self.current_ai_message_widget.message_text += "\n[italic](Stream Cancelled)[/]"
+                                static_text_widget.update(Text.from_markup(self.current_ai_message_widget.message_text))
+
+                            self.current_ai_message_widget.mark_generation_complete()
+                            self.current_ai_message_widget = None  # Clear ref
+                        except QueryError as qe_cancel_ui:
+                            self.loguru_logger.error(f"Error updating AI message UI on CANCELLED state: {qe_cancel_ui}")
+            else:
+                self.loguru_logger.debug(f"Chat-related worker '{worker_name_attr}' in other state: {worker_state}")
 
         # --- Handle Llama.cpp Server Worker (identified by group) ---
         # This handles the case where worker_name_attr was a list.

@@ -72,7 +72,19 @@ Please ensure all existing tests pass and, if you're adding a new feature or fix
     ```
 4.  **Open a pull request** from your fork to the `dev` branch of the `rmusser01/tldw_chatbook` repository.
 5.  In your pull request description, clearly explain the changes you've made and why. If it addresses an existing issue, link to it (e.g., "Fixes #123").
-6.  Be prepared to discuss your changes and make adjustments if requested by the maintainers.
+6.  Be prepared to discuss your changes and make adjustments if requested.
+7.  **Wait for review**: The project maintainers will review your pull request. They may request changes or approve it for merging.
+8. All contributions must be made under the [Tiny Contributor License Agreement](#https://github.com/indieopensource/tiny-cla/blob/main/cla.md). Please include the following text in your pull request description, along with your name in the proper location, indicating your acceptance of the Tiny Contributor License Agreement:
+
+```
+# indieopensource.com Tiny Contributor License Agreement
+
+Development Version
+
+I, {{{contributor name}}}, give Robert Musser permission to license my contributions on any terms they like.  I am giving them this license in order to make it possible for them to accept my contributions into their project.
+
+***As far as the law allows, my contributions come as is, without any warranty or condition, and I will not be liable to anyone for any damages related to this software or this license, under any kind of legal claim.***
+```
 
 ## Project Architecture Overview (Simplified)
 

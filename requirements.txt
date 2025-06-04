@@ -10,6 +10,8 @@ loguru
 pydantic
 pyyaml
 httpx
+pytest
+emoji
 # Chunk Library
 #tqdm
 #langdetect
