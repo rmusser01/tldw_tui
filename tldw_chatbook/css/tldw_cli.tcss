@@ -317,6 +317,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     width: 100%;
     height: auto; /* Allow height to be determined by content */
     /* overflow: auto; /* If content within might overflow */
+    overflow: auto;
 }
 
 /* Add this class to hide elements */
@@ -338,7 +339,10 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 }
 
 #ccp-character-editor-view {
-    display: none; /* Initially hidden, to be shown by Python logic */
+    display: none; /* Initially hidden */
+    layout: vertical; /* Important for stacking the scroller and button bar */
+    width: 100%;
+    height: 100%; /* Fill the .cc-center-pane */
 }
 
 /* Ensure the right pane sections also respect hidden class */
@@ -365,7 +369,7 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 
 /* --- Prompts Sidebar Vertical --- */
 .ccp-prompt-textarea { /* Specific class for prompt textareas if needed */
-    height: 10; /* Example height */
+    height: 20; /* Example height - Increased from 10 */
     /* width: 100%; (from .sidebar-textarea) */
     /* margin-bottom: 1; (from .sidebar-textarea) */
 }
@@ -375,11 +379,17 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     border: round $surface;
     margin-bottom: 1;
 }
-
+.ccp-card-action-buttons {
+    height: auto; /* Let it size to content */
+    width: 100%;
+    margin-top: 1; /* Space above buttons */
+    margin-bottom: 2; /* Extra space below to ensure buttons are visible */
+}
 .ccp-prompt-action-buttons {
     margin-top: 1; /* Add space above the button bar */
     height: auto; /* Allow container height to fit buttons */
-    padding-bottom: 1; /* Add space below buttons before parent's padding */
+    width: 100%; /* Full width for the button bar */
+    /* padding-bottom: 1; Removed, parent #ccp-character-editor-view now handles this */
 }
 
 .ccp-prompt-action-buttons Button {
@@ -400,6 +410,15 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
 #conv-char-right-pane Collapsible.-active > .collapsible--header { /* Optional: when expanded */
     background: $primary-background;
 }
+
+/* TextAreas for Character Card Display */
+.ccp-card-textarea {
+    height: 15;
+    width: 100%;
+    margin-bottom: 1;
+    border: round $surface; /* Ensuring consistent styling */
+}
+
 /* --- End of Prompts Sidebar Vertical --- */
 /* --- End of Conversations, Characters & Prompts Window specific layouts --- */
 /* ----------------------------- ************************* ----------------------------- */
