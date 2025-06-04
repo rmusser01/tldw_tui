@@ -19,10 +19,6 @@ from textual.widgets import (
     Static, Button, Input, Header, RichLog, TextArea, Select, ListView, Checkbox, Collapsible, ListItem, Label
 )
 from textual.containers import Horizontal, Container, HorizontalScroll, VerticalScroll
-
-from tldw_chatbook.Event_Handlers.Chat_Events.chat_streaming_events import handle_streaming_chunk, handle_stream_done
-from tldw_chatbook.Event_Handlers.worker_events import StreamingChunk, StreamDone
-from .Widgets.AppFooterStatus import AppFooterStatus
 from textual.reactive import reactive
 from textual.worker import Worker, WorkerState
 from textual.binding import Binding
@@ -33,6 +29,10 @@ from textual.css.query import QueryError
 from pathlib import Path
 #
 # --- Local API library Imports ---
+from .Event_Handlers.LLM_Management_Events import llm_management_events_transformers as transformers_handlers
+from tldw_chatbook.Event_Handlers.Chat_Events.chat_streaming_events import handle_streaming_chunk, handle_stream_done
+from tldw_chatbook.Event_Handlers.worker_events import StreamingChunk, StreamDone
+from .Widgets.AppFooterStatus import AppFooterStatus
 from .Utils import Utils
 from .config import (
     get_media_db_path,
@@ -726,6 +726,18 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.loguru_logger.error("Failed to query #llamacpp-log-output to write message.")
         except Exception as e:  # pylint: disable=broad-except
             self.loguru_logger.error(f"Error writing to Llama.cpp log: {e}", exc_info=True)
+
+    def _update_transformers_log(self, message: str) -> None:
+        """Helper to write messages to the Transformers log widget."""
+        try:
+            # Assuming the Transformers view is active when this is called,
+            # or the log widget is always part of the composed layout.
+            log_widget = self.query_one("#transformers-log-output", RichLog)
+            log_widget.write(message)
+        except QueryError:
+            self.loguru_logger.error("Failed to query #transformers-log-output to write message.")
+        except Exception as e: # pylint: disable=broad-except
+            self.loguru_logger.error(f"Error writing to Transformers log: {e}", exc_info=True)
 
     def _update_llamafile_log(self, message: str) -> None:
         """Helper to write messages to the Llamafile log widget."""
@@ -1469,7 +1481,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         except Exception as e:
             self.loguru_logger.error(f"Error toggling Evals sidebar: {e}", exc_info=True)
 
-    # --- Method DEFINITION for show_ingest_view ---
     def show_ingest_view(self, view_id_to_show: Optional[str]):
         """
         Shows the specified ingest view within the ingest-content-pane and hides others.
@@ -1568,7 +1579,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             # self.notify("Unexpected error saving note.", severity="error")
             return False
 
+
+    #######################################################################
     # --- Notes UI Event Handlers (Chat Tab Sidebar) ---
+    #######################################################################
     @on(Button.Pressed, "#chat-notes-create-new-button")
     async def handle_chat_notes_create_new(self, event: Button.Pressed) -> None:
         """Handles the 'Create New Note' button press in the chat sidebar's notes section."""
@@ -2001,7 +2015,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     await ingest_events.handle_ingest_prompts_import_now_button_pressed(self)
 
 
+        #######################################################################
         # --- Tab-Specific Button Actions ---
+        #######################################################################
         if current_active_tab == TAB_CHAT:
             action_widget = self._get_chat_message_widget_from_button(button)
             if action_widget:
@@ -2105,7 +2121,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 await ccp_handlers.handle_ccp_left_load_character_button_pressed(self)
             else: self.loguru_logger.warning(f"Unhandled button on CCP tab -> ID: {button_id}, Label: '{button.label}'")
 
+
+        #######################################################################
         # --- Notes Tab ---
+        #######################################################################
         elif current_active_tab == TAB_NOTES:
             if button_id == "notes-create-new-button": await notes_handlers.handle_notes_create_new_button_pressed(self)
             elif button_id == "notes-edit-selected-button": await notes_handlers.handle_notes_edit_selected_button_pressed(self)
@@ -2118,7 +2137,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             elif button_id == "notes-save-keywords-button": await notes_handlers.handle_notes_save_keywords_button_pressed(self)
             else: self.loguru_logger.warning(f"Unhandled button on NOTES tab: {button_id}")
 
+
+        #######################################################################
         # --- Media Tab ---
+        #######################################################################
         elif current_active_tab == TAB_MEDIA:
             if button_id and button_id.startswith("media-nav-"):
                 # e.g., "media-nav-video-audio" -> "media-view-video-audio"
@@ -2136,7 +2158,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             else:
                 self.loguru_logger.warning(f"Unhandled button on MEDIA tab: ID:{button_id}, Label:'{button.label}'")
 
+
+        #######################################################################
         # --- Ingestion Tab ---
+        #######################################################################
         elif current_active_tab == TAB_INGEST:
                 # Check if it's one of the main ingest navigation buttons
                 if button_id in INGEST_NAV_BUTTON_IDS: # INGEST_NAV_BUTTON_IDS now includes tldw-api ones
@@ -2230,7 +2255,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     f"Unhandled button on INGEST tab: ID:{button_id}, Label:'{event.button.label}' (Active Ingest View: {active_ingest_sub_view})")
                 return  # Return after logging unhandled Ingest tab button
 
+
+        #######################################################################
         # --- Tools & Settings Tab ---
+        #######################################################################
         elif current_active_tab == TAB_TOOLS_SETTINGS:
             if button_id and button_id.startswith("ts-nav-"):
                 # Extract the view name from the button ID
@@ -2243,7 +2271,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 self.loguru_logger.warning(
                     f"Unhandled button on TOOLS & SETTINGS tab: ID:{button_id}, Label:'{button.label}'")
 
+
+        #######################################################################
         # --- LLM Inference Tab ---
+        #######################################################################
         elif current_active_tab == TAB_LLM:
             if button_id and button_id.startswith("llm-nav-"):
                 await llm_handlers.handle_llm_nav_button_pressed(self, button_id)
@@ -2263,6 +2294,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 await handle_start_llamafile_server_button_pressed(self)
             elif button_id == "llamafile-stop-server-button":
                 await handle_stop_llamafile_server_button_pressed(self)
+            # Transformers buttons
+            elif button_id == "transformers-browse-models-dir-button":
+                await transformers_handlers.handle_transformers_browse_models_dir_button_pressed(self); return
+            elif button_id == "transformers-list-local-models-button":
+                await transformers_handlers.handle_transformers_list_local_models_button_pressed(self); return
+            elif button_id == "transformers-download-model-button":
+                await transformers_handlers.handle_transformers_download_model_button_pressed(self); return
             # Add these new conditions for vLLM:
             elif button_id == "vllm-browse-python-button":
                 await handle_vllm_browse_python_button_pressed(self)
@@ -2281,12 +2319,18 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 self.loguru_logger.warning(
                     f"Unhandled button on LLM MANAGEMENT tab: ID:{button_id}, Label:'{button.label}'")
 
+
+        #######################################################################
         # --- Logging Tab ---
+        #######################################################################
         elif current_active_tab == TAB_LOGS:
             if button_id == "copy-logs-button": await app_lifecycle_handlers.handle_copy_logs_button_pressed(self)
             else: self.loguru_logger.warning(f"Unhandled button on LOGS tab: {button_id}")
 
+
+        #######################################################################
         # --- Evals Tab ---
+        #######################################################################
         elif current_active_tab == TAB_EVALS:
             if button_id == "toggle-evals-sidebar":
                 self.evals_sidebar_collapsed = not self.evals_sidebar_collapsed
@@ -2459,7 +2503,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             f"Group='{worker_group}', State='{worker_state}', Desc='{worker_description}'"
         )
 
+        #######################################################################
         # --- Handle Chat-related API Calls ---
+        #######################################################################
         if isinstance(worker_name_attr, str) and \
                 (worker_name_attr.startswith("API_Call_chat") or
                  worker_name_attr.startswith("API_Call_ccp") or
@@ -2526,7 +2572,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             else:
                 self.loguru_logger.debug(f"Chat-related worker '{worker_name_attr}' in other state: {worker_state}")
 
+
+        #######################################################################
         # --- Handle Llama.cpp Server Worker (identified by group) ---
+        #######################################################################
         # This handles the case where worker_name_attr was a list.
         elif worker_group == "llamacpp_server":
             self.loguru_logger.info(
@@ -2603,7 +2652,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 except QueryError:
                     self.loguru_logger.warning("Could not find Llama.cpp server buttons to update for ERROR state.")
 
+
+        #######################################################################
         # --- Handle Llamafile Server Worker (identified by group) ---
+        #######################################################################
         elif worker_group == "llamafile_server":  # Add this new elif block
             self.loguru_logger.info(
                 f"Llamafile server worker (Group: '{worker_group}') state changed to {worker_state}."
@@ -2665,7 +2717,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 except QueryError:
                     self.loguru_logger.warning("Could not find Llamafile server buttons for ERROR state.")
 
+
+        #######################################################################
         # --- Handle vLLM Server Worker (identified by group) ---
+        #######################################################################
         elif worker_group == "vllm_server":
             self.loguru_logger.info(
                 f"vLLM server worker (Group: '{worker_group}', NameAttr: '{worker_name_attr}') state changed to {worker_state}."
@@ -2696,7 +2751,53 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 except QueryError:
                     self.loguru_logger.warning("Could not find vLLM server buttons to update state for STOPPED/ERROR.")
 
+
+        #######################################################################
+        # --- Handle Transformers Server Worker (identified by group) ---
+        #######################################################################
+        elif worker_group == "transformers_download":
+            self.loguru_logger.info(
+                f"Transformers Download worker (Group: '{worker_group}') state changed to {worker_state}."
+            )
+            download_button_id = "#transformers-download-model-button"
+
+            if worker_state == WorkerState.RUNNING:
+                self.loguru_logger.info("Transformers model download worker is RUNNING.")
+                try:
+                    self.query_one(download_button_id, Button).disabled = True
+                except QueryError:
+                    self.loguru_logger.warning(
+                        f"Could not find button {download_button_id} to disable for RUNNING state.")
+
+            elif worker_state == WorkerState.SUCCESS:
+                result_message = str(event.worker.result).strip() if event.worker.result else "Download completed."
+                self.loguru_logger.info(f"Transformers Download worker SUCCESS. Result: {result_message}")
+                if "failed" in result_message.lower() or "error" in result_message.lower() or "non-zero code" in result_message.lower():
+                    self.notify(f"Model Download: {result_message}", title="Download Issue", severity="error",
+                                timeout=10)
+                else:
+                    self.notify(f"Model Download: {result_message}", title="Download Complete", severity="information",
+                                timeout=7)
+                try:
+                    self.query_one(download_button_id, Button).disabled = False
+                except QueryError:
+                    self.loguru_logger.warning(
+                        f"Could not find button {download_button_id} to enable for SUCCESS state.")
+
+            elif worker_state == WorkerState.ERROR:
+                error_details = str(event.worker.error) if event.worker.error else "Unknown worker error."
+                self.loguru_logger.error(f"Transformers Download worker FAILED. Error: {error_details}")
+                self.notify(f"Model Download Failed: {error_details[:100]}...", title="Download Error",
+                            severity="error", timeout=10)
+                try:
+                    self.query_one(download_button_id, Button).disabled = False
+                except QueryError:
+                    self.loguru_logger.warning(f"Could not find button {download_button_id} to enable for ERROR state.")
+
+
+        #######################################################################
         # --- Handle Llamafile Server Worker (identified by group) ---
+        #######################################################################
         elif worker_group == "llamafile_server":
             self.loguru_logger.info(
                 f"Llamafile server worker (Group: '{worker_group}', NameAttr: '{worker_name_attr}') state changed to {worker_state}."
@@ -2724,7 +2825,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     self.loguru_logger.warning(
                         "Could not find Llamafile server buttons to update state for STOPPED/ERROR.")
 
+
+        #######################################################################
         # --- Handle Model Download Worker (identified by group) ---
+        #######################################################################
         elif worker_group == "model_download":
             self.loguru_logger.info(
                 f"Model Download worker (Group: '{worker_group}', NameAttr: '{worker_name_attr}') state changed to {worker_state}."
@@ -2747,7 +2851,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 self.loguru_logger.warning(
                     "Could not find model download button to re-enable (ID might be incorrect or view not present).")
 
+
+        #######################################################################
         # --- Fallback for any other workers not explicitly handled above ---
+        #######################################################################
         else:
             # This branch handles workers that are not chat-related and not one of the explicitly grouped servers.
             # It also catches the case where worker_name_attr was a list but not for a known group.

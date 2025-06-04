@@ -143,11 +143,33 @@ class LLMManagementWindow(Container):
                 yield RichLog(id="vllm-log-output", classes="log_output", wrap=True, highlight=True)
             with Container(id="llm-view-onnx", classes="llm-view-area"):
                 yield Static("ONNX Management Area - Content Coming Soon!")
-            yield Container(
-                Static("Transformers Library Management Area - Content Coming Soon!"),
-                id="llm-view-transformers",
-                classes="llm-view-area",
-            )
+            # --- Transformers View ---
+            with Container(id="llm-view-transformers", classes="llm-view-area"):
+                with VerticalScroll():
+                    yield Label("Hugging Face Transformers Model Management",
+                                classes="section_label")  # Use a consistent class like .section_label or .pane-title
+
+                    yield Label("Local Models Directory:", classes="label")
+                    with Container(classes="input_container"):  # Re-use styling for input  button
+                        yield Input(id="transformers-models-dir-path",
+                                    placeholder="/path/to/your/hf_models_cache_or_local_dir")
+                        yield Button("Browse Dir", id="transformers-browse-models-dir-button",
+                                     classes="browse_button")
+
+                    yield Button("List Local Models", id="transformers-list-local-models-button",
+                                 classes="action_button")
+                    yield RichLog(id="transformers-local-models-list", classes="log_output", markup=True,
+                                  highlight=False)  # markup=True for Rich tags
+
+                    yield Label("Download New Model:", classes="label section_label")  # Use consistent class
+                    yield Label("Model Repo ID (e.g., 'google-bert/bert-base-uncased'):", classes="label")
+                    yield Input(id="transformers-download-repo-id", placeholder="username/model_name")
+                    yield Label("Revision/Branch (optional):", classes="label")
+                    yield Input(id="transformers-download-revision", placeholder="main")
+                    yield Button("Download Model", id="transformers-download-model-button", classes="action_button")
+
+                    yield Label("Operations Log:", classes="label section_label")  # Use consistent class
+                    yield RichLog(id="transformers-log-output", classes="log_output", wrap=True, highlight=True)
             yield Container(
                 Static("Local Model Management Area - Content Coming Soon!"),
                 id="llm-view-local-models",
