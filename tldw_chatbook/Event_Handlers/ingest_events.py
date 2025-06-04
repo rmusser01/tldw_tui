@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Optional, List, Any, Dict, Callable
 # 3rd-party Libraries
 from loguru import logger
 from textual.widgets import Select, Input, TextArea, Checkbox, Label, Static, Markdown, ListItem, \
-    ListView, Collapsible
+    ListView, Collapsible, LoadingIndicator, Button
 from textual.css.query import QueryError
 from textual.containers import Container, VerticalScroll
 #
@@ -1033,54 +1033,94 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
 
     # 1. Get Endpoint URL and Auth
     try:
+        loading_indicator = app.query_one("#tldw-api-loading-indicator", LoadingIndicator)
+        status_area = app.query_one("#tldw-api-status-area", TextArea)
+        submit_button = app.query_one("#tldw-api-submit", Button)
         endpoint_url_input = app.query_one("#tldw-api-endpoint-url", Input)
         auth_method_select = app.query_one("#tldw-api-auth-method", Select)
         media_type_select = app.query_one("#tldw-api-media-type", Select)
+    except QueryError as e:
+        logger.error(f"Critical UI component missing: {e}")
+        app.notify(f"Error: UI component missing: {e.widget.id if e.widget else 'Unknown'}. Cannot proceed.", severity="error")
+        return
 
-        endpoint_url = endpoint_url_input.value.strip()
-        auth_method = auth_method_select.value
-        selected_media_type = media_type_select.value
+    endpoint_url = endpoint_url_input.value.strip()
+    auth_method = auth_method_select.value
+    selected_media_type = media_type_select.value
 
-        if not endpoint_url:
-            app.notify("API Endpoint URL is required.", severity="error")
-            endpoint_url_input.focus()
-            return
-        if auth_method == Select.BLANK:
-            app.notify("Please select an Authentication Method.", severity="error")
-            auth_method_select.focus()
-            return
-        if selected_media_type == Select.BLANK:
-            app.notify("Please select a Media Type to process.", severity="error")
-            media_type_select.focus()
-            return
+    # --- Input Validation ---
+    if not endpoint_url:
+        app.notify("API Endpoint URL is required.", severity="error")
+        endpoint_url_input.focus()
+        # No need to revert UI state as it hasn't been changed yet
+        return
 
-        auth_token: Optional[str] = None
+    if not (endpoint_url.startswith("http://") or endpoint_url.startswith("https://")):
+        app.notify("API Endpoint URL must start with http:// or https://.", severity="error")
+        endpoint_url_input.focus()
+        # No need to revert UI state
+        return
+
+    if auth_method == Select.BLANK:
+        app.notify("Please select an Authentication Method.", severity="error")
+        auth_method_select.focus()
+        # No need to revert UI state
+        return
+
+    if selected_media_type == Select.BLANK:
+        app.notify("Please select a Media Type to process.", severity="error")
+        media_type_select.focus()
+        # No need to revert UI state
+        return
+
+    # --- Set UI to Loading State ---
+    loading_indicator.display = True
+    status_area.clear()
+    status_area.load_text("Validating inputs and preparing request...") # Updated message
+    status_area.display = True
+    submit_button.disabled = True
+    app.notify("Processing request via tldw API...")
+
+    # --- Get Auth Token (after basic validations pass) ---
+    auth_token: Optional[str] = None
+    try:
         if auth_method == "custom_token":
             custom_token_input = app.query_one("#tldw-api-custom-token", Input)
             auth_token = custom_token_input.value.strip()
             if not auth_token:
                 app.notify("Custom Auth Token is required for selected method.", severity="error")
                 custom_token_input.focus()
+                # Revert UI loading state
+                loading_indicator.display = False
+                submit_button.disabled = False
+                status_area.load_text("Custom token required. Submission halted.")
                 return
         elif auth_method == "config_token":
             auth_token = app.app_config.get("tldw_api", {}).get("auth_token_config")
             if not auth_token:
                 app.notify("Auth Token not found in tldw_api.auth_token_config. Please configure or use custom.", severity="error")
+                # Revert UI loading state
+                loading_indicator.display = False
+                submit_button.disabled = False
+                status_area.load_text("Config token missing. Submission halted.")
                 return
         # Add more auth methods like ENV VAR here if needed
-
-    except QueryError as e:
-        logger.error(f"UI component not found for TLDW API submission: {e}")
-        app.notify(f"Error: Missing required UI field: {e.widget.id if e.widget else 'Unknown'}", severity="error")
+    except QueryError as e: # Should not happen if initial query was successful
+        logger.error(f"UI component not found for TLDW API auth token: {e}")
+        app.notify(f"Error: Missing UI field for auth: {e.widget.id if e.widget else 'Unknown'}", severity="error")
+        loading_indicator.display = False
+        submit_button.disabled = False
+        status_area.load_text("Error accessing auth fields. Submission halted.")
         return
 
     # 2. Collect Form Data and Create Request Model
+    status_area.load_text("Collecting form data and building request...") # Update status
     request_model: Optional[Any] = None
-    local_file_paths: Optional[List[str]] = None
+    local_file_paths: Optional[List[str]] = None # Defined here for broader scope
     try:
         common_data = _collect_common_form_data(app)
-        local_file_paths = common_data.pop("local_files", []) # Extract local files
-        common_data["api_key"] = auth_token # Pass the resolved token as api_key for the request model
+        local_file_paths = common_data.pop("local_files", [])
+        common_data["api_key"] = auth_token
 
         if selected_media_type == "video":
             request_model = _collect_video_specific_data(app, common_data)
@@ -1105,33 +1145,52 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
         #     request_model = ProcessPDFRequest(**common_data, **specific_pdf_data)
         else:
             app.notify(f"Media type '{selected_media_type}' not yet supported by this client form.", severity="warning")
+            loading_indicator.display = False # Revert UI
+            submit_button.disabled = False
+            status_area.load_text("Unsupported media type selected. Submission halted.")
             return
-
-    except QueryError: # Already handled by app.notify in collectors
-        return
-    except ValueError: # Already handled
+    except (QueryError, ValueError) as e: # Catch errors from collector functions
+        # Collector functions should ideally notify, but we catch here as a fallback
+        logger.error(f"Error collecting form data: {e}", exc_info=True)
+        app.notify(f"Error in form data: {str(e)[:100]}. Please check fields.", severity="error")
+        loading_indicator.display = False # Revert UI
+        submit_button.disabled = False
+        status_area.load_text(f"Error processing form data: {str(e)[:100]}. Submission halted.")
         return
     except Exception as e:
-        logger.error(f"Error preparing request model for TLDW API: {e}", exc_info=True)
+        logger.error(f"Unexpected error preparing request model for TLDW API: {e}", exc_info=True)
         app.notify("Error: Could not prepare data for API request.", severity="error")
+        loading_indicator.display = False # Revert UI
+        submit_button.disabled = False
+        status_area.load_text("Unexpected error preparing request. Submission halted.")
         return
 
     if not request_model:
-        app.notify("Failed to create request model.", severity="error")
+        app.notify("Failed to create request model (should not happen if collectors are correct).", severity="error")
+        loading_indicator.display = False # Revert UI
+        submit_button.disabled = False
+        status_area.load_text("Internal error: Failed to create request model. Submission halted.")
         return
 
-    # Ensure URLs and local_file_paths are not both empty if they are the primary inputs
-    if not request_model.urls and not local_file_paths:
-        app.notify("Please provide at least one URL or one local file path.", severity="warning")
-        try:
-            app.query_one("#tldw-api-urls", TextArea).focus()
-        except QueryError: pass
-        return
+    if not getattr(request_model, 'urls', None) and not local_file_paths:
+        # This check might be specific to certain request models, adjust if necessary
+        # For XML and MediaWiki, local_file_paths is primary and urls might not exist on model
+        is_xml_or_mediawiki = selected_media_type in ["xml", "mediawiki_dump"]
+        if not is_xml_or_mediawiki or (is_xml_or_mediawiki and not local_file_paths) :
+            app.notify("Please provide at least one URL or one local file path.", severity="warning")
+            try:
+                app.query_one("#tldw-api-urls", TextArea).focus()
+            except QueryError: pass
+            loading_indicator.display = False # Revert UI
+            submit_button.disabled = False
+            status_area.load_text("Missing URL or local file. Submission halted.")
+            return
 
 
     # 3. Initialize API Client and Run Worker
-    api_client = TLDWAPIClient(base_url=endpoint_url, token=auth_token) # Token for client, api_key in model for server
-    overwrite_db = common_data.get("overwrite_existing_db", False) # Get the DB overwrite flag
+    status_area.load_text("Connecting to TLDW API and sending request...") # Update status
+    api_client = TLDWAPIClient(base_url=endpoint_url, token=auth_token)
+    overwrite_db = common_data.get("overwrite_existing_db", False)
 
     async def process_media_worker():
         nonlocal request_model # Allow modification for XML/MediaWiki
@@ -1164,8 +1223,25 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
             await api_client.close()
 
     def on_worker_success(response_data: Any): # Type hint can be Union of BatchMediaProcessResponse, etc.
-        app.notify("TLDW API request successful. Ingesting results...", timeout=3)
+        try:
+            loading_indicator = app.query_one("#tldw-api-loading-indicator", LoadingIndicator)
+            loading_indicator.display = False
+            submit_button = app.query_one("#tldw-api-submit", Button)
+            submit_button.disabled = False
+        except QueryError as e:
+            logger.error(f"UI component not found in on_worker_success: {e}")
+
+        app.notify("TLDW API request successful. Processing results...", timeout=2) # Brief notify
         logger.info(f"TLDW API Response: {response_data}")
+
+        # This status_area will be updated more comprehensively later
+        # For now, we ensure it's cleared before detailed message construction
+        try:
+            status_area_widget = app.query_one("#tldw-api-status-area", TextArea)
+            status_area_widget.clear()
+        except QueryError:
+            logger.error("Could not find #tldw-api-status-area for initial clear in on_worker_success.")
+            # Not returning, as other processing might still be valuable.
 
         if not app.media_db:
             logger.error("Media_DB_v2 not initialized. Cannot ingest API results.")
@@ -1174,6 +1250,7 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
 
         processed_count = 0
         error_count = 0
+        successful_ingestions_details = [] # To store details of successful items
 
         # Handle different response types
         results_to_ingest: List[MediaItemProcessResult] = []
@@ -1203,17 +1280,23 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
                     media_type="mediawiki_article", # or "mediawiki_page"
                     metadata={"title": mw_page.title, "page_id": mw_page.page_id, "namespace": mw_page.namespace, "revision_id": mw_page.revision_id, "timestamp": mw_page.timestamp},
                     content=mw_page.content,
-                    chunks=[{"text": chunk.get("text", ""), "metadata": chunk.get("metadata", {})} for chunk in mw_page.chunks] if mw_page.chunks else None, # Simplified chunk adaptation
-                    # analysis, summary, etc. might not be directly available from MediaWiki processing
+                    chunks=[{"text": chunk.get("text", ""), "metadata": chunk.get("metadata", {})} for chunk in mw_page.chunks] if mw_page.chunks else None,
                 ))
         else:
-            logger.error(f"Unexpected TLDW API response data type: {type(response_data)}. Cannot ingest.")
+            logger.error(f"Unexpected TLDW API response data type: {type(response_data)}. Cannot display detailed summary.")
+            try:
+                status_area_widget = app.query_one("#tldw-api-status-area", TextArea)
+                status_area_widget.load_text(f"## API Request Processed\n\nUnexpected response format received from API.\nRaw response logged. Please check logs for details.")
+                status_area_widget.display = True
+            except QueryError:
+                logger.error("Could not find #tldw-api-status-area to show unexpected format message.")
             app.notify("Error: Received unexpected data format from API.", severity="error")
             return
         # Add elif for XML if it returns a single ProcessXMLResponseItem or similar
 
         for item_result in results_to_ingest:
             if item_result.status == "Success":
+                media_id_ingested = None # For storing the ID if ingestion is successful
                 try:
                     # Prepare data for add_media_with_keywords
                     # Keywords: API response might not have 'keywords'. Use originally submitted ones if available.
@@ -1259,27 +1342,130 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli') -> None:
                     if media_id:
                         logger.info(f"Successfully ingested '{item_result.input_ref}' into local DB. Media ID: {media_id}. Message: {msg}")
                         processed_count += 1
+                        media_id_ingested = media_id # Store the ID
                     else:
                         logger.error(f"Failed to ingest '{item_result.input_ref}' into local DB. Message: {msg}")
                         error_count += 1
                 except Exception as e_ingest:
                     logger.error(f"Error ingesting item '{item_result.input_ref}' into local DB: {e_ingest}", exc_info=True)
                     error_count += 1
-            else:
+
+                if media_id_ingested: # Only add to details if successfully ingested
+                    successful_ingestions_details.append({
+                        "input_ref": item_result.input_ref,
+                        "title": item_result.metadata.get("title", "N/A") if item_result.metadata else "N/A",
+                        "media_type": item_result.media_type,
+                        "db_id": media_id_ingested
+                    })
+            else: # item_result.status != "Success"
                 logger.error(f"API processing error for '{item_result.input_ref}': {item_result.error}")
                 error_count += 1
 
-        final_msg = f"Ingestion complete. Processed: {processed_count}, Errors: {error_count}."
-        app.notify(final_msg, severity="information" if error_count == 0 else "warning", timeout=5)
+        # --- Construct Markdown Summary ---
+        summary_parts = ["## TLDW API Request Successful\n\n"]
+        if processed_count == 0 and error_count == 0 and not results_to_ingest:
+             summary_parts.append("API request successful, but no items were provided or found for processing.\n")
+        elif processed_count == 0 and error_count > 0:
+            summary_parts.append(f"API request successful, but no new items were ingested due to errors.\n")
+            summary_parts.append(f"- Successfully processed items: {processed_count}\n")
+            summary_parts.append(f"- Items with errors during API processing or ingestion: {error_count}\n")
+        else:
+            summary_parts.append(f"- Successfully processed and ingested items: {processed_count}\n")
+            summary_parts.append(f"- Items with errors during API processing or ingestion: {error_count}\n\n")
+
+        if error_count > 0:
+            summary_parts.append("**Please check the application logs for details on any errors.**\n\n")
+
+        if successful_ingestions_details:
+            if len(successful_ingestions_details) <= 5:
+                summary_parts.append("### Successfully Ingested Items:\n")
+                for detail in successful_ingestions_details:
+                    title_str = f" (Title: {detail['title']})" if detail['title'] != 'N/A' else ""
+                    summary_parts.append(f"- **Input:** {detail['input_ref']}`{title_str}\n")
+                    summary_parts.append(f"  - **Type:** {detail['media_type']}, **DB ID:** {detail['db_id']}\n")
+            else:
+                summary_parts.append(f"Details for {len(successful_ingestions_details)} successfully ingested items are available in the logs.\n")
+        elif processed_count > 0 : # Processed but no details (should not happen if logic is correct)
+             summary_parts.append("Successfully processed items, but details are unavailable.\n")
+
+
+        try:
+            status_area_widget = app.query_one("#tldw-api-status-area", TextArea)
+            status_area_widget.load_text("".join(summary_parts))
+            status_area_widget.display = True
+            status_area_widget.scroll_home(animate=False)
+        except QueryError:
+            logger.error("Could not find #tldw-api-status-area to display success summary.")
+
+        # Update the brief app notification
+        notify_msg = f"Ingestion complete. Processed: {processed_count}, Errors: {error_count}."
+        app.notify(notify_msg, severity="information" if error_count == 0 and processed_count > 0 else "warning", timeout=6)
+
 
     def on_worker_failure(error: Exception):
+        try:
+            loading_indicator = app.query_one("#tldw-api-loading-indicator", LoadingIndicator)
+            loading_indicator.display = False
+            submit_button = app.query_one("#tldw-api-submit", Button)
+            submit_button.disabled = False
+        except QueryError as e:
+            logger.error(f"UI component not found in on_worker_failure: {e}")
+
         logger.error(f"TLDW API request worker failed: {error}", exc_info=True)
+
+        error_message_parts = ["## API Request Failed!\n\n"]
+        brief_notify_message = "API Request Failed."
+
         if isinstance(error, APIResponseError):
-            app.notify(f"API Error {error.status_code}: {str(error)[:200]}", severity="error", timeout=8)
-        elif isinstance(error, (APIConnectionError, APIRequestError, AuthenticationError)):
-            app.notify(f"API Client Error: {str(error)[:200]}", severity="error", timeout=8)
+            error_type = "API Error"
+            error_message_parts.append(f"**Type:** {error_type}\n")
+            error_message_parts.append(f"**Status Code:** {error.status_code}\n")
+            error_message_parts.append(f"**Message:** `{str(error)}`\n")
+            if error.detail:
+                error_message_parts.append(f"**Details:**\n```\n{error.detail}\n```\n")
+            if error.response_data:
+                try:
+                    # Try to pretty-print if it's JSON, otherwise just str
+                    response_data_str = json.dumps(error.response_data, indent=2)
+                except (TypeError, ValueError):
+                    response_data_str = str(error.response_data)
+                error_message_parts.append(f"**Response Data:**\n```json\n{response_data_str}\n```\n")
+            brief_notify_message = f"API Error {error.status_code}: {str(error)[:100]}"
+        elif isinstance(error, AuthenticationError):
+            error_type = "Authentication Error"
+            error_message_parts.append(f"**Type:** {error_type}\n")
+            error_message_parts.append(f"**Message:** `{str(error)}`\n")
+            brief_notify_message = f"Auth Error: {str(error)[:100]}"
+        elif isinstance(error, APIConnectionError):
+            error_type = "Connection Error"
+            error_message_parts.append(f"**Type:** {error_type}\n")
+            error_message_parts.append(f"**Message:** `{str(error)}`\n")
+            brief_notify_message = f"Connection Error: {str(error)[:100]}"
+        elif isinstance(error, APIRequestError):
+            error_type = "API Request Error"
+            error_message_parts.append(f"**Type:** {error_type}\n")
+            error_message_parts.append(f"**Message:** `{str(error)}`\n")
+            brief_notify_message = f"Request Error: {str(error)[:100]}"
         else:
-            app.notify(f"TLDW API processing failed: {str(error)[:200]}", severity="error", timeout=8)
+            error_type = "General Error"
+            error_message_parts.append(f"**Type:** {error_type}\n")
+            error_message_parts.append(f"**Message:** `{str(error)}`\n")
+            brief_notify_message = f"Processing failed: {str(error)[:100]}"
+
+        try:
+            status_area = app.query_one("#tldw-api-status-area", TextArea)
+            status_area.clear()
+            status_area.load_text("".join(error_message_parts))
+            status_area.display = True # Make it visible
+            status_area.scroll_home(animate=False)
+        except QueryError:
+            logger.error("Could not find #tldw-api-status-area to display error.")
+            # Fallback if status_area isn't available for some reason
+            app.notify(f"Critical: Status area not found. Error: {brief_notify_message}", severity="error", timeout=10)
+            return
+
+        app.notify(brief_notify_message, severity="error", timeout=8)
+
 
     app.run_worker(
         process_media_worker,

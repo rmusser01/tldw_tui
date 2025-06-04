@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 # 3rd-Party Imports
 from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll, Horizontal, Vertical
-from textual.widgets import Static, Button, Input, Select, Checkbox, TextArea, Label, RadioSet, RadioButton, Collapsible, ListView, ListItem, Markdown
+from textual.widgets import Static, Button, Input, Select, Checkbox, TextArea, Label, RadioSet, RadioButton, Collapsible, ListView, ListItem, Markdown, LoadingIndicator
 #
 # Local Imports
 from ..tldw_api.schemas import MediaType, ChunkMethod, PdfEngine  # Import Enums
@@ -74,7 +74,8 @@ class IngestWindow(Container):
                 id="tldw-api-custom-token",
                 placeholder="Enter custom Bearer token",
                 password=True,
-                classes="hidden"  # Hidden by default
+                classes="hidden",  # Hidden by default
+                tooltip="Enter your Bearer token for the TLDW API. This is used if 'Custom Token' is selected as the authentication method."
             )
 
             yield Static("Media Details & Processing Options", classes="sidebar-title")
@@ -90,7 +91,7 @@ class IngestWindow(Container):
                 "Local File Paths (one per line, if API supports local path references or for client-side upload):")
             yield TextArea(id="tldw-api-local-files", language="plain_text", classes="ingest-textarea-small")
 
-            with Horizontal(classes="ingest-form-row"):
+            with Horizontal(classes="title-author-row"): # Changed class here
                 with Vertical(classes="ingest-form-col"):
                     yield Label("Title (Optional):")
                     yield Input(id="tldw-api-title", placeholder="Optional title override")
@@ -204,15 +205,25 @@ class IngestWindow(Container):
             yield Checkbox("Overwrite if media exists in local DB", False, id="tldw-api-overwrite-db")
 
             yield Button("Submit to TLDW API", id="tldw-api-submit", variant="primary", classes="ingest-submit-button")
+            # LoadingIndicator and TextArea for API status/error messages
+            yield LoadingIndicator(id="tldw-api-loading-indicator", classes="hidden") # Initially hidden
+            yield TextArea(
+                "",
+                id="tldw-api-status-area",
+                read_only=True,
+                classes="ingest-status-area hidden",  # Initially hidden, common styling
+                language="markdown"  # Use markdown for potential formatting
+            )
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="ingest-nav-pane", classes="ingest-nav-pane"):
             yield Static("Ingestion Methods", classes="sidebar-title")
+            yield Button("Ingest Media via tldw API", id="ingest-nav-tldw-api", classes="ingest-nav-button")
             yield Button("Ingest Prompts", id="ingest-nav-prompts", classes="ingest-nav-button")
             yield Button("Ingest Characters", id="ingest-nav-characters", classes="ingest-nav-button")
             yield Button("Ingest Media (Local)", id="ingest-nav-media", classes="ingest-nav-button")
             yield Button("Ingest Notes", id="ingest-nav-notes", classes="ingest-nav-button")
-            yield Button("Ingest Media via tldw API", id="ingest-nav-tldw-api", classes="ingest-nav-button")
+
 
         with Container(id="ingest-content-pane", classes="ingest-content-pane"):
             # --- Prompts Ingest View ---

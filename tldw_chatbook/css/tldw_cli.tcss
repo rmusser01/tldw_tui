@@ -1339,6 +1339,12 @@ MetricsScreen Label.-info-message {
     height: auto;
     margin-bottom: 1;
 }
+.title-author-row { /* New class for Title/Author row */
+    layout: horizontal;
+    width: 100%;
+    height: auto;
+    margin-bottom: 0 !important; /* Override existing margin */
+}
 .ingest-form-col {
     width: 1fr;
     padding: 0 1;
