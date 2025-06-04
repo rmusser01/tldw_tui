@@ -110,41 +110,6 @@ def run_transformers_model_download_worker(app_instance: "TldwCli", command: Lis
             process.kill()
 
 
-async def handle_transformers_browse_models_dir_button_pressed(app: "TldwCli") -> None:
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.debug("Transformers browse models directory button pressed.")
-
-    try:
-        from textual_fspicker import FileOpen, Filters  # Dynamic import
-    except ImportError:
-        app.notify("File picker utility not available.", severity="error")
-        logger.error("textual_fspicker not found for Transformers model dir browsing.")
-        return
-
-    default_loc_str = str(Path.home())  # Fallback
-    if HUGGINGFACE_HUB_AVAILABLE and hf_constants:
-        try:
-            # Use HF_HOME if set, otherwise default cache.
-            hf_home = Path(hf_constants.HF_HUB_CACHE).parent  # Typically ~/.cache/huggingface
-            if Path(hf_constants.HF_HUB_CACHE).is_dir():
-                default_loc_str = str(hf_constants.HF_HUB_CACHE)
-            elif hf_home.is_dir():
-                default_loc_str = str(hf_home)
-        except Exception:  # pylint: disable=broad-except
-            pass  # Stick to home if HF constants fail for some reason
-
-    logger.debug(f"Transformers browse models dir: starting location '{default_loc_str}'")
-
-    await app.push_screen(
-        FileOpen(
-            location=default_loc_str,
-            select_dirs=True,
-            title="Select Local Hugging Face Models Directory",
-        ),
-        callback=_make_path_update_callback(app, "transformers-models-dir-path"),
-    )
-
-
 async def handle_transformers_list_local_models_button_pressed(app: "TldwCli") -> None:
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
     logger.info("Transformers list local models button pressed.")
@@ -305,3 +270,46 @@ async def handle_transformers_download_model_button_pressed(app: "TldwCli") -> N
         thread=True,
     )
     app.notify(f"Starting download for {repo_id}...")
+
+
+async def handle_transformers_browse_models_dir_button_pressed(app: "TldwCli") -> None:
+    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
+    logger.debug("Transformers browse models directory button pressed.")
+
+    try:
+        from textual_fspicker import FileOpen, Filters  # Ensure it's imported for runtime
+    except ImportError:
+        app.notify("File picker utility (textual-fspicker) not available.", severity="error")
+        logger.error("textual_fspicker not found for Transformers model dir browsing.")
+        return
+
+    default_loc_str = str(Path.home())
+    if HUGGINGFACE_HUB_AVAILABLE and hf_constants:
+        try:
+            # Use HF_HOME if set, otherwise default cache.
+            # hf_constants.HF_HUB_CACHE points to the 'hub' subdir, e.g., ~/.cache/huggingface/hub
+            # We might want to default to ~/.cache/huggingface or where user typically stores models
+            hf_cache_dir = Path(hf_constants.HF_HUB_CACHE)
+            if hf_cache_dir.is_dir():
+                default_loc_str = str(hf_cache_dir)
+            elif hf_cache_dir.parent.is_dir():  # Try one level up, e.g. ~/.cache/huggingface
+                default_loc_str = str(hf_cache_dir.parent)
+        except Exception:  # pylint: disable=broad-except
+            pass
+
+    logger.debug(f"Transformers browse models dir: starting location '{default_loc_str}'")
+
+    await app.push_screen(
+        FileOpen(
+            location=default_loc_str,
+            select_dirs=True,  # We want to select a directory
+            title="Select Local Hugging Face Models Directory",
+            # No specific filters needed for directory selection
+        ),
+        # This callback will update the Input widget with id "transformers-models-dir-path"
+        callback=_make_path_update_callback(app, "transformers-models-dir-path"),
+    )
+
+
+
+
