@@ -13,7 +13,7 @@ import yaml
 # 3rd-Party Imports
 from loguru import logger as loguru_logger
 from textual.widgets import (
-    Input, ListView, TextArea, Label, Collapsible, Select, Static, ListItem
+    Input, ListView, TextArea, Label, Collapsible, Select, Static, ListItem, Button
 )
 from textual.containers import VerticalScroll
 from textual.css.query import QueryError
@@ -1598,6 +1598,11 @@ async def handle_ccp_editor_char_save_button_pressed(app: 'TldwCli') -> None:
             # Reload the character into the editor to reflect any changes and update state
             await _helper_ccp_load_character_into_center_pane_editor(app, new_char_id)
             await populate_ccp_character_select(app)  # Refresh dropdown list
+            try:
+                cancel_button = app.query_one("#ccp-editor-char-cancel-button", Button)
+                cancel_button.add_class("hidden")
+            except QueryError:
+                logger.error("Failed to find #ccp-editor-char-cancel-button to add 'hidden' class post-save.")
         else:
             # This case should ideally not be reached if errors are returned above.
             logger.warning("Save/Update operation completed but no valid character details received.")
@@ -1786,6 +1791,12 @@ async def handle_ccp_editor_char_cancel_button_pressed(app: 'TldwCli') -> None:
     logger.info("CCP Editor: Cancel Character Edit button pressed.")
 
     try:
+        try:
+            cancel_button = app.query_one("#ccp-editor-char-cancel-button", Button)
+            cancel_button.add_class("hidden")
+        except QueryError:
+            logger.error("Failed to find #ccp-editor-char-cancel-button to add 'hidden' class.")
+
         if app.current_editing_character_id is not None:
             # An existing character was being edited, restore its original data.
             stored_character_id = app.current_editing_character_id
@@ -1896,6 +1907,11 @@ async def handle_ccp_card_edit_button_pressed(app: 'TldwCli') -> None:
     await _helper_ccp_load_character_into_center_pane_editor(app, character_id_to_edit)
     # This helper will set app.current_editing_character_id, app.current_editing_character_data,
     # and app.ccp_active_view = "character_editor_view"
+    try:
+        cancel_button = app.query_one("#ccp-editor-char-cancel-button", Button)
+        cancel_button.remove_class("hidden")
+    except QueryError:
+        logger.error("Failed to find #ccp-editor-char-cancel-button to remove 'hidden' class.")
 
 #
 # End of conv_char_events.py

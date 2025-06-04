@@ -83,7 +83,7 @@ class CCPWindow(Container):
                     yield Button("Edit this Character", id="ccp-card-edit-button", variant="default")
                     yield Button("Save Changes", id="ccp-card-save-button", variant="success") # Added variant
                     yield Button("Clone Character", id="ccp-card-clone-button", variant="primary") # Added variant
-                    yield Button("Cancel Edit", id="ccp-editor-char-cancel-button", variant="error", classes="sidebar-button")
+                    yield Button("Cancel Edit", id="ccp-editor-char-cancel-button", variant="error", classes="sidebar-button hidden")
             # Container for character editing UI (initially hidden by CSS)
             with Container(id="ccp-character-editor-view", classes="ccp-view-area"):
                 yield Static("Character Editor", classes="pane-title", id="ccp-center-pane-title-char-editor")
