@@ -10,7 +10,7 @@ loguru
 pydantic
 pyyaml
 httpx
-pytest
+#pytest
 emoji
 # Chunk Library
 #tqdm
