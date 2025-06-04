@@ -83,11 +83,27 @@ class CCPWindow(Container):
                     yield Button("Edit this Character", id="ccp-card-edit-button", variant="default")
                     yield Button("Save Changes", id="ccp-card-save-button", variant="success") # Added variant
                     yield Button("Clone Character", id="ccp-card-clone-button", variant="primary") # Added variant
-
             # Container for character editing UI (initially hidden by CSS)
             with Container(id="ccp-character-editor-view", classes="ccp-view-area"):
                 yield Static("Character Editor", classes="pane-title", id="ccp-center-pane-title-char-editor")
-                # Character editor fields will be mounted here
+                yield Label("Character Name:", classes="sidebar-label")
+                yield Input(id="ccp-editor-char-name-input", placeholder="Character name...", classes="sidebar-input")
+                yield Label("Avatar Path/URL:", classes="sidebar-label")
+                yield Input(id="ccp-editor-char-avatar-input", placeholder="Path or URL to avatar image...", classes="sidebar-input")
+                yield Label("Description:", classes="sidebar-label")
+                yield TextArea(id="ccp-editor-char-description-textarea", classes="sidebar-textarea ccp-prompt-textarea")
+                yield Label("Personality:", classes="sidebar-label")
+                yield TextArea(id="ccp-editor-char-personality-textarea", classes="sidebar-textarea ccp-prompt-textarea")
+                yield Label("Scenario:", classes="sidebar-label")
+                yield TextArea(id="ccp-editor-char-scenario-textarea", classes="sidebar-textarea ccp-prompt-textarea")
+                yield Label("First Message (Greeting):", classes="sidebar-label")
+                yield TextArea(id="ccp-editor-char-first-message-textarea", classes="sidebar-textarea ccp-prompt-textarea")
+                yield Label("Keywords (comma-separated):", classes="sidebar-label")
+                yield TextArea(id="ccp-editor-char-keywords-textarea", classes="sidebar-textarea ccp-prompt-textarea")
+                with Horizontal(classes="ccp-prompt-action-buttons"):
+                    yield Button("Save Character", id="ccp-editor-char-save-button", variant="success", classes="sidebar-button")
+                    yield Button("Clone Character", id="ccp-editor-char-clone-button", classes="sidebar-button")
+                    yield Button("Cancel Edit", id="ccp-editor-char-cancel-button", variant="error", classes="sidebar-button hidden")
 
             # Container for prompt editing UI (initially hidden by CSS)
             with Container(id="ccp-prompt-editor-view", classes="ccp-view-area"):

@@ -13,7 +13,7 @@ import yaml
 # 3rd-Party Imports
 from loguru import logger as loguru_logger
 from textual.widgets import (
-    Input, ListView, TextArea, Label, Collapsible, Select, Static, ListItem
+    Input, ListView, TextArea, Label, Collapsible, Select, Static, ListItem, Button
 )
 from textual.containers import VerticalScroll
 from textual.css.query import QueryError
@@ -1473,7 +1473,7 @@ async def handle_ccp_editor_prompt_clone_button_pressed(app: 'TldwCli') -> None:
 
 async def handle_ccp_editor_prompt_delete_button_pressed(app: 'TldwCli') -> None:
     """Handles deleting the prompt currently in the CENTER PANE editor."""
-    logger = getattr(app, 'loguru_logger', logging)
+    logger = getattr(app, 'loguru_logger', loguru_logger)
     logger.info("CCP Editor Delete Prompt button pressed.")
     if not app.prompts_service_initialized or app.current_prompt_id is None:
         app.notify("No prompt loaded in editor to delete or service unavailable.", severity="warning")
@@ -1513,6 +1513,118 @@ async def handle_ccp_editor_prompt_delete_button_pressed(app: 'TldwCli') -> None
 # --- CCP Center Pane Editor Button Handlers End ---
 # ##############################################################
 
+async def handle_ccp_editor_char_save_button_pressed(app: 'TldwCli') -> None:
+    """Handles saving a new or existing character from the CENTER PANE editor."""
+    logger = getattr(app, 'loguru_logger', loguru_logger)
+    logger.info("CCP Editor: Save Character button pressed.")
+
+    if not app.chachanotes_db:
+        app.notify("Database service not available for characters.", severity="error")
+        logger.error("app.chachanotes_db not available for saving character.")
+        return
+    db = app.chachanotes_db
+
+    try:
+        # Retrieve character data from the UI input fields
+        char_name = app.query_one("#ccp-editor-char-name-input", Input).value.strip()
+        avatar_path = app.query_one("#ccp-editor-char-avatar-input", Input).value.strip()
+        description = app.query_one("#ccp-editor-char-description-textarea", TextArea).text.strip()
+        personality = app.query_one("#ccp-editor-char-personality-textarea", TextArea).text.strip()
+        scenario = app.query_one("#ccp-editor-char-scenario-textarea", TextArea).text.strip()
+        first_message = app.query_one("#ccp-editor-char-first-message-textarea", TextArea).text.strip()
+        keywords_text = app.query_one("#ccp-editor-char-keywords-textarea", TextArea).text.strip()
+        keywords_list = [kw.strip() for kw in keywords_text.split(',') if kw.strip()]
+
+        if not char_name:
+            app.notify("Character Name cannot be empty.", severity="error", timeout=4)
+            app.query_one("#ccp-editor-char-name-input", Input).focus()
+            return
+
+        character_data_for_db_op: Dict[str, Any] = {
+            "name": char_name,
+            "description": description,
+            "personality": personality,
+            "scenario": scenario,
+            "first_message": first_message,
+            "keywords": keywords_list,
+            "image_path": avatar_path,  # Storing avatar path as image_path
+            # Ensure other relevant fields from your DB schema are included if needed
+            # e.g., "creator_notes", "system_prompt", "post_history_instructions",
+            # "alternate_greetings", "tags", "creator", "character_version", "extensions"
+        }
+
+        saved_character_details: Optional[Dict[str, Any]] = None
+        current_editing_id = app.current_editing_character_id
+        current_editing_data = cast(Optional[Dict[str, Any]], app.current_editing_character_data)
+
+        if current_editing_id is None:  # New character
+            logger.info(f"Attempting to add new character: {char_name}")
+            saved_character_details = db.add_character_card(character_data=character_data_for_db_op)
+            if saved_character_details and saved_character_details.get("id"):
+                logger.info(f"New character '{char_name}' added. ID: {saved_character_details['id']}")
+                app.notify(f"Character '{char_name}' saved successfully.", severity="information")
+            else:
+                logger.error(f"Failed to save new character '{char_name}'. DB response: {saved_character_details}")
+                app.notify(f"Failed to save new character '{char_name}'.", severity="error")
+                return
+        else:  # Existing character
+            logger.info(f"Attempting to update character ID: {current_editing_id}, Name: {char_name}")
+            if not current_editing_data:
+                logger.error(f"Cannot update character {current_editing_id}: current editing data is missing.")
+                app.notify("Error: Current character data is missing. Please reload.", severity="error")
+                return
+
+            current_version = current_editing_data.get('version')
+            if current_version is None:
+                logger.error(f"Cannot update character {current_editing_id}: version is missing from loaded data.")
+                app.notify("Error: Character version is missing. Please reload and try again.", severity="error")
+                return
+
+            saved_character_details = db.update_character_card(
+                character_id=current_editing_id,
+                update_data=character_data_for_db_op,
+                expected_version=current_version
+            )
+            if saved_character_details:
+                logger.info(f"Character '{char_name}' (ID: {current_editing_id}) updated successfully.")
+                app.notify(f"Character '{char_name}' updated successfully.", severity="information")
+            else:
+                logger.error(f"Failed to update character '{char_name}'. DB response: {saved_character_details}")
+                app.notify(f"Failed to update character '{char_name}'.", severity="error")
+                return
+
+        if saved_character_details and saved_character_details.get("id"):
+            new_char_id = saved_character_details["id"]
+            # Reload the character into the editor to reflect any changes and update state
+            await _helper_ccp_load_character_into_center_pane_editor(app, new_char_id)
+            await populate_ccp_character_select(app)  # Refresh dropdown list
+            try:
+                cancel_button = app.query_one("#ccp-editor-char-cancel-button", Button)
+                cancel_button.add_class("hidden")
+            except QueryError:
+                logger.error("Failed to find #ccp-editor-char-cancel-button to add 'hidden' class post-save.")
+        else:
+            # This case should ideally not be reached if errors are returned above.
+            logger.warning("Save/Update operation completed but no valid character details received.")
+            # Optionally, try to reload current if update failed but no specific error caught
+            if current_editing_id:
+                 await _helper_ccp_load_character_into_center_pane_editor(app, current_editing_id)
+
+
+    except ConflictError as e_conflict:
+        logger.warning(f"Conflict saving character '{char_name}': {e_conflict}", exc_info=True)
+        app.notify(f"Save conflict: Data was modified elsewhere. Please reload and try again.", severity="error", timeout=7)
+        if app.current_editing_character_id: # Reload to show current state from DB
+            await _helper_ccp_load_character_into_center_pane_editor(app, app.current_editing_character_id)
+    except CharactersRAGDBError as e_db:
+        logger.error(f"Database error saving character '{char_name}': {e_db}", exc_info=True)
+        app.notify(f"Database error saving character: {type(e_db).__name__}", severity="error")
+    except QueryError as e_query:
+        logger.error(f"UI component error saving character: {e_query}", exc_info=True)
+        app.notify("UI Error: Could not access character editor fields.", severity="error")
+    except Exception as e_unexp:
+        logger.error(f"Unexpected error saving character '{char_name}': {e_unexp}", exc_info=True)
+        app.notify(f"An unexpected error occurred: {type(e_unexp).__name__}", severity="error")
 
 # ##############################################################
 # --- CCP Center Pane Editor Clearance ---
@@ -1522,10 +1634,12 @@ async def _helper_ccp_clear_center_pane_character_editor_fields(app: 'TldwCli') 
     try:
         # Assuming these are the IDs for the CENTER PANE character editor
         app.query_one("#ccp-editor-char-name-input", Input).value = ""
+        app.query_one("#ccp-editor-char-avatar-input", Input).value = ""
         app.query_one("#ccp-editor-char-description-textarea", TextArea).text = ""
         app.query_one("#ccp-editor-char-personality-textarea", TextArea).text = ""
         app.query_one("#ccp-editor-char-scenario-textarea", TextArea).text = ""
         app.query_one("#ccp-editor-char-first-message-textarea", TextArea).text = ""
+        app.query_one("#ccp-editor-char-keywords-textarea", TextArea).text = ""
         # Add other fields if they exist in the center pane editor
         # e.g., app.query_one("#ccp-editor-char-system-prompt-textarea", TextArea).text = ""
 
@@ -1547,6 +1661,8 @@ async def _helper_ccp_load_character_into_center_pane_editor(app: 'TldwCli', cha
 
     try:
         # Use ccl (Character_Chat_Lib) to load the character data
+        # Assuming load_character_and_image is the correct function from ccl
+        # and it returns (character_data_dict, initial_ui_history_list, PIL_Image_object_or_None)
         char_data, _, char_image_pil = ccl.load_character_and_image(
             app.chachanotes_db,
             character_id,
@@ -1560,27 +1676,18 @@ async def _helper_ccp_load_character_into_center_pane_editor(app: 'TldwCli', cha
 
             # Populate UI elements in the CENTER PANE character editor
             app.query_one("#ccp-editor-char-name-input", Input).value = char_data.get("name", "")
+            app.query_one("#ccp-editor-char-avatar-input", Input).value = char_data.get("image_path", char_data.get("avatar", "")) # Use image_path or avatar
             app.query_one("#ccp-editor-char-description-textarea", TextArea).text = char_data.get("description", "")
             app.query_one("#ccp-editor-char-personality-textarea", TextArea).text = char_data.get("personality", "")
             app.query_one("#ccp-editor-char-scenario-textarea", TextArea).text = char_data.get("scenario", "")
-            app.query_one("#ccp-editor-char-first-message-textarea", TextArea).text = char_data.get("first_message", char_data.get("first_mes","")) # check common key names
-            # Add other fields if present in your editor UI:
-            # e.g., app.query_one("#ccp-editor-char-system-prompt-textarea", TextArea).text = char_data.get("system_prompt", "")
-
-            # Optional: Handle image display if your editor has an image area
-            # try:
-            #     editor_image_placeholder = app.query_one("#ccp-editor-char-image-placeholder", Static) # Example ID
-            #     if char_image_pil:
-            #         editor_image_placeholder.update("Character image loaded (editor display not shown).")
-            #     else:
-            #         editor_image_placeholder.update("No image available for editor.")
-            # except QueryError:
-            #     loguru_logger.warning("No image placeholder found in CCP character editor.")
+            app.query_one("#ccp-editor-char-first-message-textarea", TextArea).text = char_data.get("first_message", char_data.get("first_mes",""))
+            keywords_list = char_data.get("keywords", [])
+            app.query_one("#ccp-editor-char-keywords-textarea", TextArea).text = ", ".join(keywords_list) if keywords_list else ""
 
 
             app.query_one("#ccp-editor-char-name-input", Input).focus()
             app.notify(f"Character '{char_data.get('name', 'Unknown')}' loaded into center editor.", severity="information")
-            loguru_logger.info(f"Loaded character '{char_data.get('name', 'Unknown')}' into CCP center editor.")
+            loguru_logger.info(f"Loaded character '{char_data.get('name', 'Unknown')}' (ID: {char_data.get('id')}) into CCP center editor.")
         else:
             app.notify(f"Failed to load character details for ID: {character_id} into editor.", severity="error")
             await _helper_ccp_clear_center_pane_character_editor_fields(app)
@@ -1603,109 +1710,6 @@ async def _helper_ccp_load_character_into_center_pane_editor(app: 'TldwCli', cha
         await _helper_ccp_clear_center_pane_character_editor_fields(app)
         app.current_editing_character_id = None
         app.current_editing_character_data = None
-
-async def handle_ccp_editor_char_save_button_pressed(app: 'TldwCli') -> None:
-    logger = getattr(app, 'loguru_logger', loguru_logger) # Use loguru_logger if available
-    logger.info("CCP Editor: Save Character button pressed.")
-
-    if not app.chachanotes_db: # Check the correct DB instance
-        app.notify("Database service not available.", severity="error")
-        logger.error("ChaChaNotes DB not available for saving character.")
-        return
-
-    try:
-        # Retrieve data from CENTER PANE UI fields
-        name = app.query_one("#ccp-editor-char-name-input", Input).value.strip()
-        description = app.query_one("#ccp-editor-char-description-textarea", TextArea).text.strip()
-        personality = app.query_one("#ccp-editor-char-personality-textarea", TextArea).text.strip()
-        scenario = app.query_one("#ccp-editor-char-scenario-textarea", TextArea).text.strip()
-        first_message = app.query_one("#ccp-editor-char-first-message-textarea", TextArea).text.strip()
-        # system_prompt = app.query_one("#ccp-editor-char-system-prompt-textarea", TextArea).text.strip() # If you add this field
-
-        if not name:
-            app.notify("Character Name is required.", severity="error", timeout=4)
-            app.query_one("#ccp-editor-char-name-input", Input).focus()
-            return
-
-        character_data_for_db_op: Dict[str, Any] = {
-            "name": name,
-            "description": description,
-            "personality": personality,
-            "scenario": scenario,
-            "first_message": first_message, # Ensure DB schema uses "first_message" or "first_mes"
-            # "system_prompt": system_prompt, # If added
-        }
-
-        saved_character_details: Optional[Dict[str, Any]] = None
-        db = app.chachanotes_db # Use the correct instance
-
-        # Use app.current_editing_character_id to determine if it's a new or existing character
-        current_editing_id = app.current_editing_character_id
-        current_editing_data_value = cast(Optional[Dict[str, Any]], app.current_editing_character_data)
-
-
-        if current_editing_id is None: # New character
-            logger.info(f"Attempting to add new character from editor: {name}")
-            # add_character_card does not take user_id directly in CharactersRAGDB
-            # It's usually handled by the service layer or implied by the DB connection.
-            # Assuming your db.add_character_card from CharactersRAGDB takes only character_data
-            saved_character_details = db.add_character_card(
-                character_data=character_data_for_db_op
-            )
-            if saved_character_details and saved_character_details.get("id"):
-                logger.info(f"New character added successfully. ID: {saved_character_details['id']}")
-                app.notify(f"Character '{name}' saved successfully.", severity="information")
-            else:
-                logger.error(f"Failed to save new character '{name}'. DB returned: {saved_character_details}")
-                app.notify(f"Failed to save new character '{name}'.", severity="error")
-                return
-
-        else: # Existing character
-            logger.info(f"Attempting to update character ID from editor: {current_editing_id}")
-            # Get expected_version from app.current_editing_character_data
-            current_version = current_editing_data_value.get("version") if current_editing_data_value else None
-
-            if current_version is None:
-                logger.error(f"Cannot update character {current_editing_id}: version is missing from loaded data.")
-                app.notify("Cannot update: Character version is missing. Please reload.", severity="error")
-                return
-
-            saved_character_details = db.update_character_card(
-                character_id=current_editing_id, # Must be str
-                update_data=character_data_for_db_op,
-                expected_version=current_version # Must be int
-            )
-            if saved_character_details:
-                logger.info(f"Character {current_editing_id} updated successfully.")
-                app.notify(f"Character '{name}' updated successfully.", severity="information")
-            else:
-                logger.error(f"Failed to update character '{name}'. DB returned: {saved_character_details}")
-                app.notify(f"Failed to update character '{name}'.", severity="error")
-                return
-
-        if saved_character_details and saved_character_details.get("id"):
-            # Reload into editor to reflect any DB-side changes (new ID, version)
-            await _helper_ccp_load_character_into_center_pane_editor(app, saved_character_details["id"])
-            await populate_ccp_character_select(app)
-        else:
-            logger.warning("Save/Update operation completed but no valid character details returned.")
-            if current_editing_id:
-                await _helper_ccp_load_character_into_center_pane_editor(app, current_editing_id)
-
-    except ConflictError as e_conflict:
-        logger.error(f"Conflict saving character: {e_conflict}", exc_info=True)
-        app.notify(f"Save conflict: {e_conflict}. Please reload and try again.", severity="error", timeout=7)
-        if app.current_editing_character_id: # Check before trying to reload
-           await _helper_ccp_load_character_into_center_pane_editor(app, app.current_editing_character_id)
-    except CharactersRAGDBError as e_db:
-        logger.error(f"Database error saving character: {e_db}", exc_info=True)
-        app.notify(f"Database error: {type(e_db).__name__}", severity="error")
-    except QueryError as e_query:
-        logger.error(f"UI component error saving character from editor: {e_query}", exc_info=True)
-        app.notify("UI Error: Could not retrieve character data from editor fields.", severity="error")
-    except Exception as e_unexp:
-        logger.error(f"Unexpected error saving character from editor: {e_unexp}", exc_info=True)
-        app.notify(f"Unexpected error: {type(e_unexp).__name__}", severity="error")
 
 
 async def handle_ccp_editor_char_clone_button_pressed(app: 'TldwCli') -> None:
@@ -1779,6 +1783,93 @@ async def handle_ccp_editor_char_clone_button_pressed(app: 'TldwCli') -> None:
     except Exception as e_unexp:
         logger.error(f"Unexpected error cloning character from editor: {e_unexp}", exc_info=True)
         app.notify(f"Unexpected error cloning: {type(e_unexp).__name__}", severity="error")
+
+
+async def handle_ccp_editor_char_cancel_button_pressed(app: 'TldwCli') -> None:
+    """Handles cancelling an edit in the CCP CENTER PANE character editor."""
+    logger = getattr(app, 'loguru_logger', loguru_logger)
+    logger.info("CCP Editor: Cancel Character Edit button pressed.")
+
+    try:
+        cancel_button = app.query_one("#ccp-editor-char-cancel-button", Button)
+        cancel_button.add_class("hidden")
+
+        if app.current_editing_character_id is not None:
+            # An existing character was being edited. Restore card view with original data.
+            stored_character_id = app.current_editing_character_id
+            logger.info(f"Cancelling edit for existing character ID: {stored_character_id}. Restoring card view.")
+
+            if not app.chachanotes_db:
+                app.notify("Database service not available to restore character.", severity="error")
+                logger.error("ChaChaNotes DB not available to restore character for card view.")
+                # Attempt to clear editor and switch to a neutral view anyway
+                await _helper_ccp_clear_center_pane_character_editor_fields(app)
+                app.current_editing_character_id = None
+                app.current_editing_character_data = None
+                app.ccp_active_view = "conversation_messages_view" # Fallback view
+                return
+
+            try:
+                # Fetch the original, unmodified character data for the card view
+                original_char_data, _, original_char_image_pil = ccl.load_character_and_image(
+                    app.chachanotes_db,
+                    stored_character_id,
+                    app.notes_user_id # Assuming this is the correct user context
+                )
+
+                if original_char_data:
+                    # Update the state for the character card view
+                    app.current_ccp_character_details = original_char_data
+                    app.current_ccp_character_image = original_char_image_pil
+
+                    # Switch view to the character card display
+                    app.ccp_active_view = "character_card_view"
+                    app.notify("Character editing cancelled. Displaying original card.", severity="information")
+                else:
+                    # Failed to reload original data, fallback to clearing editor and neutral view
+                    app.notify("Could not reload original character data. Clearing editor.", severity="warning")
+                    logger.warning(f"Failed to reload original data for char ID {stored_character_id} on cancel.")
+                    await _helper_ccp_clear_center_pane_character_editor_fields(app)
+                    app.ccp_active_view = "conversation_messages_view" # Fallback
+
+            except Exception as e_load:
+                logger.error(f"Error reloading original character data (ID: {stored_character_id}) on cancel: {e_load}", exc_info=True)
+                app.notify("Error restoring character view. Clearing editor.", severity="error")
+                await _helper_ccp_clear_center_pane_character_editor_fields(app)
+                app.ccp_active_view = "conversation_messages_view" # Fallback
+
+            # Clear the editor's specific state
+            app.current_editing_character_id = None
+            app.current_editing_character_data = None
+            # Optionally, explicitly clear editor fields if not already done in error paths
+            # await _helper_ccp_clear_center_pane_character_editor_fields(app) # This might be redundant if view always changes
+
+        else:
+            # A new character form was being edited. Clear fields and switch view.
+            logger.info("Cancelling creation of new character. Clearing fields and switching view.")
+            await _helper_ccp_clear_center_pane_character_editor_fields(app)
+            # Ensure state reflects no character is being edited
+            app.current_editing_character_id = None
+            app.current_editing_character_data = None
+            # Switch to a view that makes sense, e.g., where the user might have come from
+            # If there was a previously viewed card, character_card_view might be okay,
+            # otherwise, conversation_messages_view is a general default.
+            if app.current_ccp_character_details and app.current_ccp_character_details.get("id"):
+                app.ccp_active_view = "character_card_view" # Show previous card if one was loaded
+            else:
+                app.ccp_active_view = "conversation_messages_view" # General fallback
+            app.notify("New character creation cancelled.", severity="information")
+
+    except QueryError as e_query:
+        logger.error(f"UI component error during cancel character edit (querying cancel button): {e_query}", exc_info=True)
+        app.notify("UI Error: Could not properly cancel character edit.", severity="error")
+        # Attempt to recover by switching to a default view
+        app.ccp_active_view = "conversation_messages_view"
+    except Exception as e_unexp:
+        logger.error(f"Unexpected error during cancel character edit: {e_unexp}", exc_info=True)
+        app.notify(f"An unexpected error occurred: {type(e_unexp).__name__}", severity="error")
+        # Attempt to recover
+        app.ccp_active_view = "conversation_messages_view"
 
 
 async def handle_ccp_editor_char_delete_button_pressed(app: 'TldwCli') -> None:
@@ -1866,6 +1957,11 @@ async def handle_ccp_card_edit_button_pressed(app: 'TldwCli') -> None:
     await _helper_ccp_load_character_into_center_pane_editor(app, character_id_to_edit)
     # This helper will set app.current_editing_character_id, app.current_editing_character_data,
     # and app.ccp_active_view = "character_editor_view"
+    try:
+        cancel_button = app.query_one("#ccp-editor-char-cancel-button", Button)
+        cancel_button.remove_class("hidden")
+    except QueryError:
+        logger.error("Failed to find #ccp-editor-char-cancel-button to remove 'hidden' class.")
 
 #
 # End of conv_char_events.py

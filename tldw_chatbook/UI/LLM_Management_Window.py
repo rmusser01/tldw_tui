@@ -143,11 +143,52 @@ class LLMManagementWindow(Container):
                 yield RichLog(id="vllm-log-output", classes="log_output", wrap=True, highlight=True)
             with Container(id="llm-view-onnx", classes="llm-view-area"):
                 yield Static("ONNX Management Area - Content Coming Soon!")
-            yield Container(
-                Static("Transformers Library Management Area - Content Coming Soon!"),
-                id="llm-view-transformers",
-                classes="llm-view-area",
-            )
+            # --- Transformers View ---
+            with Container(id="llm-view-transformers", classes="llm-view-area"):
+                with VerticalScroll():
+                    yield Label("Hugging Face Transformers Model Management",
+                                classes="section_label")  # Use a consistent class like .section_label or .pane-title
+
+                    yield Label("Local Models Root Directory (for listing/browsing):", classes="label")
+                    with Container(classes="input_container"):  # Re-use styling for input  button
+                        yield Input(id="transformers-models-dir-path",
+                                    placeholder="/path/to/your/hf_models_cache_or_local_dir")
+                        yield Button("Browse Dir", id="transformers-browse-models-dir-button",
+                                     classes="browse_button")
+
+                    yield Button("List Local Models", id="transformers-list-local-models-button",
+                                 classes="action_button")
+                    yield RichLog(id="transformers-local-models-list", classes="log_output", markup=True,
+                                  highlight=False)  # markup=True for Rich tags
+                    yield Static("---", classes="separator")  # Visual separator
+
+                    yield Label("Download New Model:", classes="label section_label")  # Use consistent class
+                    yield Label("Model Repo ID (e.g., 'google-bert/bert-base-uncased'):", classes="label")
+                    yield Input(id="transformers-download-repo-id", placeholder="username/model_name")
+                    yield Label("Revision/Branch (optional):", classes="label")
+                    yield Input(id="transformers-download-revision", placeholder="main")
+                    yield Button("Download Model", id="transformers-download-model-button", classes="action_button")
+                    yield Static("---", classes="separator")
+                    yield Label("Run Custom Transformers Server Script:", classes="label section_label")
+                    yield Label("Python Interpreter:", classes="label")
+                    yield Input(id="transformers-python-path", value="python", placeholder="e.g., /path/to/venv/bin/python")
+                    yield Label("Path to your Server Script (.py):", classes="label")
+                    with Container(classes="input_container"):
+                        yield Input(id="transformers-script-path", placeholder="/path/to/your_transformers_server_script.py")
+                        yield Button("Browse Script", id="transformers-browse-script-button", classes="browse_button")
+                    yield Label("Model to Load (ID or Path for script):", classes="label")
+                    yield Input(id="transformers-server-model-arg", placeholder="Script-dependent model identifier")
+                    yield Label("Host:", classes="label")
+                    yield Input(id="transformers-server-host", value="127.0.0.1")
+                    yield Label("Port:", classes="label")
+                    yield Input(id="transformers-server-port", value="8003") # Example port
+                    yield Label("Additional Script Arguments:", classes="label")
+                    yield TextArea(id="transformers-server-additional-args", classes="additional_args_textarea", language="bash", theme="vscode_dark")
+                    yield Button("Start Transformers Server", id="transformers-start-server-button", classes="action_button")
+                    yield Button("Stop Transformers Server", id="transformers-stop-server-button", classes="action_button")
+
+                    yield Label("Operations Log:", classes="label section_label")  # Use consistent class
+                    yield RichLog(id="transformers-log-output", classes="log_output", wrap=True, highlight=True)
             yield Container(
                 Static("Local Model Management Area - Content Coming Soon!"),
                 id="llm-view-local-models",

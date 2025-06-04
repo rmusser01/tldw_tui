@@ -4,15 +4,15 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tldw_chatbook" # This is the distribution name (what you pip install)
+name = "tldw_chatbook"
 version = "0.1.0"
 authors = [
   { name="Robert Musser", email="contact@rmusser.net" },
 ]
 description = "A Textual TUI for chatting with LLMs, and interacting with the tldw server."
-readme = "README.md" # Assumes README.md is in the project root
+readme = "README.md"
 requires-python = ">=3.11"
-license = { file="LICENSE" } # Assumes LICENSE file is in the project root
+license = { file="LICENSE" }
 keywords = ["tui", "cli", "llm", "textual", "ai", "chat"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -20,11 +20,10 @@ classifiers = [
     "Intended Audience :: End Users/Desktop",
     "Topic :: Utilities",
     "Topic :: Terminals",
-    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)", # Corrected to AGPL
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    # "Programming Language :: Python :: 3.13", # Only list if you actively test/support it
     "Environment :: Console",
     "Operating System :: OS Independent",
 ]
@@ -34,9 +33,9 @@ dependencies = [
     "chardet",
     "httpx",
     "loguru",
-    "textual>=3.3.0", # Specify a minimum Textual version if features depend on it
+    "textual>=3.3.0",
     "requests",
-     "rich", # Usually pulled in by Textual, but explicit is fine
+     "rich",
     "Pillow",
     "PyYAML",
     "pydantic",

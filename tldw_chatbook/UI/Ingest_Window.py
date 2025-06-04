@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 # 3rd-Party Imports
 from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll, Horizontal, Vertical
-from textual.widgets import Static, Button, Input, Select, Checkbox, TextArea, Label, RadioSet, RadioButton, Collapsible, ListView, ListItem, Markdown
+from textual.widgets import Static, Button, Input, Select, Checkbox, TextArea, Label, RadioSet, RadioButton, Collapsible, ListView, ListItem, Markdown, LoadingIndicator
 #
 # Local Imports
 from ..tldw_api.schemas import MediaType, ChunkMethod, PdfEngine  # Import Enums
@@ -24,13 +24,17 @@ if TYPE_CHECKING:
 #
 # Functions:
 
+MEDIA_TYPES = ['video', 'audio', 'document', 'pdf', 'ebook', 'xml', 'mediawiki_dump']
+
 INGEST_VIEW_IDS = [
     "ingest-view-prompts", "ingest-view-characters",
-    "ingest-view-media", "ingest-view-notes", "ingest-view-tldw-api"
+    "ingest-view-media", "ingest-view-notes",
+    *[f"ingest-view-tldw-api-{mt}" for mt in MEDIA_TYPES]
 ]
 INGEST_NAV_BUTTON_IDS = [
     "ingest-nav-prompts", "ingest-nav-characters",
-    "ingest-nav-media", "ingest-nav-notes", "ingest-nav-tldw-api"
+    "ingest-nav-media", "ingest-nav-notes",
+    *[f"ingest-nav-tldw-api-{mt}" for mt in MEDIA_TYPES]
 ]
 
 class IngestWindow(Container):
@@ -38,8 +42,8 @@ class IngestWindow(Container):
         super().__init__(**kwargs)
         self.app_instance = app_instance
 
-    def compose_tldw_api_form(self) -> ComposeResult:
-        """Composes the form for 'Ingest Media via tldw API'."""
+    def compose_tldw_api_form(self, media_type: str) -> ComposeResult:
+        """Composes the common part of the form for 'Ingest Media via tldw API'."""
         # Get default API URL from app config
         default_api_url = self.app_instance.app_config.get("tldw_api", {}).get("base_url", "http://127.0.0.1:8000")
 
@@ -52,10 +56,10 @@ class IngestWindow(Container):
         if not analysis_provider_options:
             analysis_provider_options = [("No Providers Configured", Select.BLANK)]
 
-        with VerticalScroll(classes="ingest-form-scrollable"):
+        with VerticalScroll(classes="ingest-form-scrollable"): # TODO: Consider if this scrollable itself needs a unique ID if we have nested ones. For now, assuming not.
             yield Static("TLDW API Configuration", classes="sidebar-title")
             yield Label("API Endpoint URL:")
-            yield Input(default_api_url, id="tldw-api-endpoint-url", placeholder="http://localhost:8000")
+            yield Input(default_api_url, id=f"tldw-api-endpoint-url-{media_type}", placeholder="http://localhost:8000")
 
             yield Label("Authentication Method:")
             yield Select(
@@ -65,154 +69,172 @@ class IngestWindow(Container):
                     # ("Environment Variable", "env_var_token") # Future: add if needed
                 ],
                 prompt="Select Auth Method...",
-                id="tldw-api-auth-method",
+                id=f"tldw-api-auth-method-{media_type}",
                 value="config_token"  # Default
             )
-            yield Label("Custom Auth Token:", id="tldw-api-custom-token-label", classes="hidden")  # Hidden by default
+            yield Label("Custom Auth Token:", id=f"tldw-api-custom-token-label-{media_type}", classes="hidden")  # Hidden by default
             yield Input(
                 "",
-                id="tldw-api-custom-token",
+                id=f"tldw-api-custom-token-{media_type}",
                 placeholder="Enter custom Bearer token",
                 password=True,
-                classes="hidden"  # Hidden by default
+                classes="hidden",  # Hidden by default
+                tooltip="Enter your Bearer token for the TLDW API. This is used if 'Custom Token' is selected as the authentication method."
             )
 
             yield Static("Media Details & Processing Options", classes="sidebar-title")
-            yield Label("Media Type to Process:")
-            # Use values from the MediaType Literal for options
-            media_type_options = [(mt, mt) for mt in MediaType.__args__]
-            yield Select(media_type_options, prompt="Select Media Type...", id="tldw-api-media-type")
+            # Media Type selection is now handled by which form is shown
 
             # --- Common Input Fields ---
+            # FIXME/TODO: Consider if URL/Local File input is applicable for all media_type or if this also needs to be specific
+            # For example, mediawiki_dump typically uses a local file path.
             yield Label("Media URLs (one per line):")
-            yield TextArea(id="tldw-api-urls", language="plain_text", classes="ingest-textarea-small")
+            yield TextArea(id=f"tldw-api-urls-{media_type}", language="plain_text", classes="ingest-textarea-small")
             yield Label(
                 "Local File Paths (one per line, if API supports local path references or for client-side upload):")
-            yield TextArea(id="tldw-api-local-files", language="plain_text", classes="ingest-textarea-small")
+            yield TextArea(id=f"tldw-api-local-files-{media_type}", language="plain_text", classes="ingest-textarea-small")
 
-            with Horizontal(classes="ingest-form-row"):
+            with Horizontal(classes="title-author-row"): # Changed class here
                 with Vertical(classes="ingest-form-col"):
                     yield Label("Title (Optional):")
-                    yield Input(id="tldw-api-title", placeholder="Optional title override")
+                    yield Input(id=f"tldw-api-title-{media_type}", placeholder="Optional title override")
                 with Vertical(classes="ingest-form-col"):
                     yield Label("Author (Optional):")
-                    yield Input(id="tldw-api-author", placeholder="Optional author override")
+                    yield Input(id=f"tldw-api-author-{media_type}", placeholder="Optional author override")
 
             yield Label("Keywords (comma-separated):")
-            yield TextArea(id="tldw-api-keywords", classes="ingest-textarea-small")
+            yield TextArea(id=f"tldw-api-keywords-{media_type}", classes="ingest-textarea-small")
 
             # --- Common Processing Options ---
             yield Label("Custom Prompt (for analysis):")
-            yield TextArea(id="tldw-api-custom-prompt", classes="ingest-textarea-medium")
+            yield TextArea(id=f"tldw-api-custom-prompt-{media_type}", classes="ingest-textarea-medium")
             yield Label("System Prompt (for analysis):")
-            yield TextArea(id="tldw-api-system-prompt", classes="ingest-textarea-medium")
-            yield Checkbox("Perform Analysis (e.g., Summarization)", True, id="tldw-api-perform-analysis")
+            yield TextArea(id=f"tldw-api-system-prompt-{media_type}", classes="ingest-textarea-medium")
+            yield Checkbox("Perform Analysis (e.g., Summarization)", True, id=f"tldw-api-perform-analysis-{media_type}")
             yield Label("Analysis API Provider (if analysis enabled):")
-            yield Select(analysis_provider_options, id="tldw-api-analysis-api-name",
+            yield Select(analysis_provider_options, id=f"tldw-api-analysis-api-name-{media_type}",
                          prompt="Select API for Analysis...")
 
             # --- Common Chunking Options ---
-            with Collapsible(title="Chunking Options", collapsed=True, id="tldw-api-chunking-collapsible"):
-                yield Checkbox("Perform Chunking", True, id="tldw-api-perform-chunking")
+            with Collapsible(title="Chunking Options", collapsed=True, id=f"tldw-api-chunking-collapsible-{media_type}"):
+                yield Checkbox("Perform Chunking", True, id=f"tldw-api-perform-chunking-{media_type}")
                 yield Label("Chunking Method:")
                 chunk_method_options = [(cm, cm) for cm in ChunkMethod.__args__]
-                yield Select(chunk_method_options, id="tldw-api-chunk-method", prompt="Default (per type)")
+                yield Select(chunk_method_options, id=f"tldw-api-chunk-method-{media_type}", prompt="Default (per type)")
                 with Horizontal(classes="ingest-form-row"):
                     with Vertical(classes="ingest-form-col"):
                         yield Label("Chunk Size:")
-                        yield Input("500", id="tldw-api-chunk-size", type="integer")
+                        yield Input("500", id=f"tldw-api-chunk-size-{media_type}", type="integer")
                     with Vertical(classes="ingest-form-col"):
                         yield Label("Chunk Overlap:")
-                        yield Input("200", id="tldw-api-chunk-overlap", type="integer")
+                        yield Input("200", id=f"tldw-api-chunk-overlap-{media_type}", type="integer")
                 yield Label("Chunk Language (e.g., 'en', optional):")
-                yield Input(id="tldw-api-chunk-lang", placeholder="Defaults to media language")
-                yield Checkbox("Use Adaptive Chunking", False, id="tldw-api-adaptive-chunking")
-                yield Checkbox("Use Multi-level Chunking", False, id="tldw-api-multi-level-chunking")
+                yield Input(id=f"tldw-api-chunk-lang-{media_type}", placeholder="Defaults to media language")
+                yield Checkbox("Use Adaptive Chunking", False, id=f"tldw-api-adaptive-chunking-{media_type}")
+                yield Checkbox("Use Multi-level Chunking", False, id=f"tldw-api-multi-level-chunking-{media_type}")
                 yield Label("Custom Chapter Pattern (Regex, optional):")
-                yield Input(id="tldw-api-custom-chapter-pattern", placeholder="e.g., ^Chapter\\s+\\d+")
+                yield Input(id=f"tldw-api-custom-chapter-pattern-{media_type}", placeholder="e.g., ^Chapter\\s+\\d+")
 
             # --- Common Analysis Options ---
             with Collapsible(title="Advanced Analysis Options", collapsed=True,
-                             id="tldw-api-analysis-opts-collapsible"):
-                yield Checkbox("Summarize Recursively (if chunked)", False, id="tldw-api-summarize-recursively")
-                yield Checkbox("Perform Rolling Summarization", False, id="tldw-api-perform-rolling-summarization")
+                             id=f"tldw-api-analysis-opts-collapsible-{media_type}"):
+                yield Checkbox("Summarize Recursively (if chunked)", False, id=f"tldw-api-summarize-recursively-{media_type}")
+                yield Checkbox("Perform Rolling Summarization", False, id=f"tldw-api-perform-rolling-summarization-{media_type}")
                 # Add more analysis options here as needed
 
-            # --- Media-Type Specific Option Containers (initially hidden) ---
-            # Video Options
-            with Container(id=TLDW_API_VIDEO_OPTIONS_ID, classes="tldw-api-media-specific-options hidden"):
-                yield Static("Video Specific Options", classes="sidebar-title")
-                yield Label("Transcription Model:")
-                yield Input("deepdml/faster-whisper-large-v3-turbo-ct2", id="tldw-api-video-transcription-model")
-                yield Label("Transcription Language (e.g., 'en'):")
-                yield Input("en", id="tldw-api-video-transcription-language")
-                yield Checkbox("Enable Speaker Diarization", False, id="tldw-api-video-diarize")
-                yield Checkbox("Include Timestamps in Transcription", True, id="tldw-api-video-timestamp")
-                yield Checkbox("Enable VAD (Voice Activity Detection)", False, id="tldw-api-video-vad")
-                yield Checkbox("Perform Confabulation Check of Analysis", False, id="tldw-api-video-confab-check")
-                with Horizontal(classes="ingest-form-row"):
-                    with Vertical(classes="ingest-form-col"):
-                        yield Label("Start Time (HH:MM:SS or secs):")
-                        yield Input(id="tldw-api-video-start-time", placeholder="Optional")
-                    with Vertical(classes="ingest-form-col"):
-                        yield Label("End Time (HH:MM:SS or secs):")
-                        yield Input(id="tldw-api-video-end-time", placeholder="Optional")
+            # --- Media-Type Specific Option Containers have been removed from this common method ---
+            # They will be added to the media-type specific views/containers directly.
 
-            # Audio Options (Example structure, add fields as needed)
-            with Container(id=TLDW_API_AUDIO_OPTIONS_ID, classes="tldw-api-media-specific-options hidden"):
-                yield Static("Audio Specific Options", classes="sidebar-title")
-                yield Label("Transcription Model:")
-                yield Input("deepdml/faster-distil-whisper-large-v3.5", id="tldw-api-audio-transcription-model")
-                # Add other audio specific fields from ProcessAudioRequest: lang, diarize, timestamp, vad, confab
-
-            # PDF Options
-            with Container(id=TLDW_API_PDF_OPTIONS_ID, classes="tldw-api-media-specific-options hidden"):
-                yield Static("PDF Specific Options", classes="sidebar-title")
+            # --- Inserted Media-Type Specific Options ---
+            if media_type == "video":
+                with Container(id=TLDW_API_VIDEO_OPTIONS_ID, classes="tldw-api-media-specific-options"): # ID of container itself is fine
+                    yield Static("Video Specific Options", classes="sidebar-title")
+                    yield Label("Transcription Model:")
+                    yield Input("deepdml/faster-whisper-large-v3-turbo-ct2", id=f"tldw-api-video-transcription-model-{media_type}")
+                    yield Label("Transcription Language (e.g., 'en'):")
+                    yield Input("en", id=f"tldw-api-video-transcription-language-{media_type}")
+                    yield Checkbox("Enable Speaker Diarization", False, id=f"tldw-api-video-diarize-{media_type}")
+                    yield Checkbox("Include Timestamps in Transcription", True, id=f"tldw-api-video-timestamp-{media_type}")
+                    yield Checkbox("Enable VAD (Voice Activity Detection)", False, id=f"tldw-api-video-vad-{media_type}")
+                    yield Checkbox("Perform Confabulation Check of Analysis", False, id=f"tldw-api-video-confab-check-{media_type}")
+                    with Horizontal(classes="ingest-form-row"):
+                        with Vertical(classes="ingest-form-col"):
+                            yield Label("Start Time (HH:MM:SS or secs):")
+                            yield Input(id=f"tldw-api-video-start-time-{media_type}", placeholder="Optional")
+                        with Vertical(classes="ingest-form-col"):
+                            yield Label("End Time (HH:MM:SS or secs):")
+                            yield Input(id=f"tldw-api-video-end-time-{media_type}", placeholder="Optional")
+            elif media_type == "audio":
+                with Container(id=TLDW_API_AUDIO_OPTIONS_ID, classes="tldw-api-media-specific-options"):
+                    yield Static("Audio Specific Options", classes="sidebar-title")
+                    yield Label("Transcription Model:")
+                    yield Input("deepdml/faster-distil-whisper-large-v3.5", id=f"tldw-api-audio-transcription-model-{media_type}")
+                    yield Label("Transcription Language (e.g., 'en'):")
+                    yield Input("en", id=f"tldw-api-audio-transcription-language-{media_type}")
+                    yield Checkbox("Enable Speaker Diarization", False, id=f"tldw-api-audio-diarize-{media_type}")
+                    yield Checkbox("Include Timestamps in Transcription", True, id=f"tldw-api-audio-timestamp-{media_type}")
+                    yield Checkbox("Enable VAD (Voice Activity Detection)", False, id=f"tldw-api-audio-vad-{media_type}")
+                    # TODO: Add other audio specific fields from ProcessAudioRequest: confab (e.g. id=f"tldw-api-audio-confab-check-{media_type}")
+            elif media_type == "pdf":
                 pdf_engine_options = [(engine, engine) for engine in PdfEngine.__args__]
-                yield Label("PDF Parsing Engine:")
-                yield Select(pdf_engine_options, id="tldw-api-pdf-engine", value="pymupdf4llm")
-
-            # Ebook Options
-            with Container(id=TLDW_API_EBOOK_OPTIONS_ID, classes="tldw-api-media-specific-options hidden"):
-                yield Static("Ebook Specific Options", classes="sidebar-title")
+                with Container(id=TLDW_API_PDF_OPTIONS_ID, classes="tldw-api-media-specific-options"):
+                    yield Static("PDF Specific Options", classes="sidebar-title")
+                    yield Label("PDF Parsing Engine:")
+                    yield Select(pdf_engine_options, id=f"tldw-api-pdf-engine-{media_type}", value="pymupdf4llm")
+            elif media_type == "ebook":
                 ebook_extraction_options = [("filtered", "filtered"), ("markdown", "markdown"), ("basic", "basic")]
-                yield Label("Ebook Extraction Method:")
-                yield Select(ebook_extraction_options, id="tldw-api-ebook-extraction-method", value="filtered")
-                # Ebook chunk_method defaults to ebook_chapters in schema, no specific UI override here unless complex
-
-            # Document Options
-            with Container(id=TLDW_API_DOCUMENT_OPTIONS_ID, classes="tldw-api-media-specific-options hidden"):
-                yield Static("Document Specific Options", classes="sidebar-title")
-                # Document chunk_method defaults to sentences in schema
-                # Add specific document parsing options if any
-
-            # XML Options
-            with Container(id=TLDW_API_XML_OPTIONS_ID, classes="tldw-api-media-specific-options hidden"):
-                yield Static("XML Specific Options", classes="sidebar-title")
-                yield Checkbox("Auto Summarize XML Content", False, id="tldw-api-xml-auto-summarize")
-
-            # MediaWiki Dump Options
-            with Container(id=TLDW_API_MEDIAWIKI_OPTIONS_ID, classes="tldw-api-media-specific-options hidden"):
-                yield Static("MediaWiki Dump Specific Options", classes="sidebar-title")
-                yield Label("Wiki Name (for identification):")
-                yield Input(id="tldw-api-mediawiki-wiki-name", placeholder="e.g., my_wiki_backup")
-                yield Label("Namespaces (comma-sep IDs, optional):")
-                yield Input(id="tldw-api-mediawiki-namespaces", placeholder="e.g., 0,14")
-                yield Checkbox("Skip Redirect Pages", True, id="tldw-api-mediawiki-skip-redirects")
+                with Container(id=TLDW_API_EBOOK_OPTIONS_ID, classes="tldw-api-media-specific-options"):
+                    yield Static("Ebook Specific Options", classes="sidebar-title")
+                    yield Label("Ebook Extraction Method:")
+                    yield Select(ebook_extraction_options, id=f"tldw-api-ebook-extraction-method-{media_type}", value="filtered")
+            elif media_type == "document":
+                with Container(id=TLDW_API_DOCUMENT_OPTIONS_ID, classes="tldw-api-media-specific-options"):
+                    yield Static("Document Specific Options", classes="sidebar-title")
+                    # yield Label("Note: Document specific options are minimal beyond common settings.") # Placeholder - can be removed or made more specific if needed
+                    # If adding specific fields, ensure their IDs are dynamic e.g. id=f"tldw-api-doc-some-option-{media_type}"
+            elif media_type == "xml":
+                with Container(id=TLDW_API_XML_OPTIONS_ID, classes="tldw-api-media-specific-options"):
+                    yield Static("XML Specific Options (Note: Only one local file at a time)", classes="sidebar-title")
+                    yield Checkbox("Auto Summarize XML Content", False, id=f"tldw-api-xml-auto-summarize-{media_type}")
+            elif media_type == "mediawiki_dump":
+                with Container(id=TLDW_API_MEDIAWIKI_OPTIONS_ID, classes="tldw-api-media-specific-options"):
+                    yield Static("MediaWiki Dump Specific Options (Note: Only one local file at a time)", classes="sidebar-title")
+                    yield Label("Wiki Name (for identification):")
+                    yield Input(id=f"tldw-api-mediawiki-wiki-name-{media_type}", placeholder="e.g., my_wiki_backup")
+                    yield Label("Namespaces (comma-sep IDs, optional):")
+                    yield Input(id=f"tldw-api-mediawiki-namespaces-{media_type}", placeholder="e.g., 0,14")
+                    yield Checkbox("Skip Redirect Pages (recommended)", True, id=f"tldw-api-mediawiki-skip-redirects-{media_type}")
+            # --- End of Inserted Media-Type Specific Options ---
 
             yield Static("Local Database Options", classes="sidebar-title")
-            yield Checkbox("Overwrite if media exists in local DB", False, id="tldw-api-overwrite-db")
+            yield Checkbox("Overwrite if media exists in local DB", False, id=f"tldw-api-overwrite-db-{media_type}")
 
-            yield Button("Submit to TLDW API", id="tldw-api-submit", variant="primary", classes="ingest-submit-button")
+            yield Button("Submit to TLDW API", id=f"tldw-api-submit-{media_type}", variant="primary", classes="ingest-submit-button")
+            # LoadingIndicator and TextArea for API status/error messages
+            yield LoadingIndicator(id=f"tldw-api-loading-indicator-{media_type}", classes="hidden") # Initially hidden
+            yield TextArea(
+                "",
+                id=f"tldw-api-status-area-{media_type}",
+                read_only=True,
+                classes="ingest-status-area hidden",  # Initially hidden, common styling
+                language="markdown"  # Use markdown for potential formatting
+            )
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="ingest-nav-pane", classes="ingest-nav-pane"):
             yield Static("Ingestion Methods", classes="sidebar-title")
+            # Add new buttons for each media type
+            for media_type in MEDIA_TYPES:
+                label = f"Ingest {media_type.replace('_', ' ').title()} via tldw API"
+                if media_type == 'mediawiki_dump':
+                    label = "Ingest MediaWiki Dump via tldw API"
+                button_id = f"ingest-nav-tldw-api-{media_type}"
+                yield Button(label, id=button_id, classes="ingest-nav-button")
             yield Button("Ingest Prompts", id="ingest-nav-prompts", classes="ingest-nav-button")
             yield Button("Ingest Characters", id="ingest-nav-characters", classes="ingest-nav-button")
             yield Button("Ingest Media (Local)", id="ingest-nav-media", classes="ingest-nav-button")
             yield Button("Ingest Notes", id="ingest-nav-notes", classes="ingest-nav-button")
-            yield Button("Ingest Media via tldw API", id="ingest-nav-tldw-api", classes="ingest-nav-button")
+
 
         with Container(id="ingest-content-pane", classes="ingest-content-pane"):
             # --- Prompts Ingest View ---
@@ -272,9 +294,13 @@ class IngestWindow(Container):
                 classes="ingest-view-area",
             )
 
-            # New container for tldw API form
-            with Container(id="ingest-view-tldw-api", classes="ingest-view-area"):
-                yield from self.compose_tldw_api_form()
+            # New containers for tldw API forms for each media type
+            for media_type in MEDIA_TYPES:
+                with Container(id=f"ingest-view-tldw-api-{media_type}", classes="ingest-view-area hidden"): # Start hidden
+                    # TODO: Later, tailor the form composition if needed per media type, (This is the next step)
+                    # or decide if one generic form is enough and it's just the nav that changes.
+                    # For now, we assume compose_tldw_api_form is generic enough or will be adapted.
+                    yield from self.compose_tldw_api_form(media_type=media_type)
 
 
 
