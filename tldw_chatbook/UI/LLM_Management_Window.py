@@ -142,7 +142,29 @@ class LLMManagementWindow(Container):
                     yield Button("Stop Server", id="vllm-stop-server-button", classes="action_button")
                 yield RichLog(id="vllm-log-output", classes="log_output", wrap=True, highlight=True)
             with Container(id="llm-view-onnx", classes="llm-view-area"):
-                yield Static("ONNX Management Area - Content Coming Soon!")
+                with VerticalScroll():
+                    yield Label("Python Interpreter Path:", classes="label")
+                    with Container(classes="input_container"):
+                        yield Input(id="onnx-python-path", value="python", placeholder="e.g., /path/to/venv/bin/python")
+                        yield Button("Browse", id="onnx-browse-python-button", classes="browse_button")
+                    yield Label("Path to your ONNX Server Script (.py):", classes="label")
+                    with Container(classes="input_container"):
+                        yield Input(id="onnx-script-path", placeholder="/path/to/your/onnx_server_script.py")
+                        yield Button("Browse Script", id="onnx-browse-script-button", classes="browse_button")
+                    yield Label("Model to Load (Path for script):", classes="label")
+                    with Container(classes="input_container"):
+                        yield Input(id="onnx-model-path", placeholder="Path to your .onnx model file or directory")
+                        yield Button("Browse Model", id="onnx-browse-model-button", classes="browse_button")
+                    yield Label("Host:", classes="label")
+                    yield Input(id="onnx-host", value="127.0.0.1", classes="input_field")
+                    yield Label("Port:", classes="label")
+                    yield Input(id="onnx-port", value="8004", classes="input_field")
+                    yield Label("Additional Script Arguments:", classes="label")
+                    yield TextArea(id="onnx-additional-args", classes="additional_args_textarea", language="bash", theme="vscode_dark")
+                    with Container(classes="button_container"):
+                        yield Button("Start ONNX Server", id="onnx-start-server-button", classes="action_button")
+                        yield Button("Stop ONNX Server", id="onnx-stop-server-button", classes="action_button")
+                    yield RichLog(id="onnx-log-output", classes="log_output", wrap=True, highlight=True)
             # --- Transformers View ---
             with Container(id="llm-view-transformers", classes="llm-view-area"):
                 with VerticalScroll():

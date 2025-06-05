@@ -90,7 +90,9 @@ from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events im
     handle_llamafile_browse_model_button_pressed, handle_start_mlx_server_button_pressed, \
     handle_stop_mlx_server_button_pressed, handle_stop_llamafile_server_button_pressed, populate_llm_help_texts, \
     handle_start_llamacpp_server_button_pressed, handle_stop_llamacpp_server_button_pressed, \
-    handle_start_llamafile_server_button_pressed
+    handle_start_llamafile_server_button_pressed, handle_onnx_browse_python_button_pressed, \
+    handle_onnx_browse_script_button_pressed, handle_onnx_browse_model_button_pressed, \
+    handle_start_onnx_server_button_pressed, handle_stop_onnx_server_button_pressed
 from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_vllm import handle_vllm_browse_python_button_pressed, handle_vllm_browse_model_button_pressed, handle_start_vllm_server_button_pressed, handle_stop_vllm_server_button_pressed
 from .Notes.Notes_Library import NotesInteropService
 from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
@@ -333,7 +335,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     llamafile_server_process: Optional[subprocess.Popen] = None
     vllm_server_process: Optional[subprocess.Popen] = None
     ollama_server_process: Optional[subprocess.Popen] = None
-
+    mlx_server_process: Optional[subprocess.Popen] = None
+    onnx_server_process: Optional[subprocess.Popen] = None
 
     # De-Bouncers
     _conv_char_search_timer: Optional[Timer] = None
@@ -378,6 +381,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         # vLLM server process
         self.vllm_server_process = None
         self.ollama_server_process = None
+        self.mlx_server_process = None
+        self.onnx_server_process = None
 
         # 1. Get the user name from the loaded settings
         # The fallback here should match what you expect if settings doesn't have it,
@@ -2366,11 +2371,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 await handle_start_vllm_server_button_pressed(self)
             elif button_id == "vllm-stop-server-button":
                 await handle_stop_vllm_server_button_pressed(self)
-            # MLX Server Buttons
-            elif button_id == "mlx-start-server-button":
-                await handle_start_mlx_server_button_pressed(self)
-            elif button_id == "mlx-stop-server-button":
-                await handle_stop_mlx_server_button_pressed(self)
+            # --- Ollama Button Handlers ---
+            elif button_id == "ollama-list-models-button":
+                await handle_ollama_list_models_button_pressed(self)
             # --- Ollama Service Buttons ---
             elif button_id == "ollama-browse-exec-button":
                 await handle_ollama_browse_exec_button_pressed(self)
@@ -2413,6 +2416,23 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 await handle_ollama_ps_button_pressed(self)
                 return
             # --- End of Ollama Button Handlers ---
+            # MLX Server Buttons
+            elif button_id == "mlx-start-server-button":
+                await handle_start_mlx_server_button_pressed(self)
+            elif button_id == "mlx-stop-server-button":
+                await handle_stop_mlx_server_button_pressed(self)
+            # --- ONNX Server Buttons ---
+            elif button_id == "onnx-browse-python-button":
+                await handle_onnx_browse_python_button_pressed(self)
+            elif button_id == "onnx-browse-script-button":
+                await handle_onnx_browse_script_button_pressed(self)
+            elif button_id == "onnx-browse-model-button":
+                await handle_onnx_browse_model_button_pressed(self)
+            elif button_id == "onnx-start-server-button":
+                await handle_start_onnx_server_button_pressed(self)
+            elif button_id == "onnx-stop-server-button":
+                await handle_stop_onnx_server_button_pressed(self)
+
             else:
                 self.loguru_logger.warning(
                     f"Unhandled button on LLM MANAGEMENT tab: ID:{button_id}, Label:'{button.label}'")
@@ -2475,6 +2495,27 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 "chat-character-first-message-edit"
             ]:
                 await chat_handlers.handle_chat_character_attribute_changed(self, event)
+
+    def _update_model_download_log(self, message: str) -> None:
+        """Helper to write messages to the model download log widget."""
+        try:
+            # This ID must match the RichLog widget in your "Download Models" view
+            log_widget = self.query_one("#model-download-log-output", RichLog)
+            log_widget.write(message)
+        except QueryError:
+            self.loguru_logger.error("Failed to query #model-download-log-output to write message.")
+        except Exception as e:
+            self.loguru_logger.error(f"Error writing to model download log: {e}", exc_info=True)
+
+    def _update_mlx_log(self, message: str) -> None:
+        """Helper to write messages to the MLX-LM log widget."""
+        try:
+            log_widget = self.query_one("#mlx-log-output", RichLog)
+            log_widget.write(message)
+        except QueryError:
+            self.loguru_logger.error("Failed to query #mlx-log-output to write message.")
+        except Exception as e:
+            self.loguru_logger.error(f"Error writing to MLX-LM log: {e}", exc_info=True)
 
     async def on_input_changed(self, event: Input.Changed) -> None:
         input_id = event.input.id
@@ -2860,6 +2901,66 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 except QueryError:
                     self.loguru_logger.warning("Could not find vLLM server buttons to update state for STOPPED/ERROR.")
 
+                #######################################################################
+                # --- Handle MLX-LM Server Worker ---
+                #######################################################################
+            elif worker_group == "mlx_lm_server":
+                self.loguru_logger.info(f"MLX-LM server worker state changed to {worker_state}.")
+                start_button_id = "#mlx-start-server-button"
+                stop_button_id = "#mlx-stop-server-button"
+
+                if worker_state == WorkerState.RUNNING:
+                    self.loguru_logger.info("MLX-LM server worker is RUNNING.")
+                    try:
+                        self.query_one(start_button_id, Button).disabled = True
+                        self.query_one(stop_button_id, Button).disabled = False
+                        self.notify("MLX-LM server process is running.", title="Server Status")
+                    except QueryError:
+                        self.loguru_logger.warning("Could not find MLX-LM server buttons for RUNNING state.")
+
+                elif worker_state in [WorkerState.SUCCESS, WorkerState.ERROR]:
+                    result_message = str(event.worker.result).strip() if event.worker.result else "Worker finished."
+                    self.loguru_logger.info(f"MLX-LM worker finished. Result: '{result_message}'")
+
+                    severity = "error" if "error" in result_message.lower() or "non-zero code" in result_message.lower() else "information"
+                    self.notify(f"MLX-LM server process finished.", title="Server Status", severity=f"{severity}")
+
+                    try:
+                        self.query_one(start_button_id, Button).disabled = False
+                        self.query_one(stop_button_id, Button).disabled = True
+                    except QueryError:
+                        self.loguru_logger.warning("Could not find MLX-LM server buttons to reset state.")
+
+                    if self.mlx_server_process is not None:
+                        self.mlx_server_process = None
+
+            #######################################################################
+            # --- Handle ONNX Server Worker ---
+            #######################################################################
+            elif worker_group == "onnx_server":
+                self.loguru_logger.info(f"ONNX server worker state changed to {worker_state}.")
+                start_button_id = "#onnx-start-server-button"
+                stop_button_id = "#onnx-stop-server-button"
+
+                if worker_state == WorkerState.RUNNING:
+                    self.loguru_logger.info("ONNX server worker is RUNNING.")
+                    try:
+                        self.query_one(start_button_id, Button).disabled = True
+                        self.query_one(stop_button_id, Button).disabled = False
+                        self.notify("ONNX server process is running.", title="Server Status")
+                    except QueryError:
+                        self.loguru_logger.warning("Could not find ONNX server buttons for RUNNING state.")
+
+                elif worker_state in [WorkerState.SUCCESS, WorkerState.ERROR]:
+                    result_message = str(event.worker.result).strip() if event.worker.result else "Worker finished."
+                    severity = "error" if "error" in result_message.lower() or "non-zero code" in result_message.lower() else "information"
+                    self.notify(f"ONNX server process finished.", title="Server Status", severity=f"{severity}")
+
+                    try:
+                        self.query_one(start_button_id, Button).disabled = False
+                        self.query_one(stop_button_id, Button).disabled = True
+                    except QueryError:
+                        self.loguru_logger.warning("Could not find ONNX server buttons to reset state.")
 
         #######################################################################
         # --- Handle Transformers Server Worker (identified by group) ---
@@ -2902,6 +3003,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     self.query_one(download_button_id, Button).disabled = False
                 except QueryError:
                     self.loguru_logger.warning(f"Could not find button {download_button_id} to enable for ERROR state.")
+
 
 
         #######################################################################

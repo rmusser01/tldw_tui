@@ -15,7 +15,8 @@ if TYPE_CHECKING:
 
 # Import the specific handler
 from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_ollama import handle_ollama_nav_button_pressed
-from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events import handle_mlx_lm_nav_button_pressed
+from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events import handle_mlx_lm_nav_button_pressed, \
+    handle_onnx_nav_button_pressed
 
 __all__ = [
     "handle_llm_nav_button_pressed",
@@ -74,6 +75,8 @@ async def handle_llm_nav_button_pressed(app: "TldwCli", button_id: str) -> None:
         # This seems acceptable.
     elif button_id == "llm-nav-mlx-lm":
         await handle_mlx_lm_nav_button_pressed(app)
+    elif button_id == "llm-nav-onnx":
+        await handle_onnx_nav_button_pressed(app)
     # Add other specific handlers here:
     # elif button_id == "llm-nav-another":
     #     await handle_another_llm_nav_button_pressed(app)
