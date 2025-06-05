@@ -8,11 +8,10 @@ from typing import TYPE_CHECKING, List
 from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll, Horizontal
 from textual.widgets import Static, Button, Label, Input, ListView, TextArea
-
-from ..DB.Client_Media_DB_v2 import MediaDatabase
-
 #
 # Local Imports
+from ..DB.Client_Media_DB_v2 import MediaDatabase
+from ..Utils.text import slugify
 if TYPE_CHECKING:
     from ..app import TldwCli
 #
@@ -30,12 +29,6 @@ MEDIA_SUB_TABS = [
     ("Placeholder", "placeholder")
 ]
 
-def slugify(text: str) -> str:
-    """Simple slugify function, robust for empty or non-string."""
-    if not isinstance(text, str) or not text:
-        return "unknown_type" # Default slug for unexpected types
-    return text.lower().replace(" ", "-").replace("/", "-").replace("&", "and").replace("(", "").replace(")", "").replace(":", "").replace(",", "")
-
 class MediaWindow(Container):
     """
     Container for the Media Tab's UI, featuring a left navigation pane
@@ -48,7 +41,7 @@ class MediaWindow(Container):
         # media_types will be fetched and passed by app.py during compose_content_area
         self.media_types_from_db: List[str] = []
 
-    def on_mount(self) -> None:
+    async def on_mount(self) -> None:
         """Fetch media types and build UI elements after mount."""
         self.log.debug("MediaWindow on_mount: Fetching media types...")
         if self.app_instance.notes_service and hasattr(self.app_instance.notes_service, '_get_db'):
@@ -59,30 +52,49 @@ class MediaWindow(Container):
                         list(set(db.get_distinct_media_types(include_deleted=False, include_trash=False))))
                     self.log.info(
                         f"MediaWindow: Fetched {len(self.media_types_from_db)} distinct media types: {self.media_types_from_db}")
+
+                    # Rebuild nav pane with fetched types
+                    nav_pane = self.query_one("#media-nav-pane", VerticalScroll)
+                    await nav_pane.remove_children()
+                    await nav_pane.mount(Static("Media Types", classes="sidebar-title"))
+                    if not self.media_types_from_db or self.media_types_from_db == ["Error Loading Types"] or self.media_types_from_db == ["DB Error or No Media in DB"] or self.media_types_from_db == ["Service Error"]:
+                        await nav_pane.mount(Label("No media types loaded." if not self.media_types_from_db else self.media_types_from_db[0]))
+                    else:
+                        for media_type_display_name in self.media_types_from_db:
+                            type_slug = slugify(media_type_display_name) # slugify is now imported
+                            await nav_pane.mount(Button(media_type_display_name, id=f"media-nav-{type_slug}", classes="media-nav-button"))
+
                 except Exception as e:
                     self.log.error(f"MediaWindow: Error fetching media types: {e}", exc_info=True)
                     self.media_types_from_db = ["Error Loading Types"]
+                    # Attempt to update nav_pane even on error to show the error message
+                    try:
+                        nav_pane = self.query_one("#media-nav-pane", VerticalScroll)
+                        await nav_pane.remove_children()
+                        await nav_pane.mount(Static("Media Types", classes="sidebar-title"))
+                        await nav_pane.mount(Label("Error Loading Types"))
+                    except Exception as e_nav_pane_update:
+                        self.log.error(f"MediaWindow: Error updating nav_pane after fetch error: {e_nav_pane_update}")
             else:
                 self.log.error("MediaWindow: MediaDatabase instance not available or invalid.")
                 self.media_types_from_db = ["DB Error"]
+                try:
+                    nav_pane = self.query_one("#media-nav-pane", VerticalScroll)
+                    await nav_pane.remove_children()
+                    await nav_pane.mount(Static("Media Types", classes="sidebar-title"))
+                    await nav_pane.mount(Label("DB Error"))
+                except Exception as e_nav_pane_update:
+                    self.log.error(f"MediaWindow: Error updating nav_pane after DB error: {e_nav_pane_update}")
         else:
             self.log.error("MediaWindow: Notes service or _get_db method not available.")
             self.media_types_from_db = ["Service Error"]
-
-        # Now that media_types_from_db is populated, we can mount the children.
-        # Textual generally prefers defining children in compose, but for dynamic content
-        # based on async/DB calls at mount, we might need to mount them here.
-        # For simplicity, we'll ensure compose can handle an empty list and re-compose if types change significantly.
-        # Or, better, make compose use self.media_types_from_db and call self.recompose() if it changes.
-        # The provided `app.py` calls `compose_content_area` once. If media_types_from_db needs to be fetched
-        # *before* compose, it should happen in app.py and be passed to MediaWindow constructor.
-        # Let's assume for now that `app.py` will handle fetching and passing.
-        # If `compose` is called *after* `on_mount` completes (which is not standard for initial compose),
-        # then the current logic in `compose` using `self.media_types_from_db` would work.
-        #
-        # Given the structure of app.py's compose_content_area, it's better if app.py fetches the types
-        # and passes them to MediaWindow's constructor. Let's adjust that.
-        # If not, MediaWindow would need to be more complex, possibly using app.call_later to mount children.
+            try:
+                nav_pane = self.query_one("#media-nav-pane", VerticalScroll)
+                await nav_pane.remove_children()
+                await nav_pane.mount(Static("Media Types", classes="sidebar-title"))
+                await nav_pane.mount(Label("Service Error"))
+            except Exception as e_nav_pane_update:
+                self.log.error(f"MediaWindow: Error updating nav_pane after service error: {e_nav_pane_update}")
 
     def compose(self) -> ComposeResult:
         # self.media_types_from_db should be populated by app.py passing it to constructor

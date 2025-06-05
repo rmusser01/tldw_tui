@@ -11,22 +11,13 @@ from textual.css.query import QueryError
 from rich.text import Text  # For formatting details
 #
 # Local Imports
+from ..Utils.text import slugify
 if TYPE_CHECKING:
     from ..app import TldwCli
     from ..DB.Client_Media_DB_v2 import MediaDatabase  # Correct import
 ########################################################################################################################
 #
 # Functions:
-
-# Helper to slugify, consistent with MediaWindow
-def slugify(text: str) -> str:
-    """Simple slugify function, robust for empty or non-string."""
-    if not isinstance(text, str) or not text:
-        return "unknown"
-    return text.lower().replace(" ", "-").replace("/", "-").replace("&", "and").replace("(", "").replace(")",
-                                                                                                         "").replace(
-        ":", "").replace(",", "")
-
 
 async def handle_media_nav_button_pressed(app: 'TldwCli', button_id: str) -> None:
     """Handles media navigation button presses in the Media tab."""
@@ -100,6 +91,13 @@ async def handle_media_load_selected_button_pressed(app: 'TldwCli', button_id: s
     logger = app.loguru_logger
     try:
         type_slug = button_id.replace("media-load-selected-button-", "")
+        details_display_id = f"media-details-display-{type_slug}"
+        try:
+            details_display_widget = app.query_one(f"#{details_display_id}", TextArea)
+            # Ensure old text is cleared and "Loading..." is shown before new content might arrive
+            details_display_widget.load_text("Loading details...")
+        except QueryError as qe:
+            logger.warning(f"Could not find details display widget {details_display_id} to show loading message: {qe}")
         list_view_id = f"media-list-view-{type_slug}"
         list_view_widget = app.query_one(f"#{list_view_id}", ListView)
 
@@ -108,8 +106,11 @@ async def handle_media_load_selected_button_pressed(app: 'TldwCli', button_id: s
             app.notify("No media item selected.", severity="warning")
             # Clear details display if no item selected
             details_display_id = f"media-details-display-{type_slug}"
-            details_display_widget = app.query_one(f"#{details_display_id}", TextArea)
-            details_display_widget.load_text("No item selected or item has no data.")
+            try: # Ensure this block also exists or is updated
+                details_display_widget = app.query_one(f"#{details_display_id}", TextArea)
+                details_display_widget.load_text("No item selected or item has no data.") # Overwrites "Loading details..." if it was set
+            except QueryError:
+                logger.warning(f"Details display widget #{details_display_id} not found while clearing for no selection.")
             app.current_loaded_media_item = None
             return
 
@@ -136,7 +137,10 @@ async def perform_media_search_and_display(app: 'TldwCli', type_slug: str, searc
 
     try:
         list_view_widget = app.query_one(f"#{list_view_id}", ListView)
-        await list_view_widget.clear()
+        await list_view_widget.clear() # Clear previous items
+        loading_item = ListItem(Label("Loading items..."))
+        loading_item.disabled = True # Make it non-selectable
+        await list_view_widget.append(loading_item)
 
         # Also clear details display when search is performed
         details_display_id = f"media-details-display-{type_slug}"
@@ -195,7 +199,13 @@ async def perform_media_search_and_display(app: 'TldwCli', type_slug: str, searc
             await list_view_widget.append(ListItem(Label(msg)))
         else:
             for item_data in results_list:
-                item_label_text = f"{item_data.get('title', 'Untitled')} (ID: {item_data.get('id')})"
+                item_title = item_data.get('title', 'Untitled')
+                item_id = item_data.get('id')
+                if type_slug == "all-media":
+                    item_data_type = item_data.get('type', 'N/A')
+                    item_label_text = f"[{item_data_type}] {item_title} (ID: {item_id})"
+                else:
+                    item_label_text = f"{item_title} (ID: {item_id})"
                 list_item = ListItem(Label(item_label_text))
                 list_item.media_data = item_data  # Store full data on the ListItem
                 await list_view_widget.append(list_item)
