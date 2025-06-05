@@ -3,6 +3,8 @@
 #
 # Imports
 from typing import TYPE_CHECKING, List
+
+from loguru import logger
 #
 # Third-party Libraries
 from textual.app import ComposeResult
@@ -44,6 +46,7 @@ class MediaWindow(Container):
     async def on_mount(self) -> None:
         """Fetch media types and build UI elements after mount."""
         self.log.debug("MediaWindow on_mount: Fetching media types...")
+        logger.debug("MediaWindow on_mount: Fetching media types...")
         if self.app_instance.notes_service and hasattr(self.app_instance.notes_service, '_get_db'):
             db = self.app_instance.notes_service._get_db(self.app_instance.notes_user_id)
             if db and isinstance(db, self.app_instance.MediaDatabase):  # Use MediaDatabase for type check
@@ -52,6 +55,7 @@ class MediaWindow(Container):
                         list(set(db.get_distinct_media_types(include_deleted=False, include_trash=False))))
                     self.log.info(
                         f"MediaWindow: Fetched {len(self.media_types_from_db)} distinct media types: {self.media_types_from_db}")
+                    logger.info(f"MediaWindow: Fetched {len(self.media_types_from_db)} distinct media types: {self.media_types_from_db}")
 
                     # Rebuild nav pane with fetched types
                     nav_pane = self.query_one("#media-nav-pane", VerticalScroll)
@@ -66,6 +70,7 @@ class MediaWindow(Container):
 
                 except Exception as e:
                     self.log.error(f"MediaWindow: Error fetching media types: {e}", exc_info=True)
+                    logger.error(f"MediaWindow: Error fetching media types: {e}", exc_info=True)
                     self.media_types_from_db = ["Error Loading Types"]
                     # Attempt to update nav_pane even on error to show the error message
                     try:
@@ -75,9 +80,11 @@ class MediaWindow(Container):
                         await nav_pane.mount(Label("Error Loading Types"))
                     except Exception as e_nav_pane_update:
                         self.log.error(f"MediaWindow: Error updating nav_pane after fetch error: {e_nav_pane_update}")
+                        logger.error(f"MediaWindow: Error updating nav_pane after fetch error: {e_nav_pane_update}")
             else:
                 self.log.error("MediaWindow: MediaDatabase instance not available or invalid.")
                 self.media_types_from_db = ["DB Error"]
+                logger.error("MediaWindow: MediaDatabase instance not available or invalid.")
                 try:
                     nav_pane = self.query_one("#media-nav-pane", VerticalScroll)
                     await nav_pane.remove_children()
@@ -85,8 +92,10 @@ class MediaWindow(Container):
                     await nav_pane.mount(Label("DB Error"))
                 except Exception as e_nav_pane_update:
                     self.log.error(f"MediaWindow: Error updating nav_pane after DB error: {e_nav_pane_update}")
+                    logger.error(f"MediaWindow: Error updating nav_pane after DB error: {e_nav_pane_update}")
         else:
             self.log.error("MediaWindow: Notes service or _get_db method not available.")
+            logger.error("MediaWindow: Notes service or _get_db method not available.")
             self.media_types_from_db = ["Service Error"]
             try:
                 nav_pane = self.query_one("#media-nav-pane", VerticalScroll)
@@ -95,6 +104,7 @@ class MediaWindow(Container):
                 await nav_pane.mount(Label("Service Error"))
             except Exception as e_nav_pane_update:
                 self.log.error(f"MediaWindow: Error updating nav_pane after service error: {e_nav_pane_update}")
+                logger.error(f"MediaWindow: Error updating nav_pane after service error: {e_nav_pane_update}")
 
     def compose(self) -> ComposeResult:
         # self.media_types_from_db should be populated by app.py passing it to constructor
@@ -103,6 +113,7 @@ class MediaWindow(Container):
         # If it's empty at compose time, it will show "No media types".
 
         self.log.debug(f"MediaWindow composing. Types available: {self.media_types_from_db}")
+        logger.debug(f"MediaWindow composing. Types available: {self.media_types_from_db}")
 
         # Left Navigation Pane
         with VerticalScroll(classes="media-nav-pane", id="media-nav-pane"):

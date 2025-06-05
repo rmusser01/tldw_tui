@@ -440,6 +440,18 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.loguru_logger.error(f"Failed to initialize Media_DB_v2: {e}", exc_info=True)
             self.media_db = None
 
+        # --- Pre-fetch media types for UI ---
+        if self.media_db:
+            try:
+                self._media_types_for_ui = self.media_db.get_distinct_media_types(include_deleted=False, include_trash=False)
+                self.loguru_logger.info(f"Pre-fetched {len(self._media_types_for_ui)} media types for UI.")
+            except Exception as e_media_types:
+                self.loguru_logger.error(f"Failed to pre-fetch media types: {e_media_types}", exc_info=True)
+                self._media_types_for_ui = [] # Initialize as empty list on error
+        else:
+            self.loguru_logger.error("Media_DB not initialized. Cannot pre-fetch media types.")
+            self._media_types_for_ui = [] # Initialize as empty list
+
         # --- Setup Default view for CCP tab ---
         # Initialize self.ccp_active_view based on initial tab or default state if needed
         if self._initial_tab_value == TAB_CCP:
