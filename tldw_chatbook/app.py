@@ -436,21 +436,30 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                                           client_id=CLI_APP_CLIENT_ID)  # Use constant for client_id
             self.loguru_logger.info(
                 f"Media_DB_v2 initialized successfully for client '{CLI_APP_CLIENT_ID}' at {media_db_path}")
-        except Exception as e:
-            self.loguru_logger.error(f"Failed to initialize Media_DB_v2: {e}", exc_info=True)
+            self.loguru_logger.debug(f"ULTRA EARLY APP INIT: self.media_db instance: {self.media_db}")
+            if self.media_db:
+                self.loguru_logger.debug(f"ULTRA EARLY APP INIT: self.media_db.db_path_str: {self.media_db.db_path_str}")
+            else:
+                self.loguru_logger.debug("ULTRA EARLY APP INIT: self.media_db is None immediately after successful initialization block (should not happen).")
+        except Exception as e_media_init:
+            self.loguru_logger.debug(f"ULTRA EARLY APP INIT: CRITICAL ERROR initializing self.media_db: {e_media_init}", exc_info=True)
             self.media_db = None
+            self.loguru_logger.critical("ULTRA EARLY APP INIT: self.media_db is None due to exception during initialization.")
 
         # --- Pre-fetch media types for UI ---
-        if self.media_db:
-            try:
+        try:
+            if self.media_db:
                 self._media_types_for_ui = self.media_db.get_distinct_media_types(include_deleted=False, include_trash=False)
-                self.loguru_logger.info(f"Pre-fetched {len(self._media_types_for_ui)} media types for UI.")
-            except Exception as e_media_types:
-                self.loguru_logger.error(f"Failed to pre-fetch media types: {e_media_types}", exc_info=True)
-                self._media_types_for_ui = [] # Initialize as empty list on error
-        else:
-            self.loguru_logger.error("Media_DB not initialized. Cannot pre-fetch media types.")
-            self._media_types_for_ui = [] # Initialize as empty list
+                self.loguru_logger.info(f"App __init__: Pre-fetched {len(self._media_types_for_ui)} media types for UI.")
+            else:
+                self.loguru_logger.error("App __init__: self.media_db is None, cannot pre-fetch media types.")
+                self._media_types_for_ui = ["Error: Media DB not loaded"]
+        except Exception as e_media_types_fetch:
+            self.loguru_logger.critical(f"ULTRA EARLY APP INIT: CRITICAL ERROR fetching _media_types_for_ui: {e_media_types_fetch}", exc_info=True)
+            self._media_types_for_ui = ["Error: Exception fetching media types"]
+
+        self.loguru_logger.debug(f"ULTRA EARLY APP INIT: self._media_types_for_ui VALUE: {self._media_types_for_ui}")
+        self.loguru_logger.debug(f"ULTRA EARLY APP INIT: self._media_types_for_ui TYPE: {type(self._media_types_for_ui)}")
 
         # --- Setup Default view for CCP tab ---
         # Initialize self.ccp_active_view based on initial tab or default state if needed
