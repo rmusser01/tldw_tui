@@ -3163,6 +3163,68 @@ class MediaDatabase:
             # Wrap unexpected errors in DatabaseError
             raise DatabaseError(f"Unexpected error during pagination: {e}") from e
 
+    def backup_database(self, backup_file_path: str) -> bool:
+        """
+        Creates a backup of the current database to the specified file path.
+
+        Args:
+            backup_file_path (str): The path to save the backup database file.
+
+        Returns:
+            bool: True if the backup was successful, False otherwise.
+        """
+        logger.info(f"Starting database backup from '{self.db_path_str}' to '{backup_file_path}'")
+        src_conn = None
+        backup_conn = None
+        try:
+            # Ensure the backup file path is not the same as the source, unless it's an in-memory DB
+            if not self.is_memory_db and Path(self.db_path_str).resolve() == Path(backup_file_path).resolve():
+                logger.error("Backup path cannot be the same as the source database path.")
+                raise ValueError("Backup path cannot be the same as the source database path.")
+
+            # Get connection to the source database
+            src_conn = self.get_connection()  # This uses the existing thread-local connection or creates one
+
+            # Create a connection to the backup database file
+            # Ensure parent directory for backup_file_path exists
+            backup_db_path = Path(backup_file_path)
+            backup_db_path.parent.mkdir(parents=True, exist_ok=True)
+
+            backup_conn = sqlite3.connect(backup_file_path)
+
+            logger.debug(f"Source DB connection: {src_conn}")
+            logger.debug(f"Backup DB connection: {backup_conn} to file {backup_file_path}")
+
+            # Perform the backup
+            # pages=0 means all pages will be copied
+            src_conn.backup(backup_conn, pages=0, progress=None)
+
+            logger.info(f"Database backup successful from '{self.db_path_str}' to '{backup_file_path}'")
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"SQLite error during database backup: {e}", exc_info=True)
+            return False
+        except ValueError as ve: # Catch specific ValueError for path mismatch
+            logger.error(f"ValueError during database backup: {ve}", exc_info=True)
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error during database backup: {e}", exc_info=True)
+            return False
+        finally:
+            if backup_conn:
+                try:
+                    backup_conn.close()
+                    logger.debug("Closed backup database connection.")
+                except sqlite3.Error as e:
+                    logger.warning(f"Error closing backup database connection: {e}")
+            # Do not close src_conn here if it's managed by _get_thread_connection / close_connection
+            # self.close_connection() might close the main connection pool which might not be desired.
+            # The source connection is managed by the class's connection pooling.
+            # If this backup is a one-off, the connection will be closed when the thread context ends
+            # or if explicitly closed by the caller of this instance.
+            # For safety, if this method obtained a new connection not from the pool, it should close it.
+            # However, self.get_connection() reuses pooled connections.
+
     def get_distinct_media_types(self, include_deleted=False, include_trash=False) -> List[str]:
         """
         Retrieves a list of all distinct, non-null media types present in the Media table.

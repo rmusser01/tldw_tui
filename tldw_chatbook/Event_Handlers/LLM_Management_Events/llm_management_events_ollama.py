@@ -81,11 +81,7 @@ async def handle_ollama_nav_button_pressed(app: "TldwCli") -> None:
             app.query_one("#ollama-embeddings-prompt", Input).value = ""
 
             # Output TextAreas
-            app.query_one("#ollama-list-models-output", TextArea).clear()
-            app.query_one("#ollama-show-model-output", TextArea).clear()
-            app.query_one("#ollama-embeddings-output", TextArea).clear()
-            app.query_one("#ollama-ps-output", TextArea).clear()
-
+            app.query_one("#ollama-combined-output", RichLog).clear()
             # Main log output
             log_output = app.query_one("#ollama-log-output", RichLog)
             log_output.clear()
@@ -112,8 +108,7 @@ async def handle_ollama_list_models_button_pressed(app: "TldwCli") -> None:
     logger.debug("Ollama 'List Models' button pressed.")
     try:
         base_url_input = app.query_one("#ollama-server-url", Input)
-        log_output_widget = app.query_one("#ollama-list-models-output", TextArea) # Changed to specific output
-        # general_log_widget = app.query_one("#ollama-log-output", RichLog) # For general messages
+        log_output_widget = app.query_one("#ollama-combined-output", RichLog)
 
         base_url = base_url_input.value.strip()
         if not base_url:
@@ -156,7 +151,7 @@ async def handle_ollama_show_model_button_pressed(app: "TldwCli") -> None:
     try:
         base_url_input = app.query_one("#ollama-server-url", Input)
         model_name_input = app.query_one("#ollama-show-model-name", Input)
-        log_output_widget = app.query_one("#ollama-show-model-output", TextArea)
+        log_output_widget = app.query_one("#ollama-combined-output", RichLog)
         # general_log_widget = app.query_one("#ollama-log-output", RichLog)
 
         base_url = base_url_input.value.strip()
@@ -498,7 +493,7 @@ async def handle_ollama_embeddings_button_pressed(app: "TldwCli") -> None:
         base_url_input = app.query_one("#ollama-server-url", Input)
         model_name_input = app.query_one("#ollama-embeddings-model-name", Input)
         prompt_input = app.query_one("#ollama-embeddings-prompt", Input)
-        embeddings_output_widget = app.query_one("#ollama-embeddings-output", TextArea)
+        embeddings_output_widget = app.query_one("#ollama-combined-output", RichLog)
         # general_log_widget = app.query_one("#ollama-log-output", RichLog)
 
 
@@ -532,19 +527,19 @@ async def handle_ollama_embeddings_button_pressed(app: "TldwCli") -> None:
         )
 
         if error:
-            embeddings_output_widget.text = f"Error generating embeddings: {error}"
+            embeddings_output_widget.write(f"Error generating embeddings: {error}")
             app.notify("Error generating embeddings.", severity="error")
         elif data and data.get('embedding'):
             try:
                 # The embedding is usually a list of floats.
                 formatted_embedding = json.dumps(data['embedding'], indent=2)
-                embeddings_output_widget.text = formatted_embedding
+                embeddings_output_widget.write(formatted_embedding)
                 app.notify("Embeddings generated successfully.")
             except (TypeError, KeyError, json.JSONDecodeError) as e:
-                embeddings_output_widget.text = f"Error processing embeddings response: {e}\nRaw data: {data}"
+                embeddings_output_widget.write(f"Error processing embeddings response: {e}\nRaw data: {data}")
                 app.notify("Error processing embeddings response.", severity="error")
         else:
-            embeddings_output_widget.text = f"No embeddings returned or unexpected response: {data}"
+            embeddings_output_widget.write(f"No embeddings returned or unexpected response: {data}")
             app.notify("No embeddings returned or unexpected response.", severity="warning")
     except QueryError as e: # pragma: no cover
         logger.error(f"QueryError in handle_ollama_embeddings_button_pressed: {e}", exc_info=True)
@@ -560,7 +555,7 @@ async def handle_ollama_ps_button_pressed(app: "TldwCli") -> None:
     logger.debug("Ollama 'List Running Models (ps)' button pressed.")
     try:
         base_url_input = app.query_one("#ollama-server-url", Input)
-        ps_output_widget = app.query_one("#ollama-ps-output", TextArea)
+        ps_output_widget = app.query_one("#ollama-combined-output", RichLog)
         # general_log_widget = app.query_one("#ollama-log-output", RichLog)
 
         base_url = base_url_input.value.strip()
@@ -576,18 +571,18 @@ async def handle_ollama_ps_button_pressed(app: "TldwCli") -> None:
         data, error = ollama_list_running_models(base_url=base_url, log_widget=None)
 
         if error:
-            ps_output_widget.text = f"Error listing running models: {error}"
+            ps_output_widget.write(f"Error listing running models: {error}")
             app.notify("Error listing running Ollama models.", severity="error")
         elif data and data.get('models'):
             try:
                 formatted_ps_info = json.dumps(data['models'], indent=2)
-                ps_output_widget.text = formatted_ps_info
+                ps_output_widget.write(formatted_ps_info)
                 app.notify(f"Successfully listed {len(data['models'])} running Ollama models.")
             except (TypeError, KeyError, json.JSONDecodeError) as e:
-                ps_output_widget.text = f"Error processing running models response: {e}\nRaw data: {data}"
+                ps_output_widget.write(f"Error processing running models response: {e}\nRaw data: {data}")
                 app.notify("Error processing running models list.", severity="error")
         else:
-            ps_output_widget.text = "No running models found or unexpected response."
+            ps_output_widget.write("No running models found or unexpected response.")
             app.notify("No running Ollama models found or response format issue.", severity="warning")
     except QueryError as e: # pragma: no cover
         logger.error(f"QueryError in handle_ollama_ps_button_pressed: {e}", exc_info=True)
