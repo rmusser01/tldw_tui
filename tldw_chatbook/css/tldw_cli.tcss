@@ -1021,6 +1021,10 @@ MetricsScreen Label.-info-message {
     margin-left: 1; /* Space between buttons */
 }
 /* Ollama Specific Styles within #llm-view-ollama */
+#llm-view-ollama {
+    layout: vertical; /* Ensures children stack vertically by default */
+    /* overflow-y: auto; /* Add if direct children of llm-view-ollama might overflow before VerticalScroll */
+}
 #llm-view-ollama VerticalScroll { /* Ensure the VerticalScroll takes up space */
     height: 100%;
 }

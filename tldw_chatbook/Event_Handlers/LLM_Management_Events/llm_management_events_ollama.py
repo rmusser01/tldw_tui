@@ -11,9 +11,12 @@ import asyncio
 
 import json
 import logging
+import time
+from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
+from cv2 import data
 from textual.containers import Container
 from textual.css.query import QueryError
 from textual.widgets import Input, TextArea, RichLog
@@ -86,7 +89,7 @@ async def handle_ollama_nav_button_pressed(app: "TldwCli") -> None:
             # Main log output
             log_output = app.query_one("#ollama-log-output", RichLog)
             log_output.clear()
-            log_output.write("Switched to Ollama view. Output log cleared.")
+            log_output.write("Switched to Ollama view. Output log cleared and initialized.")
 
         except QueryError as qe: # pragma: no cover
             logger.warning(f"Ollama UI clear: Could not find one or more UI elements during view switch: {qe}")
@@ -118,17 +121,23 @@ async def handle_ollama_list_models_button_pressed(app: "TldwCli") -> None:
             return
 
         log_output_widget.clear()
-        # general_log_widget.write(f"Attempting to list models from: {base_url}")
+        _update_ollama_combined_output(app, f"Attempting to list models from: {base_url}...")
 
-        data, error = await asyncio.to_thread(
-            ollama_list_local_models,
-            base_url=base_url
+        app.run_worker(
+            _worker_ollama_list_models,
+            base_url,
+            thread=True,
+            name=f"ollama_list_models_{time.monotonic()}",
+            group="ollama_api",
+            description="Listing Ollama local models",
+            on_success=partial(_on_list_models_success, app),
+            on_error=partial(_on_ollama_worker_error, app, "list_models")
         )
-        if error:
-            log_output_widget.write(f"Error listing models: {error}")
+        if logging.error:
+            log_output_widget.write(f"Error listing models: {logging.error}")
 
-        if error: # This is the original error check, the one above is newly added by script
-            log_output_widget.write(f"Error listing models: {error}")
+        if logging.error: # This is the original error check, the one above is newly added by script
+            log_output_widget.write(f"Error listing models: {logging.error}")
             app.notify("Error listing Ollama models.", severity="error")
         elif data and data.get('models'):
             try:
