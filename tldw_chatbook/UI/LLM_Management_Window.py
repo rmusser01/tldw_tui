@@ -216,6 +216,18 @@ class LLMManagementWindow(Container):
             with Container(id="llm-view-ollama", classes="llm-view-area"):
                 with VerticalScroll():
                     # Server URL - stays at top and takes full width
+                    yield Label("Ollama Service Management", classes="label section_label")
+                    yield Label("Ollama Executable Path:", classes="label")
+                    with Container(classes="input_container"):
+                        yield Input(id="ollama-exec-path",
+                                    placeholder="Path to ollama executable (e.g., /usr/local/bin/ollama)")
+                        yield Button("Browse", id="ollama-browse-exec-button", classes="browse_button")
+                    with Horizontal(classes="ollama-button-bar"):
+                        yield Button("Start Ollama Service", id="ollama-start-service-button")
+                        yield Button("Stop Ollama Service", id="ollama-stop-service-button")
+
+                    # API Management Section
+                    yield Label("Ollama API Management (requires running service)", classes="label section_label")
                     yield Label("Ollama Server URL:", classes="label")
                     yield Input(id="ollama-server-url", value="http://localhost:11434", classes="input_field_long")
 

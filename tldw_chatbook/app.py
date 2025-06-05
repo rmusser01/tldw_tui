@@ -32,7 +32,9 @@ from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_ol
     handle_ollama_pull_model_button_pressed, handle_ollama_copy_model_button_pressed, \
     handle_ollama_delete_model_button_pressed, handle_ollama_show_model_button_pressed, \
     handle_ollama_list_models_button_pressed, handle_ollama_browse_modelfile_button_pressed, \
-    handle_ollama_push_model_button_pressed, handle_ollama_worker_completion
+    handle_ollama_push_model_button_pressed, handle_ollama_worker_completion, \
+    handle_ollama_browse_exec_button_pressed, handle_start_ollama_service_button_pressed, \
+    handle_stop_ollama_service_button_pressed
 #
 # --- Local API library Imports ---
 from .Event_Handlers.LLM_Management_Events import llm_management_events_transformers as transformers_handlers
@@ -330,6 +332,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     llamacpp_server_process: Optional[subprocess.Popen] = None
     llamafile_server_process: Optional[subprocess.Popen] = None
     vllm_server_process: Optional[subprocess.Popen] = None
+    ollama_server_process: Optional[subprocess.Popen] = None
 
 
     # De-Bouncers
@@ -374,6 +377,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         self.llamafile_server_process = None
         # vLLM server process
         self.vllm_server_process = None
+        self.ollama_server_process = None
 
         # 1. Get the user name from the loaded settings
         # The fallback here should match what you expect if settings doesn't have it,
@@ -2367,6 +2371,16 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 await handle_start_mlx_server_button_pressed(self)
             elif button_id == "mlx-stop-server-button":
                 await handle_stop_mlx_server_button_pressed(self)
+            # --- Ollama Service Buttons ---
+            elif button_id == "ollama-browse-exec-button":
+                await handle_ollama_browse_exec_button_pressed(self)
+                return
+            elif button_id == "ollama-start-service-button":
+                await handle_start_ollama_service_button_pressed(self)
+                return
+            elif button_id == "ollama-stop-service-button":
+                await handle_stop_ollama_service_button_pressed(self)
+                return
             # --- Ollama Button Handlers ---
             elif button_id == "ollama-list-models-button":
                 await handle_ollama_list_models_button_pressed(self)
