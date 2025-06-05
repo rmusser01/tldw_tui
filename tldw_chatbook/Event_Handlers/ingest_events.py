@@ -13,8 +13,11 @@ from textual.widgets import Select, Input, TextArea, Checkbox, Label, Static, Ma
     ListView, Collapsible, LoadingIndicator, Button
 from textual.css.query import QueryError
 from textual.containers import Container, VerticalScroll
+
+from ..Constants import ALL_TLDW_API_OPTION_CONTAINERS
 #
 # Local Imports
+from ..UI.Ingest_Window import IngestWindow # Added for IngestWindow access
 import tldw_chatbook.Event_Handlers.conv_char_events as ccp_handlers
 from . import chat_events as chat_handlers
 from .chat_events import populate_chat_conversation_character_filter_select
@@ -43,6 +46,9 @@ if TYPE_CHECKING:
 ########################################################################################################################
 #
 # Functions:
+
+
+
 
 # --- Prompt Ingest Constants (existing) ---
 MAX_PROMPT_PREVIEWS = 10
@@ -770,21 +776,6 @@ async def handle_tldw_api_auth_method_changed(app: 'TldwCli', event_value: str) 
     except QueryError as e:
         logger.error(f"UI component not found for TLDW API auth method change: {e}")
 
-# --- TLDW API Form Specific Option Containers (IDs) ---
-TLDW_API_VIDEO_OPTIONS_ID = "tldw-api-video-options"
-TLDW_API_AUDIO_OPTIONS_ID = "tldw-api-audio-options"
-TLDW_API_PDF_OPTIONS_ID = "tldw-api-pdf-options"
-TLDW_API_EBOOK_OPTIONS_ID = "tldw-api-ebook-options"
-TLDW_API_DOCUMENT_OPTIONS_ID = "tldw-api-document-options"
-TLDW_API_XML_OPTIONS_ID = "tldw-api-xml-options"
-TLDW_API_MEDIAWIKI_OPTIONS_ID = "tldw-api-mediawiki-options"
-
-ALL_TLDW_API_OPTION_CONTAINERS = [
-    TLDW_API_VIDEO_OPTIONS_ID, TLDW_API_AUDIO_OPTIONS_ID, TLDW_API_PDF_OPTIONS_ID,
-    TLDW_API_EBOOK_OPTIONS_ID, TLDW_API_DOCUMENT_OPTIONS_ID, TLDW_API_XML_OPTIONS_ID,
-    TLDW_API_MEDIAWIKI_OPTIONS_ID
-]
-
 async def handle_tldw_api_media_type_changed(app: 'TldwCli', event_value: str) -> None:
     """Shows/hides media type specific option containers."""
     logger.debug(f"TLDW API Media Type changed to: {event_value}")
@@ -817,12 +808,33 @@ def _collect_common_form_data(app: 'TldwCli', media_type: str) -> Dict[str, Any]
     # Keep track of which field was being processed for better error messages
     # The f-string will be used in the actual query_one call.
     current_field_template_for_error = "Unknown Field-{media_type}"
+
+    # Get the IngestWindow instance to access selected_local_files
+    try:
+        ingest_window = app.query_one(IngestWindow)
+    except QueryError:
+        logger.error("Could not find IngestWindow instance to retrieve selected files.")
+        # Decide how to handle this: raise error, return empty, or notify.
+        # For now, let's log and proceed, which means local_files might be empty.
+        # A more robust solution might involve ensuring IngestWindow is always available.
+        ingest_window = None # Or handle error more strictly
+
     try:
         current_field_template_for_error = f"#tldw-api-urls-{media_type}"
         data["urls"] = [url.strip() for url in app.query_one(f"#tldw-api-urls-{media_type}", TextArea).text.splitlines() if url.strip()]
 
-        current_field_template_for_error = f"#tldw-api-local-files-{media_type}"
-        data["local_files"] = [fp.strip() for fp in app.query_one(f"#tldw-api-local-files-{media_type}", TextArea).text.splitlines() if fp.strip()]
+        # current_field_template_for_error = f"#tldw-api-local-files-{media_type}" # Old way
+        # data["local_files"] = [fp.strip() for fp in app.query_one(f"#tldw-api-local-files-{media_type}", TextArea).text.splitlines() if fp.strip()] # Old way
+
+        # New way to get local_files from IngestWindow instance
+        if ingest_window and media_type in ingest_window.selected_local_files:
+            # Convert Path objects to strings as expected by the API client processing functions
+            data["local_files"] = [str(p) for p in ingest_window.selected_local_files[media_type]]
+        else:
+            data["local_files"] = []
+            if ingest_window: # Only log if ingest_window was found but no files for this media_type
+                logger.info(f"No local files selected in IngestWindow for media type '{media_type}'.")
+            # If ingest_window was None, error already logged above.
 
         current_field_template_for_error = f"#tldw-api-title-{media_type}"
         data["title"] = app.query_one(f"#tldw-api-title-{media_type}", Input).value or None
