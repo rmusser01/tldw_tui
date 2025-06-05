@@ -1,10 +1,7 @@
-# llm_management_events.py
-#
-# Imports
+# /tldw_chatbook/Event_Handlers/LLM_Management_Events/llm_management_events.py
 from __future__ import annotations
 
 import functools
-#
 import logging
 import os
 import shlex
@@ -13,88 +10,38 @@ import sys
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
-#
-# Third-Party Libraries
-from textual.containers import Container
-from textual.css.query import QueryError
+
 from textual.worker import Worker, WorkerState
 from textual.widgets import Input, RichLog, TextArea, Button
+from textual.css.query import QueryError
 
 from tldw_chatbook.Constants import LLAMA_CPP_SERVER_ARGS_HELP_TEXT, LLAMAFILE_SERVER_ARGS_HELP_TEXT
 
-#
-# Local Imports
 if TYPE_CHECKING:
-    from tldw_chatbook.app import TldwCli  # pragma: no cover – runtime import only
-from tldw_chatbook.Local_Inference.mlx_lm_inference_local import start_mlx_lm_server, stop_mlx_lm_server
-# subprocess already imported
+    from tldw_chatbook.app import TldwCli
+
 from tldw_chatbook.Third_Party.textual_fspicker import FileOpen, Filters
-#
-########################################################################################################################
-#
-#
-"""llm_management_events.py
-
-A collection of helper callbacks, worker functions and event‑handler
-coroutines used by the **LLM Management** tab in *tldw‑cli*.
-
-The file now supports **four** back‑ends:
-
-* **Llamafile**
-* **Llama.cpp**
-* **vLLM**
-* **Model Download** via Hugging Face
-
-The design intentionally mirrors the style that was started by a previous
-LLM so that each back‑end offers a familiar set of helpers:
-
-* *browse‑…* handlers for file/directory pickers
-* *_make_…_path_update_callback* helpers to populate `Input` widgets
-* *run_…_worker* background workers streaming stdout → `RichLog`
-* *handle_start_…_button_pressed* coroutines that validate UI fields,
-  build command‑lines and spawn the workers with `app.run_worker`
-* *stream_…_worker_output_to_log* (generic) that forward the *final*
-  messages from a worker to its log widget.
-
-The UI layer itself (layouts, widgets, tab switching, etc.) lives in
-`llm_management.py` next to this module.  That file builds a left‑hand
-vertical `VerticalTabs` widget whose four tabs bind to the handlers
-below.
-"""
-#
-
 
 __all__ = [
-    # ─── Llamafile ────────────────────────────────────────────────────────────
+    # Generic Helpers (Exported for other modules to use)
+    "_make_path_update_callback",
+    "_stream_process",
+    "stream_worker_output_to_log",
+    # Llamafile Handlers
     "handle_llamafile_browse_exec_button_pressed",
     "handle_llamafile_browse_model_button_pressed",
     "handle_start_llamafile_server_button_pressed",
-    # ─── Llama.cpp ────────────────────────────────────────────────────────────
+    "handle_stop_llamafile_server_button_pressed",
+    # Llama.cpp Handlers
     "handle_llamacpp_browse_exec_button_pressed",
     "handle_llamacpp_browse_model_button_pressed",
     "handle_start_llamacpp_server_button_pressed",
     "handle_stop_llamacpp_server_button_pressed",
-    # ─── Model download ───────────────────────────────────────────────────────
-    "handle_browse_models_dir_button_pressed",
-    "handle_start_model_download_button_pressed",
-    # ─── MLX-LM ───────────────────────────────────────────────────────────────
-    "handle_mlx_lm_nav_button_pressed",
-    "handle_start_mlx_server_button_pressed",
-    "handle_stop_mlx_server_button_pressed",
-    # ─── ONNX ─────────────────────────────────────────────────────────────────
-    "handle_onnx_nav_button_pressed",
-    "handle_onnx_browse_python_button_pressed",
-    "handle_onnx_browse_script_button_pressed",
-    "handle_onnx_browse_model_button_pressed",
-    "handle_start_onnx_server_button_pressed",
-    "handle_stop_onnx_server_button_pressed",
+    # General Setup
+    "populate_llm_help_texts",
 ]
 
-
-###############################################################################
-# Generic helpers
-###############################################################################
-
+# --- Generic Helpers ---
 
 def _make_path_update_callback(app: "TldwCli", input_widget_id: str, is_directory: bool = False):
     """
@@ -106,24 +53,15 @@ def _make_path_update_callback(app: "TldwCli", input_widget_id: str, is_director
     async def _callback(selected_path: Optional[Path]) -> None:
         if selected_path:
             try:
-                # Determine the final path based on whether we're selecting a directory
                 final_path = selected_path.parent if is_directory else selected_path
-
                 input_widget = app.query_one(f"#{input_widget_id}", Input)
                 input_widget.value = str(final_path)
-                logger.info(
-                    f"Updated input {input_widget_id} with path: {final_path}"
-                )
+                logger.info(f"Updated input {input_widget_id} with path: {final_path}")
             except Exception as err:
-                logger.error(
-                    f"Error updating input #{input_widget_id}: {err}", exc_info=True
-                )
-                app.notify(
-                    f"Error setting path for {input_widget_id}.", severity="error"
-                )
+                logger.error(f"Error updating input #{input_widget_id}: {err}", exc_info=True)
+                app.notify(f"Error setting path for {input_widget_id}.", severity="error")
         else:
             logger.info("File/Directory selection cancelled for #%s.", input_widget_id)
-
     return _callback
 
 
@@ -1012,462 +950,6 @@ async def handle_start_model_download_button_pressed(app: "TldwCli") -> None:
     except Exception as err:  # pragma: no cover
         logger.error("Error preparing model download: %s", err, exc_info=True)
         app.notify("Error setting up model download.", severity="error")
-
-
-###############################################################################
-# ─── MLX-LM UI helpers ──────────────────────────────────────────────────────
-###############################################################################
-
-
-def _set_mlx_lm_process_on_app(app_instance: "TldwCli", process: Optional[subprocess.Popen]):
-    """Helper to set/clear the MLX-LM process on the app instance from the worker thread."""
-    app_instance.mlx_server_process = process
-    if process and hasattr(process, 'pid') and process.pid is not None:
-        app_instance.loguru_logger.info(f"Stored MLX-LM process PID {process.pid} on app instance.")
-    else:
-        app_instance.loguru_logger.info("Cleared MLX-LM process from app instance (or process was None).")
-
-
-def _update_mlx_log(app_instance: "TldwCli", message: str) -> None:
-    """Helper to write messages to the MLX-LM log widget."""
-    try:
-        log_widget = app_instance.query_one("#mlx-log-output", RichLog)
-        log_widget.write(message)
-    except QueryError:
-        app_instance.loguru_logger.error("Failed to query #mlx-log-output to write message.")
-    except Exception as e:
-        app_instance.loguru_logger.error(f"Error writing to MLX-LM log: {e}", exc_info=True)
-
-
-def run_mlx_lm_server_worker(app_instance: "TldwCli", command: List[str]) -> str | None:
-    """Background worker to run the MLX-LM server and stream its output."""
-    logger = getattr(app_instance, "loguru_logger", logging.getLogger(__name__))
-    quoted_command = ' '.join(shlex.quote(c) for c in command)
-    logger.info(f"MLX-LM WORKER starting with command: {quoted_command}")
-
-    process: Optional[subprocess.Popen] = None
-    pid_str = "N/A"
-    env = os.environ.copy()
-    env["PYTHONUNBUFFERED"] = "1"
-
-    try:
-        process = subprocess.Popen(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,  # Merge stderr into stdout for simplicity
-            text=True,
-            universal_newlines=True,
-            bufsize=1,
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
-            env=env
-        )
-        pid_str = str(process.pid) if process and process.pid else "UnknownPID"
-        logger.info(f"MLX-LM WORKER: Subprocess launched, PID: {pid_str}")
-
-        app_instance.call_from_thread(_set_mlx_lm_process_on_app, app_instance, process)
-        app_instance.call_from_thread(app_instance._update_mlx_log, f"[PID:{pid_str}] MLX-LM server starting...\n")
-
-        if process.stdout:
-            for line in iter(process.stdout.readline, ""):
-                app_instance.call_from_thread(app_instance._update_mlx_log, line)
-            process.stdout.close()
-
-        process.wait()
-        exit_code = process.returncode if process.returncode is not None else -1
-        final_status_message = f"MLX-LM server (PID:{pid_str}) exited with code: {exit_code}."
-        logger.info(final_status_message)
-        app_instance.call_from_thread(app_instance._update_mlx_log, f"\n--- {final_status_message} ---\n")
-        return final_status_message
-    except FileNotFoundError:
-        msg = f"ERROR: Python or mlx_lm.server not found. Command: {command[0]}"
-        logger.error(msg)
-        app_instance.call_from_thread(app_instance._update_mlx_log, f"[bold red]{msg}[/]\n")
-        raise
-    except Exception as err:
-        msg = f"CRITICAL ERROR in MLX-LM worker: {err} (Command: {quoted_command})"
-        logger.error(msg, exc_info=True)
-        app_instance.call_from_thread(app_instance._update_mlx_log, f"[bold red]{msg}[/]\n")
-        raise
-    finally:
-        logger.info(f"MLX-LM WORKER: Worker function for command '{quoted_command}' finishing.")
-        app_instance.call_from_thread(_set_mlx_lm_process_on_app, app_instance, None)
-        if process and process.poll() is None:
-            logger.warning(f"MLX-LM WORKER (PID:{pid_str}): Process still running in finally. Terminating.")
-            stop_mlx_lm_server(process)
-
-
-async def handle_mlx_lm_nav_button_pressed(app: "TldwCli") -> None:
-    """Handle the MLX-LM navigation button press."""
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.debug("MLX-LM nav button pressed.")
-
-    try:
-        content_pane = app.query_one("#llm-content-pane", Container)
-        view_areas = content_pane.query(".llm-view-area")
-
-        for view in view_areas:
-            if view.id:
-                view.styles.display = "none"
-
-        mlx_lm_view = app.query_one("#llm-view-mlx-lm", Container)
-        mlx_lm_view.styles.display = "block"
-
-        if not hasattr(app, 'mlx_server_process'):
-            app.mlx_server_process = None
-
-        start_button = mlx_lm_view.query_one("#mlx-start-server-button", Button)
-        stop_button = mlx_lm_view.query_one("#mlx-stop-server-button", Button)
-
-        is_running = app.mlx_server_process and app.mlx_server_process.poll() is None
-        start_button.disabled = is_running
-        stop_button.disabled = not is_running
-
-    except QueryError as e:
-        logger.error(f"QueryError in handle_mlx_lm_nav_button_pressed: {e}", exc_info=True)
-        app.notify("Error switching to MLX-LM view: Could not find required UI elements.", severity="error")
-
-
-async def handle_start_mlx_server_button_pressed(app: "TldwCli") -> None:
-    """Starts the MLX-LM server using a non-blocking worker."""
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.info("User requested to start MLX-LM server.")
-
-    # FIX: Initialize variables to None before the try block
-    log_output_widget: Optional[RichLog] = None
-    start_button: Optional[Button] = None
-    stop_button: Optional[Button] = None
-
-    try:
-        llm_mlx_view_container = app.query_one("#llm-view-mlx-lm", Container)
-        model_path_input = llm_mlx_view_container.query_one("#mlx-model-path", Input)
-        host_input = llm_mlx_view_container.query_one("#mlx-host", Input)
-        port_input = llm_mlx_view_container.query_one("#mlx-port", Input)
-        additional_args_area = llm_mlx_view_container.query_one("#mlx-additional-args", TextArea)
-        log_output_widget = llm_mlx_view_container.query_one("#mlx-log-output", RichLog)
-        start_button = llm_mlx_view_container.query_one("#mlx-start-server-button", Button)
-        stop_button = llm_mlx_view_container.query_one("#mlx-stop-server-button", Button)
-
-        model_path = model_path_input.value.strip()
-        host = host_input.value.strip() or "127.0.0.1"
-        port_str = port_input.value.strip() or "8080"
-        additional_args = additional_args_area.text.strip()
-
-        log_output_widget.clear()
-
-        if not model_path:
-            app.notify("MLX Model Path is required.", severity="error")
-            return
-        try:
-            int(port_str)
-        except ValueError:
-            app.notify("Port must be a valid number.", severity="error")
-            return
-
-        if app.mlx_server_process and app.mlx_server_process.poll() is None:
-            app.notify("MLX-LM server is already running.", severity="warning")
-            return
-
-        command = ["python", "-m", "mlx_lm.server", "--model", model_path, "--host", host, "--port", port_str]
-        if additional_args:
-            command.extend(shlex.split(additional_args))
-
-        log_output_widget.write(f"Executing: {' '.join(shlex.quote(c) for c in command)}\n")
-
-        # Use the worker for non-blocking execution
-        worker_callable = functools.partial(run_mlx_lm_server_worker, app, command)
-        app.run_worker(
-            worker_callable,
-            group="mlx_lm_server",
-            description="Running MLX-LM server process",
-            exclusive=True,
-            thread=True
-        )
-        app.notify("MLX-LM server starting…")
-
-    except QueryError as e:
-        logger.error(f"UI Error starting MLX server: {e}", exc_info=True)
-        app.notify("Error accessing MLX-LM UI elements.", severity="error")
-    except Exception as e:
-        logger.error(f"Error starting MLX-LM server: {e}", exc_info=True)
-        if log_output_widget:
-            log_output_widget.write(f"An unexpected error occurred: {e}")
-        app.notify(f"An unexpected error occurred: {e}", severity="error")
-        # FIX: Check if buttons were assigned before trying to use them
-        if start_button: start_button.disabled = False
-        if stop_button: stop_button.disabled = True
-
-
-async def handle_stop_mlx_server_button_pressed(app: "TldwCli") -> None:
-    """Stops the MLX-LM server process if it is running."""
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.info("User requested to stop MLX-LM server.")
-
-    # FIX: Initialize variables to None before the try block
-    log_output_widget: Optional[RichLog] = None
-
-    try:
-        log_output_widget = app.query_one("#mlx-log-output", RichLog)
-        process_to_stop = app.mlx_server_process
-
-        if process_to_stop and process_to_stop.poll() is None:
-            pid = process_to_stop.pid
-            log_output_widget.write(f"Stopping MLX-LM server (PID: {pid})...")
-            stop_mlx_lm_server(process_to_stop)  # This helper terminates/kills
-            app.mlx_server_process = None  # Clear the stored process
-            log_output_widget.write(f"MLX-LM server (PID: {pid}) stop command issued.")
-            app.notify("MLX-LM server stopped.")
-        else:
-            log_output_widget.write("MLX-LM server is not currently running.")
-            app.notify("MLX-LM server is not running.", severity="warning")
-            if hasattr(app, 'mlx_server_process'):
-                app.mlx_server_process = None
-
-    except QueryError as e:
-        logger.error(f"UI Error stopping MLX server: {e}", exc_info=True)
-        app.notify("Error accessing MLX-LM UI elements.", severity="error")
-    except Exception as e:
-        logger.error(f"Error stopping MLX-LM server: {e}", exc_info=True)
-        if log_output_widget:
-            log_output_widget.write(f"An unexpected error occurred while stopping the server: {e}")
-        app.notify(f"An unexpected error occurred: {e}", severity="error")
-
-
-###############################################################################
-# ─── ONNX UI helpers ─────────────────────────────────────────────────────────
-###############################################################################
-
-
-async def handle_onnx_nav_button_pressed(app: "TldwCli") -> None:
-    """Handle the ONNX navigation button press."""
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.debug("ONNX nav button pressed.")
-    try:
-        content_pane = app.query_one("#llm-content-pane", Container)
-        for view in content_pane.query(".llm-view-area"):
-            if view.id:
-                view.styles.display = "none"
-
-        onnx_view = app.query_one("#llm-view-onnx", Container)
-        onnx_view.styles.display = "block"
-
-        if not hasattr(app, 'onnx_server_process'):
-            app.onnx_server_process = None
-
-        start_button = onnx_view.query_one("#onnx-start-server-button", Button)
-        stop_button = onnx_view.query_one("#onnx-stop-server-button", Button)
-        is_running = app.onnx_server_process and app.onnx_server_process.poll() is None
-        start_button.disabled = is_running
-        stop_button.disabled = not is_running
-    except QueryError as e:
-        logger.error(f"QueryError in handle_onnx_nav_button_pressed: {e}", exc_info=True)
-        app.notify("Error switching to ONNX view.", severity="error")
-
-
-async def handle_onnx_browse_python_button_pressed(app: "TldwCli") -> None:
-    """Handles browse for Python executable for ONNX server."""
-    await app.push_screen(
-        FileOpen(location=str(Path.home()), title="Select Python executable"),
-        callback=_make_path_update_callback(app, "onnx-python-path"),
-    )
-
-
-async def handle_onnx_browse_script_button_pressed(app: "TldwCli") -> None:
-    """Handles browse for ONNX server script."""
-    filters = Filters(("Python Scripts (*.py)", lambda p: p.suffix.lower() == ".py"),
-                      ("All files (*.*)", lambda p: True))
-    await app.push_screen(
-        FileOpen(location=str(Path.home()), title="Select ONNX server script", filters=filters),
-        callback=_make_path_update_callback(app, "onnx-script-path"),
-    )
-
-
-async def handle_onnx_browse_model_button_pressed(app: "TldwCli") -> None:
-    """Handles browse for ONNX model file or directory."""
-    await app.push_screen(
-        FileOpen(
-            location=str(Path.home()),
-            title="Select ONNX Model Directory (select any file inside)",
-        ),
-        callback=_make_path_update_callback(app, "onnx-model-path", is_directory=True),
-    )
-
-
-def _set_onnx_process_on_app(app_instance: "TldwCli", process: Optional[subprocess.Popen]):
-    """Helper to set/clear the ONNX process on the app instance from the worker thread."""
-    app_instance.onnx_server_process = process
-    if process and process.pid:
-        app_instance.loguru_logger.info(f"Stored ONNX process PID {process.pid} on app instance.")
-    else:
-        app_instance.loguru_logger.info("Cleared ONNX process from app instance.")
-
-
-def _update_onnx_log(app_instance: "TldwCli", message: str) -> None:
-    """Helper to write messages to the ONNX log widget."""
-    try:
-        log_widget = app_instance.query_one("#onnx-log-output", RichLog)
-        log_widget.write(message)
-    except QueryError:
-        app_instance.loguru_logger.error("Failed to query #onnx-log-output to write message.")
-    except Exception as e:
-        app_instance.loguru_logger.error(f"Error writing to ONNX log: {e}", exc_info=True)
-
-
-def run_onnx_server_worker(app_instance: "TldwCli", command: List[str]) -> str | None:
-    """Background worker to run a generic ONNX server script and stream its output."""
-    logger = getattr(app_instance, "loguru_logger", logging.getLogger(__name__))
-    quoted_command = ' '.join(shlex.quote(c) for c in command)
-    logger.info(f"ONNX WORKER starting with command: {quoted_command}")
-
-    process: Optional[subprocess.Popen] = None
-    pid_str = "N/A"
-    env = os.environ.copy()
-    env["PYTHONUNBUFFERED"] = "1"
-
-    try:
-        process = subprocess.Popen(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            universal_newlines=True,
-            bufsize=1,
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
-            env=env
-        )
-        pid_str = str(process.pid) if process and process.pid else "UnknownPID"
-        logger.info(f"ONNX WORKER: Subprocess launched, PID: {pid_str}")
-
-        app_instance.call_from_thread(_set_onnx_process_on_app, app_instance, process)
-        app_instance.call_from_thread(app_instance._update_onnx_log, f"[PID:{pid_str}] ONNX server starting...\n")
-
-        if process.stdout:
-            for line in iter(process.stdout.readline, ""):
-                app_instance.call_from_thread(app_instance._update_onnx_log, line)
-            process.stdout.close()
-
-        process.wait()
-        exit_code = process.returncode if process.returncode is not None else -1
-        final_status_message = f"ONNX server (PID:{pid_str}) exited with code: {exit_code}."
-        logger.info(final_status_message)
-        app_instance.call_from_thread(app_instance._update_onnx_log, f"\n--- {final_status_message} ---\n")
-        return final_status_message
-    except FileNotFoundError:
-        msg = f"ERROR: Python interpreter or script not found. Command: {command[0]}"
-        logger.error(msg)
-        app_instance.call_from_thread(app_instance._update_onnx_log, f"[bold red]{msg}[/]\n")
-        raise
-    except Exception as err:
-        msg = f"CRITICAL ERROR in ONNX worker: {err} (Command: {quoted_command})"
-        logger.error(msg, exc_info=True)
-        app_instance.call_from_thread(app_instance._update_onnx_log, f"[bold red]{msg}[/]\n")
-        raise
-    finally:
-        logger.info(f"ONNX WORKER: Worker function for command '{quoted_command}' finishing.")
-        app_instance.call_from_thread(_set_onnx_process_on_app, app_instance, None)
-        if process and process.poll() is None:
-            logger.warning(f"ONNX WORKER (PID:{pid_str}): Process still running in finally. Terminating.")
-            process.terminate()
-            try:
-                process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                process.kill()
-
-
-async def handle_start_onnx_server_button_pressed(app: "TldwCli") -> None:
-    """Handles the 'Start ONNX Server' button press."""
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.info("User requested to start ONNX server.")
-
-    log_output_widget: Optional[RichLog] = None
-
-    try:
-        python_path = app.query_one("#onnx-python-path", Input).value.strip()
-        script_path = app.query_one("#onnx-script-path", Input).value.strip()
-        model_path = app.query_one("#onnx-model-path", Input).value.strip()
-        host = app.query_one("#onnx-host", Input).value.strip() or "127.0.0.1"
-        port = app.query_one("#onnx-port", Input).value.strip() or "8004"
-        additional_args_str = app.query_one("#onnx-additional-args", TextArea).text.strip()
-        log_output_widget = app.query_one("#onnx-log-output", RichLog)
-
-        log_output_widget.clear()
-
-        if not python_path:
-            app.notify("Python path is required.", severity="error")
-            return
-        if not script_path:
-            app.notify("Server script path is required.", severity="error")
-            return
-        if not Path(script_path).is_file():
-            app.notify(f"Script not found: {script_path}", severity="error")
-            return
-
-        command = [python_path, script_path]
-        if model_path: command.extend(["--model", model_path])
-        if host: command.extend(["--host", host])
-        if port: command.extend(["--port", port])
-        if additional_args_str: command.extend(shlex.split(additional_args_str))
-
-        log_output_widget.write(f"Executing: {' '.join(shlex.quote(c) for c in command)}\n")
-
-        worker_callable = functools.partial(run_onnx_server_worker, app, command)
-        app.run_worker(
-            worker_callable,
-            group="onnx_server",
-            description="Running ONNX server process",
-            exclusive=True,
-            thread=True
-        )
-        app.notify("ONNX server starting…")
-
-    except QueryError as e:
-        logger.error(f"UI Error starting ONNX server: {e}", exc_info=True)
-        app.notify("Error accessing ONNX UI elements.", severity="error")
-    except Exception as e:
-        logger.error(f"Error starting ONNX server: {e}", exc_info=True)
-        if log_output_widget:
-            log_output_widget.write(f"An unexpected error occurred: {e}")
-        app.notify(f"An unexpected error occurred: {e}", severity="error")
-
-
-async def handle_stop_onnx_server_button_pressed(app: "TldwCli") -> None:
-    """Handles the 'Stop ONNX Server' button press."""
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.info("User requested to stop ONNX server.")
-
-    log_output_widget: Optional[RichLog] = None
-    try:
-        log_output_widget = app.query_one("#onnx-log-output", RichLog)
-        process_to_stop = app.onnx_server_process
-
-        if process_to_stop and process_to_stop.poll() is None:
-            pid = process_to_stop.pid
-            log_output_widget.write(f"Stopping ONNX server (PID: {pid})...")
-            process_to_stop.terminate()
-            try:
-                process_to_stop.wait(timeout=10)
-                log_output_widget.write(f"ONNX server (PID: {pid}) stopped.")
-                app.notify("ONNX server stopped.")
-            except subprocess.TimeoutExpired:
-                log_output_widget.write(f"ONNX server (PID: {pid}) did not stop gracefully. Killing...")
-                process_to_stop.kill()
-                process_to_stop.wait()
-                app.notify("ONNX server killed.", severity="warning")
-        else:
-            log_output_widget.write("ONNX server is not running.")
-            app.notify("ONNX server is not running.", severity="warning")
-
-        if hasattr(app, 'onnx_server_process'):
-            app.onnx_server_process = None
-
-    except QueryError as e:
-        logger.error(f"UI Error stopping ONNX server: {e}", exc_info=True)
-        app.notify("Error accessing ONNX UI elements.", severity="error")
-    except Exception as e:
-        logger.error(f"Error stopping ONNX server: {e}", exc_info=True)
-        if log_output_widget:
-            log_output_widget.write(f"An unexpected error occurred: {e}")
-        app.notify(f"An unexpected error occurred: {e}", severity="error")
-
 
 async def populate_llm_help_texts(app: 'TldwCli') -> None:
     """Populates the RichLog widgets with help text for LLM arguments."""

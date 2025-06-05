@@ -27,6 +27,8 @@ from textual.css.query import QueryError
 # Ensure Path is imported
 from pathlib import Path
 
+from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_mlx_lm import \
+    handle_start_mlx_server_button_pressed, handle_stop_mlx_server_button_pressed
 from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_ollama import \
     handle_ollama_embeddings_button_pressed, handle_ollama_ps_button_pressed, handle_ollama_create_model_button_pressed, \
     handle_ollama_pull_model_button_pressed, handle_ollama_copy_model_button_pressed, \
@@ -87,12 +89,17 @@ from tldw_chatbook.Event_Handlers.Chat_Events import chat_events
 from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events import \
     handle_llamacpp_browse_exec_button_pressed, \
     handle_llamacpp_browse_model_button_pressed, handle_llamafile_browse_exec_button_pressed, \
-    handle_llamafile_browse_model_button_pressed, handle_start_mlx_server_button_pressed, \
-    handle_stop_mlx_server_button_pressed, handle_stop_llamafile_server_button_pressed, populate_llm_help_texts, \
-    handle_start_llamacpp_server_button_pressed, handle_stop_llamacpp_server_button_pressed, \
-    handle_start_llamafile_server_button_pressed, handle_onnx_browse_python_button_pressed, \
-    handle_onnx_browse_script_button_pressed, handle_onnx_browse_model_button_pressed, \
-    handle_start_onnx_server_button_pressed, handle_stop_onnx_server_button_pressed
+    handle_llamafile_browse_model_button_pressed, populate_llm_help_texts, handle_start_llamacpp_server_button_pressed, \
+    handle_stop_llamacpp_server_button_pressed, handle_start_llamafile_server_button_pressed, \
+    handle_stop_llamafile_server_button_pressed
+from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_onnx import \
+    handle_onnx_browse_python_button_pressed, \
+    handle_onnx_browse_script_button_pressed, \
+    handle_onnx_browse_model_button_pressed, \
+    handle_start_onnx_server_button_pressed, \
+    handle_stop_onnx_server_button_pressed
+from tldw_chatbook.Event_Handlers.LLM_Management_Events import llm_management_events_mlx_lm as mlx_handlers
+from tldw_chatbook.Event_Handlers.LLM_Management_Events import llm_management_events_onnx as onnx_handlers
 from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_vllm import handle_vllm_browse_python_button_pressed, handle_vllm_browse_model_button_pressed, handle_start_vllm_server_button_pressed, handle_stop_vllm_server_button_pressed
 from .Notes.Notes_Library import NotesInteropService
 from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
@@ -2432,7 +2439,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 await handle_start_onnx_server_button_pressed(self)
             elif button_id == "onnx-stop-server-button":
                 await handle_stop_onnx_server_button_pressed(self)
-
             else:
                 self.loguru_logger.warning(
                     f"Unhandled button on LLM MANAGEMENT tab: ID:{button_id}, Label:'{button.label}'")
@@ -2901,9 +2907,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 except QueryError:
                     self.loguru_logger.warning("Could not find vLLM server buttons to update state for STOPPED/ERROR.")
 
-                #######################################################################
-                # --- Handle MLX-LM Server Worker ---
-                #######################################################################
+            #######################################################################
+            # --- Handle MLX-LM Server Worker ---
+            #######################################################################
             elif worker_group == "mlx_lm_server":
                 self.loguru_logger.info(f"MLX-LM server worker state changed to {worker_state}.")
                 start_button_id = "#mlx-start-server-button"
@@ -2923,7 +2929,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     self.loguru_logger.info(f"MLX-LM worker finished. Result: '{result_message}'")
 
                     severity = "error" if "error" in result_message.lower() or "non-zero code" in result_message.lower() else "information"
-                    self.notify(f"MLX-LM server process finished.", title="Server Status", severity=f"{severity}")
+                    self.notify(f"MLX-LM server process finished.", title="Server Status", severity=severity)
 
                     try:
                         self.query_one(start_button_id, Button).disabled = False
@@ -2934,9 +2940,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     if self.mlx_server_process is not None:
                         self.mlx_server_process = None
 
-            #######################################################################
-            # --- Handle ONNX Server Worker ---
-            #######################################################################
+                #######################################################################
+                # --- Handle ONNX Server Worker ---
+                #######################################################################
             elif worker_group == "onnx_server":
                 self.loguru_logger.info(f"ONNX server worker state changed to {worker_state}.")
                 start_button_id = "#onnx-start-server-button"
@@ -2954,7 +2960,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 elif worker_state in [WorkerState.SUCCESS, WorkerState.ERROR]:
                     result_message = str(event.worker.result).strip() if event.worker.result else "Worker finished."
                     severity = "error" if "error" in result_message.lower() or "non-zero code" in result_message.lower() else "information"
-                    self.notify(f"ONNX server process finished.", title="Server Status", severity=f"{severity}")
+                    self.notify(f"ONNX server process finished.", title="Server Status", severity=severity)
 
                     try:
                         self.query_one(start_button_id, Button).disabled = False
