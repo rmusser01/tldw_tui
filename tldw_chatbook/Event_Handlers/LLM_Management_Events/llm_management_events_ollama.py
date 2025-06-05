@@ -7,6 +7,7 @@ coroutines specifically for the **Ollama** back‑end in the
 This module isolates Ollama-specific logic from the main llm_management_events.py.
 """
 from __future__ import annotations
+import asyncio
 
 import json
 import logging
@@ -119,9 +120,14 @@ async def handle_ollama_list_models_button_pressed(app: "TldwCli") -> None:
         log_output_widget.clear()
         # general_log_widget.write(f"Attempting to list models from: {base_url}")
 
-        data, error = ollama_list_local_models(base_url=base_url, log_widget=None) # Pass general_log_widget if errors should also go there
-
+        data, error = await asyncio.to_thread(
+            ollama_list_local_models,
+            base_url=base_url
+        )
         if error:
+            log_output_widget.write(f"Error listing models: {error}")
+
+        if error: # This is the original error check, the one above is newly added by script
             log_output_widget.write(f"Error listing models: {error}")
             app.notify("Error listing Ollama models.", severity="error")
         elif data and data.get('models'):
@@ -169,9 +175,15 @@ async def handle_ollama_show_model_button_pressed(app: "TldwCli") -> None:
         log_output_widget.clear()
         # general_log_widget.write(f"Attempting to show info for model: {model_name} from {base_url}")
 
-        data, error = ollama_model_info(base_url=base_url, model_name=model_name, log_widget=None)
-
+        data, error = await asyncio.to_thread(
+            ollama_model_info,
+            base_url=base_url,
+            model_name=model_name
+        )
         if error:
+            log_output_widget.write(f"Error showing model info for '{model_name}': {error}")
+
+        if error: # This is the original error check, the one above is newly added by script
             log_output_widget.write(f"Error showing model info for '{model_name}': {error}")
             app.notify(f"Error fetching info for {model_name}.", severity="error")
         elif data:
@@ -219,14 +231,16 @@ async def handle_ollama_delete_model_button_pressed(app: "TldwCli") -> None:
         def stream_to_log(message: str):
             app.call_from_thread(log_output_widget.write, message)
 
-        data, error = ollama_delete_model(
+        data, error = await asyncio.to_thread(
+            ollama_delete_model,
             base_url=base_url,
             model_name=model_name,
-            stream_log_callback=stream_to_log,
-            log_widget=None # General RichLog is used via callback
+            stream_log_callback=stream_to_log
         )
-
         if error:
+            log_output_widget.write(f"[bold red]Error deleting model '{model_name}': {error}[/bold red]")
+
+        if error: # This is the original error check, the one above is newly added by script
             log_output_widget.write(f"[bold red]Error deleting model '{model_name}': {error}[/bold red]")
             app.notify(f"Error deleting {model_name}.", severity="error")
         else:
@@ -280,14 +294,16 @@ async def handle_ollama_copy_model_button_pressed(app: "TldwCli") -> None:
 
         log_output_widget.write(f"Attempting to copy model: {source_model} to {dest_model} from {base_url}")
 
-        data, error = ollama_copy_model(
+        data, error = await asyncio.to_thread(
+            ollama_copy_model,
             base_url=base_url,
             source=source_model,
-            destination=dest_model,
-            log_widget=None # Direct feedback to log_output_widget
+            destination=dest_model
         )
-
         if error:
+            log_output_widget.write(f"[bold red]Error copying model '{source_model}' to '{dest_model}': {error}[/bold red]")
+
+        if error: # This is the original error check, the one above is newly added by script
             log_output_widget.write(f"[bold red]Error copying model '{source_model}' to '{dest_model}': {error}[/bold red]")
             app.notify(f"Error copying {source_model}.", severity="error")
         else:
@@ -335,14 +351,16 @@ async def handle_ollama_pull_model_button_pressed(app: "TldwCli") -> None:
             app.call_from_thread(log_output_widget.write, message)
 
         # Consider adding 'insecure' parameter if UI supports it, default False
-        data, error = ollama_pull_model(
+        data, error = await asyncio.to_thread(
+            ollama_pull_model,
             base_url=base_url,
             model_name=model_name,
-            stream_log_callback=stream_to_log,
-            log_widget=None
+            stream_log_callback=stream_to_log
         )
-
         if error:
+            log_output_widget.write(f"[bold red]Error pulling model '{model_name}': {error}[/bold red]")
+
+        if error: # This is the original error check, the one above is newly added by script
             log_output_widget.write(f"[bold red]Error pulling model '{model_name}': {error}[/bold red]")
             app.notify(f"Error pulling {model_name}.", severity="error")
         else:
@@ -415,15 +433,17 @@ async def handle_ollama_create_model_button_pressed(app: "TldwCli") -> None:
         def stream_to_log(message: str):
             app.call_from_thread(log_output_widget.write, message)
 
-        data, error = ollama_create_model(
+        data, error = await asyncio.to_thread(
+            ollama_create_model,
             base_url=base_url,
             model_name=model_name,
             path=modelfile_path,
-            stream_log_callback=stream_to_log,
-            log_widget=None
+            stream_log_callback=stream_to_log
         )
-
         if error:
+            log_output_widget.write(f"[bold red]Error creating model '{model_name}': {error}[/bold red]")
+
+        if error: # This is the original error check, the one above is newly added by script
             log_output_widget.write(f"[bold red]Error creating model '{model_name}': {error}[/bold red]")
             app.notify(f"Error creating {model_name}.", severity="error")
         else:
@@ -464,14 +484,16 @@ async def handle_ollama_push_model_button_pressed(app: "TldwCli") -> None:
             app.call_from_thread(log_output_widget.write, message)
 
         # Consider adding 'insecure' parameter if UI supports it, default False
-        data, error = ollama_push_model(
+        data, error = await asyncio.to_thread(
+            ollama_push_model,
             base_url=base_url,
             model_name=model_name,
-            stream_log_callback=stream_to_log,
-            log_widget=None
+            stream_log_callback=stream_to_log
         )
-
         if error:
+            log_output_widget.write(f"[bold red]Error pushing model '{model_name}': {error}[/bold red]")
+
+        if error: # This is the original error check, the one above is newly added by script
             log_output_widget.write(f"[bold red]Error pushing model '{model_name}': {error}[/bold red]")
             app.notify(f"Error pushing {model_name}.", severity="error")
         else:
@@ -519,14 +541,16 @@ async def handle_ollama_embeddings_button_pressed(app: "TldwCli") -> None:
         # general_log_widget = app.query_one("#ollama-log-output", RichLog) # If you want general logs too
         # general_log_widget.write(f"Attempting to generate embeddings for model: {model_name} with prompt: '{prompt[:30]}...' from {base_url}")
 
-        data, error = ollama_generate_embeddings(
+        data, error = await asyncio.to_thread(
+            ollama_generate_embeddings,
             base_url=base_url,
             model_name=model_name,
-            prompt=prompt,
-            log_widget=None # Or general_log_widget if desired for operational logs
+            prompt=prompt
         )
-
         if error:
+            embeddings_output_widget.write(f"Error generating embeddings: {error}")
+
+        if error: # This is the original error check, the one above is newly added by script
             embeddings_output_widget.write(f"Error generating embeddings: {error}")
             app.notify("Error generating embeddings.", severity="error")
         elif data and data.get('embedding'):
@@ -568,9 +592,14 @@ async def handle_ollama_ps_button_pressed(app: "TldwCli") -> None:
         # general_log_widget = app.query_one("#ollama-log-output", RichLog)
         # general_log_widget.write(f"Attempting to list running models (ps) from: {base_url}")
 
-        data, error = ollama_list_running_models(base_url=base_url, log_widget=None)
-
+        data, error = await asyncio.to_thread(
+            ollama_list_running_models,
+            base_url=base_url
+        )
         if error:
+            ps_output_widget.write(f"Error listing running models: {error}")
+
+        if error: # This is the original error check, the one above is newly added by script
             ps_output_widget.write(f"Error listing running models: {error}")
             app.notify("Error listing running Ollama models.", severity="error")
         elif data and data.get('models'):

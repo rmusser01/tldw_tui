@@ -11,9 +11,6 @@ from textual.containers import Container, VerticalScroll
 from textual.widgets import Static, Button, TextArea
 # Local Imports
 from tldw_chatbook.config import load_cli_config_and_ensure_existence, DEFAULT_CONFIG_PATH
-from tldw_chatbook.config import chachanotes_db, media_db, prompts_db # DB instances
-from datetime import datetime
-from pathlib import Path
 #
 # Local Imports
 #
