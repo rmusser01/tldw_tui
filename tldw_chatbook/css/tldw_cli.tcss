@@ -1138,6 +1138,57 @@ MetricsScreen Label.-info-message {
     width: 100%;
 }
 
+/* OLLAMA compact layout grid */
+.ollama-button-bar {
+    layout: horizontal;
+    height: auto;
+    width: 100%;
+    margin: 1 0;
+    align-horizontal: center;
+}
+.ollama-button-bar Button {
+    width: 1fr;
+    margin: 0 1;
+}
+
+.ollama-actions-grid {
+    layout: horizontal;
+    height: auto;
+    align-vertical: top; /* Align columns to the top */
+    margin-bottom: 1;
+}
+
+.ollama-actions-column {
+    layout: vertical;
+    width: 1fr;
+    height: 100%; /* Make columns fill parent height */
+    padding: 1;
+    border: round $panel-lighten-1;
+    margin: 0 1;
+}
+.ollama-actions-column:first-of-type {
+    margin-left: 0;
+}
+.ollama-actions-column:last-of-type {
+    margin-right: 0;
+}
+
+.column-title {
+    text-style: bold underline;
+    width: 100%;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+/* Override input container margin inside a column */
+.ollama-actions-column .input_action_container {
+    margin-bottom: 1;
+}
+.ollama-actions-column .full_width_button {
+    margin-top: 0; /* Tighten up space for buttons below inputs */
+}
+
+
 /* --- End of LLM Management Tab --- */
 /* ----------------------------- ************************* ----------------------------- */
 
