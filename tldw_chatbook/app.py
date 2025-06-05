@@ -32,7 +32,7 @@ from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_ol
     handle_ollama_pull_model_button_pressed, handle_ollama_copy_model_button_pressed, \
     handle_ollama_delete_model_button_pressed, handle_ollama_show_model_button_pressed, \
     handle_ollama_list_models_button_pressed, handle_ollama_browse_modelfile_button_pressed, \
-    handle_ollama_push_model_button_pressed
+    handle_ollama_push_model_button_pressed, handle_ollama_worker_completion
 #
 # --- Local API library Imports ---
 from .Event_Handlers.LLM_Management_Events import llm_management_events_transformers as transformers_handlers
@@ -2658,6 +2658,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                             self.loguru_logger.error(f"Error updating AI message UI on CANCELLED state: {qe_cancel_ui}")
             else:
                 self.loguru_logger.debug(f"Chat-related worker '{worker_name_attr}' in other state: {worker_state}")
+
+
+        #######################################################################
+        # --- Handle Ollama API Worker ---
+        #######################################################################
+        elif worker_group == "ollama_api":
+            self.loguru_logger.info(f"Ollama API worker '{event.worker.name}' finished with state {event.state}.")
+            await handle_ollama_worker_completion(self, event)
 
 
         #######################################################################
