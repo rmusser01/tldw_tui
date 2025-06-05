@@ -3,7 +3,6 @@
 #
 # Imports
 import json
-import yaml  # Add yaml import if not already there
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, List, Any, Dict, Callable
 #
@@ -19,8 +18,8 @@ from ..Constants import ALL_TLDW_API_OPTION_CONTAINERS
 # Local Imports
 from ..UI.Ingest_Window import IngestWindow # Added for IngestWindow access
 import tldw_chatbook.Event_Handlers.conv_char_events as ccp_handlers
-from . import chat_events as chat_handlers
-from .chat_events import populate_chat_conversation_character_filter_select
+from .Chat_Events import chat_events as chat_handlers
+from tldw_chatbook.Event_Handlers.Chat_Events.chat_events import populate_chat_conversation_character_filter_select
 from ..tldw_api import (
     TLDWAPIClient, ProcessVideoRequest, ProcessAudioRequest,
     APIConnectionError, APIRequestError, APIResponseError, AuthenticationError,
@@ -35,7 +34,7 @@ from ..Prompt_Management.Prompts_Interop import (
     is_initialized as prompts_db_initialized,  # Renamed for clarity
     import_prompts_from_files, _get_file_type as _get_prompt_file_type  # Renamed for clarity
 )
-from ..DB.ChaChaNotes_DB import ConflictError as ChaChaConflictError, CharactersRAGDBError
+from ..DB.ChaChaNotes_DB import CharactersRAGDBError
 # Character Chat Lib for parsing and importing character cards
 from ..Character_Chat import Character_Chat_Lib as ccl
 from ..DB.ChaChaNotes_DB import ConflictError as ChaChaConflictError  # For character import conflict

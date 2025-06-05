@@ -18,22 +18,22 @@ from textual.widgets import (
 from textual.containers import VerticalScroll
 from textual.css.query import QueryError
 
-from ..Utils.Utils import safe_float, safe_int
+from tldw_chatbook.Utils.Utils import safe_float, safe_int
 #
 # Local Imports
-from ..Widgets.chat_message import ChatMessage
-from ..Widgets.titlebar import TitleBar
-from ..Utils.Emoji_Handling import (
+from tldw_chatbook.Widgets.chat_message import ChatMessage
+from tldw_chatbook.Widgets.titlebar import TitleBar
+from tldw_chatbook.Utils.Emoji_Handling import (
     get_char, EMOJI_THINKING, FALLBACK_THINKING, EMOJI_EDIT, FALLBACK_EDIT,
     EMOJI_SAVE_EDIT, FALLBACK_SAVE_EDIT, EMOJI_COPIED, FALLBACK_COPIED, EMOJI_COPY, FALLBACK_COPY
 )
-from ..Character_Chat import Character_Chat_Lib as ccl
-from ..Character_Chat.Character_Chat_Lib import load_character_and_image
-from ..DB.ChaChaNotes_DB import ConflictError, CharactersRAGDBError, InputError
-from ..Prompt_Management import Prompts_Interop as prompts_interop
+from tldw_chatbook.Character_Chat import Character_Chat_Lib as ccl
+from tldw_chatbook.Character_Chat.Character_Chat_Lib import load_character_and_image
+from tldw_chatbook.DB.ChaChaNotes_DB import ConflictError, CharactersRAGDBError, InputError
+from tldw_chatbook.Prompt_Management import Prompts_Interop as prompts_interop
 #
 if TYPE_CHECKING:
-    from ..app import TldwCli
+    from tldw_chatbook.app import TldwCli
 
 
 #

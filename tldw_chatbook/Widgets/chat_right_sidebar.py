@@ -7,7 +7,7 @@
 import logging
 
 from textual.app import ComposeResult
-from textual.containers import VerticalScroll
+from textual.containers import VerticalScroll, Horizontal
 from textual.widgets import Static, Collapsible, Placeholder, Select, Input, Label, TextArea, Button, Checkbox, ListView
 
 from tldw_chatbook.config import settings
@@ -92,6 +92,43 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
                 id=f"{id_prefix}-strip-thinking-tags-checkbox",
                 classes="sidebar-checkbox" # Add a class if specific styling is needed
             )
+        # ===================================================================
+        # Search Media (only for chat tab)
+        # ===================================================================
+        if id_prefix == "chat":
+            with Collapsible(title="Search Media", collapsed=True, id=f"{id_prefix}-media-collapsible"):
+                yield Label("Search Your Media:", classes="sidebar-label")
+                yield Input(
+                    id="chat-media-search-input",
+                    placeholder="Search media content...",
+                    classes="sidebar-input"
+                )
+                media_results_list = ListView(
+                    id="chat-media-search-results-listview",
+                    classes="sidebar-listview"
+                )
+                media_results_list.styles.height = 7
+                yield media_results_list
+                with Horizontal(classes="sidebar-button-group"):
+                    yield Button(
+                        "View",
+                        id="chat-media-view-selected-button",
+                        classes="sidebar-button"
+                    )
+                    yield Button(
+                        "Copy to Chat",
+                        id="chat-media-copy-selected-button",
+                        classes="sidebar-button",
+                        variant="primary"
+                    )
+                yield Label("Selected Media Content:", classes="sidebar-label")
+                media_content_display = TextArea(
+                    "",
+                    id="chat-media-content-display",
+                    classes="sidebar-textarea media-display-textarea"
+                )
+                media_content_display.styles.height = 15
+                yield media_content_display
         # ===================================================================
         # Prompts (only for chat tab)
         # ===================================================================

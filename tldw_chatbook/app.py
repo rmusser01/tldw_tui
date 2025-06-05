@@ -4,7 +4,6 @@
 # Imports
 import logging
 import logging.handlers
-import re # Added import for regex
 import subprocess
 import traceback
 from typing import Union, Optional, Any, Dict, List, Callable
@@ -27,10 +26,25 @@ from textual.timer import Timer
 from textual.css.query import QueryError
 # Ensure Path is imported
 from pathlib import Path
+
+from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_ollama import \
+    handle_ollama_embeddings_button_pressed, handle_ollama_ps_button_pressed, handle_ollama_create_model_button_pressed, \
+    handle_ollama_pull_model_button_pressed, handle_ollama_copy_model_button_pressed, \
+    handle_ollama_delete_model_button_pressed, handle_ollama_show_model_button_pressed, \
+    handle_ollama_list_models_button_pressed, handle_ollama_browse_modelfile_button_pressed, \
+    handle_ollama_push_model_button_pressed
 #
 # --- Local API library Imports ---
 from .Event_Handlers.LLM_Management_Events import llm_management_events_transformers as transformers_handlers
 from tldw_chatbook.Event_Handlers.Chat_Events.chat_streaming_events import handle_streaming_chunk, handle_stream_done
+from tldw_chatbook.Event_Handlers.Chat_Events.chat_events_sidebar import (
+    handle_chat_media_search_input_changed,
+    handle_chat_media_load_selected_button_pressed,
+    handle_chat_media_copy_title_button_pressed,
+    handle_chat_media_copy_content_button_pressed,
+    handle_chat_media_copy_author_button_pressed,
+    handle_chat_media_copy_url_button_pressed,
+)
 from tldw_chatbook.Event_Handlers.worker_events import StreamingChunk, StreamDone
 from .Widgets.AppFooterStatus import AppFooterStatus
 from .Utils import Utils
@@ -59,16 +73,15 @@ from .config import (
 from .Event_Handlers import (
     app_lifecycle as app_lifecycle_handlers,
     tab_events as tab_handlers,
-    chat_events as chat_handlers,
-    chat_events,
     conv_char_events as ccp_handlers,
     media_events as media_handlers,
     notes_events as notes_handlers,
     worker_events as worker_handlers, worker_events, ingest_events,
     llm_nav_events as llm_handlers,
     # Explicit import for Ollama handler as per subtask, though current dispatch is generic
-    LLM_Management_Events,
 )
+from .Event_Handlers.Chat_Events import chat_events as chat_handlers
+from tldw_chatbook.Event_Handlers.Chat_Events import chat_events
 from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events import \
     handle_llamacpp_browse_exec_button_pressed, \
     handle_llamacpp_browse_model_button_pressed, handle_llamafile_browse_exec_button_pressed, \
@@ -99,7 +112,7 @@ from .UI.Conv_Char_Window import CCPWindow
 from .UI.Notes_Window import NotesWindow
 from .UI.Logs_Window import LogsWindow
 from .UI.Stats_Window import StatsWindow
-from .UI.Ingest_Window import IngestWindow, INGEST_VIEW_IDS, INGEST_NAV_BUTTON_IDS
+from .UI.Ingest_Window import IngestWindow, INGEST_NAV_BUTTON_IDS
 from .UI.Tools_Settings_Window import ToolsSettingsWindow
 from .UI.LLM_Management_Window import LLMManagementWindow
 from .UI.Evals_Window import EvalsWindow # Added EvalsWindow
@@ -276,11 +289,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # current_media_search_term: reactive[str] = reactive("") # Handled by inputs directly
     current_loaded_media_item: reactive[Optional[Dict[str, Any]]] = reactive(None)
     _media_search_timers: Dict[str, Timer] = {}  # For debouncing per media type
+    _media_sidebar_search_timer: Optional[Timer] = None # For chat sidebar media search debouncing
 
     # Add media_types_for_ui to store fetched types
     media_types_for_ui: List[str] = []
     _initial_media_view: Optional[str] = "media-view-video-audio"  # Default to the first sub-tab
     media_db: Optional[MediaDatabase] = None
+    current_sidebar_media_item: Optional[Dict[str, Any]] = None # For chat sidebar media review
 
     # Search Tab's active sub-view reactives
     search_active_sub_tab: reactive[Optional[str]] = reactive(None)
@@ -2091,6 +2106,22 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             elif button_id == "chat-clear-active-character-button":
                 await chat_handlers.handle_chat_clear_active_character_button_pressed(self)
                 return
+            # --- Chat Tab Media Search Sidebar Buttons ---
+            elif button_id == "chat-media-load-selected-button":
+                await handle_chat_media_load_selected_button_pressed(self)
+                return
+            elif button_id == "chat-media-copy-title-button":
+                await handle_chat_media_copy_title_button_pressed(self)
+                return
+            elif button_id == "chat-media-copy-content-button":
+                await handle_chat_media_copy_content_button_pressed(self)
+                return
+            elif button_id == "chat-media-copy-author-button":
+                await handle_chat_media_copy_author_button_pressed(self)
+                return
+            elif button_id == "chat-media-copy-url-button":
+                await handle_chat_media_copy_url_button_pressed(self)
+                return
             # --- Chat Tab Notes Sidebar Buttons ---
             # These are handled by @on decorators, so we just acknowledge them here to prevent "unhandled" warnings.
             elif button_id == "chat-notes-create-new-button":
@@ -2338,35 +2369,35 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 await handle_stop_mlx_server_button_pressed(self)
             # --- Ollama Button Handlers ---
             elif button_id == "ollama-list-models-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_list_models_button_pressed(self)
-                return # Add return to ensure it's handled
+                await handle_ollama_list_models_button_pressed(self)
+                return
             elif button_id == "ollama-show-model-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_show_model_button_pressed(self)
-                return # Add return
+                await handle_ollama_show_model_button_pressed(self)
+                return
             elif button_id == "ollama-delete-model-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_delete_model_button_pressed(self)
-                return # Add return
+                await handle_ollama_delete_model_button_pressed(self)
+                return
             elif button_id == "ollama-copy-model-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_copy_model_button_pressed(self)
-                return # Add return
+                await handle_ollama_copy_model_button_pressed(self)
+                return
             elif button_id == "ollama-pull-model-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_pull_model_button_pressed(self)
-                return # Add return
+                await handle_ollama_pull_model_button_pressed(self)
+                return
             elif button_id == "ollama-browse-modelfile-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_browse_modelfile_button_pressed(self)
-                return # Add return
+                await handle_ollama_browse_modelfile_button_pressed(self)
+                return
             elif button_id == "ollama-create-model-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_create_model_button_pressed(self)
-                return # Add return
+                await handle_ollama_create_model_button_pressed(self)
+                return
             elif button_id == "ollama-push-model-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_push_model_button_pressed(self)
-                return # Add return
+                await handle_ollama_push_model_button_pressed(self)
+                return
             elif button_id == "ollama-embeddings-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_embeddings_button_pressed(self)
-                return # Add return
+                await handle_ollama_embeddings_button_pressed(self)
+                return
             elif button_id == "ollama-ps-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_ps_button_pressed(self)
-                return # Add return
+                await handle_ollama_ps_button_pressed(self)
+                return
             # --- End of Ollama Button Handlers ---
             else:
                 self.loguru_logger.warning(
@@ -2459,6 +2490,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             await chat_handlers.handle_chat_character_search_input_changed(self, event)
         elif input_id == "chat-character-name-edit" and current_active_tab == TAB_CHAT:
             await chat_handlers.handle_chat_character_attribute_changed(self, event)
+        # --- Chat Tab Media Search Input ---
+        elif input_id == "chat-media-search-input" and current_active_tab == TAB_CHAT:
+            await handle_chat_media_search_input_changed(self, event.input)
         # Add more specific input handlers if needed, e.g., for title inputs if they need live validation/reaction
 
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
