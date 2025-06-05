@@ -222,14 +222,12 @@ class LLMManagementWindow(Container):
                     yield Label("List Models:", classes="label section_label")
                     with Container(classes="action_container"):
                         yield Button("List Models", id="ollama-list-models-button", classes="action_button")
-                    yield TextArea(id="ollama-list-models-output", read_only=True, classes="output_textarea")
 
                     # Show Model Info
                     yield Label("Show Model Information:", classes="label section_label")
                     with Container(classes="input_action_container"):
                         yield Input(id="ollama-show-model-name", placeholder="Model name (e.g., llama2)", classes="input_field_short")
                         yield Button("Show Info", id="ollama-show-model-button", classes="action_button_short")
-                    yield TextArea(id="ollama-show-model-output", read_only=True, classes="output_textarea")
 
                     # Delete Model
                     yield Label("Delete Model:", classes="label section_label")
@@ -276,13 +274,14 @@ class LLMManagementWindow(Container):
                         yield Input(id="ollama-embeddings-model-name", placeholder="Model name for embeddings", classes="input_field_short")
                         yield Input(id="ollama-embeddings-prompt", placeholder="Prompt for embeddings", classes="input_field_long") # Longer input for prompt
                         yield Button("Generate Embeddings", id="ollama-embeddings-button", classes="action_button_short")
-                    yield TextArea(id="ollama-embeddings-output", read_only=True, classes="output_textarea_small") # Smaller text area for embeddings
 
                     # Running Models (ps)
                     yield Label("List Running Models (ps):", classes="label section_label")
                     with Container(classes="action_container"):
                         yield Button("List Running Models", id="ollama-ps-button", classes="action_button")
-                    yield TextArea(id="ollama-ps-output", read_only=True, classes="output_textarea")
+
+                    # Combined Output Log
+                    yield RichLog(id="ollama-combined-output", wrap=True, highlight=False, classes="output_textarea_medium")
 
                     # General Log Output
                     yield Label("Ollama Log Output:", classes="label section_label")

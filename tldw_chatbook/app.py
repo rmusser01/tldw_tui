@@ -2315,6 +2315,38 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 await handle_start_mlx_server_button_pressed(self)
             elif button_id == "mlx-stop-server-button":
                 await handle_stop_mlx_server_button_pressed(self)
+            # --- Ollama Button Handlers ---
+            elif button_id == "ollama-list-models-button":
+                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_list_models_button_pressed(self)
+                return # Add return to ensure it's handled
+            elif button_id == "ollama-show-model-button":
+                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_show_model_button_pressed(self)
+                return # Add return
+            elif button_id == "ollama-delete-model-button":
+                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_delete_model_button_pressed(self)
+                return # Add return
+            elif button_id == "ollama-copy-model-button":
+                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_copy_model_button_pressed(self)
+                return # Add return
+            elif button_id == "ollama-pull-model-button":
+                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_pull_model_button_pressed(self)
+                return # Add return
+            elif button_id == "ollama-browse-modelfile-button":
+                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_browse_modelfile_button_pressed(self)
+                return # Add return
+            elif button_id == "ollama-create-model-button":
+                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_create_model_button_pressed(self)
+                return # Add return
+            elif button_id == "ollama-push-model-button":
+                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_push_model_button_pressed(self)
+                return # Add return
+            elif button_id == "ollama-embeddings-button":
+                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_embeddings_button_pressed(self)
+                return # Add return
+            elif button_id == "ollama-ps-button":
+                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_ps_button_pressed(self)
+                return # Add return
+            # --- End of Ollama Button Handlers ---
             else:
                 self.loguru_logger.warning(
                     f"Unhandled button on LLM MANAGEMENT tab: ID:{button_id}, Label:'{button.label}'")

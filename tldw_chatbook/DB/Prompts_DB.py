@@ -336,6 +336,56 @@ class PromptsDatabase:
             finally:
                 if hasattr(self._local, 'conn'): self._local.conn = None
 
+    def backup_database(self, backup_file_path: str) -> bool:
+        """
+        Creates a backup of the current database to the specified file path.
+
+        Args:
+            backup_file_path (str): The path to save the backup database file.
+
+        Returns:
+            bool: True if the backup was successful, False otherwise.
+        """
+        logger.info(f"Starting database backup from '{self.db_path_str}' to '{backup_file_path}'")
+        backup_conn: Optional[sqlite3.Connection] = None
+        try:
+            # Ensure the backup file path is not the same as the source for file-based DBs
+            if not self.is_memory_db and self.db_path.resolve() == Path(backup_file_path).resolve():
+                logger.error("Backup path cannot be the same as the source database path.")
+                raise ValueError("Backup path cannot be the same as the source database path.")
+
+            src_conn = self.get_connection()
+
+            backup_db_path_obj = Path(backup_file_path)
+            backup_db_path_obj.parent.mkdir(parents=True, exist_ok=True)
+
+            backup_conn = sqlite3.connect(str(backup_db_path_obj))
+
+            logger.debug(f"Source DB connection: {src_conn}")
+            logger.debug(f"Backup DB connection: {backup_conn} to file {str(backup_db_path_obj)}")
+
+            src_conn.backup(backup_conn, pages=0, progress=None)
+
+            logger.info(f"Database backup successful from '{self.db_path_str}' to '{str(backup_db_path_obj)}'")
+            return True
+        except ValueError as ve:
+            logger.error(f"ValueError during database backup: {ve}", exc_info=True)
+            return False
+        except sqlite3.Error as e:
+            logger.error(f"SQLite error during database backup: {e}", exc_info=True)
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error during database backup: {e}", exc_info=True)
+            return False
+        finally:
+            if backup_conn:
+                try:
+                    backup_conn.close()
+                    logger.debug("Closed backup database connection.")
+                except sqlite3.Error as e:
+                    logger.warning(f"Error closing backup database connection: {e}")
+            # Source connection (src_conn) is managed by the thread-local mechanism.
+
     # --- Query Execution ---
     def execute_query(self, query: str, params: tuple = None, *, commit: bool = False) -> sqlite3.Cursor:
         conn = self.get_connection()

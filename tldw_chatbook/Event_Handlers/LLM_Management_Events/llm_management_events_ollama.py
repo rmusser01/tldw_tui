@@ -7,12 +7,16 @@ coroutines specifically for the **Ollama** back‑end in the
 This module isolates Ollama-specific logic from the main llm_management_events.py.
 """
 from __future__ import annotations
+import asyncio
 
 import json
 import logging
+import time
+from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
+from cv2 import data
 from textual.containers import Container
 from textual.css.query import QueryError
 from textual.widgets import Input, TextArea, RichLog
@@ -81,15 +85,11 @@ async def handle_ollama_nav_button_pressed(app: "TldwCli") -> None:
             app.query_one("#ollama-embeddings-prompt", Input).value = ""
 
             # Output TextAreas
-            app.query_one("#ollama-list-models-output", TextArea).clear()
-            app.query_one("#ollama-show-model-output", TextArea).clear()
-            app.query_one("#ollama-embeddings-output", TextArea).clear()
-            app.query_one("#ollama-ps-output", TextArea).clear()
-
+            app.query_one("#ollama-combined-output", RichLog).clear()
             # Main log output
             log_output = app.query_one("#ollama-log-output", RichLog)
             log_output.clear()
-            log_output.write("Switched to Ollama view. Output log cleared.")
+            log_output.write("Switched to Ollama view. Output log cleared and initialized.")
 
         except QueryError as qe: # pragma: no cover
             logger.warning(f"Ollama UI clear: Could not find one or more UI elements during view switch: {qe}")
@@ -112,8 +112,7 @@ async def handle_ollama_list_models_button_pressed(app: "TldwCli") -> None:
     logger.debug("Ollama 'List Models' button pressed.")
     try:
         base_url_input = app.query_one("#ollama-server-url", Input)
-        log_output_widget = app.query_one("#ollama-list-models-output", TextArea) # Changed to specific output
-        # general_log_widget = app.query_one("#ollama-log-output", RichLog) # For general messages
+        log_output_widget = app.query_one("#ollama-combined-output", RichLog)
 
         base_url = base_url_input.value.strip()
         if not base_url:
@@ -122,12 +121,23 @@ async def handle_ollama_list_models_button_pressed(app: "TldwCli") -> None:
             return
 
         log_output_widget.clear()
-        # general_log_widget.write(f"Attempting to list models from: {base_url}")
+        _update_ollama_combined_output(app, f"Attempting to list models from: {base_url}...")
 
-        data, error = ollama_list_local_models(base_url=base_url, log_widget=None) # Pass general_log_widget if errors should also go there
+        app.run_worker(
+            _worker_ollama_list_models,
+            base_url,
+            thread=True,
+            name=f"ollama_list_models_{time.monotonic()}",
+            group="ollama_api",
+            description="Listing Ollama local models",
+            on_success=partial(_on_list_models_success, app),
+            on_error=partial(_on_ollama_worker_error, app, "list_models")
+        )
+        if logging.error:
+            log_output_widget.write(f"Error listing models: {logging.error}")
 
-        if error:
-            log_output_widget.write(f"Error listing models: {error}")
+        if logging.error: # This is the original error check, the one above is newly added by script
+            log_output_widget.write(f"Error listing models: {logging.error}")
             app.notify("Error listing Ollama models.", severity="error")
         elif data and data.get('models'):
             try:
@@ -156,7 +166,7 @@ async def handle_ollama_show_model_button_pressed(app: "TldwCli") -> None:
     try:
         base_url_input = app.query_one("#ollama-server-url", Input)
         model_name_input = app.query_one("#ollama-show-model-name", Input)
-        log_output_widget = app.query_one("#ollama-show-model-output", TextArea)
+        log_output_widget = app.query_one("#ollama-combined-output", RichLog)
         # general_log_widget = app.query_one("#ollama-log-output", RichLog)
 
         base_url = base_url_input.value.strip()
@@ -174,9 +184,15 @@ async def handle_ollama_show_model_button_pressed(app: "TldwCli") -> None:
         log_output_widget.clear()
         # general_log_widget.write(f"Attempting to show info for model: {model_name} from {base_url}")
 
-        data, error = ollama_model_info(base_url=base_url, model_name=model_name, log_widget=None)
-
+        data, error = await asyncio.to_thread(
+            ollama_model_info,
+            base_url=base_url,
+            model_name=model_name
+        )
         if error:
+            log_output_widget.write(f"Error showing model info for '{model_name}': {error}")
+
+        if error: # This is the original error check, the one above is newly added by script
             log_output_widget.write(f"Error showing model info for '{model_name}': {error}")
             app.notify(f"Error fetching info for {model_name}.", severity="error")
         elif data:
@@ -224,14 +240,16 @@ async def handle_ollama_delete_model_button_pressed(app: "TldwCli") -> None:
         def stream_to_log(message: str):
             app.call_from_thread(log_output_widget.write, message)
 
-        data, error = ollama_delete_model(
+        data, error = await asyncio.to_thread(
+            ollama_delete_model,
             base_url=base_url,
             model_name=model_name,
-            stream_log_callback=stream_to_log,
-            log_widget=None # General RichLog is used via callback
+            stream_log_callback=stream_to_log
         )
-
         if error:
+            log_output_widget.write(f"[bold red]Error deleting model '{model_name}': {error}[/bold red]")
+
+        if error: # This is the original error check, the one above is newly added by script
             log_output_widget.write(f"[bold red]Error deleting model '{model_name}': {error}[/bold red]")
             app.notify(f"Error deleting {model_name}.", severity="error")
         else:
@@ -285,14 +303,16 @@ async def handle_ollama_copy_model_button_pressed(app: "TldwCli") -> None:
 
         log_output_widget.write(f"Attempting to copy model: {source_model} to {dest_model} from {base_url}")
 
-        data, error = ollama_copy_model(
+        data, error = await asyncio.to_thread(
+            ollama_copy_model,
             base_url=base_url,
             source=source_model,
-            destination=dest_model,
-            log_widget=None # Direct feedback to log_output_widget
+            destination=dest_model
         )
-
         if error:
+            log_output_widget.write(f"[bold red]Error copying model '{source_model}' to '{dest_model}': {error}[/bold red]")
+
+        if error: # This is the original error check, the one above is newly added by script
             log_output_widget.write(f"[bold red]Error copying model '{source_model}' to '{dest_model}': {error}[/bold red]")
             app.notify(f"Error copying {source_model}.", severity="error")
         else:
@@ -340,14 +360,16 @@ async def handle_ollama_pull_model_button_pressed(app: "TldwCli") -> None:
             app.call_from_thread(log_output_widget.write, message)
 
         # Consider adding 'insecure' parameter if UI supports it, default False
-        data, error = ollama_pull_model(
+        data, error = await asyncio.to_thread(
+            ollama_pull_model,
             base_url=base_url,
             model_name=model_name,
-            stream_log_callback=stream_to_log,
-            log_widget=None
+            stream_log_callback=stream_to_log
         )
-
         if error:
+            log_output_widget.write(f"[bold red]Error pulling model '{model_name}': {error}[/bold red]")
+
+        if error: # This is the original error check, the one above is newly added by script
             log_output_widget.write(f"[bold red]Error pulling model '{model_name}': {error}[/bold red]")
             app.notify(f"Error pulling {model_name}.", severity="error")
         else:
@@ -420,15 +442,17 @@ async def handle_ollama_create_model_button_pressed(app: "TldwCli") -> None:
         def stream_to_log(message: str):
             app.call_from_thread(log_output_widget.write, message)
 
-        data, error = ollama_create_model(
+        data, error = await asyncio.to_thread(
+            ollama_create_model,
             base_url=base_url,
             model_name=model_name,
             path=modelfile_path,
-            stream_log_callback=stream_to_log,
-            log_widget=None
+            stream_log_callback=stream_to_log
         )
-
         if error:
+            log_output_widget.write(f"[bold red]Error creating model '{model_name}': {error}[/bold red]")
+
+        if error: # This is the original error check, the one above is newly added by script
             log_output_widget.write(f"[bold red]Error creating model '{model_name}': {error}[/bold red]")
             app.notify(f"Error creating {model_name}.", severity="error")
         else:
@@ -469,14 +493,16 @@ async def handle_ollama_push_model_button_pressed(app: "TldwCli") -> None:
             app.call_from_thread(log_output_widget.write, message)
 
         # Consider adding 'insecure' parameter if UI supports it, default False
-        data, error = ollama_push_model(
+        data, error = await asyncio.to_thread(
+            ollama_push_model,
             base_url=base_url,
             model_name=model_name,
-            stream_log_callback=stream_to_log,
-            log_widget=None
+            stream_log_callback=stream_to_log
         )
-
         if error:
+            log_output_widget.write(f"[bold red]Error pushing model '{model_name}': {error}[/bold red]")
+
+        if error: # This is the original error check, the one above is newly added by script
             log_output_widget.write(f"[bold red]Error pushing model '{model_name}': {error}[/bold red]")
             app.notify(f"Error pushing {model_name}.", severity="error")
         else:
@@ -498,7 +524,7 @@ async def handle_ollama_embeddings_button_pressed(app: "TldwCli") -> None:
         base_url_input = app.query_one("#ollama-server-url", Input)
         model_name_input = app.query_one("#ollama-embeddings-model-name", Input)
         prompt_input = app.query_one("#ollama-embeddings-prompt", Input)
-        embeddings_output_widget = app.query_one("#ollama-embeddings-output", TextArea)
+        embeddings_output_widget = app.query_one("#ollama-combined-output", RichLog)
         # general_log_widget = app.query_one("#ollama-log-output", RichLog)
 
 
@@ -524,27 +550,29 @@ async def handle_ollama_embeddings_button_pressed(app: "TldwCli") -> None:
         # general_log_widget = app.query_one("#ollama-log-output", RichLog) # If you want general logs too
         # general_log_widget.write(f"Attempting to generate embeddings for model: {model_name} with prompt: '{prompt[:30]}...' from {base_url}")
 
-        data, error = ollama_generate_embeddings(
+        data, error = await asyncio.to_thread(
+            ollama_generate_embeddings,
             base_url=base_url,
             model_name=model_name,
-            prompt=prompt,
-            log_widget=None # Or general_log_widget if desired for operational logs
+            prompt=prompt
         )
-
         if error:
-            embeddings_output_widget.text = f"Error generating embeddings: {error}"
+            embeddings_output_widget.write(f"Error generating embeddings: {error}")
+
+        if error: # This is the original error check, the one above is newly added by script
+            embeddings_output_widget.write(f"Error generating embeddings: {error}")
             app.notify("Error generating embeddings.", severity="error")
         elif data and data.get('embedding'):
             try:
                 # The embedding is usually a list of floats.
                 formatted_embedding = json.dumps(data['embedding'], indent=2)
-                embeddings_output_widget.text = formatted_embedding
+                embeddings_output_widget.write(formatted_embedding)
                 app.notify("Embeddings generated successfully.")
             except (TypeError, KeyError, json.JSONDecodeError) as e:
-                embeddings_output_widget.text = f"Error processing embeddings response: {e}\nRaw data: {data}"
+                embeddings_output_widget.write(f"Error processing embeddings response: {e}\nRaw data: {data}")
                 app.notify("Error processing embeddings response.", severity="error")
         else:
-            embeddings_output_widget.text = f"No embeddings returned or unexpected response: {data}"
+            embeddings_output_widget.write(f"No embeddings returned or unexpected response: {data}")
             app.notify("No embeddings returned or unexpected response.", severity="warning")
     except QueryError as e: # pragma: no cover
         logger.error(f"QueryError in handle_ollama_embeddings_button_pressed: {e}", exc_info=True)
@@ -560,7 +588,7 @@ async def handle_ollama_ps_button_pressed(app: "TldwCli") -> None:
     logger.debug("Ollama 'List Running Models (ps)' button pressed.")
     try:
         base_url_input = app.query_one("#ollama-server-url", Input)
-        ps_output_widget = app.query_one("#ollama-ps-output", TextArea)
+        ps_output_widget = app.query_one("#ollama-combined-output", RichLog)
         # general_log_widget = app.query_one("#ollama-log-output", RichLog)
 
         base_url = base_url_input.value.strip()
@@ -573,21 +601,26 @@ async def handle_ollama_ps_button_pressed(app: "TldwCli") -> None:
         # general_log_widget = app.query_one("#ollama-log-output", RichLog)
         # general_log_widget.write(f"Attempting to list running models (ps) from: {base_url}")
 
-        data, error = ollama_list_running_models(base_url=base_url, log_widget=None)
-
+        data, error = await asyncio.to_thread(
+            ollama_list_running_models,
+            base_url=base_url
+        )
         if error:
-            ps_output_widget.text = f"Error listing running models: {error}"
+            ps_output_widget.write(f"Error listing running models: {error}")
+
+        if error: # This is the original error check, the one above is newly added by script
+            ps_output_widget.write(f"Error listing running models: {error}")
             app.notify("Error listing running Ollama models.", severity="error")
         elif data and data.get('models'):
             try:
                 formatted_ps_info = json.dumps(data['models'], indent=2)
-                ps_output_widget.text = formatted_ps_info
+                ps_output_widget.write(formatted_ps_info)
                 app.notify(f"Successfully listed {len(data['models'])} running Ollama models.")
             except (TypeError, KeyError, json.JSONDecodeError) as e:
-                ps_output_widget.text = f"Error processing running models response: {e}\nRaw data: {data}"
+                ps_output_widget.write(f"Error processing running models response: {e}\nRaw data: {data}")
                 app.notify("Error processing running models list.", severity="error")
         else:
-            ps_output_widget.text = "No running models found or unexpected response."
+            ps_output_widget.write("No running models found or unexpected response.")
             app.notify("No running Ollama models found or response format issue.", severity="warning")
     except QueryError as e: # pragma: no cover
         logger.error(f"QueryError in handle_ollama_ps_button_pressed: {e}", exc_info=True)
