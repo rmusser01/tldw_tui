@@ -10,6 +10,7 @@ from typing import Optional
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.css.query import QueryError
+from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Static, Button, Label # Added Label
 from textual.reactive import reactive
@@ -22,6 +23,13 @@ from textual.reactive import reactive
 
 class ChatMessage(Widget):
     """A widget to display a single chat message with action buttons."""
+
+    class Action(Message):
+        """Posted when a button on the message is pressed."""
+        def __init__(self, message_widget: "ChatMessage", button: Button) -> None:
+            super().__init__()
+            self.message_widget = message_widget
+            self.button = button
 
     DEFAULT_CSS = """
     ChatMessage {
@@ -195,6 +203,13 @@ class ChatMessage(Widget):
             except QueryError:
                 pass # Expected for non-AI messages as the button isn't composed.
 
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Called when a button inside this message is pressed."""
+        # Post our custom Action message so the app can handle it.
+        # The message carries the button and this widget instance.
+        self.post_message(self.Action(self, event.button))
+        # Stop the event from bubbling up to the app's on_button_pressed.
+        event.stop()
 
     def mark_generation_complete(self):
         """

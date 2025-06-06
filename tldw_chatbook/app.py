@@ -19,6 +19,7 @@ from textual.app import App, ComposeResult
 from textual.widgets import (
     Static, Button, Input, Header, RichLog, TextArea, Select, ListView, Checkbox, Collapsible, ListItem, Label
 )
+
 from textual.containers import Container
 from textual.reactive import reactive
 from textual.worker import Worker, WorkerState
@@ -644,6 +645,21 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             yield StatsWindow(self, id="stats-window", classes="window")
             yield EvalsWindow(self, id="evals-window", classes="window")
             yield CodingWindow(self, id="coding-window", classes="window")
+
+    @on(ChatMessage.Action)
+    async def handle_chat_message_action(self, event: ChatMessage.Action) -> None:
+        """Handles actions (edit, copy, etc.) from within a ChatMessage widget."""
+        button_classes = " ".join(event.button.classes) # Get class string for logging
+        self.loguru_logger.debug(
+            f"ChatMessage.Action received for button "
+            f"(Classes: {button_classes}, Label: '{event.button.label}') "
+            f"on message role: {event.message_widget.role}"
+        )
+        # The event directly gives us the context we need.
+        # Now we call the existing handler function with the correct arguments.
+        await chat_events.handle_chat_action_button_pressed(
+            self, event.button, event.message_widget
+        )
 
     # --- Watcher for CCP Active View ---
     def watch_ccp_active_view(self, old_view: Optional[str], new_view: str) -> None:
@@ -1990,17 +2006,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             await tab_events.handle_tab_button_pressed(self, event)
             return
 
-        # 2. Handle dynamically generated ChatMessage action buttons
-        # This needs to check the current tab, as ChatMessages can appear in Chat and CCP tabs.
-        if self.current_tab in [TAB_CHAT, TAB_CCP]:
-            action_widget = self._get_chat_message_widget_from_button(event.button)
-            if action_widget:
-                self.loguru_logger.debug(
-                    f"Button '{button_id}' is inside a ChatMessage, dispatching to action handler.")
-                await chat_events.handle_chat_action_button_pressed(self, event.button, action_widget)
-                return
-
-        # 3. Use the handler map for all other tab-specific buttons
+        # 2. Use the handler map for all other tab-specific buttons
         current_tab_handlers = self.button_handler_map.get(self.current_tab, {})
         handler = current_tab_handlers.get(button_id)
 
@@ -2021,27 +2027,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 self.loguru_logger.error(f"Handler for button '{button_id}' is not callable: {handler}")
             return  # The button press was handled (or an error occurred).
 
-        # 4. Fallback for unmapped buttons
+        # 3. Fallback for unmapped buttons
         self.loguru_logger.warning(f"Unhandled button press for ID '{button_id}' on tab '{self.current_tab}'.")
-
-    def _get_chat_message_widget_from_button(self, button: Button) -> Optional[ChatMessage]:
-        """Helper to find the parent ChatMessage widget from an action button within it."""
-        self.loguru_logger.debug(f"_get_chat_message_widget_from_button searching for parent of button ID: {button.id}, Classes: {button.classes}")
-        node: Optional[DOMNode] = button.parent
-        depth = 0
-        max_depth = 5 # Safety break
-        while node is not None and depth < max_depth:
-            self.loguru_logger.debug(f"  Traversal depth {depth}: current node is {type(node)}, id: {getattr(node, 'id', 'N/A')}, classes: {getattr(node, 'classes', '')}")
-            if isinstance(node, ChatMessage):
-                self.loguru_logger.debug(f"  Found ChatMessage parent!")
-                return node
-            node = node.parent
-            depth += 1
-        if depth >= max_depth:
-            self.loguru_logger.warning(f"  _get_chat_message_widget_from_button reached max depth for button: {button.id}")
-        else:
-            self.loguru_logger.warning(f"  _get_chat_message_widget_from_button could not find parent ChatMessage for button: {button.id}")
-        return None
 
     async def on_text_area_changed(self, event: TextArea.Changed) -> None:
         """Handles text area changes, e.g., for live updates to character data."""
