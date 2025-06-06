@@ -132,7 +132,7 @@ async def handle_chat_media_search_input_changed(app: 'TldwCli', input_widget: I
     logger.debug(f"Set new media search timer for term: '{search_term}'")
 
 
-async def handle_chat_media_load_selected_button_pressed(app: 'TldwCli'):
+async def handle_chat_media_load_selected_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """
     Loads the selected media item's details into the review display.
     """
@@ -177,7 +177,7 @@ async def handle_chat_media_load_selected_button_pressed(app: 'TldwCli'):
     logger.debug("Media copy buttons state updated.")
 
 
-async def handle_chat_media_copy_title_button_pressed(app: 'TldwCli'):
+async def handle_chat_media_copy_title_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Copies the title of the currently loaded sidebar media to clipboard."""
     logger.debug("Copy Title button pressed.")
     if app.current_sidebar_media_item and 'title' in app.current_sidebar_media_item:
@@ -190,7 +190,7 @@ async def handle_chat_media_copy_title_button_pressed(app: 'TldwCli'):
         logger.warning("No media title available to copy.")
 
 
-async def handle_chat_media_copy_content_button_pressed(app: 'TldwCli'):
+async def handle_chat_media_copy_content_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Copies the content of the currently loaded sidebar media to clipboard."""
     logger.debug("Copy Content button pressed.")
     if app.current_sidebar_media_item and 'content' in app.current_sidebar_media_item:
@@ -203,7 +203,7 @@ async def handle_chat_media_copy_content_button_pressed(app: 'TldwCli'):
         logger.warning("No media content available to copy.")
 
 
-async def handle_chat_media_copy_author_button_pressed(app: 'TldwCli'):
+async def handle_chat_media_copy_author_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Copies the author of the currently loaded sidebar media to clipboard."""
     logger.debug("Copy Author button pressed.")
     if app.current_sidebar_media_item and 'author' in app.current_sidebar_media_item:
@@ -216,7 +216,7 @@ async def handle_chat_media_copy_author_button_pressed(app: 'TldwCli'):
         logger.warning("No media author available to copy.")
 
 
-async def handle_chat_media_copy_url_button_pressed(app: 'TldwCli'):
+async def handle_chat_media_copy_url_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Copies the URL of the currently loaded sidebar media to clipboard."""
     logger.debug("Copy URL button pressed.")
     if app.current_sidebar_media_item and 'url' in app.current_sidebar_media_item and app.current_sidebar_media_item['url']:

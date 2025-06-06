@@ -104,7 +104,7 @@ def run_mlx_lm_server_worker(app_instance: "TldwCli", command: List[str]) -> str
 
 # --- Event Handlers ---
 
-async def handle_mlx_lm_nav_button_pressed(app: "TldwCli") -> None:
+async def handle_mlx_lm_nav_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     """Handle the MLX-LM navigation button press."""
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
     logger.debug("MLX-LM nav button pressed.")
@@ -132,7 +132,7 @@ async def handle_mlx_lm_nav_button_pressed(app: "TldwCli") -> None:
         app.notify("Error switching to MLX-LM view: Could not find required UI elements.", severity="error")
 
 
-async def handle_start_mlx_server_button_pressed(app: "TldwCli") -> None:
+async def handle_start_mlx_server_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     """Starts the MLX-LM server using a non-blocking worker."""
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
     logger.info("User requested to start MLX-LM server.")
@@ -191,7 +191,7 @@ async def handle_start_mlx_server_button_pressed(app: "TldwCli") -> None:
         app.notify(f"An unexpected error occurred: {e}", severity="error")
 
 
-async def handle_stop_mlx_server_button_pressed(app: "TldwCli") -> None:
+async def handle_stop_mlx_server_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     """Stops the MLX-LM server process if it is running."""
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
     logger.info("User requested to stop MLX-LM server.")

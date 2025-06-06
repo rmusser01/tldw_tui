@@ -70,7 +70,7 @@ def _make_path_update_callback(app: "TldwCli", input_widget_id: str, is_director
 ###############################################################################
 
 
-async def handle_llamafile_browse_exec_button_pressed(app: "TldwCli") -> None:
+async def handle_llamafile_browse_exec_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
     logger.debug("Llamafile browse executable button pressed.")
 
@@ -85,7 +85,7 @@ async def handle_llamafile_browse_exec_button_pressed(app: "TldwCli") -> None:
     )
 
 
-async def handle_llamafile_browse_model_button_pressed(app: "TldwCli") -> None:
+async def handle_llamafile_browse_model_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
     logger.debug("Llamafile browse model button pressed.")
 
@@ -527,7 +527,7 @@ async def stream_worker_output_to_log(app: "TldwCli", worker: Worker, log_widget
 ###############################################################################
 
 
-async def handle_start_llamafile_server_button_pressed(app: "TldwCli") -> None:
+async def handle_start_llamafile_server_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
     logger.info("User requested to start Llamafile server.")
 
@@ -597,7 +597,7 @@ async def handle_start_llamafile_server_button_pressed(app: "TldwCli") -> None:
         app.notify("Error setting up Llamafile server start.", severity="error")
 
 
-async def handle_stop_llamafile_server_button_pressed(app: "TldwCli") -> None:
+async def handle_stop_llamafile_server_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
     logger.info("User requested to stop Llamafile server.")
 
@@ -668,7 +668,7 @@ async def handle_stop_llamafile_server_button_pressed(app: "TldwCli") -> None:
 ###############################################################################
 
 
-async def handle_llamacpp_browse_exec_button_pressed(app: "TldwCli") -> None:
+async def handle_llamacpp_browse_exec_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
     logger.debug("Llama.cpp browse executable button pressed.")
 
@@ -683,7 +683,7 @@ async def handle_llamacpp_browse_exec_button_pressed(app: "TldwCli") -> None:
     )
 
 
-async def handle_llamacpp_browse_model_button_pressed(app: "TldwCli") -> None:
+async def handle_llamacpp_browse_model_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     gguf_filters = Filters(
         ("GGUF Models (*.gguf)", lambda p: p.suffix.lower() == ".gguf"),
         ("All files (*.*)", lambda p: True),
@@ -698,7 +698,7 @@ async def handle_llamacpp_browse_model_button_pressed(app: "TldwCli") -> None:
     )
 
 
-async def handle_start_llamacpp_server_button_pressed(app: "TldwCli") -> None:
+async def handle_start_llamacpp_server_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
     logger.info("User requested to start Llama.cpp server.")
 
@@ -769,7 +769,7 @@ async def handle_start_llamacpp_server_button_pressed(app: "TldwCli") -> None:
         app.notify("Error setting up Llama.cpp server start.", severity="error")
 
 
-async def handle_stop_llamacpp_server_button_pressed(app: "TldwCli") -> None:
+async def handle_stop_llamacpp_server_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     """Stops the Llama.cpp server process if it is running."""
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
     logger.info("User requested to stop Llama.cpp server.")
@@ -880,7 +880,7 @@ async def handle_stop_llamacpp_server_button_pressed(app: "TldwCli") -> None:
 ###############################################################################
 
 
-async def handle_browse_models_dir_button_pressed(app: "TldwCli") -> None:
+async def handle_browse_models_dir_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     """Open a directory picker so the user can choose the *models* directory."""
     await app.push_screen(
         FileOpen(
@@ -891,7 +891,7 @@ async def handle_browse_models_dir_button_pressed(app: "TldwCli") -> None:
     )
 
 
-async def handle_start_model_download_button_pressed(app: "TldwCli") -> None:
+async def handle_start_model_download_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     """Validate inputs and launch *run_model_download_worker*."""
 
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))

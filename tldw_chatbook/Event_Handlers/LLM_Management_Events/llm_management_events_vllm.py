@@ -8,8 +8,6 @@ This module isolates vLLM-specific logic from the main llm_management_events.py.
 """
 # Imports
 from __future__ import annotations
-
-import functools
 #
 import logging
 import shlex
@@ -20,15 +18,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
 #
 # Third-party Libraries
-from textual.widgets import Input, RichLog, TextArea
+from textual.widgets import Input, RichLog, TextArea, Button
+
 if TYPE_CHECKING:
     from tldw_chatbook.app import TldwCli
-    # Assuming LLMManagementWindow might be needed for type hints if methods are complex
-    # from ..UI.LLM_Management_Window import LLMManagementWindow
 #
 # Local Imports
-# Imports for shared functions from the original events file
-from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events import _make_path_update_callback, _stream_process, stream_worker_output_to_log
+from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events import _make_path_update_callback
 from tldw_chatbook.Third_Party.textual_fspicker import FileOpen, Filters
 #
 #
@@ -50,7 +46,7 @@ __all__ = [
 ###############################################################################
 
 
-async def handle_vllm_browse_python_button_pressed(app: "TldwCli") -> None:
+async def handle_vllm_browse_python_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     """Let the user pick the Python interpreter used for vLLM (venv, etc.)."""
 
     await app.push_screen(
@@ -63,7 +59,7 @@ async def handle_vllm_browse_python_button_pressed(app: "TldwCli") -> None:
     )
 
 
-async def handle_vllm_browse_model_button_pressed(app: "TldwCli") -> None:
+async def handle_vllm_browse_model_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     await app.push_screen(
         FileOpen(
             location=str(Path.home()),
@@ -86,7 +82,7 @@ def _set_vllm_process_on_app(app_instance: "TldwCli", process: Optional[subproce
         app_instance.loguru_logger.info("Cleared vLLM process from app instance (or process was None).")
 
 
-def run_vllm_server_worker(app_instance: "TldwCli", command: List[str]) -> str:  # Added return type hint
+async def run_vllm_server_worker(app_instance: "TldwCli", command: List[str]) -> str:
     logger = getattr(app_instance, "loguru_logger", logging.getLogger(__name__))
     quoted_command = ' '.join(shlex.quote(c) for c in command)
     logger.info(f"vLLM WORKER (persistent stream) starting with command: {quoted_command}")
@@ -197,7 +193,7 @@ def run_vllm_server_worker(app_instance: "TldwCli", command: List[str]) -> str: 
 # ─── vLLM – start/stop handlers ──────────────────────────────────────────────
 ###############################################################################
 
-async def handle_start_vllm_server_button_pressed(app: "TldwCli") -> None:
+async def handle_start_vllm_server_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
     logger.info("User requested to start vLLM server.")
 
@@ -244,15 +240,8 @@ async def handle_start_vllm_server_button_pressed(app: "TldwCli") -> None:
         log_output_widget.clear()
         log_output_widget.write(f"Executing: {' '.join(shlex.quote(c) for c in command)}\n") # Quote for safety
 
-        worker_callable = functools.partial(run_vllm_server_worker, app, command)
-
-        logger.debug(f"Type of 'app' object for vLLM worker: {type(app)}")
-        logger.debug(f"Bound 'app.run_worker' method for vLLM: {app.run_worker}")
-        logger.debug(f"Preparing to call app.run_worker for vLLM with partial: {worker_callable}")
-
         app.run_worker(
-            worker_callable,  # The pre-configured function
-            # NO 'args' PARAMETER HERE
+            run_vllm_server_worker(app, command),
             group="vllm_server",
             description="Running vLLM API server",
             exclusive=True,
@@ -264,7 +253,7 @@ async def handle_start_vllm_server_button_pressed(app: "TldwCli") -> None:
         app.notify("Error setting up vLLM server start.", severity="error")
 
 
-async def handle_stop_vllm_server_button_pressed(app: "TldwCli") -> None:
+async def handle_stop_vllm_server_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     """Stops the vLLM server process if it's running."""
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
     logger.info("User requested to stop vLLM server.")

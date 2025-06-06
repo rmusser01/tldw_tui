@@ -28,8 +28,9 @@ if TYPE_CHECKING:
 #
 # Functions:
 
-async def handle_notes_tab_sidebar_toggle(app: 'TldwCli', button_id: str) -> None:
+async def handle_notes_tab_sidebar_toggle(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles sidebar toggles specific to the Notes tab."""
+    button_id = event.button.id
     logger_instance = getattr(app, 'loguru_logger', logger) # Use app's logger or global
     if button_id == "toggle-notes-sidebar-left":
         app.notes_sidebar_left_collapsed = not app.notes_sidebar_left_collapsed
@@ -303,7 +304,7 @@ async def handle_notes_import_button_pressed(app: 'TldwCli') -> None:
         callback=lambda path: _note_import_callback(app, path))
 
 
-async def handle_notes_create_new_button_pressed(app: 'TldwCli') -> None:
+async def handle_notes_create_new_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles the 'Create New Note' button press in the notes sidebar."""
     logger = getattr(app, 'loguru_logger', logging)
     logger.info("Notes 'Create New Note' button pressed.")
@@ -361,7 +362,7 @@ async def handle_notes_create_new_button_pressed(app: 'TldwCli') -> None:
         app.notify("Unexpected error creating note.", severity="error")
 
 
-async def handle_notes_edit_selected_button_pressed(app: 'TldwCli') -> None:
+async def handle_notes_edit_selected_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Focuses the notes editor if a note is selected."""
     logging.info("Notes 'Edit Selected Note' button pressed.")
     try:
@@ -376,7 +377,7 @@ async def handle_notes_edit_selected_button_pressed(app: 'TldwCli') -> None:
         app.notify("UI error: Cannot focus editor.", severity="error")
 
 
-async def handle_notes_search_button_pressed(app: 'TldwCli') -> None:
+async def handle_notes_search_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Focuses the notes search input field."""
     logging.info("Notes 'Search Notes' button pressed.")
     try:
@@ -387,7 +388,7 @@ async def handle_notes_search_button_pressed(app: 'TldwCli') -> None:
         app.notify("UI error: Cannot focus search.", severity="error")
 
 
-async def handle_notes_load_selected_button_pressed(app: 'TldwCli') -> None:
+async def handle_notes_load_selected_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Loads the highlighted note from the list into the editor."""
     logger = getattr(app, 'loguru_logger', logging)
     logger.info("Notes 'Load Selected Note' button pressed.")
@@ -413,19 +414,19 @@ async def handle_notes_load_selected_button_pressed(app: 'TldwCli') -> None:
         app.notify("Unexpected error loading note.", severity="error")
 
 
-async def handle_notes_save_current_button_pressed(app: 'TldwCli') -> None:
+async def handle_notes_save_current_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles the 'Save Current Note' button in the notes sidebar."""
     logging.info("Notes 'Save Current Note' (sidebar) button pressed.")
     await save_current_note_handler(app)
 
 
-async def handle_notes_main_save_button_pressed(app: 'TldwCli') -> None:
+async def handle_notes_main_save_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles the 'Save Note' button in the notes main content area controls."""
     logging.info("Notes 'Save Note' (main controls) button pressed.")
     await save_current_note_handler(app)
 
 
-async def handle_notes_delete_button_pressed(app: 'TldwCli') -> None:
+async def handle_notes_delete_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles the 'Delete Selected Note' button press."""
     logger = getattr(app, 'loguru_logger', logging)
     logger.info("Notes 'Delete Selected Note' button pressed.")
@@ -481,7 +482,7 @@ async def handle_notes_delete_button_pressed(app: 'TldwCli') -> None:
         app.notify("Unexpected error deleting note.", severity="error")
 
 
-async def handle_notes_save_keywords_button_pressed(app: 'TldwCli') -> None:
+async def handle_notes_save_keywords_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles saving keywords for the currently selected note."""
     logger = getattr(app, 'loguru_logger', logging)
     logger.info("Notes 'Save Keywords' button pressed.")

@@ -4,6 +4,9 @@
 # Imports
 import logging
 from typing import TYPE_CHECKING
+
+from textual.widgets import Button
+
 #
 # 3rd-Party Imports
 #
@@ -15,8 +18,9 @@ if TYPE_CHECKING:
 #
 # Functions:
 
-async def handle_sidebar_toggle_button_pressed(app: 'TldwCli', button_id: str) -> None:
+async def handle_sidebar_toggle_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles all sidebar toggle button presses."""
+    button_id = event.button.id
     # --- Chat Sidebar ---
     if button_id == "toggle-chat-left-sidebar":
         app.chat_sidebar_collapsed = not app.chat_sidebar_collapsed

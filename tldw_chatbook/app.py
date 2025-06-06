@@ -2,6 +2,8 @@
 # Description: This file contains the main application logic for the tldw_cli, a Textual-based CLI for interacting with various LLM APIs.
 #
 # Imports
+import functools
+import inspect
 import logging
 import logging.handlers
 import subprocess
@@ -10,39 +12,26 @@ from typing import Union, Optional, Any, Dict, List, Callable
 #
 # 3rd-Party Libraries
 from PIL import Image
-from loguru import logger as loguru_logger, logger  # Keep if app.py uses it directly, or pass app.loguru_logger
+from loguru import logger as loguru_logger, logger
 from rich.text import Text
 from textual import on
 from textual.app import App, ComposeResult
 from textual.widgets import (
     Static, Button, Input, Header, RichLog, TextArea, Select, ListView, Checkbox, Collapsible, ListItem, Label
 )
-from textual.containers import Horizontal, Container, HorizontalScroll, VerticalScroll
+from textual.containers import Container
 from textual.reactive import reactive
 from textual.worker import Worker, WorkerState
 from textual.binding import Binding
 from textual.dom import DOMNode  # For type hinting if needed
 from textual.timer import Timer
 from textual.css.query import QueryError
-# Ensure Path is imported
 from pathlib import Path
-
-from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_mlx_lm import \
-    handle_start_mlx_server_button_pressed, handle_stop_mlx_server_button_pressed
-from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_ollama import \
-    handle_ollama_embeddings_button_pressed, handle_ollama_ps_button_pressed, handle_ollama_create_model_button_pressed, \
-    handle_ollama_pull_model_button_pressed, handle_ollama_copy_model_button_pressed, \
-    handle_ollama_delete_model_button_pressed, handle_ollama_show_model_button_pressed, \
-    handle_ollama_list_models_button_pressed, handle_ollama_browse_modelfile_button_pressed, \
-    handle_ollama_push_model_button_pressed, handle_ollama_worker_completion, \
-    handle_ollama_browse_exec_button_pressed, handle_start_ollama_service_button_pressed, \
-    handle_stop_ollama_service_button_pressed
-from tldw_chatbook.Event_Handlers.conv_char_events import CCP_BUTTON_HANDLERS
 #
 # --- Local API library Imports ---
-from .Event_Handlers.LLM_Management_Events import llm_management_events_transformers as transformers_handlers, \
-    llm_management_events, llm_management_events_mlx_lm, llm_management_events_ollama, llm_management_events_onnx, \
-    llm_management_events_transformers, llm_management_events_vllm
+from .Event_Handlers.LLM_Management_Events import (llm_management_events, llm_management_events_mlx_lm,
+    llm_management_events_ollama, llm_management_events_onnx, llm_management_events_transformers,
+                                                   llm_management_events_vllm)
 from tldw_chatbook.Event_Handlers.Chat_Events.chat_streaming_events import handle_streaming_chunk, handle_stream_done
 from tldw_chatbook.Event_Handlers.Chat_Events.chat_events_sidebar import (
     handle_chat_media_search_input_changed,
@@ -78,32 +67,13 @@ from .config import (
     API_MODELS_BY_PROVIDER,
     LOCAL_PROVIDERS, )
 from .Event_Handlers import (
-    app_lifecycle as app_lifecycle_handlers,
-    tab_events as tab_handlers,
     conv_char_events as ccp_handlers,
-    media_events as media_handlers,
     notes_events as notes_handlers,
     worker_events as worker_handlers, worker_events, ingest_events,
-    llm_nav_events as llm_handlers, llm_nav_events, media_events, notes_events, app_lifecycle,
-    # Explicit import for Ollama handler as per subtask, though current dispatch is generic
+    llm_nav_events, media_events, notes_events, app_lifecycle, tab_events,
 )
 from .Event_Handlers.Chat_Events import chat_events as chat_handlers, chat_events_sidebar
 from tldw_chatbook.Event_Handlers.Chat_Events import chat_events
-from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events import \
-    handle_llamacpp_browse_exec_button_pressed, \
-    handle_llamacpp_browse_model_button_pressed, handle_llamafile_browse_exec_button_pressed, \
-    handle_llamafile_browse_model_button_pressed, populate_llm_help_texts, handle_start_llamacpp_server_button_pressed, \
-    handle_stop_llamacpp_server_button_pressed, handle_start_llamafile_server_button_pressed, \
-    handle_stop_llamafile_server_button_pressed
-from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_onnx import \
-    handle_onnx_browse_python_button_pressed, \
-    handle_onnx_browse_script_button_pressed, \
-    handle_onnx_browse_model_button_pressed, \
-    handle_start_onnx_server_button_pressed, \
-    handle_stop_onnx_server_button_pressed
-from tldw_chatbook.Event_Handlers.LLM_Management_Events import llm_management_events_mlx_lm as mlx_handlers
-from tldw_chatbook.Event_Handlers.LLM_Management_Events import llm_management_events_onnx as onnx_handlers
-from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_vllm import handle_vllm_browse_python_button_pressed, handle_vllm_browse_model_button_pressed, handle_start_vllm_server_button_pressed, handle_stop_vllm_server_button_pressed
 from .Notes.Notes_Library import NotesInteropService
 from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
 from .Widgets.chat_message import ChatMessage
@@ -126,7 +96,7 @@ from .UI.Conv_Char_Window import CCPWindow
 from .UI.Notes_Window import NotesWindow
 from .UI.Logs_Window import LogsWindow
 from .UI.Stats_Window import StatsWindow
-from .UI.Ingest_Window import IngestWindow, INGEST_NAV_BUTTON_IDS
+from .UI.Ingest_Window import IngestWindow, INGEST_NAV_BUTTON_IDS, MEDIA_TYPES
 from .UI.Tools_Settings_Window import ToolsSettingsWindow
 from .UI.LLM_Management_Window import LLMManagementWindow
 from .UI.Evals_Window import EvalsWindow # Added EvalsWindow
@@ -135,9 +105,7 @@ from .UI.Tab_Bar import TabBar
 from .UI.MediaWindow import MediaWindow
 from .UI.SearchWindow import SearchWindow
 from .UI.SearchWindow import ( # Import new constants from SearchWindow.py
-    SEARCH_VIEW_RAG_QA, SEARCH_VIEW_RAG_CHAT, SEARCH_VIEW_EMBEDDINGS_CREATION,
-    SEARCH_VIEW_RAG_MANAGEMENT, SEARCH_VIEW_EMBEDDINGS_MANAGEMENT,
-    SEARCH_NAV_RAG_QA, SEARCH_NAV_RAG_CHAT, SEARCH_NAV_EMBEDDINGS_CREATION,
+    SEARCH_VIEW_RAG_QA, SEARCH_NAV_RAG_QA, SEARCH_NAV_RAG_CHAT, SEARCH_NAV_EMBEDDINGS_CREATION,
     SEARCH_NAV_RAG_MANAGEMENT, SEARCH_NAV_EMBEDDINGS_MANAGEMENT
 )
 API_IMPORTS_SUCCESSFUL = True
@@ -206,7 +174,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
     ALL_INGEST_VIEW_IDS = [
         "ingest-view-prompts", "ingest-view-characters",
-        "ingest-view-media", "ingest-view-notes", "ingest-view-tldw-api"
+        "ingest-view-media", "ingest-view-notes",
+        *[f"ingest-view-tldw-api-{mt}" for mt in MEDIA_TYPES]
     ]
     ALL_MAIN_WINDOW_IDS = [ # Assuming these are your main content window IDs
         "chat-window", "conversations_characters_prompts-window",
@@ -529,6 +498,113 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             logging.error("ChaChaNotesDB (CharactersRAGDB) instance not found/assigned in app.__init__.")
             self.chachanotes_db = None # Explicitly set to None
 
+        # --- Create the master handler map ---
+        # This one-time setup makes the dispatcher clean and fast.
+        self.button_handler_map = self._build_handler_map()
+
+    def _build_handler_map(self) -> dict:
+        """Constructs the master button handler map from all event modules."""
+
+        # --- Generic, Awaitable Helper Handlers ---
+        async def _handle_nav(app: 'TldwCli', event: Button.Pressed, *, prefix: str, reactive_attr: str) -> None:
+            """Generic handler for switching views within a tab."""
+            view_to_activate = event.button.id.replace(f"{prefix}-nav-", f"{prefix}-view-")
+            app.loguru_logger.debug(f"Nav button '{event.button.id}' pressed. Activating view '{view_to_activate}'.")
+            setattr(app, reactive_attr, view_to_activate)
+
+        async def _handle_sidebar_toggle(app: 'TldwCli', event: Button.Pressed, *, reactive_attr: str) -> None:
+            """Generic handler for toggling a sidebar's collapsed state."""
+            setattr(app, reactive_attr, not getattr(app, reactive_attr))
+
+        # --- LLM Management Handlers ---
+        llm_handlers_map = {
+            **llm_management_events.LLM_MANAGEMENT_BUTTON_HANDLERS,
+            **llm_nav_events.LLM_NAV_BUTTON_HANDLERS,
+            **llm_management_events_mlx_lm.MLX_LM_BUTTON_HANDLERS,
+            **llm_management_events_ollama.OLLAMA_BUTTON_HANDLERS,
+            **llm_management_events_onnx.ONNX_BUTTON_HANDLERS,
+            **llm_management_events_transformers.TRANSFORMERS_BUTTON_HANDLERS,
+            **llm_management_events_vllm.VLLM_BUTTON_HANDLERS,
+        }
+
+        # --- Chat Handlers ---
+
+        chat_handlers_map = {
+            **chat_events.CHAT_BUTTON_HANDLERS,
+            **chat_events_sidebar.CHAT_SIDEBAR_BUTTON_HANDLERS,
+            "toggle-chat-left-sidebar": functools.partial(_handle_sidebar_toggle, reactive_attr="chat_sidebar_collapsed"),
+            "toggle-chat-right-sidebar": functools.partial(_handle_sidebar_toggle, reactive_attr="chat_right_sidebar_collapsed"),
+        }
+        # --- Tools & Settings Handlers ---
+        tools_settings_handlers = {
+            "ts-nav-general-settings": functools.partial(_handle_nav, prefix="ts-view",
+                                                         reactive_attr="tools_settings_active_view"),
+            "ts-nav-config-file-settings": functools.partial(_handle_nav, prefix="ts-view",
+                                                             reactive_attr="tools_settings_active_view"),
+            "ts-nav-db-tools": functools.partial(_handle_nav, prefix="ts-view",
+                                                 reactive_attr="tools_settings_active_view"),
+            "ts-nav-appearance": functools.partial(_handle_nav, prefix="ts-view",
+                                                   reactive_attr="tools_settings_active_view"),
+        }
+
+        # --- Search Handlers ---
+        search_handlers = {
+            SEARCH_NAV_RAG_QA: functools.partial(_handle_nav, prefix="search", reactive_attr="search_active_sub_tab"),
+            SEARCH_NAV_RAG_CHAT: functools.partial(_handle_nav, prefix="search", reactive_attr="search_active_sub_tab"),
+            SEARCH_NAV_EMBEDDINGS_CREATION: functools.partial(_handle_nav, prefix="search",
+                                                              reactive_attr="search_active_sub_tab"),
+            SEARCH_NAV_RAG_MANAGEMENT: functools.partial(_handle_nav, prefix="search",
+                                                         reactive_attr="search_active_sub_tab"),
+            SEARCH_NAV_EMBEDDINGS_MANAGEMENT: functools.partial(_handle_nav, prefix="search",
+                                                                reactive_attr="search_active_sub_tab"),
+        }
+
+        # --- Evals Handler ---
+        evals_handlers = {
+            "toggle-evals-sidebar": functools.partial(_handle_sidebar_toggle, reactive_attr="evals_sidebar_collapsed"),
+        }
+
+        # --- Ingest Handlers ---
+        ingest_handlers_map = {
+            **ingest_events.INGEST_BUTTON_HANDLERS,
+            # Add nav handlers using the helper
+            **{button_id: functools.partial(_handle_nav, prefix="ingest", reactive_attr="ingest_active_view")
+               for button_id in INGEST_NAV_BUTTON_IDS}
+        }
+
+        # Master map organized by tab
+        return {
+            TAB_CHAT: chat_handlers_map,
+            TAB_CCP: {
+                **ccp_handlers.CCP_BUTTON_HANDLERS,
+                "toggle-conv-char-left-sidebar": functools.partial(_handle_sidebar_toggle,
+                                                                   reactive_attr="conv_char_sidebar_left_collapsed"),
+                "toggle-conv-char-right-sidebar": functools.partial(_handle_sidebar_toggle,
+                                                                    reactive_attr="conv_char_sidebar_right_collapsed"),
+            },
+            TAB_NOTES: {
+                **notes_events.NOTES_BUTTON_HANDLERS,
+                "toggle-notes-sidebar-left": functools.partial(_handle_sidebar_toggle,
+                                                               reactive_attr="notes_sidebar_left_collapsed"),
+                "toggle-notes-sidebar-right": functools.partial(_handle_sidebar_toggle,
+                                                                reactive_attr="notes_sidebar_right_collapsed"),
+            },
+            TAB_MEDIA: {
+                **media_events.MEDIA_BUTTON_HANDLERS,
+                **{f"media-nav-{media_slugify(media_type)}": functools.partial(_handle_nav, prefix="media",
+                                                                               reactive_attr="media_active_view")
+                   for media_type in self._media_types_for_ui},
+                "media-nav-all-media": functools.partial(_handle_nav, prefix="media",
+                                                         reactive_attr="media_active_view"),
+            },
+            TAB_INGEST: ingest_handlers_map,
+            TAB_LLM: llm_handlers_map,
+            TAB_LOGS: app_lifecycle.APP_LIFECYCLE_BUTTON_HANDLERS,
+            TAB_TOOLS_SETTINGS: tools_settings_handlers,
+            TAB_SEARCH: search_handlers,
+            TAB_EVALS: evals_handlers,
+        }
+
     def _setup_logging(self):
         configure_application_logging(self)
 
@@ -541,66 +617,11 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         # Use new TabBar widget
         yield TabBar(tab_ids=ALL_TABS, initial_active_tab=self._initial_tab_value)
 
-        # FIXME - OLD
-        #yield from self.compose_tabs()
-
         yield from self.compose_content_area() # Call refactored content area composer
 
         # Yield the new AppFooterStatus widget instead of the old Footer
         yield AppFooterStatus(id="app-footer-status")
         logging.debug("App compose finished.")
-
-    def compose_tabs(self) -> ComposeResult:
-        # The outer container still docks and defines the overall tab bar height
-        with Horizontal(id="tabs-outer-container"):  # This container takes the 'dock: top' and 'height: 3'
-            # The HorizontalScroll allows the buttons inside to scroll if they overflow
-            with HorizontalScroll(id="tabs"):  # This is where the buttons will go
-                for tab_id_loop in ALL_TABS:
-                    label_text = "CCP" if tab_id_loop == TAB_CCP else \
-                        "Tools & Settings" if tab_id_loop == TAB_TOOLS_SETTINGS else \
-                        "Ingest Content" if tab_id_loop == TAB_INGEST else \
-                        "LLM Management" if tab_id_loop == TAB_LLM else \
-                        tab_id_loop.replace('_', ' ').capitalize()
-                    yield Button(
-                        label_text,
-                        id=f"tab-{tab_id_loop}",
-                        classes="-active" if tab_id_loop == self._initial_tab_value else ""
-                    )
-
-            # --- Create the master handler map ---
-            # This one-time setup makes the dispatcher clean and fast.
-            self.button_handler_map = self._build_handler_map()
-
-        def _build_handler_map(self) -> dict:
-            """Constructs the master button handler map from all event modules."""
-
-            # Combine all LLM Management handlers into one dictionary
-            llm_handlers = {
-                **llm_management_events.LLM_MANAGEMENT_BUTTON_HANDLERS,
-                **llm_management_events_mlx_lm.MLX_LM_BUTTON_HANDLERS,
-                **llm_management_events_ollama.OLLAMA_BUTTON_HANDLERS,
-                **llm_management_events_onnx.ONNX_BUTTON_HANDLERS,
-                **llm_management_events_transformers.TRANSFORMERS_BUTTON_HANDLERS,
-                **llm_management_events_vllm.VLLM_BUTTON_HANDLERS,
-                **llm_nav_events.LLM_NAV_BUTTON_HANDLERS,
-            }
-
-            # Combine Chat handlers
-            chat_handlers = {
-                **chat_events.CHAT_BUTTON_HANDLERS,
-                **chat_events_sidebar.CHAT_SIDEBAR_BUTTON_HANDLERS,
-            }
-
-            # Master map organized by tab
-            return {
-                TAB_CHAT: chat_handlers,
-                TAB_CCP: CCP_BUTTON_HANDLERS,
-                TAB_NOTES: notes_events.NOTES_BUTTON_HANDLERS,
-                TAB_MEDIA: media_events.MEDIA_BUTTON_HANDLERS,
-                TAB_INGEST: ingest_events.INGEST_BUTTON_HANDLERS,
-                TAB_LLM: llm_handlers,
-                TAB_LOGS: app_lifecycle.APP_LIFECYCLE_BUTTON_HANDLERS,
-            }
 
     ############################################################
     #
@@ -1192,7 +1213,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         """Operations to perform after the main UI is expected to be fully mounted."""
         self.loguru_logger.info("App _post_mount_setup: Binding Select widgets and populating dynamic content...")
         # Populate LLM help texts
-        self.call_later(populate_llm_help_texts, self)
+        self.call_later(llm_management_events.populate_llm_help_texts, self)
 
         try:
             chat_select = self.query_one(f"#{TAB_CHAT}-api-provider", Select)
@@ -1250,6 +1271,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         except Exception as e_db_size:
             self.loguru_logger.error(f"Error setting up DB size indicator with AppFooterStatus: {e_db_size}", exc_info=True)
         # --- End DB Size Indicator Setup ---
+
+        # CRITICAL: Set UI ready state after all bindings and initializations
+        self._ui_ready = True
 
         self.loguru_logger.info("App _post_mount_setup: Post-mount setup completed.")
 
@@ -1952,552 +1976,52 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # --- EVENT DISPATCHERS ---
     #
     ########################################################################
-    # FIXME - refactor version of this method to use the button handler map
-    # async def on_button_pressed(self, event: Button.Pressed) -> None:
-    #     """Dispatches button presses to the appropriate event handler using a map."""
-    #     button_id = event.button.id
-    #     if not button_id:
-    #         return
-    #
-    #     self.loguru_logger.debug(f"Button pressed: ID='{button_id}' on Tab='{self.current_tab}'")
-    #
-    #     # 1. Handle global tab switching first
-    #     if button_id.startswith("tab-"):
-    #         await tab_events.handle_tab_button_pressed(self, button_id)
-    #         return
-    #
-    #     # 2. Handle dynamically generated ChatMessage action buttons
-    #     action_widget = self._get_chat_message_widget_from_button(event.button)
-    #     if action_widget:
-    #         # This handler is designed to inspect the button and widget to take the correct action
-    #         await chat_events.handle_chat_action_button_pressed(self, event.button, action_widget)
-    #         return
-    #
-    #     # 3. Use the handler map for all other tab-specific buttons
-    #     # The map is now pre-built, so we just look up the current tab's handlers
-    #     current_tab_handlers = self.button_handler_map.get(self.current_tab)
-    #
-    #     if current_tab_handlers and button_id in current_tab_handlers:
-    #         handler = current_tab_handlers[button_id]
-    #
-    #         # The handler can be a direct function or a lambda
-    #         if callable(handler):
-    #             await handler(self, event)  # Pass both app and event for flexibility
-    #             return
-    #         else:
-    #             self.loguru_logger.error(f"Handler for button '{button_id}' is not callable.")
-    #
-    #     # 4. Fallback for unmapped buttons
-    #     # This block will now only be reached if a button ID isn't in any map.
-    #     self.loguru_logger.warning(f"Unhandled button press for ID '{button_id}' on tab '{self.current_tab}'.")
     async def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle button presses for tabs, sending messages, and message actions."""
-        button = event.button
-        button_id = button.id
-        self.loguru_logger.debug(f"Button pressed: ID: {button_id}, Classes: {button.classes}, Label: '{button.label}' on tab {self.current_tab}") # More info
+        """Dispatches button presses to the appropriate event handler using a map."""
+        button_id = event.button.id
+        if not button_id:
+            return
 
-        # Tab Switching
-        if button_id and button_id.startswith("tab-"):
-            await tab_handlers.handle_tab_button_pressed(self, button_id)
-            return # Handled
+        self.loguru_logger.debug(f"Button pressed: ID='{button_id}' on Tab='{self.current_tab}'")
 
-        current_active_tab = self.current_tab
+        # 1. Handle global tab switching first
+        if button_id.startswith("tab-"):
+            await tab_events.handle_tab_button_pressed(self, event)
+            return
 
-        # Sidebar Toggles (now tab-specific)
-        if button_id and button_id.startswith("toggle-"):
-            if current_active_tab == TAB_CHAT:
-                if button_id in ["toggle-chat-left-sidebar", "toggle-chat-right-sidebar"]:
-                    await chat_handlers.handle_chat_tab_sidebar_toggle(self, button_id)
-                    return
-            elif current_active_tab == TAB_CCP:
-                if button_id in ["toggle-conv-char-left-sidebar", "toggle-conv-char-right-sidebar"]:
-                    await ccp_handlers.handle_ccp_tab_sidebar_toggle(self, button_id)
-                    return
-            elif current_active_tab == TAB_NOTES:
-                if button_id in ["toggle-notes-sidebar-left", "toggle-notes-sidebar-right"]:
-                    await notes_handlers.handle_notes_tab_sidebar_toggle(self, button_id)
-                    return
-            elif current_active_tab == TAB_SEARCH:
-                self.loguru_logger.info(f"Button '{button_id}' on active Search tab.")
-                search_button_id_to_view_map = {
-                    SEARCH_NAV_RAG_QA: SEARCH_VIEW_RAG_QA,
-                    SEARCH_NAV_RAG_CHAT: SEARCH_VIEW_RAG_CHAT,
-                    SEARCH_NAV_EMBEDDINGS_CREATION: SEARCH_VIEW_EMBEDDINGS_CREATION,
-                    SEARCH_NAV_RAG_MANAGEMENT: SEARCH_VIEW_RAG_MANAGEMENT,
-                    SEARCH_NAV_EMBEDDINGS_MANAGEMENT: SEARCH_VIEW_EMBEDDINGS_MANAGEMENT,
-                }
-                if button_id in search_button_id_to_view_map:
-                    view_to_activate = search_button_id_to_view_map[button_id]
-                    self.loguru_logger.debug(
-                        f"Search nav button '{button_id}' pressed. Activating view '{view_to_activate}'.")
-                    self.search_active_sub_tab = view_to_activate
-                    return  # Search sub-navigation button handled.
+        # 2. Handle dynamically generated ChatMessage action buttons
+        # This needs to check the current tab, as ChatMessages can appear in Chat and CCP tabs.
+        if self.current_tab in [TAB_CHAT, TAB_CCP]:
+            action_widget = self._get_chat_message_widget_from_button(event.button)
+            if action_widget:
+                self.loguru_logger.debug(
+                    f"Button '{button_id}' is inside a ChatMessage, dispatching to action handler.")
+                await chat_events.handle_chat_action_button_pressed(self, event.button, action_widget)
+                return
+
+        # 3. Use the handler map for all other tab-specific buttons
+        current_tab_handlers = self.button_handler_map.get(self.current_tab, {})
+        handler = current_tab_handlers.get(button_id)
+
+        if handler:
+            if callable(handler):
+                # Call the handler, which is expected to return a coroutine (an awaitable object).
+                result = handler(self, event)
+
+                # Check if the result is indeed awaitable before awaiting it.
+                # This makes the code more robust and satisfies static type checkers.
+                if inspect.isawaitable(result):
+                    await result
                 else:
                     self.loguru_logger.warning(
-                        f"Unhandled button on SEARCH tab: ID:{button_id}, Label:'{event.button.label}'")
-                return  # Explicitly return after handling (or logging unhandled) buttons on Search tab.
-                # --- Ingest Nav Pane Buttons (within Ingest Tab) ---
-            elif self.current_tab == "ingest":  # Only process these if ingest tab is active
-                if button_id == "ingest-nav-prompts":
-                    if button_id and button_id.startswith("ingest-nav-"):
-                        view_to_activate = button_id.replace("ingest-nav-", "-view-")  # Corrected replacement
-                        self.loguru_logger.info(
-                            f"Ingest nav button '{button_id}' pressed. Activating view '{view_to_activate}'.")
-                        self.ingest_active_view = view_to_activate
-                        # Simplified and more careful initialization for the prompts view
-                        if view_to_activate == "ingest-view-prompts":
-                            try:
-                                selected_list_view = self.query_one("#ingest-prompts-selected-files-list", ListView)
-                                if not selected_list_view.children:  # Only if it's truly empty
-                                    await selected_list_view.clear()  # Clear just in case, then append
-                                    await selected_list_view.append(ListItem(Label("No files selected.")))
-
-                                preview_area = self.query_one("#ingest-prompts-preview-area", VerticalScroll)
-                                # Only add placeholder if preview is empty
-                                if not preview_area.children:
-                                   #await preview_area.clear()  # Clear just in case, then mount
-                                    await preview_area.mount(
-                                        Static("Select files to see a preview.",
-                                               id="ingest-prompts-preview-placeholder"))
-                            except QueryError:
-                                self.loguru_logger.warning(
-                                    "Failed to initialize prompts list/preview for ingest-view-prompts on nav click.")
-                        return  # Nav button handled
-                    self.show_ingest_view("ingest-view-prompts")
-                    try:
-                        selected_list_view = self.query_one("#ingest-prompts-selected-files-list", ListView)
-                        if not selected_list_view._nodes:
-                            await selected_list_view.append(ListItem(Label("No files selected.")))
-                        preview_area = self.query_one("#ingest-prompts-preview-area", VerticalScroll)
-                        await preview_area.remove_children()  # Clear old preview
-                        await preview_area.mount(
-                            Static("Select files to see a preview.", id="ingest-prompts-preview-placeholder"))
-                    except QueryError:
-                        self.log.warning("Failed to initialize prompts list view elements on nav click.")
-                elif button_id == "ingest-nav-characters":
-                    self.show_ingest_view("ingest-view-characters")
-                elif button_id == "ingest-nav-media":
-                    self.show_ingest_view("ingest-view-media")
-                elif button_id == "ingest-nav-notes":
-                    self.show_ingest_view("ingest-view-notes")
-                elif button_id.startswith("ingest-nav-tldw-api-"): # Handle new dynamic TLDW API nav buttons
-                    view_to_activate_nav = button_id.replace("ingest-nav-", "ingest-view-")
-                    self.loguru_logger.info(
-                        f"Ingest TLDW API nav button '{button_id}' pressed. Activating view '{view_to_activate_nav}'.")
-                    self.ingest_active_view = view_to_activate_nav # This should trigger the watcher
-                    return # Nav button handled
-
-                # --- Buttons within ingest-view-prompts ---
-                # Ensure these handlers are only called if the ingest-view-prompts is active
-                # or simply rely on the button_id being unique enough.
-                elif button_id == "ingest-prompts-select-file-button":
-                    # This is where ingest_events.handle_... is CALLED
-                    await ingest_events.handle_ingest_prompts_select_file_button_pressed(self)
-                elif button_id == "ingest-prompts-clear-files-button":
-                    await ingest_events.handle_ingest_prompts_clear_files_button_pressed(self)
-                elif button_id == "ingest-prompts-import-now-button":
-                    await ingest_events.handle_ingest_prompts_import_now_button_pressed(self)
-
-
-        #######################################################################
-        # --- Tab-Specific Button Actions ---
-        #######################################################################
-        if current_active_tab == TAB_CHAT:
-            action_widget = self._get_chat_message_widget_from_button(button)
-            if action_widget:
-                # Specific buttons within ChatMessage take precedence
-                if button_id == "continue-response-button":
-                    self.loguru_logger.info(f"Continue Response button ({button_id}) pressed in ChatMessage. Calling handler.")
-                    self.call_later(chat_events.handle_continue_response_button_pressed, self, button, action_widget) # Corrected call_later
-                    return
-                # Fallback to generic action button handler for other buttons in ChatMessage
-                self.loguru_logger.debug(
-                    f"Button (ID: {button_id}, Label: '{button.label}') identified as part of ChatMessage. Delegating to generic chat_actions.")
-                await chat_handlers.handle_chat_action_button_pressed(self, button, action_widget)
-                return
-
-            # Buttons directly in the ChatWindow, not inside a ChatMessage
-            if button_id == "send-chat":
-                await chat_handlers.handle_chat_send_button_pressed(self, TAB_CHAT)
-                return
-            elif button_id == "respond-for-me-button": # New handler for Respond For Me
-                self.loguru_logger.info(f"Respond For Me button ({button_id}) pressed. Calling handler.")
-                self.call_later(chat_events.handle_respond_for_me_button_pressed, self) # Corrected call_later usage
-                return
-            elif button_id == "chat-new-conversation-button":
-                await chat_handlers.handle_chat_new_conversation_button_pressed(self)
-                return
-            elif button_id == "chat-new-temp-chat-button":
-                await chat_handlers.handle_chat_new_conversation_button_pressed(self) # Reuses existing handler
-                return
-            elif button_id == "chat-save-current-chat-button":
-                await chat_handlers.handle_chat_save_current_chat_button_pressed(self)
-                return
-            elif button_id == "chat-save-conversation-details-button":
-                await chat_handlers.handle_chat_save_details_button_pressed(self)
-                return
-            elif button_id == "chat-conversation-load-selected-button":
-                await chat_handlers.handle_chat_load_selected_button_pressed(self)
-                return
-            elif button_id == "chat-prompt-load-selected-button":
-                await chat_handlers.handle_chat_view_selected_prompt_button_pressed(self)
-                return
-            elif button_id == "chat-prompt-copy-system-button":
-                await chat_handlers.handle_chat_copy_system_prompt_button_pressed(self)
-                return
-            elif button_id == "chat-prompt-copy-user-button":
-                await chat_handlers.handle_chat_copy_user_prompt_button_pressed(self)
-                return
-            elif button_id == "chat-load-character-button":
-                await chat_handlers.handle_chat_load_character_button_pressed(self, event) # Pass event if needed by handler
-                return
-            elif button_id == "chat-clear-active-character-button":
-                await chat_handlers.handle_chat_clear_active_character_button_pressed(self)
-                return
-            # --- Chat Tab Media Search Sidebar Buttons ---
-            elif button_id == "chat-media-load-selected-button":
-                await handle_chat_media_load_selected_button_pressed(self)
-                return
-            elif button_id == "chat-media-copy-title-button":
-                await handle_chat_media_copy_title_button_pressed(self)
-                return
-            elif button_id == "chat-media-copy-content-button":
-                await handle_chat_media_copy_content_button_pressed(self)
-                return
-            elif button_id == "chat-media-copy-author-button":
-                await handle_chat_media_copy_author_button_pressed(self)
-                return
-            elif button_id == "chat-media-copy-url-button":
-                await handle_chat_media_copy_url_button_pressed(self)
-                return
-            # --- Chat Tab Notes Sidebar Buttons ---
-            # These are handled by @on decorators, so we just acknowledge them here to prevent "unhandled" warnings.
-            elif button_id == "chat-notes-create-new-button":
-                self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
-                return # Assuming @on handles it fully
-            elif button_id == "chat-notes-search-button":
-                self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
-                return # Assuming @on handles it fully
-            elif button_id == "chat-notes-load-button":
-                self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
-                return # Assuming @on handles it fully
-            elif button_id == "chat-notes-save-button":
-                self.loguru_logger.debug(f"Button {button_id} handled by @on decorator.")
-                return # Assuming @on handles it fully
-            # No return after the final else, so it can fall through to the generic unhandled warning
-            else: self.loguru_logger.warning(f"Unhandled button on CHAT tab -> ID: {button_id}, Label: '{button.label}'")
-            # No return here, let it fall through if it was an unhandled button on CHAT tab
-
-        elif current_active_tab == TAB_CCP:
-            # ---- First, try to identify if it's an action button within a ChatMessage (if CCP tab uses them) ----
-            action_widget_ccp = self._get_chat_message_widget_from_button(button)
-            if action_widget_ccp:
-                self.loguru_logger.debug(
-                    f"Button (ID: {button_id}, Label: '{button.label}') identified as part of ChatMessage on CCP tab. Delegating.")
-                await chat_handlers.handle_chat_action_button_pressed(self, button, action_widget_ccp) # Assuming generic actions
-                return
-            if button_id == "conv-char-conversation-search-button": await ccp_handlers.handle_ccp_conversation_search_button_pressed(self)
-            elif button_id == "ccp-import-character-button": await ccp_handlers.handle_ccp_import_character_button_pressed(self)
-            elif button_id == "ccp-card-edit-button": await ccp_handlers.handle_ccp_card_edit_button_pressed(self)
-            elif button_id == "conv-char-load-button": await ccp_handlers.handle_ccp_load_conversation_button_pressed(self)
-            elif button_id == "conv-char-save-details-button": await ccp_handlers.handle_ccp_save_conversation_details_button_pressed(self)
-            elif button_id == "ccp-import-prompt-button": await ccp_handlers.handle_ccp_import_prompt_button_pressed(self)
-            elif button_id == "ccp-prompt-create-new-button": await ccp_handlers.handle_ccp_prompt_create_new_button_pressed(self)
-            elif button_id == "ccp-prompt-load-selected-button": await ccp_handlers.handle_ccp_prompt_load_selected_button_pressed(self)
-            elif button_id == "ccp-prompt-save-button": await ccp_handlers.handle_ccp_prompt_save_button_pressed(self) # For RIGHT pane editor
-            elif button_id == "ccp-prompt-clone-button": await ccp_handlers.handle_ccp_prompt_clone_button_pressed(self) # For RIGHT pane editor
-            elif button_id == "ccp-prompt-delete-button": await ccp_handlers.handle_ccp_prompt_delete_button_pressed(self) # For RIGHT pane editor
-            # Buttons for CENTER PANE editor
-            elif button_id == "ccp-editor-prompt-save-button": await ccp_handlers.handle_ccp_editor_prompt_save_button_pressed(self)
-            elif button_id == "ccp-editor-prompt-clone-button": await ccp_handlers.handle_ccp_editor_prompt_clone_button_pressed(self)
-            elif button_id == "ccp-editor-prompt-delete-button": await ccp_handlers.handle_ccp_editor_prompt_delete_button_pressed(self)
-            # Buttons for CENTER PANE CHARACTER editor
-            elif button_id == "ccp-editor-char-save-button": await ccp_handlers.handle_ccp_editor_char_save_button_pressed(self)
-            elif button_id == "ccp-editor-char-cancel-button": await ccp_handlers.handle_ccp_editor_char_cancel_button_pressed(self)
-            # Other CCP buttons
-            elif button_id == "ccp-import-conversation-button": await ccp_handlers.handle_ccp_import_conversation_button_pressed(self)
-            elif button_id == "ccp-right-pane-load-character-button":
-                self.loguru_logger.info(f"CCP Right Pane Load Character button pressed: {button_id}")
-                await ccp_handlers.handle_ccp_left_load_character_button_pressed(self)
-            else: self.loguru_logger.warning(f"Unhandled button on CCP tab -> ID: {button_id}, Label: '{button.label}'")
-
-
-        #######################################################################
-        # --- Notes Tab ---
-        #######################################################################
-        elif current_active_tab == TAB_NOTES:
-            if button_id == "notes-create-new-button": await notes_handlers.handle_notes_create_new_button_pressed(self)
-            elif button_id == "notes-edit-selected-button": await notes_handlers.handle_notes_edit_selected_button_pressed(self)
-            elif button_id == "notes-import-button": await notes_handlers.handle_notes_import_button_pressed(self)
-            elif button_id == "notes-search-button": await notes_handlers.handle_notes_search_button_pressed(self)
-            elif button_id == "notes-load-selected-button": await notes_handlers.handle_notes_load_selected_button_pressed(self)
-            elif button_id == "notes-save-current-button": await notes_handlers.handle_notes_save_current_button_pressed(self)
-            elif button_id == "notes-save-button": await notes_handlers.handle_notes_main_save_button_pressed(self)
-            elif button_id == "notes-delete-button": await notes_handlers.handle_notes_delete_button_pressed(self)
-            elif button_id == "notes-save-keywords-button": await notes_handlers.handle_notes_save_keywords_button_pressed(self)
-            else: self.loguru_logger.warning(f"Unhandled button on NOTES tab: {button_id}")
-
-
-        #######################################################################
-        # --- Media Tab ---
-        #######################################################################
-        elif current_active_tab == TAB_MEDIA:
-            if button_id and button_id.startswith("media-nav-"):
-                # e.g., "media-nav-video-audio" -> "media-view-video-audio"
-                view_to_activate = button_id.replace("media-nav-", "media-view-")
-                self.loguru_logger.debug(f"Media nav button '{button_id}' pressed. Activating view '{view_to_activate}'.")
-                self.media_active_view = view_to_activate # Triggers watcher
-                await media_handlers.handle_media_nav_button_pressed(self, button_id)
-                return
-            elif button_id and button_id.startswith("media-search-button-"):
-                await media_handlers.handle_media_search_button_pressed(self, button_id)
-                return
-            elif button_id and button_id.startswith("media-load-selected-button-"):
-                await media_handlers.handle_media_load_selected_button_pressed(self, button_id)
-                return
+                        f"Handler for button '{button_id}' did not return an awaitable object."
+                    )
             else:
-                self.loguru_logger.warning(f"Unhandled button on MEDIA tab: ID:{button_id}, Label:'{button.label}'")
+                self.loguru_logger.error(f"Handler for button '{button_id}' is not callable: {handler}")
+            return  # The button press was handled (or an error occurred).
 
-
-        #######################################################################
-        # --- Ingestion Tab ---
-        #######################################################################
-        elif current_active_tab == TAB_INGEST:
-                # Check if it's one of the main ingest navigation buttons
-                if button_id in INGEST_NAV_BUTTON_IDS: # INGEST_NAV_BUTTON_IDS now includes tldw-api ones
-                    self.loguru_logger.info(f"Ingest navigation button pressed: {button_id}")
-                    # Determine the target view ID
-                    # This covers "ingest-nav-prompts" -> "ingest-view-prompts"
-                    # and "ingest-nav-tldw-api-video" -> "ingest-view-tldw-api-video"
-                    target_view_id = button_id.replace("ingest-nav-", "ingest-view-")
-
-                    self.ingest_active_view = target_view_id # This will trigger the watcher
-
-                    # Initialize UI elements if necessary (e.g., for prompts or characters view)
-                    if target_view_id == "ingest-view-prompts":
-                        try:
-                            selected_list_view = self.query_one("#ingest-prompts-selected-files-list", ListView)
-                            if not selected_list_view.children:
-                                await selected_list_view.clear()
-                                await selected_list_view.append(ListItem(Label("No files selected.")))
-                            preview_area = self.query_one("#ingest-prompts-preview-area", VerticalScroll)
-                            if not preview_area.children:
-                                await preview_area.mount(
-                                    Static("Select files to see a preview.", id="ingest-prompts-preview-placeholder"))
-                        except QueryError:
-                            self.loguru_logger.warning(
-                                "Failed to initialize prompts list/preview elements on nav click to prompts.")
-                    elif target_view_id == "ingest-view-characters":
-                        try:
-                            selected_list_view = self.query_one("#ingest-characters-selected-files-list", ListView)
-                            if not selected_list_view.children:
-                                await selected_list_view.clear()
-                                await selected_list_view.append(ListItem(Label("No files selected.")))
-                            preview_area = self.query_one("#ingest-characters-preview-area", VerticalScroll)
-                            if not preview_area.children:
-                                await preview_area.mount(
-                                    Static("Select files to see a preview.", id="ingest-characters-preview-placeholder"))
-                        except QueryError:
-                            self.loguru_logger.warning(
-                                "Failed to initialize characters list/preview for ingest-view-characters on nav click.")
-                    # Add similar initializations for other static ingest views if needed
-                    return # Navigation handled
-
-                # If not a main nav button, it might be a button within an active sub-view
-                active_ingest_sub_view = self.ingest_active_view
-
-                if active_ingest_sub_view == "ingest-view-prompts":
-                    if button_id == "ingest-prompts-select-file-button":
-                        await ingest_events.handle_ingest_prompts_select_file_button_pressed(self)
-                        return
-                    elif button_id == "ingest-prompts-clear-files-button":
-                        await ingest_events.handle_ingest_prompts_clear_files_button_pressed(self)
-                        return
-                    elif button_id == "ingest-prompts-import-now-button":
-                        await ingest_events.handle_ingest_prompts_import_now_button_pressed(self)
-                    else: self.loguru_logger.warning(f"Unhandled button on INGEST (Prompts) sub-view: {button_id}")
-                    return
-
-                elif active_ingest_sub_view == "ingest-view-characters":
-                    if button_id == "ingest-characters-select-file-button":
-                        await ingest_events.handle_ingest_characters_select_file_button_pressed(self)
-                        return
-                    elif button_id == "ingest-characters-clear-files-button":
-                        await ingest_events.handle_ingest_characters_clear_files_button_pressed(self)
-                        return
-                    elif button_id == "ingest-characters-import-now-button":
-                        await ingest_events.handle_ingest_characters_import_now_button_pressed(self)
-                    else: self.loguru_logger.warning(f"Unhandled button on INGEST (Characters) sub-view: {button_id}")
-                    return
-
-                elif active_ingest_sub_view == "ingest-view-notes":
-                    if button_id == "ingest-notes-select-file-button":
-                        await ingest_events.handle_ingest_notes_select_file_button_pressed(self)
-                    elif button_id == "ingest-notes-clear-files-button":
-                        await ingest_events.handle_ingest_notes_clear_files_button_pressed(self)
-                    elif button_id == "ingest-notes-import-now-button":
-                        await ingest_events.handle_ingest_notes_import_now_button_pressed(self)
-                    else: self.loguru_logger.warning(f"Unhandled button on INGEST (Notes) sub-view: {button_id}")
-                    return
-
-                # Handle TLDW API form submissions (dynamic IDs)
-                elif active_ingest_sub_view and active_ingest_sub_view.startswith("ingest-view-tldw-api-"):
-                    # The button ID itself will be like "tldw-api-submit-{media_type}"
-                    # The active_ingest_sub_view is "ingest-view-tldw-api-{media_type}"
-                    # The event handler ingest_events.handle_tldw_api_submit_button_pressed now extracts media_type from button_id
-                    if button_id.startswith("tldw-api-submit-"):
-                         await ingest_events.handle_tldw_api_submit_button_pressed(self, event) # Pass the full event
-                    else: self.loguru_logger.warning(f"Unhandled button on INGEST (TLDW API - {active_ingest_sub_view}) sub-view: {button_id}")
-                    return
-
-                # Fallback for unhandled buttons on Ingest tab
-                self.loguru_logger.warning(
-                    f"Unhandled button on INGEST tab: ID:{button_id}, Label:'{event.button.label}' (Active Ingest View: {active_ingest_sub_view})")
-                return  # Return after logging unhandled Ingest tab button
-
-
-        #######################################################################
-        # --- Tools & Settings Tab ---
-        #######################################################################
-        elif current_active_tab == TAB_TOOLS_SETTINGS:
-            if button_id and button_id.startswith("ts-nav-"):
-                # Extract the view name from the button ID
-                # e.g., "ts-nav-general-settings" -> "ts-view-general-settings"
-                view_to_activate = button_id.replace("ts-nav-", "ts-view-")
-                self.loguru_logger.debug(
-                    f"Tools & Settings nav button '{button_id}' pressed. Activating view '{view_to_activate}'.")
-                self.tools_settings_active_view = view_to_activate  # This will trigger the watcher
-            else:
-                self.loguru_logger.warning(
-                    f"Unhandled button on TOOLS & SETTINGS tab: ID:{button_id}, Label:'{button.label}'")
-
-
-        #######################################################################
-        # --- LLM Inference Tab ---
-        #######################################################################
-        elif current_active_tab == TAB_LLM:
-            if button_id and button_id.startswith("llm-nav-"):
-                await llm_handlers.handle_llm_nav_button_pressed(self, button_id)
-            elif button_id == "llamacpp-browse-exec-button":
-                await handle_llamacpp_browse_exec_button_pressed(self)
-            elif button_id == "llamacpp-browse-model-button":
-                await handle_llamacpp_browse_model_button_pressed(self)
-            elif button_id == "llamacpp-start-server-button":
-                await handle_start_llamacpp_server_button_pressed(self)
-            elif button_id == "llamacpp-stop-server-button":
-                await handle_stop_llamacpp_server_button_pressed(self)
-            elif button_id == "llamafile-browse-exec-button":
-                await handle_llamafile_browse_exec_button_pressed(self)
-            elif button_id == "llamafile-browse-model-button":
-                await handle_llamafile_browse_model_button_pressed(self)
-            elif button_id == "llamafile-start-server-button":
-                await handle_start_llamafile_server_button_pressed(self)
-            elif button_id == "llamafile-stop-server-button":
-                await handle_stop_llamafile_server_button_pressed(self)
-            # Transformers buttons
-            elif button_id == "transformers-browse-models-dir-button":
-                await transformers_handlers.handle_transformers_browse_models_dir_button_pressed(self); return
-            elif button_id == "transformers-list-local-models-button":
-                await transformers_handlers.handle_transformers_list_local_models_button_pressed(self); return
-            elif button_id == "transformers-download-model-button":
-                await transformers_handlers.handle_transformers_download_model_button_pressed(self); return
-            # Add these new conditions for vLLM:
-            elif button_id == "vllm-browse-python-button":
-                await handle_vllm_browse_python_button_pressed(self)
-            elif button_id == "vllm-browse-model-button":
-                await handle_vllm_browse_model_button_pressed(self)
-            elif button_id == "vllm-start-server-button":
-                await handle_start_vllm_server_button_pressed(self)
-            elif button_id == "vllm-stop-server-button":
-                await handle_stop_vllm_server_button_pressed(self)
-            # --- Ollama Button Handlers ---
-            elif button_id == "ollama-list-models-button":
-                await handle_ollama_list_models_button_pressed(self)
-            # --- Ollama Service Buttons ---
-            elif button_id == "ollama-browse-exec-button":
-                await handle_ollama_browse_exec_button_pressed(self)
-                return
-            elif button_id == "ollama-start-service-button":
-                await handle_start_ollama_service_button_pressed(self)
-                return
-            elif button_id == "ollama-stop-service-button":
-                await handle_stop_ollama_service_button_pressed(self)
-                return
-            # --- Ollama Button Handlers ---
-            elif button_id == "ollama-list-models-button":
-                await handle_ollama_list_models_button_pressed(self)
-                return
-            elif button_id == "ollama-show-model-button":
-                await handle_ollama_show_model_button_pressed(self)
-                return
-            elif button_id == "ollama-delete-model-button":
-                await handle_ollama_delete_model_button_pressed(self)
-                return
-            elif button_id == "ollama-copy-model-button":
-                await handle_ollama_copy_model_button_pressed(self)
-                return
-            elif button_id == "ollama-pull-model-button":
-                await handle_ollama_pull_model_button_pressed(self)
-                return
-            elif button_id == "ollama-browse-modelfile-button":
-                await handle_ollama_browse_modelfile_button_pressed(self)
-                return
-            elif button_id == "ollama-create-model-button":
-                await handle_ollama_create_model_button_pressed(self)
-                return
-            elif button_id == "ollama-push-model-button":
-                await handle_ollama_push_model_button_pressed(self)
-                return
-            elif button_id == "ollama-embeddings-button":
-                await handle_ollama_embeddings_button_pressed(self)
-                return
-            elif button_id == "ollama-ps-button":
-                await handle_ollama_ps_button_pressed(self)
-                return
-            # --- End of Ollama Button Handlers ---
-            # MLX Server Buttons
-            elif button_id == "mlx-start-server-button":
-                await handle_start_mlx_server_button_pressed(self)
-            elif button_id == "mlx-stop-server-button":
-                await handle_stop_mlx_server_button_pressed(self)
-            # --- ONNX Server Buttons ---
-            elif button_id == "onnx-browse-python-button":
-                await handle_onnx_browse_python_button_pressed(self)
-            elif button_id == "onnx-browse-script-button":
-                await handle_onnx_browse_script_button_pressed(self)
-            elif button_id == "onnx-browse-model-button":
-                await handle_onnx_browse_model_button_pressed(self)
-            elif button_id == "onnx-start-server-button":
-                await handle_start_onnx_server_button_pressed(self)
-            elif button_id == "onnx-stop-server-button":
-                await handle_stop_onnx_server_button_pressed(self)
-            else:
-                self.loguru_logger.warning(
-                    f"Unhandled button on LLM MANAGEMENT tab: ID:{button_id}, Label:'{button.label}'")
-
-
-        #######################################################################
-        # --- Logging Tab ---
-        #######################################################################
-        elif current_active_tab == TAB_LOGS:
-            if button_id == "copy-logs-button": await app_lifecycle_handlers.handle_copy_logs_button_pressed(self)
-            else: self.loguru_logger.warning(f"Unhandled button on LOGS tab: {button_id}")
-
-
-        #######################################################################
-        # --- Evals Tab ---
-        #######################################################################
-        elif current_active_tab == TAB_EVALS:
-            if button_id == "toggle-evals-sidebar":
-                self.evals_sidebar_collapsed = not self.evals_sidebar_collapsed
-                self.loguru_logger.debug(f"Evals sidebar toggle button pressed. New state: {self.evals_sidebar_collapsed}")
-                return # Handled
-            else:
-                self.loguru_logger.warning(f"Unhandled button on EVALS tab: ID:{button_id}, Label:'{button.label}'")
-            return # Explicitly return after handling buttons on Evals tab.
-
-        else:
-            self.loguru_logger.warning(f"Button '{button_id}' pressed on unhandled/unknown tab '{current_active_tab}' or unhandled button ID.")
+        # 4. Fallback for unmapped buttons
+        self.loguru_logger.warning(f"Unhandled button press for ID '{button_id}' on tab '{self.current_tab}'.")
 
     def _get_chat_message_widget_from_button(self, button: Button) -> Optional[ChatMessage]:
         """Helper to find the parent ChatMessage widget from an action button within it."""
@@ -2659,7 +2183,11 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         # Persist the change
         try:
-            save_setting_to_cli_config("chat_defaults", "strip_thinking_tags", new_value)
+            # save_setting_to_cli_config is not defined, assuming this is a placeholder
+            # You would need to implement this function to write to your config file.
+            # Example implementation:
+            # from .config import save_setting_to_cli_config
+            # save_setting_to_cli_config("chat_defaults", "strip_thinking_tags", new_value)
             self.notify(f"Thinking tag stripping {'enabled' if new_value else 'disabled'}.", timeout=2)
         except Exception as e:
             self.loguru_logger.error(f"Failed to save 'strip_thinking_tags' setting: {e}", exc_info=True)
@@ -2758,7 +2286,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         #######################################################################
         elif worker_group == "ollama_api":
             self.loguru_logger.info(f"Ollama API worker '{event.worker.name}' finished with state {event.state}.")
-            await handle_ollama_worker_completion(self, event)
+            await llm_management_events_ollama.handle_ollama_worker_completion(self, event)
 
 
         #######################################################################

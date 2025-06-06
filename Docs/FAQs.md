@@ -82,6 +82,9 @@ Refer to the official [Windows Terminal Interaction Settings Documentation](http
 
 
 
+### MLX on Mac
+https://github.com/google/sentencepiece/issues/1083
+
 
 ### Samplers
 https://rentry.org/samplers
