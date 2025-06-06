@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, List, Dict, Any, Optional
 import functools  # For download worker
 
-from textual.widgets import Input, RichLog
+from textual.widgets import Input, RichLog, Button
 from textual.css.query import QueryError
 
 # For listing local models, you might need to interact with huggingface_hub or scan directories
@@ -32,8 +32,8 @@ from .llm_management_events import \
 
 
 # --- Worker function for model download (can be similar to the existing one) ---
-def run_transformers_model_download_worker(app_instance: "TldwCli", command: List[str],
-                                           models_base_dir_for_cwd: str) -> str:
+async def run_transformers_model_download_worker(app_instance: "TldwCli", command: List[str],
+                                                 models_base_dir_for_cwd: str) -> str:
     logger = getattr(app_instance, "loguru_logger", logging.getLogger(__name__))
     quoted_command = ' '.join(shlex.quote(c) for c in command)
     # The actual target download path is part of the command (--local-dir)
@@ -110,7 +110,7 @@ def run_transformers_model_download_worker(app_instance: "TldwCli", command: Lis
             process.kill()
 
 
-async def handle_transformers_list_local_models_button_pressed(app: "TldwCli") -> None:
+async def handle_transformers_list_local_models_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
     logger.info("Transformers list local models button pressed.")
 
@@ -255,15 +255,8 @@ async def handle_transformers_download_model_button_pressed(app: "TldwCli") -> N
     # The worker CWD should be a neutral place, or the parent of target_model_specific_dir
     worker_cwd = models_dir_str
 
-    worker_callable = functools.partial(
-        run_transformers_model_download_worker,
-        app,
-        command,
-        worker_cwd
-    )
-
     app.run_worker(
-        worker_callable,
+        run_transformers_model_download_worker(app, command, worker_cwd),
         group="transformers_download",
         description=f"Downloading HF Model {repo_id}",
         exclusive=False,
@@ -272,7 +265,7 @@ async def handle_transformers_download_model_button_pressed(app: "TldwCli") -> N
     app.notify(f"Starting download for {repo_id}...")
 
 
-async def handle_transformers_browse_models_dir_button_pressed(app: "TldwCli") -> None:
+async def handle_transformers_browse_models_dir_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
     logger.debug("Transformers browse models directory button pressed.")
 
