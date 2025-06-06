@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING
 from textual.css.query import QueryError
 #
 # 3rd-Party Imports
-from textual.widgets import RichLog
+from textual.widgets import RichLog, Button
+
 #
 # Local Imports
 if TYPE_CHECKING:
@@ -18,7 +19,7 @@ if TYPE_CHECKING:
 #
 # Functions:
 
-async def handle_copy_logs_button_pressed(app: 'TldwCli') -> None:
+async def handle_copy_logs_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles the 'Copy All Logs to Clipboard' button press."""
     logger = getattr(app, 'loguru_logger', logging)  # Use app's logger
     logger.info("Copy logs button pressed.")

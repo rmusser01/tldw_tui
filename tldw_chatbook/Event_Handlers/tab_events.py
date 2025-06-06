@@ -4,6 +4,9 @@
 # Imports
 import logging
 from typing import TYPE_CHECKING
+
+from textual.widgets import Button
+
 #
 # 3rd-Party Imports
 #
@@ -15,8 +18,9 @@ if TYPE_CHECKING:
 #
 # Functions:
 
-async def handle_tab_button_pressed(app: 'TldwCli', button_id: str) -> None:
+async def handle_tab_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles tab switching button presses."""
+    button_id = event.button.id
     new_tab_id = button_id.replace("tab-", "")
     logging.info(f"Tab button {button_id} pressed. Requesting switch to '{new_tab_id}'")
     if new_tab_id != app.current_tab:

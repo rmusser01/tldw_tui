@@ -19,9 +19,10 @@ if TYPE_CHECKING:
 #
 # Functions:
 
-async def handle_media_nav_button_pressed(app: 'TldwCli', button_id: str) -> None:
+async def handle_media_nav_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles media navigation button presses in the Media tab."""
     logger = app.loguru_logger
+    button_id = event.button.id
     try:
         type_slug = button_id.replace("media-nav-", "")
         view_to_activate = f"media-view-{type_slug}"
@@ -49,9 +50,10 @@ async def handle_media_nav_button_pressed(app: 'TldwCli', button_id: str) -> Non
         app.notify(f"Error switching media view: {str(e)[:100]}", severity="error")
 
 
-async def handle_media_search_button_pressed(app: 'TldwCli', button_id: str) -> None:
+async def handle_media_search_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles search button press within a specific media type view."""
     logger = app.loguru_logger
+    button_id = event.button.id
     try:
         type_slug = button_id.replace("media-search-button-", "")
         search_input_id = f"media-search-input-{type_slug}"
@@ -86,9 +88,10 @@ async def handle_media_search_input_changed(app: 'TldwCli', input_id: str, value
     app._media_search_timers[type_slug] = app.set_timer(0.6, debounced_search)
 
 
-async def handle_media_load_selected_button_pressed(app: 'TldwCli', button_id: str) -> None:
+async def handle_media_load_selected_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles loading a selected media item's details."""
     logger = app.loguru_logger
+    button_id = event.button.id
     try:
         type_slug = button_id.replace("media-load-selected-button-", "")
         details_display_id = f"media-details-display-{type_slug}"

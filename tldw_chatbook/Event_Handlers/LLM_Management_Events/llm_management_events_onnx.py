@@ -111,33 +111,7 @@ def run_onnx_server_worker(app_instance: "TldwCli", command: List[str]) -> str |
 
 # --- Event Handlers ---
 
-async def handle_onnx_nav_button_pressed(app: "TldwCli") -> None:
-    """Handle the ONNX navigation button press."""
-    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
-    logger.debug("ONNX nav button pressed.")
-    try:
-        content_pane = app.query_one("#llm-content-pane", Container)
-        for view in content_pane.query(".llm-view-area"):
-            if view.id:
-                view.styles.display = "none"
-
-        onnx_view = app.query_one("#llm-view-onnx", Container)
-        onnx_view.styles.display = "block"
-
-        if not hasattr(app, 'onnx_server_process'):
-            app.onnx_server_process = None
-
-        start_button = onnx_view.query_one("#onnx-start-server-button", Button)
-        stop_button = onnx_view.query_one("#onnx-stop-server-button", Button)
-        is_running = app.onnx_server_process and app.onnx_server_process.poll() is None
-        start_button.disabled = is_running
-        stop_button.disabled = not is_running
-    except QueryError as e:
-        logger.error(f"QueryError in handle_onnx_nav_button_pressed: {e}", exc_info=True)
-        app.notify("Error switching to ONNX view.", severity="error")
-
-
-async def handle_onnx_browse_python_button_pressed(app: "TldwCli") -> None:
+async def handle_onnx_browse_python_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     """Handles browse for Python executable for ONNX server."""
     await app.push_screen(
         FileOpen(location=str(Path.home()), title="Select Python executable"),
@@ -145,7 +119,7 @@ async def handle_onnx_browse_python_button_pressed(app: "TldwCli") -> None:
     )
 
 
-async def handle_onnx_browse_script_button_pressed(app: "TldwCli") -> None:
+async def handle_onnx_browse_script_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     """Handles browse for ONNX server script."""
     filters = Filters(("Python Scripts (*.py)", lambda p: p.suffix.lower() == ".py"),
                       ("All files (*.*)", lambda p: True))
@@ -155,7 +129,7 @@ async def handle_onnx_browse_script_button_pressed(app: "TldwCli") -> None:
     )
 
 
-async def handle_onnx_browse_model_button_pressed(app: "TldwCli") -> None:
+async def handle_onnx_browse_model_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     """Handles browse for ONNX model file or directory."""
     await app.push_screen(
         FileOpen(
@@ -166,7 +140,7 @@ async def handle_onnx_browse_model_button_pressed(app: "TldwCli") -> None:
     )
 
 
-async def handle_start_onnx_server_button_pressed(app: "TldwCli") -> None:
+async def handle_start_onnx_server_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     """Handles the 'Start ONNX Server' button press."""
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
     logger.info("User requested to start ONNX server.")
@@ -222,7 +196,7 @@ async def handle_start_onnx_server_button_pressed(app: "TldwCli") -> None:
         app.notify(f"An unexpected error occurred: {e}", severity="error")
 
 
-async def handle_stop_onnx_server_button_pressed(app: "TldwCli") -> None:
+async def handle_stop_onnx_server_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     """Handles the 'Stop ONNX Server' button press."""
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
     logger.info("User requested to stop ONNX server.")
