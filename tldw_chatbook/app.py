@@ -3,6 +3,7 @@
 #
 # Imports
 import functools
+import inspect
 import logging
 import logging.handlers
 import subprocess
@@ -11,39 +12,26 @@ from typing import Union, Optional, Any, Dict, List, Callable
 #
 # 3rd-Party Libraries
 from PIL import Image
-from loguru import logger as loguru_logger, logger  # Keep if app.py uses it directly, or pass app.loguru_logger
+from loguru import logger as loguru_logger, logger
 from rich.text import Text
 from textual import on
 from textual.app import App, ComposeResult
 from textual.widgets import (
     Static, Button, Input, Header, RichLog, TextArea, Select, ListView, Checkbox, Collapsible, ListItem, Label
 )
-from textual.containers import Horizontal, Container, HorizontalScroll, VerticalScroll
+from textual.containers import Container
 from textual.reactive import reactive
 from textual.worker import Worker, WorkerState
 from textual.binding import Binding
 from textual.dom import DOMNode  # For type hinting if needed
 from textual.timer import Timer
 from textual.css.query import QueryError
-# Ensure Path is imported
 from pathlib import Path
-
-from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_mlx_lm import \
-    handle_start_mlx_server_button_pressed, handle_stop_mlx_server_button_pressed
-from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_ollama import \
-    handle_ollama_embeddings_button_pressed, handle_ollama_ps_button_pressed, handle_ollama_create_model_button_pressed, \
-    handle_ollama_pull_model_button_pressed, handle_ollama_copy_model_button_pressed, \
-    handle_ollama_delete_model_button_pressed, handle_ollama_show_model_button_pressed, \
-    handle_ollama_list_models_button_pressed, handle_ollama_browse_modelfile_button_pressed, \
-    handle_ollama_push_model_button_pressed, handle_ollama_worker_completion, \
-    handle_ollama_browse_exec_button_pressed, handle_start_ollama_service_button_pressed, \
-    handle_stop_ollama_service_button_pressed
-from tldw_chatbook.Event_Handlers.conv_char_events import CCP_BUTTON_HANDLERS
 #
 # --- Local API library Imports ---
-from .Event_Handlers.LLM_Management_Events import llm_management_events_transformers as transformers_handlers, \
-    llm_management_events, llm_management_events_mlx_lm, llm_management_events_ollama, llm_management_events_onnx, \
-    llm_management_events_transformers, llm_management_events_vllm
+from .Event_Handlers.LLM_Management_Events import (llm_management_events, llm_management_events_mlx_lm,
+    llm_management_events_ollama, llm_management_events_onnx, llm_management_events_transformers,
+                                                   llm_management_events_vllm)
 from tldw_chatbook.Event_Handlers.Chat_Events.chat_streaming_events import handle_streaming_chunk, handle_stream_done
 from tldw_chatbook.Event_Handlers.Chat_Events.chat_events_sidebar import (
     handle_chat_media_search_input_changed,
@@ -79,32 +67,13 @@ from .config import (
     API_MODELS_BY_PROVIDER,
     LOCAL_PROVIDERS, )
 from .Event_Handlers import (
-    app_lifecycle as app_lifecycle_handlers,
-    tab_events as tab_handlers,
     conv_char_events as ccp_handlers,
-    media_events as media_handlers,
     notes_events as notes_handlers,
     worker_events as worker_handlers, worker_events, ingest_events,
-    llm_nav_events as llm_handlers, llm_nav_events, media_events, notes_events, app_lifecycle, tab_events,
-    # Explicit import for Ollama handler as per subtask, though current dispatch is generic
+    llm_nav_events, media_events, notes_events, app_lifecycle, tab_events,
 )
 from .Event_Handlers.Chat_Events import chat_events as chat_handlers, chat_events_sidebar
 from tldw_chatbook.Event_Handlers.Chat_Events import chat_events
-from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events import \
-    handle_llamacpp_browse_exec_button_pressed, \
-    handle_llamacpp_browse_model_button_pressed, handle_llamafile_browse_exec_button_pressed, \
-    handle_llamafile_browse_model_button_pressed, populate_llm_help_texts, handle_start_llamacpp_server_button_pressed, \
-    handle_stop_llamacpp_server_button_pressed, handle_start_llamafile_server_button_pressed, \
-    handle_stop_llamafile_server_button_pressed
-from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_onnx import \
-    handle_onnx_browse_python_button_pressed, \
-    handle_onnx_browse_script_button_pressed, \
-    handle_onnx_browse_model_button_pressed, \
-    handle_start_onnx_server_button_pressed, \
-    handle_stop_onnx_server_button_pressed
-from tldw_chatbook.Event_Handlers.LLM_Management_Events import llm_management_events_mlx_lm as mlx_handlers
-from tldw_chatbook.Event_Handlers.LLM_Management_Events import llm_management_events_onnx as onnx_handlers
-from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_vllm import handle_vllm_browse_python_button_pressed, handle_vllm_browse_model_button_pressed, handle_start_vllm_server_button_pressed, handle_stop_vllm_server_button_pressed
 from .Notes.Notes_Library import NotesInteropService
 from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
 from .Widgets.chat_message import ChatMessage
@@ -136,9 +105,7 @@ from .UI.Tab_Bar import TabBar
 from .UI.MediaWindow import MediaWindow
 from .UI.SearchWindow import SearchWindow
 from .UI.SearchWindow import ( # Import new constants from SearchWindow.py
-    SEARCH_VIEW_RAG_QA, SEARCH_VIEW_RAG_CHAT, SEARCH_VIEW_EMBEDDINGS_CREATION,
-    SEARCH_VIEW_RAG_MANAGEMENT, SEARCH_VIEW_EMBEDDINGS_MANAGEMENT,
-    SEARCH_NAV_RAG_QA, SEARCH_NAV_RAG_CHAT, SEARCH_NAV_EMBEDDINGS_CREATION,
+    SEARCH_VIEW_RAG_QA, SEARCH_NAV_RAG_QA, SEARCH_NAV_RAG_CHAT, SEARCH_NAV_EMBEDDINGS_CREATION,
     SEARCH_NAV_RAG_MANAGEMENT, SEARCH_NAV_EMBEDDINGS_MANAGEMENT
 )
 API_IMPORTS_SUCCESSFUL = True
@@ -2027,7 +1994,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         if self.current_tab in [TAB_CHAT, TAB_CCP]:
             action_widget = self._get_chat_message_widget_from_button(event.button)
             if action_widget:
-                self.loguru_logger.debug(f"Button '{button_id}' is inside a ChatMessage, dispatching to action handler.")
+                self.loguru_logger.debug(
+                    f"Button '{button_id}' is inside a ChatMessage, dispatching to action handler.")
                 await chat_events.handle_chat_action_button_pressed(self, event.button, action_widget)
                 return
 
@@ -2037,7 +2005,17 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         if handler:
             if callable(handler):
-                await handler(self, event) # Standardize on passing both app and event
+                # Call the handler, which is expected to return a coroutine (an awaitable object).
+                result = handler(self, event)
+
+                # Check if the result is indeed awaitable before awaiting it.
+                # This makes the code more robust and satisfies static type checkers.
+                if inspect.isawaitable(result):
+                    await result
+                else:
+                    self.loguru_logger.warning(
+                        f"Handler for button '{button_id}' did not return an awaitable object."
+                    )
             else:
                 self.loguru_logger.error(f"Handler for button '{button_id}' is not callable: {handler}")
             return  # The button press was handled (or an error occurred).
