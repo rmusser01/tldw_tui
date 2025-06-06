@@ -37,9 +37,12 @@ from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_ol
     handle_ollama_push_model_button_pressed, handle_ollama_worker_completion, \
     handle_ollama_browse_exec_button_pressed, handle_start_ollama_service_button_pressed, \
     handle_stop_ollama_service_button_pressed
+from tldw_chatbook.Event_Handlers.conv_char_events import CCP_BUTTON_HANDLERS
 #
 # --- Local API library Imports ---
-from .Event_Handlers.LLM_Management_Events import llm_management_events_transformers as transformers_handlers
+from .Event_Handlers.LLM_Management_Events import llm_management_events_transformers as transformers_handlers, \
+    llm_management_events, llm_management_events_mlx_lm, llm_management_events_ollama, llm_management_events_onnx, \
+    llm_management_events_transformers, llm_management_events_vllm
 from tldw_chatbook.Event_Handlers.Chat_Events.chat_streaming_events import handle_streaming_chunk, handle_stream_done
 from tldw_chatbook.Event_Handlers.Chat_Events.chat_events_sidebar import (
     handle_chat_media_search_input_changed,
@@ -81,10 +84,10 @@ from .Event_Handlers import (
     media_events as media_handlers,
     notes_events as notes_handlers,
     worker_events as worker_handlers, worker_events, ingest_events,
-    llm_nav_events as llm_handlers,
+    llm_nav_events as llm_handlers, llm_nav_events, media_events, notes_events, app_lifecycle,
     # Explicit import for Ollama handler as per subtask, though current dispatch is generic
 )
-from .Event_Handlers.Chat_Events import chat_events as chat_handlers
+from .Event_Handlers.Chat_Events import chat_events as chat_handlers, chat_events_sidebar
 from tldw_chatbook.Event_Handlers.Chat_Events import chat_events
 from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events import \
     handle_llamacpp_browse_exec_button_pressed, \
@@ -563,6 +566,41 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                         id=f"tab-{tab_id_loop}",
                         classes="-active" if tab_id_loop == self._initial_tab_value else ""
                     )
+
+            # --- Create the master handler map ---
+            # This one-time setup makes the dispatcher clean and fast.
+            self.button_handler_map = self._build_handler_map()
+
+        def _build_handler_map(self) -> dict:
+            """Constructs the master button handler map from all event modules."""
+
+            # Combine all LLM Management handlers into one dictionary
+            llm_handlers = {
+                **llm_management_events.LLM_MANAGEMENT_BUTTON_HANDLERS,
+                **llm_management_events_mlx_lm.MLX_LM_BUTTON_HANDLERS,
+                **llm_management_events_ollama.OLLAMA_BUTTON_HANDLERS,
+                **llm_management_events_onnx.ONNX_BUTTON_HANDLERS,
+                **llm_management_events_transformers.TRANSFORMERS_BUTTON_HANDLERS,
+                **llm_management_events_vllm.VLLM_BUTTON_HANDLERS,
+                **llm_nav_events.LLM_NAV_BUTTON_HANDLERS,
+            }
+
+            # Combine Chat handlers
+            chat_handlers = {
+                **chat_events.CHAT_BUTTON_HANDLERS,
+                **chat_events_sidebar.CHAT_SIDEBAR_BUTTON_HANDLERS,
+            }
+
+            # Master map organized by tab
+            return {
+                TAB_CHAT: chat_handlers,
+                TAB_CCP: CCP_BUTTON_HANDLERS,
+                TAB_NOTES: notes_events.NOTES_BUTTON_HANDLERS,
+                TAB_MEDIA: media_events.MEDIA_BUTTON_HANDLERS,
+                TAB_INGEST: ingest_events.INGEST_BUTTON_HANDLERS,
+                TAB_LLM: llm_handlers,
+                TAB_LOGS: app_lifecycle.APP_LIFECYCLE_BUTTON_HANDLERS,
+            }
 
     ############################################################
     #
@@ -1914,6 +1952,44 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # --- EVENT DISPATCHERS ---
     #
     ########################################################################
+    # FIXME - refactor version of this method to use the button handler map
+    # async def on_button_pressed(self, event: Button.Pressed) -> None:
+    #     """Dispatches button presses to the appropriate event handler using a map."""
+    #     button_id = event.button.id
+    #     if not button_id:
+    #         return
+    #
+    #     self.loguru_logger.debug(f"Button pressed: ID='{button_id}' on Tab='{self.current_tab}'")
+    #
+    #     # 1. Handle global tab switching first
+    #     if button_id.startswith("tab-"):
+    #         await tab_events.handle_tab_button_pressed(self, button_id)
+    #         return
+    #
+    #     # 2. Handle dynamically generated ChatMessage action buttons
+    #     action_widget = self._get_chat_message_widget_from_button(event.button)
+    #     if action_widget:
+    #         # This handler is designed to inspect the button and widget to take the correct action
+    #         await chat_events.handle_chat_action_button_pressed(self, event.button, action_widget)
+    #         return
+    #
+    #     # 3. Use the handler map for all other tab-specific buttons
+    #     # The map is now pre-built, so we just look up the current tab's handlers
+    #     current_tab_handlers = self.button_handler_map.get(self.current_tab)
+    #
+    #     if current_tab_handlers and button_id in current_tab_handlers:
+    #         handler = current_tab_handlers[button_id]
+    #
+    #         # The handler can be a direct function or a lambda
+    #         if callable(handler):
+    #             await handler(self, event)  # Pass both app and event for flexibility
+    #             return
+    #         else:
+    #             self.loguru_logger.error(f"Handler for button '{button_id}' is not callable.")
+    #
+    #     # 4. Fallback for unmapped buttons
+    #     # This block will now only be reached if a button ID isn't in any map.
+    #     self.loguru_logger.warning(f"Unhandled button press for ID '{button_id}' on tab '{self.current_tab}'.")
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses for tabs, sending messages, and message actions."""
         button = event.button
