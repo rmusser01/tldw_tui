@@ -18,9 +18,10 @@ from textual.widgets import (
 from textual.containers import VerticalScroll
 from textual.css.query import QueryError
 
-from tldw_chatbook.Event_Handlers.Chat_Events.chat_events_sidebar import handle_chat_media_copy_url_button_pressed, \
-    handle_chat_media_copy_author_button_pressed, handle_chat_media_copy_content_button_pressed, \
-    handle_chat_media_copy_title_button_pressed, handle_chat_media_load_selected_button_pressed
+from tldw_chatbook.Event_Handlers.Chat_Events.chat_events_sidebar import (
+    handle_chat_media_load_selected_button_pressed, handle_chat_media_copy_title_button_pressed,
+    handle_chat_media_copy_content_button_pressed, handle_chat_media_copy_author_button_pressed,
+    handle_chat_media_copy_url_button_pressed)
 from tldw_chatbook.Utils.Utils import safe_float, safe_int
 #
 # Local Imports
@@ -1610,7 +1611,7 @@ async def handle_chat_character_attribute_changed(app: 'TldwCli', event: Union[I
         loguru_logger.warning(f"Attribute change event from unmapped control_id: {control_id}")
 
 
-async def handle_chat_clear_active_character_button_pressed(app: 'TldwCli') -> None:
+async def handle_chat_clear_active_character_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Clears the currently active character data and resets related UI fields."""
     loguru_logger.info("Clear Active Character button pressed.")
 
@@ -1737,7 +1738,7 @@ async def perform_chat_prompt_search(app: 'TldwCli') -> None:
         logger.error(f"Chat Tab: Error performing prompt search via perform_chat_prompt_search: {e}", exc_info=True)
 
 
-async def handle_chat_view_selected_prompt_button_pressed(app: 'TldwCli') -> None:
+async def handle_chat_view_selected_prompt_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     logger = getattr(app, 'loguru_logger', logging)
     logger.debug("Chat Tab: View Selected Prompt button pressed.")
 
