@@ -772,7 +772,7 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
                        description=f"Regenerating for {selected_provider_regen}")
 
 
-async def handle_chat_new_conversation_button_pressed(app: 'TldwCli') -> None:
+async def handle_chat_new_conversation_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     loguru_logger.info("New Chat button pressed.")
     try:
         chat_log_widget = app.query_one("#chat-log", VerticalScroll)
@@ -814,7 +814,7 @@ async def handle_chat_new_conversation_button_pressed(app: 'TldwCli') -> None:
         loguru_logger.error(f"UI component not found during new chat setup: {e}")
 
 
-async def handle_chat_save_current_chat_button_pressed(app: 'TldwCli') -> None:
+async def handle_chat_save_current_chat_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     loguru_logger.info("Save Current Chat button pressed.")
     if not (app.current_chat_is_ephemeral and app.current_chat_conversation_id is None):
         loguru_logger.warning("Chat not eligible for saving (not ephemeral or already has ID).")
@@ -911,7 +911,7 @@ async def handle_chat_save_current_chat_button_pressed(app: 'TldwCli') -> None:
         app.notify(f"Error saving chat: {str(e_save_chat)[:100]}", severity="error")
 
 
-async def handle_chat_save_details_button_pressed(app: 'TldwCli') -> None:
+async def handle_chat_save_details_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     loguru_logger.info("Save conversation details button pressed.")
     if app.current_chat_is_ephemeral or not app.current_chat_conversation_id:
         loguru_logger.warning("Cannot save details for an ephemeral or non-existent chat.")
@@ -1015,7 +1015,7 @@ async def handle_chat_save_details_button_pressed(app: 'TldwCli') -> None:
         app.notify("Unexpected error saving details.", severity="error", timeout=3)
 
 
-async def handle_chat_load_selected_button_pressed(app: 'TldwCli') -> None:
+async def handle_chat_load_selected_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     loguru_logger.info("Load selected chat button pressed.")
     try:
         results_list_view = app.query_one("#chat-conversation-search-results-list", ListView)
@@ -1054,7 +1054,7 @@ async def handle_chat_load_selected_button_pressed(app: 'TldwCli') -> None:
         app.notify("Unexpected error loading chat.", severity="error")
 
 
-async def perform_chat_conversation_search(app: 'TldwCli') -> None:
+async def perform_chat_conversation_search(app: 'TldwCli', event: Button.Pressed) -> None:
     loguru_logger.debug("Performing chat conversation search...")
     try:
         search_bar = app.query_one("#chat-conversation-search-bar", Input)
