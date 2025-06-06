@@ -23,12 +23,13 @@ from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_ol
 
 __all__ = ["handle_llm_nav_button_pressed"]
 
-async def handle_llm_nav_button_pressed(app: "TldwCli", button_id: str) -> None:
+async def handle_llm_nav_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
     """
     Handles navigation button presses in the LLM Management tab.
     Dispatches to specific handlers if available, otherwise uses a generic approach.
     """
     logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
+    button_id = event.button.id
     logger.info(f"LLM nav button pressed: {button_id}")
 
     view_to_activate = button_id.replace("llm-nav-", "llm-view-")

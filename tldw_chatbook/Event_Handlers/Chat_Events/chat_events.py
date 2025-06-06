@@ -18,6 +18,9 @@ from textual.widgets import (
 from textual.containers import VerticalScroll
 from textual.css.query import QueryError
 
+from tldw_chatbook.Event_Handlers.Chat_Events.chat_events_sidebar import handle_chat_media_copy_url_button_pressed, \
+    handle_chat_media_copy_author_button_pressed, handle_chat_media_copy_content_button_pressed, \
+    handle_chat_media_copy_title_button_pressed, handle_chat_media_load_selected_button_pressed
 from tldw_chatbook.Utils.Utils import safe_float, safe_int
 #
 # Local Imports
@@ -41,9 +44,10 @@ if TYPE_CHECKING:
 #
 # Functions:
 
-async def handle_chat_tab_sidebar_toggle(app: 'TldwCli', button_id: str) -> None:
+async def handle_chat_tab_sidebar_toggle(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles sidebar toggles specific to the Chat tab."""
     logger = getattr(app, 'loguru_logger', logging)
+    button_id = event.button.id
     if button_id == "toggle-chat-left-sidebar":
         app.chat_sidebar_collapsed = not app.chat_sidebar_collapsed
         logger.debug("Chat tab settings sidebar (left) now %s", "collapsed" if app.chat_sidebar_collapsed else "expanded")
@@ -53,8 +57,9 @@ async def handle_chat_tab_sidebar_toggle(app: 'TldwCli', button_id: str) -> None
     else:
         logger.warning(f"Unhandled sidebar toggle button ID '{button_id}' in Chat tab handler.")
 
-async def handle_chat_send_button_pressed(app: 'TldwCli', prefix: str) -> None:
+async def handle_chat_send_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles the send button press for the main chat tab."""
+    prefix = "chat"  # This handler is specific to the main chat tab's send button
     loguru_logger.info(f"Send button pressed for '{prefix}' (main chat)") # Use loguru_logger consistently
 
     # --- 1. Query UI Widgets ---
@@ -1294,7 +1299,7 @@ async def display_conversation_in_chat_tab_ui(app: 'TldwCli', conversation_id: s
     loguru_logger.info(f"Displayed conversation '{conv_metadata.get('title', 'Untitled')}' (ID: {conversation_id}) in chat tab.")
 
 
-async def load_branched_conversation_history_ui(app: 'TldwCli', target_conversation_id: str, chat_log_widget: VerticalScroll):
+async def load_branched_conversation_history_ui(app: 'TldwCli', target_conversation_id: str, chat_log_widget: VerticalScroll) -> None:
     """
     Loads the complete message history for a given conversation_id,
     tracing back through parent branches to the root if necessary.
@@ -1977,7 +1982,7 @@ async def handle_chat_sidebar_prompt_search_changed(
     logger.info(f"[Prompts] Search '{search_term}' → {len(prompts)} results.")
 
 
-async def handle_continue_response_button_pressed(app: 'TldwCli', button: Button, message_widget: ChatMessage) -> None:
+async def handle_continue_response_button_pressed(app: 'TldwCli', event: Button.Pressed, message_widget: ChatMessage) -> None:
     """Handles the 'Continue Response' button press on an AI chat message."""
     loguru_logger.info(f"Continue Response button pressed for message_id: {message_widget.message_id_internal}, current text: '{message_widget.message_text[:50]}...'")
     db = app.chachanotes_db
@@ -1989,9 +1994,8 @@ async def handle_continue_response_button_pressed(app: 'TldwCli', button: Button
     original_display_text_obj: Optional[Union[str, Text]] = None # renderable can be str or Text
 
     try:
-        # Ensure we are targeting the correct button on the specific message_widget instance
-        # The 'button' argument is the button that was pressed.
-        continue_button_widget = button # This IS the button that was pressed.
+        button = event.button
+        continue_button_widget = button
         original_button_label = continue_button_widget.label
         continue_button_widget.disabled = True
         continue_button_widget.label = get_char(EMOJI_THINKING, FALLBACK_THINKING) # "⏳" or similar
@@ -2307,7 +2311,7 @@ async def handle_continue_response_button_pressed(app: 'TldwCli', button: Button
     loguru_logger.info(f"Continuation process completed for message_id: {message_widget.message_id_internal}. Final text length: {len(current_full_text)}")
 
 
-async def handle_respond_for_me_button_pressed(app: 'TldwCli') -> None:
+async def handle_respond_for_me_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles the 'Respond for Me' (Suggest) button press in the chat input area."""
     loguru_logger.info("Enter: handle_respond_for_me_button_pressed")
     loguru_logger.info("Respond for Me button pressed.")
@@ -2541,7 +2545,7 @@ class ApiKeyMissingError(Exception): # Custom exception for cleaner handling in 
     pass
 
 
-async def handle_stop_chat_generation_pressed(app: 'TldwCli') -> None:
+async def handle_stop_chat_generation_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles the 'Stop Chat Generation' button press."""
     loguru_logger.info("Stop Chat Generation button pressed.")
 
@@ -2637,11 +2641,10 @@ async def populate_chat_conversation_character_filter_select(app: 'TldwCli') -> 
 # --- Button Handler Map ---
 # This maps button IDs to their async handler functions.
 CHAT_BUTTON_HANDLERS = {
-    "send-chat": lambda app: handle_chat_send_button_pressed(app, "chat"),
+    "send-chat": handle_chat_send_button_pressed,
     "respond-for-me-button": handle_respond_for_me_button_pressed,
     "stop-chat-generation": handle_stop_chat_generation_pressed,
     "chat-new-conversation-button": handle_chat_new_conversation_button_pressed,
-    "chat-new-temp-chat-button": handle_chat_new_conversation_button_pressed,  # Reuses handler
     "chat-save-current-chat-button": handle_chat_save_current_chat_button_pressed,
     "chat-save-conversation-details-button": handle_chat_save_details_button_pressed,
     "chat-conversation-load-selected-button": handle_chat_load_selected_button_pressed,
@@ -2650,19 +2653,13 @@ CHAT_BUTTON_HANDLERS = {
     "chat-prompt-copy-user-button": handle_chat_copy_user_prompt_button_pressed,
     "chat-load-character-button": handle_chat_load_character_button_pressed,
     "chat-clear-active-character-button": handle_chat_clear_active_character_button_pressed,
-
-    # --- Sidebar Toggles ---
-    "toggle-chat-left-sidebar": lambda app: handle_chat_tab_sidebar_toggle(app, "toggle-chat-left-sidebar"),
-    "toggle-chat-right-sidebar": lambda app: handle_chat_tab_sidebar_toggle(app, "toggle-chat-right-sidebar"),
-
-    # --- Sidebar Media Buttons (from chat_events_sidebar.py) ---
-    "chat-media-load-selected-button": 'chat_events_sidebar.handle_chat_media_load_selected_button_pressed',
-    "chat-media-copy-title-button": 'chat_events_sidebar.handle_chat_media_copy_title_button_pressed',
-    "chat-media-copy-content-button": 'chat_events_sidebar.handle_chat_media_copy_content_button_pressed',
-    "chat-media-copy-author-button": 'chat_events_sidebar.handle_chat_media_copy_author_button_pressed',
-    "chat-media-copy-url-button": 'chat_events_sidebar.handle_chat_media_copy_url_button_pressed',
-
-    # --- Note: ChatMessage action buttons (like edit, copy, delete) are handled separately by _get_chat_message_widget_from_button ---
+    "toggle-chat-left-sidebar": handle_chat_tab_sidebar_toggle,
+    "toggle-chat-right-sidebar": handle_chat_tab_sidebar_toggle,
+    "chat-media-load-selected-button": handle_chat_media_load_selected_button_pressed,
+    "chat-media-copy-title-button": handle_chat_media_copy_title_button_pressed,
+    "chat-media-copy-content-button": handle_chat_media_copy_content_button_pressed,
+    "chat-media-copy-author-button": handle_chat_media_copy_author_button_pressed,
+    "chat-media-copy-url-button": handle_chat_media_copy_url_button_pressed,
 }
 
 #

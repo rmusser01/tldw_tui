@@ -279,7 +279,7 @@ async def _character_import_callback(app: 'TldwCli', selected_path: Optional[Pat
         logger.info("Character card import cancelled.")
         app.notify("Character import cancelled.", severity="information", timeout=2)
 
-async def handle_ccp_import_character_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_import_character_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     logger = getattr(app, 'loguru_logger', logging)
     logger.info("CCP Import Character Card button pressed.")
 
@@ -297,7 +297,7 @@ async def handle_ccp_import_character_button_pressed(app: 'TldwCli') -> None:
                           callback=lambda path: _character_import_callback(app, path))
 
 
-async def handle_ccp_left_load_character_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_left_load_character_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     logger = getattr(app, 'loguru_logger', logging) # Or however logger is typically obtained
     logger.info("CCP Load Selected Character button (left pane) pressed.")
     try:
@@ -361,7 +361,7 @@ async def handle_ccp_left_load_character_button_pressed(app: 'TldwCli') -> None:
         app.notify("An unexpected error occurred while trying to load character view.", severity="error")
 
 
-async def handle_ccp_card_save_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_card_save_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles the Save Changes button press on the CCP Character Card view."""
     logger = getattr(app, 'loguru_logger', loguru_logger)
     logger.info("CCP Card Save Character button pressed.")
@@ -452,7 +452,7 @@ async def handle_ccp_card_save_button_pressed(app: 'TldwCli') -> None:
         app.notify(f"An unexpected error occurred: {type(e_unexp).__name__}. Check logs.", severity="error")
 
 
-async def handle_ccp_card_clone_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_card_clone_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles the Clone Character button press on the CCP Character Card view."""
     logger = getattr(app, 'loguru_logger', loguru_logger)
     logger.info("CCP Card Clone Character button pressed.")
@@ -561,7 +561,7 @@ async def handle_ccp_card_clone_button_pressed(app: 'TldwCli') -> None:
                    severity="error")
 
 
-async def handle_ccp_right_delete_character_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_right_delete_character_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles the Delete Character button press from the right pane (associated with card view)."""
     logger = getattr(app, 'loguru_logger', loguru_logger)
     logger.info("CCP Right Pane Delete Character button pressed.")
@@ -728,12 +728,12 @@ async def perform_ccp_conversation_search(app: 'TldwCli') -> None:
 # Event Handlers (called by app.py)
 #
 ########################################################################################################################
-async def handle_ccp_conversation_search_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_conversation_search_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles the search button press in the CCP tab's conversation section."""
     await perform_ccp_conversation_search(app)
 
 
-async def handle_ccp_load_conversation_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_load_conversation_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles loading a selected conversation in the CCP tab."""
     logger = getattr(app, 'loguru_logger', logging)
     logger.info("CCP Load Conversation button pressed.")
@@ -798,7 +798,7 @@ async def handle_ccp_load_conversation_button_pressed(app: 'TldwCli') -> None:
         app.notify("An unexpected error occurred while loading conversation.", severity="error")
 
 
-async def handle_ccp_save_conversation_details_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_save_conversation_details_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles saving conversation title/keywords in the CCP tab."""
     logger = getattr(app, 'loguru_logger', logging)
     logger.info("CCP Save Conversation Details button pressed.")
@@ -891,7 +891,7 @@ async def handle_ccp_save_conversation_details_button_pressed(app: 'TldwCli') ->
         app.notify("An unexpected error occurred.", severity="error")
 
 
-async def handle_ccp_prompt_create_new_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_prompt_create_new_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles creating a new prompt in the CCP tab."""
     logger = getattr(app, 'loguru_logger', logging)
     logger.info("CCP Create New Prompt button pressed.")
@@ -917,7 +917,7 @@ async def handle_ccp_prompt_create_new_button_pressed(app: 'TldwCli') -> None:
         app.notify("UI error creating new prompt.", severity="error")
 
 
-async def handle_ccp_prompt_load_selected_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_prompt_load_selected_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles loading a selected prompt from the LEFT PANE list into the RIGHT PANE editor."""
     logger = getattr(app, 'loguru_logger', logging)
     logger.info("CCP Load Selected Prompt button pressed (loads into right pane editor).")
@@ -938,7 +938,7 @@ async def handle_ccp_prompt_load_selected_button_pressed(app: 'TldwCli') -> None
         logger.error(f"Error loading prompt from list: {e}", exc_info=True)
 
 
-async def handle_ccp_prompt_save_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_prompt_save_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles saving a new or existing prompt from the RIGHT PANE editor."""
     logger = getattr(app, 'loguru_logger', logging)
     logger.info("CCP Save Prompt button pressed (saves from right pane editor).")
@@ -1010,7 +1010,7 @@ async def handle_ccp_prompt_save_button_pressed(app: 'TldwCli') -> None:
         app.notify(f"Error saving prompt: {type(e_save).__name__}", severity="error")
 
 
-async def handle_ccp_prompt_clone_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_prompt_clone_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles cloning the currently loaded prompt in the RIGHT PANE editor."""
     logger = getattr(app, 'loguru_logger', logging)
     logger.info("CCP Clone Prompt button pressed (clones from right pane editor).")
@@ -1043,7 +1043,7 @@ async def handle_ccp_prompt_clone_button_pressed(app: 'TldwCli') -> None:
         app.notify(f"Error cloning prompt: {type(e_clone).__name__}", severity="error")
 
 
-async def handle_ccp_prompt_delete_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_prompt_delete_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles deleting (soft) the currently loaded prompt from the RIGHT PANE editor."""
     logger = getattr(app, 'loguru_logger', logging)
     logger.info("CCP Delete Prompt button pressed (deletes based on right pane editor state).")
@@ -1097,30 +1097,31 @@ async def handle_ccp_prompt_delete_button_pressed(app: 'TldwCli') -> None:
         app.notify(f"Unexpected error deleting prompt: {type(e_del).__name__}", severity="error")
 
 
-async def handle_ccp_conversation_search_input_changed(app: 'TldwCli', event_value: str) -> None:
+async def handle_ccp_conversation_search_input_changed(app: 'TldwCli', event: Input.Changed) -> None:
     """Handles input changes in the CCP conversation search bar with debouncing."""
     if app._conv_char_search_timer:
         app._conv_char_search_timer.stop()
     app._conv_char_search_timer = app.set_timer(0.5, lambda: perform_ccp_conversation_search(app))
 
 
-async def handle_ccp_prompt_search_input_changed(app: 'TldwCli', event_value: str) -> None:
+async def handle_ccp_prompt_search_input_changed(app: 'TldwCli', event: Input.Changed) -> None:
     """Handles input changes in the CCP prompt search bar with debouncing."""
+    search_term = event.value
     if app._prompt_search_timer:
         app._prompt_search_timer.stop()
-    app._prompt_search_timer = app.set_timer(0.5, lambda: populate_ccp_prompts_list_view(app, event_value.strip()))
+    app._prompt_search_timer = app.set_timer(0.5, lambda: populate_ccp_prompts_list_view(app, search_term.strip()))
 
 
 async def handle_ccp_character_select_changed(app: 'TldwCli', selected_value: Any) -> None:
     """Handles changes in the CCP character select dropdown."""
-    logger = getattr(app, 'loguru_logger', logging)
+    logger = getattr(app, 'loguru_logger', loguru_logger)
     logger.debug(f"CCP Character Select changed to: {selected_value}")
     await perform_ccp_conversation_search(app)
 
 
 async def handle_ccp_prompts_list_view_selected(app: 'TldwCli', list_view_id: str, item: Any) -> None:
     """Handles selecting a prompt from the list in the CCP tab (loads to RIGHT pane)."""
-    logger = getattr(app, 'loguru_logger', logging)
+    logger = getattr(app, 'loguru_logger', loguru_logger)
     if item and (hasattr(item, 'prompt_id') or hasattr(item, 'prompt_uuid')):
         prompt_id_to_load = getattr(item, 'prompt_id', None)
         prompt_uuid_to_load = getattr(item, 'prompt_uuid', None)
@@ -1137,7 +1138,7 @@ async def handle_ccp_prompts_list_view_selected(app: 'TldwCli', list_view_id: st
 #
 ########################################################################################################################
 async def _conversation_import_callback(app: 'TldwCli', selected_path: Optional[Path]) -> None:
-    logger = getattr(app, 'loguru_logger', logging)
+    logger = getattr(app, 'loguru_logger', loguru_logger)
     if selected_path:
         logger.info(f"Conversation import selected: {selected_path}")
         if not app.notes_service:
@@ -1166,8 +1167,8 @@ async def _conversation_import_callback(app: 'TldwCli', selected_path: Optional[
         logger.info("Conversation import cancelled.")
         app.notify("Conversation import cancelled.", severity="information", timeout=2)
 
-async def handle_ccp_import_conversation_button_pressed(app: 'TldwCli') -> None:
-    logger = getattr(app, 'loguru_logger', logging)
+async def handle_ccp_import_conversation_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
+    logger = getattr(app, 'loguru_logger', loguru_logger)
     logger.info("CCP Import Conversation button pressed.")
 
     defined_filters = Filters(
@@ -1345,7 +1346,7 @@ async def _prompt_import_callback(app: 'TldwCli', selected_path: Optional[Path])
         logger.info("Prompt import cancelled.")
         app.notify("Prompt import cancelled.", severity="information", timeout=2)
 
-async def handle_ccp_import_prompt_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_import_prompt_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     logger = getattr(app, 'loguru_logger', logging)
     logger.info("CCP Import Prompt button pressed.")
 
@@ -1363,7 +1364,7 @@ async def handle_ccp_import_prompt_button_pressed(app: 'TldwCli') -> None:
 ########################################################################################################################
 # CCP Center Pane Editor Button Handlers (these operate on the #ccp-editor-* prefixed IDs)
 ########################################################################################################################
-async def handle_ccp_editor_prompt_save_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_editor_prompt_save_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles saving a new or existing prompt from the CENTER PANE editor."""
     logger = getattr(app, 'loguru_logger', logging)
     logger.info("CCP Editor Save Prompt button pressed (saves from center pane editor).")
@@ -1436,7 +1437,7 @@ async def handle_ccp_editor_prompt_save_button_pressed(app: 'TldwCli') -> None:
         app.notify(f"Editor: Error saving prompt: {type(e_save).__name__}", severity="error")
 
 
-async def handle_ccp_editor_prompt_clone_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_editor_prompt_clone_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles cloning the prompt currently in the CENTER PANE editor."""
     logger = getattr(app, 'loguru_logger', logging)
     logger.info("CCP Editor Clone Prompt button pressed.")
@@ -1471,7 +1472,7 @@ async def handle_ccp_editor_prompt_clone_button_pressed(app: 'TldwCli') -> None:
         app.notify(f"Editor: Error cloning prompt: {type(e_clone).__name__}", severity="error")
 
 
-async def handle_ccp_editor_prompt_delete_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_editor_prompt_delete_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles deleting the prompt currently in the CENTER PANE editor."""
     logger = getattr(app, 'loguru_logger', loguru_logger)
     logger.info("CCP Editor Delete Prompt button pressed.")
@@ -1513,7 +1514,7 @@ async def handle_ccp_editor_prompt_delete_button_pressed(app: 'TldwCli') -> None
 # --- CCP Center Pane Editor Button Handlers End ---
 # ##############################################################
 
-async def handle_ccp_editor_char_save_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_editor_char_save_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles saving a new or existing character from the CENTER PANE editor."""
     logger = getattr(app, 'loguru_logger', loguru_logger)
     logger.info("CCP Editor: Save Character button pressed.")
@@ -1712,7 +1713,7 @@ async def _helper_ccp_load_character_into_center_pane_editor(app: 'TldwCli', cha
         app.current_editing_character_data = None
 
 
-async def handle_ccp_editor_char_clone_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_editor_char_clone_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     logger = getattr(app, 'loguru_logger', loguru_logger)
     logger.info("CCP Editor: Clone Character button pressed.")
 
@@ -1785,7 +1786,7 @@ async def handle_ccp_editor_char_clone_button_pressed(app: 'TldwCli') -> None:
         app.notify(f"Unexpected error cloning: {type(e_unexp).__name__}", severity="error")
 
 
-async def handle_ccp_editor_char_cancel_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_editor_char_cancel_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles cancelling an edit in the CCP CENTER PANE character editor."""
     logger = getattr(app, 'loguru_logger', loguru_logger)
     logger.info("CCP Editor: Cancel Character Edit button pressed.")
@@ -1872,7 +1873,7 @@ async def handle_ccp_editor_char_cancel_button_pressed(app: 'TldwCli') -> None:
         app.ccp_active_view = "conversation_messages_view"
 
 
-async def handle_ccp_editor_char_delete_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_editor_char_delete_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     logger = getattr(app, 'loguru_logger', loguru_logger)
     logger.info("CCP Editor: Delete Character button pressed.")
 
@@ -1926,9 +1927,10 @@ async def handle_ccp_editor_char_delete_button_pressed(app: 'TldwCli') -> None:
 # ##############################################################
 # --- CCP Right Pane Editor Button Handlers ---
 # ##############################################################
-async def handle_ccp_tab_sidebar_toggle(app: 'TldwCli', button_id: str) -> None:
+async def handle_ccp_tab_sidebar_toggle(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles sidebar toggles specific to the CCP tab."""
     logger = getattr(app, 'loguru_logger', logging)
+    button_id = event.button.id
     if button_id == "toggle-conv-char-left-sidebar":
         app.conv_char_sidebar_left_collapsed = not app.conv_char_sidebar_left_collapsed
         logger.debug("CCP left sidebar now %s", "collapsed" if app.conv_char_sidebar_left_collapsed else "expanded")
@@ -1939,7 +1941,7 @@ async def handle_ccp_tab_sidebar_toggle(app: 'TldwCli', button_id: str) -> None:
         logger.warning(f"Unhandled sidebar toggle button ID '{button_id}' in CCP tab handler.")
 
 
-async def handle_ccp_card_edit_button_pressed(app: 'TldwCli') -> None:
+async def handle_ccp_card_edit_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     logger = getattr(app, 'loguru_logger', loguru_logger)
     logger.info("CCP Card Edit Character button pressed.")
 
@@ -1981,10 +1983,14 @@ CCP_BUTTON_HANDLERS = {
     "ccp-card-save-button": handle_ccp_card_save_button_pressed,
     "ccp-card-clone-button": handle_ccp_card_clone_button_pressed,
     "ccp-editor-char-save-button": handle_ccp_editor_char_save_button_pressed,
+    "ccp-editor-char-delete-button": handle_ccp_editor_char_delete_button_pressed,
     "ccp-editor-char-clone-button": handle_ccp_editor_char_clone_button_pressed,
     "ccp-editor-char-cancel-button": handle_ccp_editor_char_cancel_button_pressed,
     "ccp-editor-prompt-save-button": handle_ccp_editor_prompt_save_button_pressed,
+    "ccp-prompt-clone-button": handle_ccp_prompt_clone_button_pressed,
+    "ccp-prompt-delete-button": handle_ccp_prompt_delete_button_pressed,
     "ccp-editor-prompt-clone-button": handle_ccp_editor_prompt_clone_button_pressed,
+    "ccp-prompt-save-button": handle_ccp_prompt_save_button_pressed,
 
     # Right Pane
     "conv-char-save-details-button": handle_ccp_save_conversation_details_button_pressed,
@@ -1992,8 +1998,8 @@ CCP_BUTTON_HANDLERS = {
     "ccp-character-delete-button": handle_ccp_right_delete_character_button_pressed,
 
     # Sidebar Toggles
-    "toggle-conv-char-left-sidebar": lambda app: handle_ccp_tab_sidebar_toggle(app, "toggle-conv-char-left-sidebar"),
-    "toggle-conv-char-right-sidebar": lambda app: handle_ccp_tab_sidebar_toggle(app, "toggle-conv-char-right-sidebar"),
+    "toggle-conv-char-left-sidebar": handle_ccp_tab_sidebar_toggle,
+    "toggle-conv-char-right-sidebar": handle_ccp_tab_sidebar_toggle,
 }
 
 #

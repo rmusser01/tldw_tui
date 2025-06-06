@@ -4,7 +4,7 @@
 # Imports
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, List, Any, Dict, Callable
+from typing import TYPE_CHECKING, Optional, List, Any, Dict, Callable, Union
 #
 # 3rd-party Libraries
 from loguru import logger
@@ -259,7 +259,7 @@ async def _handle_character_file_selected_callback(app: 'TldwCli', selected_path
 
 
 # --- Prompt Ingest Handlers (existing, ensure they use renamed constants/functions if any) ---
-async def handle_ingest_prompts_select_file_button_pressed(app: 'TldwCli') -> None:
+async def handle_ingest_prompts_select_file_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     logger.debug("Select Prompt File(s) button pressed. Opening file dialog.")
     current_dir = app.last_prompt_import_dir or Path(".")
     await app.push_screen(
@@ -275,7 +275,7 @@ async def handle_ingest_prompts_select_file_button_pressed(app: 'TldwCli') -> No
 
 
 # --- Character Ingest Handlers (NEW) ---
-async def handle_ingest_characters_select_file_button_pressed(app: 'TldwCli') -> None:
+async def handle_ingest_characters_select_file_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles the 'Select Character File(s)' button press."""
     logger.debug("Select Character File(s) button pressed. Opening file dialog.")
     current_dir = app.last_character_import_dir or Path(".")  # Use new state var
@@ -291,7 +291,7 @@ async def handle_ingest_characters_select_file_button_pressed(app: 'TldwCli') ->
     )
 
 
-async def handle_ingest_characters_clear_files_button_pressed(app: 'TldwCli') -> None:
+async def handle_ingest_characters_clear_files_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles 'Clear Selection' for character import."""
     logger.info("Clearing selected character files and preview.")
     app.selected_character_files_for_import.clear()
@@ -314,7 +314,7 @@ async def handle_ingest_characters_clear_files_button_pressed(app: 'TldwCli') ->
         app.notify("Error clearing character UI.", severity="error")
 
 
-async def handle_ingest_characters_import_now_button_pressed(app: 'TldwCli') -> None:
+async def handle_ingest_characters_import_now_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles 'Import Selected Characters Now' button press."""
     logger.info("Import Selected Character Files Now button pressed.")
 
@@ -602,7 +602,7 @@ async def _handle_prompt_file_selected_callback(app: 'TldwCli', selected_path: O
         app.notify("File selection cancelled.")
 
 
-async def handle_ingest_prompts_clear_files_button_pressed(app: 'TldwCli') -> None:
+async def handle_ingest_prompts_clear_files_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles the 'Clear Selection' button press for prompt import."""
     logger.info("Clearing selected prompt files and preview.")
     app.selected_prompt_files_for_import.clear()
@@ -625,7 +625,7 @@ async def handle_ingest_prompts_clear_files_button_pressed(app: 'TldwCli') -> No
         app.notify("Error clearing UI.", severity="error")
 
 
-async def handle_ingest_prompts_import_now_button_pressed(app: 'TldwCli') -> None:
+async def handle_ingest_prompts_import_now_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles the 'Import Selected Files Now' button press."""
     logger.info("Import Selected Prompt Files Now button pressed.")
 
@@ -759,8 +759,8 @@ async def handle_ingest_prompts_import_now_button_pressed(app: 'TldwCli') -> Non
 
 
 # --- TLDW API Form Handlers ---
-async def handle_tldw_api_auth_method_changed(app: 'TldwCli', event_value: str) -> None:
-    # ... (implementation as you provided)
+async def handle_tldw_api_auth_method_changed(app: 'TldwCli', event: Union[Select.Changed, str]) -> None:
+    event_value = str(event.value) if isinstance(event, Select.Changed) else event
     logger.debug(f"TLDW API Auth method changed to: {event_value}")
     try:
         custom_token_input = app.query_one("#tldw-api-custom-token", Input)
@@ -775,8 +775,9 @@ async def handle_tldw_api_auth_method_changed(app: 'TldwCli', event_value: str) 
     except QueryError as e:
         logger.error(f"UI component not found for TLDW API auth method change: {e}")
 
-async def handle_tldw_api_media_type_changed(app: 'TldwCli', event_value: str) -> None:
+async def handle_tldw_api_media_type_changed(app: 'TldwCli', event: Union[Select.Changed, str]) -> None:
     """Shows/hides media type specific option containers."""
+    event_value = str(event.value) if isinstance(event, Select.Changed) else event
     logger.debug(f"TLDW API Media Type changed to: {event_value}")
     try:
         # Hide all specific option containers first
@@ -1436,7 +1437,6 @@ async def handle_tldw_api_submit_button_pressed(app: 'TldwCli', event: Button.Pr
         logger.error(f"TLDW API request worker failed for {selected_media_type}: {error}", exc_info=True)
 
         error_message_parts = [f"## API Request Failed! ({selected_media_type.title()})\n\n"]
-        # ... (rest of error message construction as before) ...
         brief_notify_message = f"{selected_media_type.title()} API Request Failed."
         if isinstance(error, APIResponseError):
             error_type = "API Error"
@@ -1631,7 +1631,7 @@ async def _handle_note_file_selected_callback(app: 'TldwCli', selected_path: Opt
 
 
 # --- Notes Ingest Handlers (NEW) ---
-async def handle_ingest_notes_select_file_button_pressed(app: 'TldwCli') -> None:
+async def handle_ingest_notes_select_file_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     logger.debug("Select Notes File(s) button pressed. Opening file dialog.")
     current_dir = app.last_note_import_dir or Path(".")
 
@@ -1659,7 +1659,7 @@ async def handle_ingest_notes_select_file_button_pressed(app: 'TldwCli') -> None
     await app.push_screen(file_open_screen, post_file_open_action)
 
 
-async def handle_ingest_notes_clear_files_button_pressed(app: 'TldwCli') -> None:
+async def handle_ingest_notes_clear_files_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles 'Clear Selection' for note import."""
     logger.info("Clearing selected note files and preview.")
     app.selected_note_files_for_import.clear()
@@ -1682,7 +1682,7 @@ async def handle_ingest_notes_clear_files_button_pressed(app: 'TldwCli') -> None
         app.notify("Error clearing note UI.", severity="error")
 
 
-async def handle_ingest_notes_import_now_button_pressed(app: 'TldwCli') -> None:
+async def handle_ingest_notes_import_now_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles 'Import Selected Notes Now' button press."""
     logger.info("Import Selected Note Files Now button pressed.")
 
