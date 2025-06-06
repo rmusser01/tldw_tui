@@ -521,7 +521,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             **llm_management_events.LLM_MANAGEMENT_BUTTON_HANDLERS,
             **llm_nav_events.LLM_NAV_BUTTON_HANDLERS,
             **llm_management_events_mlx_lm.MLX_LM_BUTTON_HANDLERS,
-            **llm_management_events_ollama.OLLAMA_BUTTON_HANDLERS,
+            # FIXME - OLLAMA_BUTTON_HANDLERS is not defined in llm_management_events_ollama
+            #**llm_management_events_ollama.OLLAMA_BUTTON_HANDLERS,
             **llm_management_events_onnx.ONNX_BUTTON_HANDLERS,
             **llm_management_events_transformers.TRANSFORMERS_BUTTON_HANDLERS,
             **llm_management_events_vllm.VLLM_BUTTON_HANDLERS,
