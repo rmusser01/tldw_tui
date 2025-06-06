@@ -4,7 +4,6 @@
 # Imports
 import logging
 import logging.handlers
-import re # Added import for regex
 import subprocess
 import traceback
 from typing import Union, Optional, Any, Dict, List, Callable
@@ -27,10 +26,32 @@ from textual.timer import Timer
 from textual.css.query import QueryError
 # Ensure Path is imported
 from pathlib import Path
+
+from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_mlx_lm import \
+    handle_start_mlx_server_button_pressed, handle_stop_mlx_server_button_pressed
+from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_ollama import \
+    handle_ollama_embeddings_button_pressed, handle_ollama_ps_button_pressed, handle_ollama_create_model_button_pressed, \
+    handle_ollama_pull_model_button_pressed, handle_ollama_copy_model_button_pressed, \
+    handle_ollama_delete_model_button_pressed, handle_ollama_show_model_button_pressed, \
+    handle_ollama_list_models_button_pressed, handle_ollama_browse_modelfile_button_pressed, \
+    handle_ollama_push_model_button_pressed, handle_ollama_worker_completion, \
+    handle_ollama_browse_exec_button_pressed, handle_start_ollama_service_button_pressed, \
+    handle_stop_ollama_service_button_pressed
+from tldw_chatbook.Event_Handlers.conv_char_events import CCP_BUTTON_HANDLERS
 #
 # --- Local API library Imports ---
-from .Event_Handlers.LLM_Management_Events import llm_management_events_transformers as transformers_handlers
+from .Event_Handlers.LLM_Management_Events import llm_management_events_transformers as transformers_handlers, \
+    llm_management_events, llm_management_events_mlx_lm, llm_management_events_ollama, llm_management_events_onnx, \
+    llm_management_events_transformers, llm_management_events_vllm
 from tldw_chatbook.Event_Handlers.Chat_Events.chat_streaming_events import handle_streaming_chunk, handle_stream_done
+from tldw_chatbook.Event_Handlers.Chat_Events.chat_events_sidebar import (
+    handle_chat_media_search_input_changed,
+    handle_chat_media_load_selected_button_pressed,
+    handle_chat_media_copy_title_button_pressed,
+    handle_chat_media_copy_content_button_pressed,
+    handle_chat_media_copy_author_button_pressed,
+    handle_chat_media_copy_url_button_pressed,
+)
 from tldw_chatbook.Event_Handlers.worker_events import StreamingChunk, StreamDone
 from .Widgets.AppFooterStatus import AppFooterStatus
 from .Utils import Utils
@@ -59,23 +80,29 @@ from .config import (
 from .Event_Handlers import (
     app_lifecycle as app_lifecycle_handlers,
     tab_events as tab_handlers,
-    chat_events as chat_handlers,
-    chat_events,
     conv_char_events as ccp_handlers,
     media_events as media_handlers,
     notes_events as notes_handlers,
     worker_events as worker_handlers, worker_events, ingest_events,
-    llm_nav_events as llm_handlers,
+    llm_nav_events as llm_handlers, llm_nav_events, media_events, notes_events, app_lifecycle,
     # Explicit import for Ollama handler as per subtask, though current dispatch is generic
-    LLM_Management_Events,
 )
+from .Event_Handlers.Chat_Events import chat_events as chat_handlers, chat_events_sidebar
+from tldw_chatbook.Event_Handlers.Chat_Events import chat_events
 from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events import \
     handle_llamacpp_browse_exec_button_pressed, \
     handle_llamacpp_browse_model_button_pressed, handle_llamafile_browse_exec_button_pressed, \
-    handle_llamafile_browse_model_button_pressed, handle_start_mlx_server_button_pressed, \
-    handle_stop_mlx_server_button_pressed, handle_stop_llamafile_server_button_pressed, populate_llm_help_texts, \
-    handle_start_llamacpp_server_button_pressed, handle_stop_llamacpp_server_button_pressed, \
-    handle_start_llamafile_server_button_pressed
+    handle_llamafile_browse_model_button_pressed, populate_llm_help_texts, handle_start_llamacpp_server_button_pressed, \
+    handle_stop_llamacpp_server_button_pressed, handle_start_llamafile_server_button_pressed, \
+    handle_stop_llamafile_server_button_pressed
+from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_onnx import \
+    handle_onnx_browse_python_button_pressed, \
+    handle_onnx_browse_script_button_pressed, \
+    handle_onnx_browse_model_button_pressed, \
+    handle_start_onnx_server_button_pressed, \
+    handle_stop_onnx_server_button_pressed
+from tldw_chatbook.Event_Handlers.LLM_Management_Events import llm_management_events_mlx_lm as mlx_handlers
+from tldw_chatbook.Event_Handlers.LLM_Management_Events import llm_management_events_onnx as onnx_handlers
 from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events_vllm import handle_vllm_browse_python_button_pressed, handle_vllm_browse_model_button_pressed, handle_start_vllm_server_button_pressed, handle_stop_vllm_server_button_pressed
 from .Notes.Notes_Library import NotesInteropService
 from .DB.ChaChaNotes_DB import CharactersRAGDBError, ConflictError
@@ -99,7 +126,7 @@ from .UI.Conv_Char_Window import CCPWindow
 from .UI.Notes_Window import NotesWindow
 from .UI.Logs_Window import LogsWindow
 from .UI.Stats_Window import StatsWindow
-from .UI.Ingest_Window import IngestWindow, INGEST_VIEW_IDS, INGEST_NAV_BUTTON_IDS
+from .UI.Ingest_Window import IngestWindow, INGEST_NAV_BUTTON_IDS
 from .UI.Tools_Settings_Window import ToolsSettingsWindow
 from .UI.LLM_Management_Window import LLMManagementWindow
 from .UI.Evals_Window import EvalsWindow # Added EvalsWindow
@@ -276,11 +303,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # current_media_search_term: reactive[str] = reactive("") # Handled by inputs directly
     current_loaded_media_item: reactive[Optional[Dict[str, Any]]] = reactive(None)
     _media_search_timers: Dict[str, Timer] = {}  # For debouncing per media type
+    _media_sidebar_search_timer: Optional[Timer] = None # For chat sidebar media search debouncing
 
     # Add media_types_for_ui to store fetched types
     media_types_for_ui: List[str] = []
     _initial_media_view: Optional[str] = "media-view-video-audio"  # Default to the first sub-tab
     media_db: Optional[MediaDatabase] = None
+    current_sidebar_media_item: Optional[Dict[str, Any]] = None # For chat sidebar media review
 
     # Search Tab's active sub-view reactives
     search_active_sub_tab: reactive[Optional[str]] = reactive(None)
@@ -315,7 +344,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     llamacpp_server_process: Optional[subprocess.Popen] = None
     llamafile_server_process: Optional[subprocess.Popen] = None
     vllm_server_process: Optional[subprocess.Popen] = None
-
+    ollama_server_process: Optional[subprocess.Popen] = None
+    mlx_server_process: Optional[subprocess.Popen] = None
+    onnx_server_process: Optional[subprocess.Popen] = None
 
     # De-Bouncers
     _conv_char_search_timer: Optional[Timer] = None
@@ -359,6 +390,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         self.llamafile_server_process = None
         # vLLM server process
         self.vllm_server_process = None
+        self.ollama_server_process = None
+        self.mlx_server_process = None
+        self.onnx_server_process = None
 
         # 1. Get the user name from the loaded settings
         # The fallback here should match what you expect if settings doesn't have it,
@@ -436,9 +470,30 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                                           client_id=CLI_APP_CLIENT_ID)  # Use constant for client_id
             self.loguru_logger.info(
                 f"Media_DB_v2 initialized successfully for client '{CLI_APP_CLIENT_ID}' at {media_db_path}")
-        except Exception as e:
-            self.loguru_logger.error(f"Failed to initialize Media_DB_v2: {e}", exc_info=True)
+            self.loguru_logger.debug(f"ULTRA EARLY APP INIT: self.media_db instance: {self.media_db}")
+            if self.media_db:
+                self.loguru_logger.debug(f"ULTRA EARLY APP INIT: self.media_db.db_path_str: {self.media_db.db_path_str}")
+            else:
+                self.loguru_logger.debug("ULTRA EARLY APP INIT: self.media_db is None immediately after successful initialization block (should not happen).")
+        except Exception as e_media_init:
+            self.loguru_logger.debug(f"ULTRA EARLY APP INIT: CRITICAL ERROR initializing self.media_db: {e_media_init}", exc_info=True)
             self.media_db = None
+            self.loguru_logger.critical("ULTRA EARLY APP INIT: self.media_db is None due to exception during initialization.")
+
+        # --- Pre-fetch media types for UI ---
+        try:
+            if self.media_db:
+                self._media_types_for_ui = self.media_db.get_distinct_media_types(include_deleted=False, include_trash=False)
+                self.loguru_logger.info(f"App __init__: Pre-fetched {len(self._media_types_for_ui)} media types for UI.")
+            else:
+                self.loguru_logger.error("App __init__: self.media_db is None, cannot pre-fetch media types.")
+                self._media_types_for_ui = ["Error: Media DB not loaded"]
+        except Exception as e_media_types_fetch:
+            self.loguru_logger.critical(f"ULTRA EARLY APP INIT: CRITICAL ERROR fetching _media_types_for_ui: {e_media_types_fetch}", exc_info=True)
+            self._media_types_for_ui = ["Error: Exception fetching media types"]
+
+        self.loguru_logger.debug(f"ULTRA EARLY APP INIT: self._media_types_for_ui VALUE: {self._media_types_for_ui}")
+        self.loguru_logger.debug(f"ULTRA EARLY APP INIT: self._media_types_for_ui TYPE: {type(self._media_types_for_ui)}")
 
         # --- Setup Default view for CCP tab ---
         # Initialize self.ccp_active_view based on initial tab or default state if needed
@@ -512,79 +567,61 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                         classes="-active" if tab_id_loop == self._initial_tab_value else ""
                     )
 
+            # --- Create the master handler map ---
+            # This one-time setup makes the dispatcher clean and fast.
+            self.button_handler_map = self._build_handler_map()
+
+        def _build_handler_map(self) -> dict:
+            """Constructs the master button handler map from all event modules."""
+
+            # Combine all LLM Management handlers into one dictionary
+            llm_handlers = {
+                **llm_management_events.LLM_MANAGEMENT_BUTTON_HANDLERS,
+                **llm_management_events_mlx_lm.MLX_LM_BUTTON_HANDLERS,
+                **llm_management_events_ollama.OLLAMA_BUTTON_HANDLERS,
+                **llm_management_events_onnx.ONNX_BUTTON_HANDLERS,
+                **llm_management_events_transformers.TRANSFORMERS_BUTTON_HANDLERS,
+                **llm_management_events_vllm.VLLM_BUTTON_HANDLERS,
+                **llm_nav_events.LLM_NAV_BUTTON_HANDLERS,
+            }
+
+            # Combine Chat handlers
+            chat_handlers = {
+                **chat_events.CHAT_BUTTON_HANDLERS,
+                **chat_events_sidebar.CHAT_SIDEBAR_BUTTON_HANDLERS,
+            }
+
+            # Master map organized by tab
+            return {
+                TAB_CHAT: chat_handlers,
+                TAB_CCP: CCP_BUTTON_HANDLERS,
+                TAB_NOTES: notes_events.NOTES_BUTTON_HANDLERS,
+                TAB_MEDIA: media_events.MEDIA_BUTTON_HANDLERS,
+                TAB_INGEST: ingest_events.INGEST_BUTTON_HANDLERS,
+                TAB_LLM: llm_handlers,
+                TAB_LOGS: app_lifecycle.APP_LIFECYCLE_BUTTON_HANDLERS,
+            }
+
     ############################################################
     #
     # Code that builds the content area of the app aka the main UI.
     #
     ###########################################################
     def compose_content_area(self) -> ComposeResult:
-        self.loguru_logger.info(f"--- ENTERING COMPOSE CONTENT AREA (Direct Yield Pattern with explicit Media/Search) ---")
-        self.loguru_logger.info(f"Initial _initial_tab_value: {self._initial_tab_value}")
-        self.loguru_logger.info(f"Constants.ALL_TABS content: {ALL_TABS}")
-
-        # This parent container is crucial
+        """Yields the main window component for each tab."""
         with Container(id="content"):
-            composed_window_ids = set()
-
-            def _yield_and_track(window_instance, tab_constant_val, actual_window_id_val):
-                nonlocal composed_window_ids
-                if self._initial_tab_value != tab_constant_val:
-                    window_instance.styles.display = "none"
-                else:
-                    window_instance.styles.display = "block"
-                yield window_instance
-                composed_window_ids.add(actual_window_id_val)
-                self.loguru_logger.debug(f"Yielded {window_instance.__class__.__name__}, ID: {actual_window_id_val}, Display: {window_instance.styles.display}")
-
-            self.loguru_logger.debug("Instantiating and yielding concrete tab windows...")
-
-            yield from _yield_and_track(ChatWindow(self, id="chat-window", classes="window"), TAB_CHAT, "chat-window")
-            yield from _yield_and_track(CCPWindow(self, id="conversations_characters_prompts-window", classes="window"), TAB_CCP, "conversations_characters_prompts-window")
-            yield from _yield_and_track(NotesWindow(self, id="notes-window", classes="window"), TAB_NOTES, "notes-window")
-            yield from _yield_and_track(IngestWindow(self, id="ingest-window", classes="window"), TAB_INGEST, "ingest-window")
-            yield from _yield_and_track(ToolsSettingsWindow(self, id="tools_settings-window", classes="window"), TAB_TOOLS_SETTINGS, "tools_settings-window")
-            yield from _yield_and_track(LLMManagementWindow(self, id="llm_management-window", classes="window"), TAB_LLM, "llm_management-window")
-            yield from _yield_and_track(LogsWindow(self, id="logs-window", classes="window"), TAB_LOGS, "logs-window")
-            yield from _yield_and_track(StatsWindow(self, id="stats-window", classes="window"), TAB_STATS, "stats-window")
-
-            # --- Pass fetched media types to MediaWindow ---
-            media_window_instance = MediaWindow(self, id="media-window", classes="window")
-            media_window_instance.media_types_from_db = self._media_types_for_ui # Set before compose
-            yield from _yield_and_track(media_window_instance, TAB_MEDIA, "media-window")
-            # --- End MediaWindow with passed types ---
-
-            yield from _yield_and_track(SearchWindow(self, id="search-window", classes="window"), TAB_SEARCH, "search-window")
-            yield from _yield_and_track(EvalsWindow(self, id="evals-window", classes="window"), TAB_EVALS, "evals-window") # Added EvalsWindow
-            yield from _yield_and_track(CodingWindow(self, id="coding-window", classes="window"), TAB_CODING, "coding-window")
-
-            self.loguru_logger.info(f"Finished yielding concrete windows. Composed IDs: {composed_window_ids}")
-
-            self.loguru_logger.info(f"Starting placeholder loop. ALL_TABS: {ALL_TABS}")
-            unique_tab_constants = set(ALL_TABS)
-            self.loguru_logger.info(f"Unique tab constants for placeholder loop: {unique_tab_constants}")
-            self.loguru_logger.info(f"Current composed_window_ids: {composed_window_ids}")
-
-            for tab_constant_for_placeholder in unique_tab_constants:
-                target_window_id = "llm_management-window" if tab_constant_for_placeholder == TAB_LLM else f"{tab_constant_for_placeholder}-window"
-                self.loguru_logger.debug(f"Placeholder Loop: tab_const='{tab_constant_for_placeholder}', target_id='{target_window_id}'")
-                if target_window_id not in composed_window_ids:
-                    self.loguru_logger.info(f"  --> CREATING placeholder for '{tab_constant_for_placeholder}' (ID '{target_window_id}') as it's not in composed_window_ids.")
-                    placeholder_container = Container(id=target_window_id, classes="window placeholder-window")
-                    if self._initial_tab_value != tab_constant_for_placeholder:
-                        placeholder_container.styles.display = "none"
-                    else:
-                        placeholder_container.styles.display = "block"
-                    with placeholder_container:
-                        yield Static(f"{tab_constant_for_placeholder.replace('_', ' ').capitalize()} Window Placeholder")
-                        yield Button("Coming Soon...", id=f"ph-btn-{tab_constant_for_placeholder}", disabled=True)
-                    yield placeholder_container
-                    composed_window_ids.add(target_window_id)
-                    self.loguru_logger.debug(f"  --> Yielded and added placeholder '{target_window_id}'. composed_window_ids: {composed_window_ids}")
-                else:
-                    self.loguru_logger.debug(f"  --> SKIPPING placeholder for '{target_window_id}', already in composed_window_ids.")
-            self._ui_ready = True
-            self.loguru_logger.info(f"--- FINISHED COMPOSE CONTENT AREA --- Final composed IDs: {composed_window_ids}")
-            self.loguru_logger.info("UI composition completed - watchers enabled")
+            yield ChatWindow(self, id="chat-window", classes="window")
+            yield CCPWindow(self, id="conversations_characters_prompts-window", classes="window")
+            yield NotesWindow(self, id="notes-window", classes="window")
+            yield MediaWindow(self, id="media-window", classes="window")
+            yield SearchWindow(self, id="search-window", classes="window")
+            yield IngestWindow(self, id="ingest-window", classes="window")
+            yield ToolsSettingsWindow(self, id="tools_settings-window", classes="window")
+            yield LLMManagementWindow(self, id="llm_management-window", classes="window")
+            yield LogsWindow(self, id="logs-window", classes="window")
+            yield StatsWindow(self, id="stats-window", classes="window")
+            yield EvalsWindow(self, id="evals-window", classes="window")
+            yield CodingWindow(self, id="coding-window", classes="window")
 
     # --- Watcher for CCP Active View ---
     def watch_ccp_active_view(self, old_view: Optional[str], new_view: str) -> None:
@@ -1136,6 +1173,15 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         # Schedule setup to run after initial rendering
         self.call_after_refresh(self._post_mount_setup)
+        self.call_after_refresh(self.hide_inactive_windows)
+
+    def hide_inactive_windows(self) -> None:
+        """Hides all windows that are not the current active tab."""
+        initial_tab = self._initial_tab_value
+        self.loguru_logger.debug(f"Hiding inactive windows, keeping '{initial_tab}-window' visible.")
+        for window in self.query(".window"):
+            is_active = window.id == f"{initial_tab}-window"
+            window.display = is_active
 
     async def _set_initial_tab(self) -> None:  # New method for deferred tab setting
         self.loguru_logger.info("Setting initial tab via call_later.")
@@ -1906,6 +1952,44 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # --- EVENT DISPATCHERS ---
     #
     ########################################################################
+    # FIXME - refactor version of this method to use the button handler map
+    # async def on_button_pressed(self, event: Button.Pressed) -> None:
+    #     """Dispatches button presses to the appropriate event handler using a map."""
+    #     button_id = event.button.id
+    #     if not button_id:
+    #         return
+    #
+    #     self.loguru_logger.debug(f"Button pressed: ID='{button_id}' on Tab='{self.current_tab}'")
+    #
+    #     # 1. Handle global tab switching first
+    #     if button_id.startswith("tab-"):
+    #         await tab_events.handle_tab_button_pressed(self, button_id)
+    #         return
+    #
+    #     # 2. Handle dynamically generated ChatMessage action buttons
+    #     action_widget = self._get_chat_message_widget_from_button(event.button)
+    #     if action_widget:
+    #         # This handler is designed to inspect the button and widget to take the correct action
+    #         await chat_events.handle_chat_action_button_pressed(self, event.button, action_widget)
+    #         return
+    #
+    #     # 3. Use the handler map for all other tab-specific buttons
+    #     # The map is now pre-built, so we just look up the current tab's handlers
+    #     current_tab_handlers = self.button_handler_map.get(self.current_tab)
+    #
+    #     if current_tab_handlers and button_id in current_tab_handlers:
+    #         handler = current_tab_handlers[button_id]
+    #
+    #         # The handler can be a direct function or a lambda
+    #         if callable(handler):
+    #             await handler(self, event)  # Pass both app and event for flexibility
+    #             return
+    #         else:
+    #             self.loguru_logger.error(f"Handler for button '{button_id}' is not callable.")
+    #
+    #     # 4. Fallback for unmapped buttons
+    #     # This block will now only be reached if a button ID isn't in any map.
+    #     self.loguru_logger.warning(f"Unhandled button press for ID '{button_id}' on tab '{self.current_tab}'.")
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses for tabs, sending messages, and message actions."""
         button = event.button
@@ -2069,6 +2153,22 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 return
             elif button_id == "chat-clear-active-character-button":
                 await chat_handlers.handle_chat_clear_active_character_button_pressed(self)
+                return
+            # --- Chat Tab Media Search Sidebar Buttons ---
+            elif button_id == "chat-media-load-selected-button":
+                await handle_chat_media_load_selected_button_pressed(self)
+                return
+            elif button_id == "chat-media-copy-title-button":
+                await handle_chat_media_copy_title_button_pressed(self)
+                return
+            elif button_id == "chat-media-copy-content-button":
+                await handle_chat_media_copy_content_button_pressed(self)
+                return
+            elif button_id == "chat-media-copy-author-button":
+                await handle_chat_media_copy_author_button_pressed(self)
+                return
+            elif button_id == "chat-media-copy-url-button":
+                await handle_chat_media_copy_url_button_pressed(self)
                 return
             # --- Chat Tab Notes Sidebar Buttons ---
             # These are handled by @on decorators, so we just acknowledge them here to prevent "unhandled" warnings.
@@ -2310,43 +2410,67 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 await handle_start_vllm_server_button_pressed(self)
             elif button_id == "vllm-stop-server-button":
                 await handle_stop_vllm_server_button_pressed(self)
+            # --- Ollama Button Handlers ---
+            elif button_id == "ollama-list-models-button":
+                await handle_ollama_list_models_button_pressed(self)
+            # --- Ollama Service Buttons ---
+            elif button_id == "ollama-browse-exec-button":
+                await handle_ollama_browse_exec_button_pressed(self)
+                return
+            elif button_id == "ollama-start-service-button":
+                await handle_start_ollama_service_button_pressed(self)
+                return
+            elif button_id == "ollama-stop-service-button":
+                await handle_stop_ollama_service_button_pressed(self)
+                return
+            # --- Ollama Button Handlers ---
+            elif button_id == "ollama-list-models-button":
+                await handle_ollama_list_models_button_pressed(self)
+                return
+            elif button_id == "ollama-show-model-button":
+                await handle_ollama_show_model_button_pressed(self)
+                return
+            elif button_id == "ollama-delete-model-button":
+                await handle_ollama_delete_model_button_pressed(self)
+                return
+            elif button_id == "ollama-copy-model-button":
+                await handle_ollama_copy_model_button_pressed(self)
+                return
+            elif button_id == "ollama-pull-model-button":
+                await handle_ollama_pull_model_button_pressed(self)
+                return
+            elif button_id == "ollama-browse-modelfile-button":
+                await handle_ollama_browse_modelfile_button_pressed(self)
+                return
+            elif button_id == "ollama-create-model-button":
+                await handle_ollama_create_model_button_pressed(self)
+                return
+            elif button_id == "ollama-push-model-button":
+                await handle_ollama_push_model_button_pressed(self)
+                return
+            elif button_id == "ollama-embeddings-button":
+                await handle_ollama_embeddings_button_pressed(self)
+                return
+            elif button_id == "ollama-ps-button":
+                await handle_ollama_ps_button_pressed(self)
+                return
+            # --- End of Ollama Button Handlers ---
             # MLX Server Buttons
             elif button_id == "mlx-start-server-button":
                 await handle_start_mlx_server_button_pressed(self)
             elif button_id == "mlx-stop-server-button":
                 await handle_stop_mlx_server_button_pressed(self)
-            # --- Ollama Button Handlers ---
-            elif button_id == "ollama-list-models-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_list_models_button_pressed(self)
-                return # Add return to ensure it's handled
-            elif button_id == "ollama-show-model-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_show_model_button_pressed(self)
-                return # Add return
-            elif button_id == "ollama-delete-model-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_delete_model_button_pressed(self)
-                return # Add return
-            elif button_id == "ollama-copy-model-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_copy_model_button_pressed(self)
-                return # Add return
-            elif button_id == "ollama-pull-model-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_pull_model_button_pressed(self)
-                return # Add return
-            elif button_id == "ollama-browse-modelfile-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_browse_modelfile_button_pressed(self)
-                return # Add return
-            elif button_id == "ollama-create-model-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_create_model_button_pressed(self)
-                return # Add return
-            elif button_id == "ollama-push-model-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_push_model_button_pressed(self)
-                return # Add return
-            elif button_id == "ollama-embeddings-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_embeddings_button_pressed(self)
-                return # Add return
-            elif button_id == "ollama-ps-button":
-                await LLM_Management_Events.llm_management_events_ollama.handle_ollama_ps_button_pressed(self)
-                return # Add return
-            # --- End of Ollama Button Handlers ---
+            # --- ONNX Server Buttons ---
+            elif button_id == "onnx-browse-python-button":
+                await handle_onnx_browse_python_button_pressed(self)
+            elif button_id == "onnx-browse-script-button":
+                await handle_onnx_browse_script_button_pressed(self)
+            elif button_id == "onnx-browse-model-button":
+                await handle_onnx_browse_model_button_pressed(self)
+            elif button_id == "onnx-start-server-button":
+                await handle_start_onnx_server_button_pressed(self)
+            elif button_id == "onnx-stop-server-button":
+                await handle_stop_onnx_server_button_pressed(self)
             else:
                 self.loguru_logger.warning(
                     f"Unhandled button on LLM MANAGEMENT tab: ID:{button_id}, Label:'{button.label}'")
@@ -2410,6 +2534,27 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             ]:
                 await chat_handlers.handle_chat_character_attribute_changed(self, event)
 
+    def _update_model_download_log(self, message: str) -> None:
+        """Helper to write messages to the model download log widget."""
+        try:
+            # This ID must match the RichLog widget in your "Download Models" view
+            log_widget = self.query_one("#model-download-log-output", RichLog)
+            log_widget.write(message)
+        except QueryError:
+            self.loguru_logger.error("Failed to query #model-download-log-output to write message.")
+        except Exception as e:
+            self.loguru_logger.error(f"Error writing to model download log: {e}", exc_info=True)
+
+    def _update_mlx_log(self, message: str) -> None:
+        """Helper to write messages to the MLX-LM log widget."""
+        try:
+            log_widget = self.query_one("#mlx-log-output", RichLog)
+            log_widget.write(message)
+        except QueryError:
+            self.loguru_logger.error("Failed to query #mlx-log-output to write message.")
+        except Exception as e:
+            self.loguru_logger.error(f"Error writing to MLX-LM log: {e}", exc_info=True)
+
     async def on_input_changed(self, event: Input.Changed) -> None:
         input_id = event.input.id
         current_active_tab = self.current_tab
@@ -2438,6 +2583,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             await chat_handlers.handle_chat_character_search_input_changed(self, event)
         elif input_id == "chat-character-name-edit" and current_active_tab == TAB_CHAT:
             await chat_handlers.handle_chat_character_attribute_changed(self, event)
+        # --- Chat Tab Media Search Input ---
+        elif input_id == "chat-media-search-input" and current_active_tab == TAB_CHAT:
+            await handle_chat_media_search_input_changed(self, event.input)
         # Add more specific input handlers if needed, e.g., for title inputs if they need live validation/reaction
 
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
@@ -2603,6 +2751,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                             self.loguru_logger.error(f"Error updating AI message UI on CANCELLED state: {qe_cancel_ui}")
             else:
                 self.loguru_logger.debug(f"Chat-related worker '{worker_name_attr}' in other state: {worker_state}")
+
+
+        #######################################################################
+        # --- Handle Ollama API Worker ---
+        #######################################################################
+        elif worker_group == "ollama_api":
+            self.loguru_logger.info(f"Ollama API worker '{event.worker.name}' finished with state {event.state}.")
+            await handle_ollama_worker_completion(self, event)
 
 
         #######################################################################
@@ -2783,6 +2939,66 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 except QueryError:
                     self.loguru_logger.warning("Could not find vLLM server buttons to update state for STOPPED/ERROR.")
 
+            #######################################################################
+            # --- Handle MLX-LM Server Worker ---
+            #######################################################################
+            elif worker_group == "mlx_lm_server":
+                self.loguru_logger.info(f"MLX-LM server worker state changed to {worker_state}.")
+                start_button_id = "#mlx-start-server-button"
+                stop_button_id = "#mlx-stop-server-button"
+
+                if worker_state == WorkerState.RUNNING:
+                    self.loguru_logger.info("MLX-LM server worker is RUNNING.")
+                    try:
+                        self.query_one(start_button_id, Button).disabled = True
+                        self.query_one(stop_button_id, Button).disabled = False
+                        self.notify("MLX-LM server process is running.", title="Server Status")
+                    except QueryError:
+                        self.loguru_logger.warning("Could not find MLX-LM server buttons for RUNNING state.")
+
+                elif worker_state in [WorkerState.SUCCESS, WorkerState.ERROR]:
+                    result_message = str(event.worker.result).strip() if event.worker.result else "Worker finished."
+                    self.loguru_logger.info(f"MLX-LM worker finished. Result: '{result_message}'")
+
+                    severity = "error" if "error" in result_message.lower() or "non-zero code" in result_message.lower() else "information"
+                    self.notify(f"MLX-LM server process finished.", title="Server Status", severity=severity)
+
+                    try:
+                        self.query_one(start_button_id, Button).disabled = False
+                        self.query_one(stop_button_id, Button).disabled = True
+                    except QueryError:
+                        self.loguru_logger.warning("Could not find MLX-LM server buttons to reset state.")
+
+                    if self.mlx_server_process is not None:
+                        self.mlx_server_process = None
+
+                #######################################################################
+                # --- Handle ONNX Server Worker ---
+                #######################################################################
+            elif worker_group == "onnx_server":
+                self.loguru_logger.info(f"ONNX server worker state changed to {worker_state}.")
+                start_button_id = "#onnx-start-server-button"
+                stop_button_id = "#onnx-stop-server-button"
+
+                if worker_state == WorkerState.RUNNING:
+                    self.loguru_logger.info("ONNX server worker is RUNNING.")
+                    try:
+                        self.query_one(start_button_id, Button).disabled = True
+                        self.query_one(stop_button_id, Button).disabled = False
+                        self.notify("ONNX server process is running.", title="Server Status")
+                    except QueryError:
+                        self.loguru_logger.warning("Could not find ONNX server buttons for RUNNING state.")
+
+                elif worker_state in [WorkerState.SUCCESS, WorkerState.ERROR]:
+                    result_message = str(event.worker.result).strip() if event.worker.result else "Worker finished."
+                    severity = "error" if "error" in result_message.lower() or "non-zero code" in result_message.lower() else "information"
+                    self.notify(f"ONNX server process finished.", title="Server Status", severity=severity)
+
+                    try:
+                        self.query_one(start_button_id, Button).disabled = False
+                        self.query_one(stop_button_id, Button).disabled = True
+                    except QueryError:
+                        self.loguru_logger.warning("Could not find ONNX server buttons to reset state.")
 
         #######################################################################
         # --- Handle Transformers Server Worker (identified by group) ---
@@ -2825,6 +3041,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                     self.query_one(download_button_id, Button).disabled = False
                 except QueryError:
                     self.loguru_logger.warning(f"Could not find button {download_button_id} to enable for ERROR state.")
+
 
 
         #######################################################################

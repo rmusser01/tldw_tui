@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 #
 # 3rd-Party Imports
 from textual.app import ComposeResult
-from textual.containers import Container, VerticalScroll
+from textual.containers import Container, VerticalScroll, Horizontal, Vertical
 from textual.css.query import QueryError
 from textual.widgets import Static, Button, Input, RichLog, Label, TextArea, Collapsible
 
@@ -142,7 +142,29 @@ class LLMManagementWindow(Container):
                     yield Button("Stop Server", id="vllm-stop-server-button", classes="action_button")
                 yield RichLog(id="vllm-log-output", classes="log_output", wrap=True, highlight=True)
             with Container(id="llm-view-onnx", classes="llm-view-area"):
-                yield Static("ONNX Management Area - Content Coming Soon!")
+                with VerticalScroll():
+                    yield Label("Python Interpreter Path:", classes="label")
+                    with Container(classes="input_container"):
+                        yield Input(id="onnx-python-path", value="python", placeholder="e.g., /path/to/venv/bin/python")
+                        yield Button("Browse", id="onnx-browse-python-button", classes="browse_button")
+                    yield Label("Path to your ONNX Server Script (.py):", classes="label")
+                    with Container(classes="input_container"):
+                        yield Input(id="onnx-script-path", placeholder="/path/to/your/onnx_server_script.py")
+                        yield Button("Browse Script", id="onnx-browse-script-button", classes="browse_button")
+                    yield Label("Model to Load (Path for script):", classes="label")
+                    with Container(classes="input_container"):
+                        yield Input(id="onnx-model-path", placeholder="Path to your .onnx model file or directory")
+                        yield Button("Browse Model", id="onnx-browse-model-button", classes="browse_button")
+                    yield Label("Host:", classes="label")
+                    yield Input(id="onnx-host", value="127.0.0.1", classes="input_field")
+                    yield Label("Port:", classes="label")
+                    yield Input(id="onnx-port", value="8004", classes="input_field")
+                    yield Label("Additional Script Arguments:", classes="label")
+                    yield TextArea(id="onnx-additional-args", classes="additional_args_textarea", language="bash", theme="vscode_dark")
+                    with Container(classes="button_container"):
+                        yield Button("Start ONNX Server", id="onnx-start-server-button", classes="action_button")
+                        yield Button("Stop ONNX Server", id="onnx-stop-server-button", classes="action_button")
+                    yield RichLog(id="onnx-log-output", classes="log_output", wrap=True, highlight=True)
             # --- Transformers View ---
             with Container(id="llm-view-transformers", classes="llm-view-area"):
                 with VerticalScroll():
@@ -215,77 +237,83 @@ class LLMManagementWindow(Container):
                     yield RichLog(id="mlx-log-output", classes="log_output", wrap=True, highlight=True)
             with Container(id="llm-view-ollama", classes="llm-view-area"):
                 with VerticalScroll():
+                    # Server URL - stays at top and takes full width
+                    yield Label("Ollama Service Management", classes="label section_label")
+                    yield Label("Ollama Executable Path:", classes="label")
+                    with Container(classes="input_container"):
+                        yield Input(id="ollama-exec-path",
+                                    placeholder="Path to ollama executable (e.g., /usr/local/bin/ollama)")
+                        yield Button("Browse", id="ollama-browse-exec-button", classes="browse_button")
+                    with Horizontal(classes="ollama-button-bar"):
+                        yield Button("Start Ollama Service", id="ollama-start-service-button")
+                        yield Button("Stop Ollama Service", id="ollama-stop-service-button")
+
+                    # API Management Section
+                    yield Label("Ollama API Management (requires running service)", classes="label section_label")
                     yield Label("Ollama Server URL:", classes="label")
-                    yield Input(id="ollama-server-url", value="http://localhost:11434", classes="input_field")
+                    yield Input(id="ollama-server-url", value="http://localhost:11434", classes="input_field_long")
 
-                    # List Models
-                    yield Label("List Models:", classes="label section_label")
-                    with Container(classes="action_container"):
-                        yield Button("List Models", id="ollama-list-models-button", classes="action_button")
+                    # General Actions Bar
+                    with Horizontal(classes="ollama-button-bar"):
+                        yield Button("List Local Models", id="ollama-list-models-button")
+                        yield Button("List Running Models", id="ollama-ps-button")
 
-                    # Show Model Info
-                    yield Label("Show Model Information:", classes="label section_label")
-                    with Container(classes="input_action_container"):
-                        yield Input(id="ollama-show-model-name", placeholder="Model name (e.g., llama2)", classes="input_field_short")
-                        yield Button("Show Info", id="ollama-show-model-button", classes="action_button_short")
+                    # Grid for more complex operations
+                    with Horizontal(classes="ollama-actions-grid"):
+                        # --- Left Column ---
+                        with Vertical(classes="ollama-actions-column"):
+                            yield Static("Model Management", classes="column-title")
 
-                    # Delete Model
-                    yield Label("Delete Model:", classes="label section_label")
-                    with Container(classes="input_action_container"):
-                        yield Input(id="ollama-delete-model-name", placeholder="Model name to delete", classes="input_field_short")
-                        yield Button("Delete Model", id="ollama-delete-model-button", classes="action_button_short delete_button")
-                    # Output for delete will go to the main ollama-log-output
+                            yield Label("Show Info:", classes="label")
+                            with Container(classes="input_action_container"):
+                                yield Input(id="ollama-show-model-name", placeholder="Model name", classes="input_field_short")
+                                yield Button("Show", id="ollama-show-model-button", classes="action_button_short")
 
-                    # Copy Model
-                    yield Label("Copy Model:", classes="label section_label")
-                    with Container(classes="input_action_container"):
-                        yield Input(id="ollama-copy-source-model", placeholder="Source model name", classes="input_field_short")
-                        yield Input(id="ollama-copy-destination-model", placeholder="New model name", classes="input_field_short")
-                        yield Button("Copy Model", id="ollama-copy-model-button", classes="action_button_short")
-                    # Output for copy will go to the main ollama-log-output
+                            yield Label("Delete:", classes="label")
+                            with Container(classes="input_action_container"):
+                                yield Input(id="ollama-delete-model-name", placeholder="Model to delete", classes="input_field_short")
+                                yield Button("Delete", id="ollama-delete-model-button", classes="action_button_short delete_button")
 
-                    # Pull Model
-                    yield Label("Pull Model:", classes="label section_label")
-                    with Container(classes="input_action_container"):
-                        yield Input(id="ollama-pull-model-name", placeholder="Model name (e.g., llama2)", classes="input_field_short")
-                        yield Button("Pull Model", id="ollama-pull-model-button", classes="action_button_short")
-                    # Progress/output for pull will go to the main ollama-log-output (or a dedicated area if needed later)
+                            yield Label("Copy Model:", classes="label")
+                            with Horizontal(classes="input_action_container"):
+                                yield Input(id="ollama-copy-source-model", placeholder="Source", classes="input_field_short")
+                                yield Input(id="ollama-copy-destination-model", placeholder="Destination", classes="input_field_short")
+                            yield Button("Copy Model", id="ollama-copy-model-button", classes="full_width_button")
 
-                    # Create Model
-                    yield Label("Create Model (from Modelfile):", classes="label section_label")
-                    with Container(classes="input_action_container"):
-                        yield Input(id="ollama-create-model-name", placeholder="Name for new model", classes="input_field_short")
-                        yield Button("Browse for Modelfile", id="ollama-browse-modelfile-button", classes="browse_button_short") # Consider styling consistency
-                    yield Input(id="ollama-create-modelfile-path", placeholder="Path to Modelfile will appear here", disabled=True, classes="input_field_long") # To display selected path
-                    yield Button("Create Model", id="ollama-create-model-button", classes="action_button")
-                    # Output for create will go to the main ollama-log-output
+                        # --- Right Column ---
+                        with Vertical(classes="ollama-actions-column"):
+                            yield Static("Registry & Custom Models", classes="column-title")
 
-                    # Push Model
-                    yield Label("Push Model:", classes="label section_label")
-                    with Container(classes="input_action_container"):
-                        yield Input(id="ollama-push-model-name", placeholder="Model name to push", classes="input_field_short")
-                        # Potentially add an input for destination if not defaulting or configured elsewhere
-                        yield Button("Push Model", id="ollama-push-model-button", classes="action_button_short")
-                    # Progress/output for push will go to the main ollama-log-output
+                            yield Label("Pull Model from Registry:", classes="label")
+                            with Container(classes="input_action_container"):
+                                yield Input(id="ollama-pull-model-name", placeholder="e.g. llama3", classes="input_field_short")
+                                yield Button("Pull", id="ollama-pull-model-button", classes="action_button_short")
 
-                    # Generate Embeddings
+                            yield Label("Push Model to Registry:", classes="label")
+                            with Container(classes="input_action_container"):
+                                yield Input(id="ollama-push-model-name", placeholder="e.g. my-registry/my-model", classes="input_field_short")
+                                yield Button("Push", id="ollama-push-model-button", classes="action_button_short")
+
+                            yield Label("Create Model from Modelfile:", classes="label")
+                            yield Input(id="ollama-create-model-name", placeholder="New model name", classes="input_field_long")
+                            with Horizontal(classes="input_action_container"):
+                                yield Input(id="ollama-create-modelfile-path", placeholder="Path to Modelfile...", disabled=True, classes="input_field_short")
+                                yield Button("Browse", id="ollama-browse-modelfile-button", classes="browse_button_short")
+                            yield Button("Create Model", id="ollama-create-model-button", classes="full_width_button")
+
+                    # Embeddings section - full width below grid
                     yield Label("Generate Embeddings:", classes="label section_label")
-                    with Container(classes="input_action_container"):
-                        yield Input(id="ollama-embeddings-model-name", placeholder="Model name for embeddings", classes="input_field_short")
-                        yield Input(id="ollama-embeddings-prompt", placeholder="Prompt for embeddings", classes="input_field_long") # Longer input for prompt
-                        yield Button("Generate Embeddings", id="ollama-embeddings-button", classes="action_button_short")
+                    with Horizontal(classes="input_action_container"):
+                        yield Input(id="ollama-embeddings-model-name", placeholder="Model for embeddings", classes="input_field_short")
+                        yield Input(id="ollama-embeddings-prompt", placeholder="Text to embed", classes="input_field_long")
+                        yield Button("Generate", id="ollama-embeddings-button", classes="action_button_short")
 
-                    # Running Models (ps)
-                    yield Label("List Running Models (ps):", classes="label section_label")
-                    with Container(classes="action_container"):
-                        yield Button("List Running Models", id="ollama-ps-button", classes="action_button")
-
-                    # Combined Output Log
+                    # --- Output Panes ---
+                    yield Label("Result / Status:", classes="label section_label")
                     yield RichLog(id="ollama-combined-output", wrap=True, highlight=False, classes="output_textarea_medium")
 
-                    # General Log Output
-                    yield Label("Ollama Log Output:", classes="label section_label")
-                    yield RichLog(id="ollama-log-output", classes="log_output", wrap=True, highlight=True)
+                    yield Label("Streaming Log:", classes="label section_label")
+                    yield RichLog(id="ollama-log-output", wrap=True, highlight=True, classes="log_output_large")
 
 #
 # End of LLM_Management_Window.py

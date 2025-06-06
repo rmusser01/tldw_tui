@@ -305,6 +305,14 @@ async def handle_stop_vllm_server_button_pressed(app: "TldwCli") -> None:
         log_output_widget.write("vLLM server is not currently running.\n")
         app.notify("vLLM server is not running.", severity="warning")
 
+# --- Button Handler Map ---
+VLLM_BUTTON_HANDLERS = {
+    "vllm-browse-python-button": handle_vllm_browse_python_button_pressed,
+    "vllm-browse-model-button": handle_vllm_browse_model_button_pressed,
+    "vllm-start-server-button": handle_start_vllm_server_button_pressed,
+    "vllm-stop-server-button": handle_stop_vllm_server_button_pressed,
+}
+
 #
 # End of llm_management_events_vllm.py
 ########################################################################################################################

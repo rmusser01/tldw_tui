@@ -3,16 +3,17 @@
 #
 # Imports
 from typing import TYPE_CHECKING, List
+
+from loguru import logger
 #
 # Third-party Libraries
 from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll, Horizontal
 from textual.widgets import Static, Button, Label, Input, ListView, TextArea
-
-from ..DB.Client_Media_DB_v2 import MediaDatabase
-
 #
 # Local Imports
+from ..DB.Client_Media_DB_v2 import MediaDatabase
+from ..Utils.text import slugify
 if TYPE_CHECKING:
     from ..app import TldwCli
 #
@@ -30,12 +31,6 @@ MEDIA_SUB_TABS = [
     ("Placeholder", "placeholder")
 ]
 
-def slugify(text: str) -> str:
-    """Simple slugify function, robust for empty or non-string."""
-    if not isinstance(text, str) or not text:
-        return "unknown_type" # Default slug for unexpected types
-    return text.lower().replace(" ", "-").replace("/", "-").replace("&", "and").replace("(", "").replace(")", "").replace(":", "").replace(",", "")
-
 class MediaWindow(Container):
     """
     Container for the Media Tab's UI, featuring a left navigation pane
@@ -45,74 +40,113 @@ class MediaWindow(Container):
     def __init__(self, app_instance: 'TldwCli', **kwargs):
         super().__init__(**kwargs)
         self.app_instance = app_instance
-        # media_types will be fetched and passed by app.py during compose_content_area
-        self.media_types_from_db: List[str] = []
+        # Initialize from app_instance._media_types_for_ui, which should be pre-fetched
+        self.media_types_from_db: List[str] = getattr(self.app_instance, '_media_types_for_ui', [])
+        self.log.debug(f"MediaWindow __init__: Received media types: {self.media_types_from_db}")
 
-    def on_mount(self) -> None:
-        """Fetch media types and build UI elements after mount."""
-        self.log.debug("MediaWindow on_mount: Fetching media types...")
-        if self.app_instance.notes_service and hasattr(self.app_instance.notes_service, '_get_db'):
-            db = self.app_instance.notes_service._get_db(self.app_instance.notes_user_id)
-            if db and isinstance(db, self.app_instance.MediaDatabase):  # Use MediaDatabase for type check
+    async def _rebuild_nav_pane(self, types_to_display: List[str]):
+        """Helper function to rebuild the navigation pane."""
+        nav_pane = self.query_one("#media-nav-pane", VerticalScroll)
+        await nav_pane.remove_children()
+        await nav_pane.mount(Static("Media Types", classes="sidebar-title"))
+
+        if not types_to_display or types_to_display == ["Error Loading Types"] or types_to_display == ["DB Error"] or types_to_display == ["Service Error"] or types_to_display == ["DB Error or No Media in DB"]:
+            error_message = "No media types loaded."
+            if types_to_display and isinstance(types_to_display[0], str): # Check if it's an error message
+                error_message = types_to_display[0]
+            await nav_pane.mount(Label(error_message))
+            self.log.info(f"MediaWindow: Nav pane rebuilt with message: {error_message}")
+        else:
+            for media_type_display_name in types_to_display:
+                type_slug = slugify(media_type_display_name)
+                await nav_pane.mount(Button(media_type_display_name, id=f"media-nav-{type_slug}", classes="media-nav-button"))
+            self.log.info(f"MediaWindow: Nav pane rebuilt with {len(types_to_display)} media types.")
+
+    async def on_mount(self) -> None:
+        """Validate pre-fetched media types and conditionally refresh if needed."""
+        self.log.info(f"MediaWindow on_mount: Initial media types from constructor: {self.media_types_from_db}")
+
+        # Check if pre-fetched types are valid and sufficient
+        # Valid means not empty and does not solely contain error indicators.
+        initial_types_are_valid = bool(self.media_types_from_db) and not \
+            (len(self.media_types_from_db) == 1 and self.media_types_from_db[0] in ["Error Loading Types", "DB Error", "Service Error", "DB Error or No Media in DB"])
+
+        if initial_types_are_valid:
+            self.log.info("MediaWindow on_mount: Pre-fetched media types are considered valid. Using them.")
+            # If compose already built the nav pane correctly with these, we might not need to rebuild.
+            # However, to ensure consistency if compose had an issue or if types were somehow empty during compose:
+            await self._rebuild_nav_pane(self.media_types_from_db)
+            return # Skip re-fetching
+
+        self.log.info("MediaWindow on_mount: Pre-fetched types are invalid or empty. Attempting to fetch.")
+        # Conditional Re-fetch Logic (if pre-fetched were not valid)
+        if self.app_instance.media_db: # Directly use app_instance.media_db
+            db = self.app_instance.media_db
+            self.log.debug(f"MediaWindow on_mount: Got media_db instance: {db}")
+            is_media_db_instance = isinstance(db, MediaDatabase) # Corrected class name
+            self.log.debug(f"MediaWindow on_mount: Is instance of MediaDatabase? {is_media_db_instance}")
+
+            if is_media_db_instance:
                 try:
-                    self.media_types_from_db = ["All Media"] + sorted(
+                    fetched_types = ["All Media"] + sorted(
                         list(set(db.get_distinct_media_types(include_deleted=False, include_trash=False))))
                     self.log.info(
-                        f"MediaWindow: Fetched {len(self.media_types_from_db)} distinct media types: {self.media_types_from_db}")
-                except Exception as e:
-                    self.log.error(f"MediaWindow: Error fetching media types: {e}", exc_info=True)
-                    self.media_types_from_db = ["Error Loading Types"]
-            else:
-                self.log.error("MediaWindow: MediaDatabase instance not available or invalid.")
-                self.media_types_from_db = ["DB Error"]
-        else:
-            self.log.error("MediaWindow: Notes service or _get_db method not available.")
-            self.media_types_from_db = ["Service Error"]
+                        f"MediaWindow on_mount: Fetched {len(fetched_types)} distinct media types: {fetched_types}")
 
-        # Now that media_types_from_db is populated, we can mount the children.
-        # Textual generally prefers defining children in compose, but for dynamic content
-        # based on async/DB calls at mount, we might need to mount them here.
-        # For simplicity, we'll ensure compose can handle an empty list and re-compose if types change significantly.
-        # Or, better, make compose use self.media_types_from_db and call self.recompose() if it changes.
-        # The provided `app.py` calls `compose_content_area` once. If media_types_from_db needs to be fetched
-        # *before* compose, it should happen in app.py and be passed to MediaWindow constructor.
-        # Let's assume for now that `app.py` will handle fetching and passing.
-        # If `compose` is called *after* `on_mount` completes (which is not standard for initial compose),
-        # then the current logic in `compose` using `self.media_types_from_db` would work.
-        #
-        # Given the structure of app.py's compose_content_area, it's better if app.py fetches the types
-        # and passes them to MediaWindow's constructor. Let's adjust that.
-        # If not, MediaWindow would need to be more complex, possibly using app.call_later to mount children.
+                    # Compare with initial to see if an update is truly needed
+                    if self.media_types_from_db != fetched_types:
+                        self.media_types_from_db = fetched_types
+                        await self._rebuild_nav_pane(self.media_types_from_db)
+                    else:
+                        self.log.info("MediaWindow on_mount: Fetched types are same as initial valid types. No UI rebuild needed for nav pane.")
+
+                except Exception as e:
+                    self.log.error(f"MediaWindow on_mount: Error fetching media types: {e}", exc_info=True)
+                    self.media_types_from_db = ["Error Loading Types"]
+                    await self._rebuild_nav_pane(self.media_types_from_db)
+            else:
+                self.log.error("MediaWindow on_mount: self.app_instance.media_db is not a valid MediaDatabase instance.")
+                self.media_types_from_db = ["DB Error"] # More specific error
+                await self._rebuild_nav_pane(self.media_types_from_db)
+        else:
+            self.log.error("MediaWindow on_mount: self.app_instance.media_db is None. Cannot fetch types.")
+            self.media_types_from_db = ["Service Error"] # Indicates media_db service itself is missing
+            await self._rebuild_nav_pane(self.media_types_from_db)
 
     def compose(self) -> ComposeResult:
-        # self.media_types_from_db should be populated by app.py passing it to constructor
-        # or by a dedicated on_mount fetch if compose_content_area isn't re-run.
-        # For now, assume it's passed by app.py to constructor or set before compose is called.
-        # If it's empty at compose time, it will show "No media types".
-
-        self.log.debug(f"MediaWindow composing. Types available: {self.media_types_from_db}")
+        self.log.debug(f"MediaWindow composing. Initial types from __init__: {self.media_types_from_db}")
 
         # Left Navigation Pane
         with VerticalScroll(classes="media-nav-pane", id="media-nav-pane"):
             yield Static("Media Types", classes="sidebar-title")
-            if not self.media_types_from_db:  # If list is empty after on_mount attempt
-                yield Label("No media types loaded.")
+            # Logic to display types or error message based on self.media_types_from_db
+            # This will be populated by on_mount if types were invalid/empty initially
+            if not self.media_types_from_db or \
+               (len(self.media_types_from_db) == 1 and self.media_types_from_db[0] in ["Error Loading Types", "DB Error", "Service Error", "DB Error or No Media in DB", "No media types loaded."]):
+                error_message = "No media types loaded."
+                if self.media_types_from_db and isinstance(self.media_types_from_db[0], str):
+                    error_message = self.media_types_from_db[0]
+                yield Label(error_message)
+                self.log.info(f"MediaWindow compose: Nav pane shows message: {error_message}")
             else:
                 for media_type_display_name in self.media_types_from_db:
                     type_slug = slugify(media_type_display_name)
                     yield Button(media_type_display_name, id=f"media-nav-{type_slug}", classes="media-nav-button")
+                self.log.info(f"MediaWindow compose: Nav pane composed with {len(self.media_types_from_db)} media types.")
 
         # Main Content Pane
         with Container(classes="media-content-pane", id="media-content-pane"):
-            if not self.media_types_from_db:
-                yield Static("No media content areas to display.", classes="placeholder-window")
+            if not self.media_types_from_db or \
+               (len(self.media_types_from_db) == 1 and self.media_types_from_db[0] in ["Error Loading Types", "DB Error", "Service Error", "DB Error or No Media in DB", "No media types loaded."]):
+                yield Static("No media content areas to display due to issues loading media types.", classes="placeholder-window")
+                self.log.info("MediaWindow compose: Content pane shows placeholder due to no valid media types.")
             else:
                 for media_type_display_name in self.media_types_from_db:
                     type_slug = slugify(media_type_display_name)
                     with Container(id=f"media-view-{type_slug}", classes="media-view-area"):
                         yield Label(f"{media_type_display_name} Management",
-                                    classes="pane-title")  # More descriptive title
-                        with Horizontal(classes="media-controls-bar"):  # Group search and load
+                                    classes="pane-title")
+                        with Horizontal(classes="media-controls-bar"):
                             yield Input(placeholder=f"Search in {media_type_display_name}...",
                                         id=f"media-search-input-{type_slug}",
                                         classes="sidebar-input media-search-input")
@@ -123,12 +157,13 @@ class MediaWindow(Container):
                                      classes="sidebar-button media-load-button")
 
                         with VerticalScroll(id=f"media-details-scroll-{type_slug}",
-                                            classes="media-details-scroll"):  # Scrollable details
+                                            classes="media-details-scroll"):
                             yield TextArea("", id=f"media-details-display-{type_slug}",
                                            classes="sidebar-textarea media-details-display", read_only=True)
 
                     # Hide all view areas by default; app.py watcher will manage visibility
                     self.query_one(f"#media-view-{type_slug}", Container).styles.display = "none"
+                self.log.info(f"MediaWindow compose: Content pane composed for {len(self.media_types_from_db)} media types.")
 
 #
 # End of MediaWindow.py

@@ -18,22 +18,22 @@ from textual.widgets import (
 from textual.containers import VerticalScroll
 from textual.css.query import QueryError
 
-from ..Utils.Utils import safe_float, safe_int
+from tldw_chatbook.Utils.Utils import safe_float, safe_int
 #
 # Local Imports
-from ..Widgets.chat_message import ChatMessage
-from ..Widgets.titlebar import TitleBar
-from ..Utils.Emoji_Handling import (
+from tldw_chatbook.Widgets.chat_message import ChatMessage
+from tldw_chatbook.Widgets.titlebar import TitleBar
+from tldw_chatbook.Utils.Emoji_Handling import (
     get_char, EMOJI_THINKING, FALLBACK_THINKING, EMOJI_EDIT, FALLBACK_EDIT,
     EMOJI_SAVE_EDIT, FALLBACK_SAVE_EDIT, EMOJI_COPIED, FALLBACK_COPIED, EMOJI_COPY, FALLBACK_COPY
 )
-from ..Character_Chat import Character_Chat_Lib as ccl
-from ..Character_Chat.Character_Chat_Lib import load_character_and_image
-from ..DB.ChaChaNotes_DB import ConflictError, CharactersRAGDBError, InputError
-from ..Prompt_Management import Prompts_Interop as prompts_interop
+from tldw_chatbook.Character_Chat import Character_Chat_Lib as ccl
+from tldw_chatbook.Character_Chat.Character_Chat_Lib import load_character_and_image
+from tldw_chatbook.DB.ChaChaNotes_DB import ConflictError, CharactersRAGDBError, InputError
+from tldw_chatbook.Prompt_Management import Prompts_Interop as prompts_interop
 #
 if TYPE_CHECKING:
-    from ..app import TldwCli
+    from tldw_chatbook.app import TldwCli
 
 
 #
@@ -2632,6 +2632,38 @@ async def populate_chat_conversation_character_filter_select(app: 'TldwCli') -> 
         logging.error(f"DB error populating char filter select (Chat Tab): {e_db}", exc_info=True)
     except Exception as e_unexp:
         logging.error(f"Unexpected error populating char filter select (Chat Tab): {e_unexp}", exc_info=True)
+
+
+# --- Button Handler Map ---
+# This maps button IDs to their async handler functions.
+CHAT_BUTTON_HANDLERS = {
+    "send-chat": lambda app: handle_chat_send_button_pressed(app, "chat"),
+    "respond-for-me-button": handle_respond_for_me_button_pressed,
+    "stop-chat-generation": handle_stop_chat_generation_pressed,
+    "chat-new-conversation-button": handle_chat_new_conversation_button_pressed,
+    "chat-new-temp-chat-button": handle_chat_new_conversation_button_pressed,  # Reuses handler
+    "chat-save-current-chat-button": handle_chat_save_current_chat_button_pressed,
+    "chat-save-conversation-details-button": handle_chat_save_details_button_pressed,
+    "chat-conversation-load-selected-button": handle_chat_load_selected_button_pressed,
+    "chat-prompt-load-selected-button": handle_chat_view_selected_prompt_button_pressed,
+    "chat-prompt-copy-system-button": handle_chat_copy_system_prompt_button_pressed,
+    "chat-prompt-copy-user-button": handle_chat_copy_user_prompt_button_pressed,
+    "chat-load-character-button": handle_chat_load_character_button_pressed,
+    "chat-clear-active-character-button": handle_chat_clear_active_character_button_pressed,
+
+    # --- Sidebar Toggles ---
+    "toggle-chat-left-sidebar": lambda app: handle_chat_tab_sidebar_toggle(app, "toggle-chat-left-sidebar"),
+    "toggle-chat-right-sidebar": lambda app: handle_chat_tab_sidebar_toggle(app, "toggle-chat-right-sidebar"),
+
+    # --- Sidebar Media Buttons (from chat_events_sidebar.py) ---
+    "chat-media-load-selected-button": 'chat_events_sidebar.handle_chat_media_load_selected_button_pressed',
+    "chat-media-copy-title-button": 'chat_events_sidebar.handle_chat_media_copy_title_button_pressed',
+    "chat-media-copy-content-button": 'chat_events_sidebar.handle_chat_media_copy_content_button_pressed',
+    "chat-media-copy-author-button": 'chat_events_sidebar.handle_chat_media_copy_author_button_pressed',
+    "chat-media-copy-url-button": 'chat_events_sidebar.handle_chat_media_copy_url_button_pressed',
+
+    # --- Note: ChatMessage action buttons (like edit, copy, delete) are handled separately by _get_chat_message_widget_from_button ---
+}
 
 #
 # End of chat_events.py

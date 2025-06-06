@@ -3,20 +3,19 @@
 #
 # Imports
 from typing import TYPE_CHECKING
+from pathlib import Path
 #
 # 3rd-Party Imports
 from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll, Horizontal, Vertical
-from textual.widgets import Static, Button, Input, Select, Checkbox, TextArea, Label, RadioSet, RadioButton, Collapsible, ListView, ListItem, Markdown, LoadingIndicator
+from textual.widgets import Static, Button, Input, Select, Checkbox, TextArea, Label, RadioSet, RadioButton, Collapsible, ListView, ListItem, Markdown, LoadingIndicator # Button, ListView, ListItem, Label are already here
+
+from ..Constants import TLDW_API_AUDIO_OPTIONS_ID, TLDW_API_VIDEO_OPTIONS_ID, TLDW_API_PDF_OPTIONS_ID, \
+    TLDW_API_EBOOK_OPTIONS_ID, TLDW_API_DOCUMENT_OPTIONS_ID, TLDW_API_XML_OPTIONS_ID, TLDW_API_MEDIAWIKI_OPTIONS_ID
 #
 # Local Imports
+from ..Third_Party.textual_fspicker.file_open import FileOpen
 from ..tldw_api.schemas import MediaType, ChunkMethod, PdfEngine  # Import Enums
-from ..Event_Handlers.ingest_events import (  # Import constants for option container IDs
-    TLDW_API_VIDEO_OPTIONS_ID, TLDW_API_AUDIO_OPTIONS_ID, TLDW_API_PDF_OPTIONS_ID,
-    TLDW_API_EBOOK_OPTIONS_ID, TLDW_API_DOCUMENT_OPTIONS_ID, TLDW_API_XML_OPTIONS_ID,
-    TLDW_API_MEDIAWIKI_OPTIONS_ID
-)
-
 if TYPE_CHECKING:
     from ..app import TldwCli
 #
@@ -41,6 +40,8 @@ class IngestWindow(Container):
     def __init__(self, app_instance: 'TldwCli', **kwargs):
         super().__init__(**kwargs)
         self.app_instance = app_instance
+        self.selected_local_files = {}  # Stores {media_type: [Path, ...]}
+        self._current_media_type_for_file_dialog = None # Stores the media_type for the active file dialog
 
     def compose_tldw_api_form(self, media_type: str) -> ComposeResult:
         """Composes the common part of the form for 'Ingest Media via tldw API'."""
@@ -90,9 +91,13 @@ class IngestWindow(Container):
             # For example, mediawiki_dump typically uses a local file path.
             yield Label("Media URLs (one per line):")
             yield TextArea(id=f"tldw-api-urls-{media_type}", language="plain_text", classes="ingest-textarea-small")
-            yield Label(
-                "Local File Paths (one per line, if API supports local path references or for client-side upload):")
-            yield TextArea(id=f"tldw-api-local-files-{media_type}", language="plain_text", classes="ingest-textarea-small")
+            # yield Label(
+            #     "Local File Paths (one per line, if API supports local path references or for client-side upload):")
+            # yield TextArea(id=f"tldw-api-local-files-{media_type}", language="plain_text", classes="ingest-textarea-small")
+            yield Button("Browse Local Files...", id=f"tldw-api-browse-local-files-button-{media_type}")
+            yield Label("Selected Local Files:", classes="ingest-label") # Added class for consistency
+            yield ListView(id=f"tldw-api-selected-local-files-list-{media_type}", classes="ingest-selected-files-list")
+
 
             with Horizontal(classes="title-author-row"): # Changed class here
                 with Vertical(classes="ingest-form-col"):
@@ -302,7 +307,69 @@ class IngestWindow(Container):
                     # For now, we assume compose_tldw_api_form is generic enough or will be adapted.
                     yield from self.compose_tldw_api_form(media_type=media_type)
 
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        button_id = event.button.id
+        if not button_id: # Should always have an ID
+            return
 
+        if button_id.startswith("tldw-api-browse-local-files-button-"):
+            media_type = button_id.replace("tldw-api-browse-local-files-button-", "")
+            self._current_media_type_for_file_dialog = media_type
+
+            raw_initial_path = self.app_instance.app_config.get("user_data_path", Path.home())
+            dialog_initial_path = str(raw_initial_path)
+
+            self.log.debug(f"Opening file dialog for media type '{media_type}' with initial path '{dialog_initial_path}'.")
+
+            await self.app.push_screen(
+                FileOpen(
+                    title=f"Select Local File for {media_type.title()}"
+                ),
+                callback=self.handle_file_picker_dismissed
+            )
+        # If IngestWindow has a superclass that also defines on_button_pressed, consider calling it:
+        # else:
+        #     await super().on_button_pressed(event) # Example if there's a relevant superclass method
+
+    async def handle_file_picker_dismissed(self, selected_file_path: Path | None) -> None:
+        self.log.debug(f"File picker dismissed, selected path: {selected_file_path}")
+        if self._current_media_type_for_file_dialog is None:
+            self.log.warning("File picker dismissed but no media type context was set. Ignoring.")
+            return
+
+        media_type = self._current_media_type_for_file_dialog
+
+        if not selected_file_path: # Handles None if dialog was cancelled or no path returned
+            self.log.info(f"No file selected or dialog cancelled for media type '{media_type}'.")
+            return
+
+        # Ensure the list for this media type exists in our tracking dictionary
+        if media_type not in self.selected_local_files:
+            self.selected_local_files[media_type] = []
+
+        is_duplicate = False
+        for existing_path in self.selected_local_files[media_type]:
+            if str(existing_path) == str(selected_file_path):
+                is_duplicate = True
+                break
+
+        if not is_duplicate:
+            self.selected_local_files[media_type].append(selected_file_path)
+            self.log.info(f"Added '{selected_file_path}' to selected files for media type '{media_type}'.")
+        else:
+            self.log.info(f"File '{selected_file_path}' already selected for media type '{media_type}'. Not adding again.")
+
+        list_view_id = f"#tldw-api-selected-local-files-list-{media_type}"
+        try:
+            list_view = self.query_one(list_view_id, ListView)
+            await list_view.clear()
+
+            for path_item in self.selected_local_files[media_type]:
+                list_item = ListItem(Label(str(path_item))) # Ensure Label is imported
+                await list_view.append(list_item)
+            self.log.debug(f"Updated ListView '{list_view_id}' for media type '{media_type}'.")
+        except Exception as e:
+            self.log.error(f"Error updating ListView {list_view_id} for {media_type}: {e}", exc_info=True)
 
 #
 # End of Logs_Window.py

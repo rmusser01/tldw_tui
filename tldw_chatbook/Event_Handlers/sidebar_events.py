@@ -44,6 +44,20 @@ async def handle_sidebar_toggle_button_pressed(app: 'TldwCli', button_id: str) -
     else:
         logging.warning(f"Unhandled sidebar toggle button ID: {button_id}")
 
+# --- Button Handler Map ---
+SIDEBAR_BUTTON_HANDLERS = {
+    # Chat
+    "toggle-chat-left-sidebar": handle_sidebar_toggle_button_pressed,
+    "toggle-chat-right-sidebar": handle_sidebar_toggle_button_pressed,
+    # Notes
+    "toggle-notes-sidebar-left": handle_sidebar_toggle_button_pressed,
+    "toggle-notes-sidebar-right": handle_sidebar_toggle_button_pressed,
+    # CCP
+    "toggle-conv-char-left-sidebar": handle_sidebar_toggle_button_pressed,
+    "toggle-conv-char-right-sidebar": handle_sidebar_toggle_button_pressed,
+}
+
+
 #
 # End of side_bar_events.py
 ########################################################################################################################

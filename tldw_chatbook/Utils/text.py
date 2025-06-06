@@ -132,6 +132,13 @@ def format_transcript(raw_text: str) -> str:
     return '\n'.join(lines)
 
 
+def slugify(text: str) -> str:
+    """Simple slugify function, robust for empty or non-string."""
+    if not isinstance(text, str) or not text:
+        return "unknown_type" # Default slug for unexpected types
+    return text.lower().replace(" ", "-").replace("/", "-").replace("&", "and").replace("(", "").replace(")", "").replace(":", "").replace(",", "")
+
+
 #
 # End of text.py
 ######################################################################################################################

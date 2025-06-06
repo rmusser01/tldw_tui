@@ -1,22 +1,20 @@
 import pytest
 import pytest_asyncio
-from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from textual.app import App
 from textual.widgets import Button, TextArea, Static, Select, Checkbox, Input, Label
 from textual.containers import VerticalScroll
 from rich.text import Text
 
 # Modules to be tested
 from tldw_chatbook.Widgets.chat_message import ChatMessage
-from tldw_chatbook.Event_Handlers.chat_events import (
+from tldw_chatbook.Event_Handlers.Chat_Events.chat_events import (
     handle_continue_response_button_pressed,
     handle_respond_for_me_button_pressed
 )
 # Mocked app class (simplified)
 from tldw_chatbook.app import TldwCli
 from tldw_chatbook.Character_Chat import Character_Chat_Lib as ccl
-from tldw_chatbook.Utils.Emoji_Handling import get_char, EMOJI_THINKING, FALLBACK_THINKING
 
 
 # Test Case 1: Thumbs Up/Down Icon Visibility

@@ -1963,6 +1963,39 @@ async def handle_ccp_card_edit_button_pressed(app: 'TldwCli') -> None:
     except QueryError:
         logger.error("Failed to find #ccp-editor-char-cancel-button to remove 'hidden' class.")
 
+
+# --- Button Handler Map ---
+CCP_BUTTON_HANDLERS = {
+    # Left Pane
+    "ccp-import-character-button": handle_ccp_import_character_button_pressed,
+    "ccp-import-conversation-button": handle_ccp_import_conversation_button_pressed,
+    "ccp-import-prompt-button": handle_ccp_import_prompt_button_pressed,
+    "conv-char-conversation-search-button": handle_ccp_conversation_search_button_pressed,
+    "conv-char-load-button": handle_ccp_load_conversation_button_pressed,
+    "ccp-prompt-create-new-button": handle_ccp_prompt_create_new_button_pressed,
+    "ccp-prompt-load-selected-button": handle_ccp_prompt_load_selected_button_pressed,
+    "ccp-right-pane-load-character-button": handle_ccp_left_load_character_button_pressed,
+
+    # Center Pane
+    "ccp-card-edit-button": handle_ccp_card_edit_button_pressed,
+    "ccp-card-save-button": handle_ccp_card_save_button_pressed,
+    "ccp-card-clone-button": handle_ccp_card_clone_button_pressed,
+    "ccp-editor-char-save-button": handle_ccp_editor_char_save_button_pressed,
+    "ccp-editor-char-clone-button": handle_ccp_editor_char_clone_button_pressed,
+    "ccp-editor-char-cancel-button": handle_ccp_editor_char_cancel_button_pressed,
+    "ccp-editor-prompt-save-button": handle_ccp_editor_prompt_save_button_pressed,
+    "ccp-editor-prompt-clone-button": handle_ccp_editor_prompt_clone_button_pressed,
+
+    # Right Pane
+    "conv-char-save-details-button": handle_ccp_save_conversation_details_button_pressed,
+    "ccp-editor-prompt-delete-button": handle_ccp_editor_prompt_delete_button_pressed,
+    "ccp-character-delete-button": handle_ccp_right_delete_character_button_pressed,
+
+    # Sidebar Toggles
+    "toggle-conv-char-left-sidebar": lambda app: handle_ccp_tab_sidebar_toggle(app, "toggle-conv-char-left-sidebar"),
+    "toggle-conv-char-right-sidebar": lambda app: handle_ccp_tab_sidebar_toggle(app, "toggle-conv-char-right-sidebar"),
+}
+
 #
 # End of conv_char_events.py
 ########################################################################################################################

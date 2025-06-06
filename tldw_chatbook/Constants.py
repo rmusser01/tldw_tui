@@ -10,6 +10,7 @@
 ########################################################################################################################
 #
 # Functions:
+from tldw_chatbook.Third_Party.textual_fspicker import Filters
 
 # --- Constants ---
 TAB_CHAT = "chat"
@@ -26,6 +27,21 @@ TAB_EVALS = "evals"
 TAB_CODING = "coding"
 ALL_TABS = [TAB_CHAT, TAB_CCP, TAB_NOTES, TAB_MEDIA, TAB_SEARCH, TAB_INGEST,
             TAB_TOOLS_SETTINGS, TAB_LLM, TAB_LOGS, TAB_STATS, TAB_EVALS, TAB_CODING]
+
+# --- TLDW API Form Specific Option Containers (IDs) ---
+TLDW_API_VIDEO_OPTIONS_ID = "tldw-api-video-options"
+TLDW_API_AUDIO_OPTIONS_ID = "tldw-api-audio-options"
+TLDW_API_PDF_OPTIONS_ID = "tldw-api-pdf-options"
+TLDW_API_EBOOK_OPTIONS_ID = "tldw-api-ebook-options"
+TLDW_API_DOCUMENT_OPTIONS_ID = "tldw-api-document-options"
+TLDW_API_XML_OPTIONS_ID = "tldw-api-xml-options"
+TLDW_API_MEDIAWIKI_OPTIONS_ID = "tldw-api-mediawiki-options"
+
+ALL_TLDW_API_OPTION_CONTAINERS = [
+    TLDW_API_VIDEO_OPTIONS_ID, TLDW_API_AUDIO_OPTIONS_ID, TLDW_API_PDF_OPTIONS_ID,
+    TLDW_API_EBOOK_OPTIONS_ID, TLDW_API_DOCUMENT_OPTIONS_ID, TLDW_API_XML_OPTIONS_ID,
+    TLDW_API_MEDIAWIKI_OPTIONS_ID
+]
 
 
 # --- CSS definition ---
