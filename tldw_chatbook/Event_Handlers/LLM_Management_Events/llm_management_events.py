@@ -1,6 +1,9 @@
 # /tldw_chatbook/Event_Handlers/LLM_Management_Events/llm_management_events.py
+#
+#
+# Imports
 from __future__ import annotations
-
+#
 import functools
 import logging
 import os
@@ -10,17 +13,22 @@ import sys
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
-
+#
+# Third-party Imports
 from textual.worker import Worker, WorkerState
 from textual.widgets import Input, RichLog, TextArea, Button
 from textual.css.query import QueryError
-
+#
+# Local Imports
 from tldw_chatbook.Constants import LLAMA_CPP_SERVER_ARGS_HELP_TEXT, LLAMAFILE_SERVER_ARGS_HELP_TEXT
-
+#
 if TYPE_CHECKING:
     from tldw_chatbook.app import TldwCli
-
 from tldw_chatbook.Third_Party.textual_fspicker import FileOpen, Filters
+#
+########################################################################################################################
+#
+# Constants:
 
 __all__ = [
     # Generic Helpers (Exported for other modules to use)
