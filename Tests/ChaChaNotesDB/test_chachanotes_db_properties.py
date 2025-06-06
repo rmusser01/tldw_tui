@@ -588,46 +588,6 @@ def populated_conversation(db_instance: CharactersRAGDB):
 
 
 class TestCascadeAndLinkingProperties:
-    # Test was split into two: one for soft delete behavior, one for hard delete behavior due to DB corruption risk.
-    #@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
-    # def test_deleting_conversation_cascades_to_messages(self, db_instance: CharactersRAGDB, populated_conversation):
-    #     """
-    #     Property: Soft-deleting a conversation should cause its messages to become inaccessible
-    #     (because the foreign key ON DELETE CASCADE should delete them from the table).
-    #     """
-    #     conv = populated_conversation['conv']
-    #     msg = populated_conversation['msg']
-    #
-    #     # 1. Verify message exists before
-    #     assert db_instance.get_message_by_id(msg['id']) is not None
-    #
-    #     # 2. Soft-delete the parent conversation
-    #     db_instance.soft_delete_conversation(conv['id'], expected_version=conv['version'])
-    #
-    #     # 3. Verify the message is now gone.
-    #     # Note: Your soft_delete only marks the conversation as deleted.
-    #     # The ON DELETE CASCADE is for *hard* deletes.
-    #     # Let's check the behavior of your soft delete.
-    #     # A better test: get_messages_for_conversation should return empty.
-    #     messages = db_instance.get_messages_for_conversation(conv['id'])
-    #     assert messages == []
-    #
-    #     # What about the message itself? Your `soft_delete_conversation` doesn't
-    #     # cascade to soft-delete messages. This property test reveals that!
-    #     # This is a design decision. If you expect messages to be "orphaned" but
-    #     # still exist, then this is correct. If you expect them to be deleted,
-    #     # your `soft_delete_conversation` method needs to be updated.
-    #     # Let's write the test for the CURRENT behavior.
-    #     assert db_instance.get_message_by_id(msg['id']) is not None  # It still exists!
-    #
-    #     # Let's test what happens on a HARD delete.
-    #     with db_instance.transaction() as conn:
-    #         # Manually perform a hard delete to test the SQL constraint
-    #         conn.execute("DELETE FROM conversations WHERE id = ?", (conv['id'],))
-    #
-    #     # Now the cascade should have fired, and the message should be truly gone.
-    #     assert db_instance.get_message_by_id(msg['id']) is None
-
     def test_soft_deleting_conversation_makes_messages_unfindable(self, db_instance: CharactersRAGDB,
                                                                   populated_conversation):
         """

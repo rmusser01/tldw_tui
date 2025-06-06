@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 # 3rd-Party Imports:
 #
 # Local imports
-from tldw_cli.tldw_app.DB.Client_Media_DB_v2 import Database, ConflictError
+from tldw_chatbook.DB.Client_Media_DB_v2 import MediaDatabase as Database, ConflictError
 # Import from src using adjusted sys.path in conftest
 #
 #######################################################################################################################
@@ -102,6 +102,32 @@ class TestDatabaseTransactions:
         # Verify outside transaction (count should be back to initial)
         final_count_cursor = db.execute_query("SELECT COUNT(*) FROM Keywords")
         assert final_count_cursor.fetchone()[0] == initial_count
+
+
+class TestSearchFunctionality:
+    @pytest.fixture(scope="class")
+    def search_db(self, tmp_path_factory):
+        """Setup a single DB for the entire class with predictable data."""
+        db_path = tmp_path_factory.mktemp("search_tests") / "search.db"
+        db = Database(db_path, "search_client")
+
+        # Add a predictable set of media items
+        db.add_media_with_keywords(
+            title="Alpha One", content="Content about Python and programming.", media_type="article",
+            keywords=["python", "programming"], ingestion_date="2023-01-15T12:00:00Z"
+        ) # ID 1
+        db.add_media_with_keywords(
+            title="Beta Two", content="A video about data science.", media_type="video",
+            keywords=["python", "data science"], ingestion_date="2023-02-20T12:00:00Z"
+        ) # ID 2
+        db.add_media_with_keywords(
+            title="Gamma Three (TRASH)", content="Old news.", media_type="article",
+            keywords=["news"], ingestion_date="2023-03-10T12:00:00Z"
+        ) # ID 3
+        db.mark_as_trash(3)
+
+        yield db
+        db.close
 
 
 class TestDatabaseCRUDAndSync:
