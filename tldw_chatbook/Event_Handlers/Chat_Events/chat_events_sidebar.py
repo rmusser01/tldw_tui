@@ -229,6 +229,16 @@ async def handle_chat_media_copy_url_button_pressed(app: 'TldwCli'):
         logger.warning("No media URL available to copy.")
 
 
+# --- Button Handler Map ---
+CHAT_SIDEBAR_BUTTON_HANDLERS = {
+    "chat-media-load-selected-button": handle_chat_media_load_selected_button_pressed,
+    "chat-media-copy-title-button": handle_chat_media_copy_title_button_pressed,
+    "chat-media-copy-content-button": handle_chat_media_copy_content_button_pressed,
+    "chat-media-copy-author-button": handle_chat_media_copy_author_button_pressed,
+    "chat-media-copy-url-button": handle_chat_media_copy_url_button_pressed,
+}
+
+
 #
 # End of chat_events_sidebar.py
 ########################################################################################################################

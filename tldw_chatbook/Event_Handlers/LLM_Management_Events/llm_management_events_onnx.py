@@ -261,6 +261,15 @@ async def handle_stop_onnx_server_button_pressed(app: "TldwCli") -> None:
             log_output_widget.write(f"An unexpected error occurred: {e}")
         app.notify(f"An unexpected error occurred: {e}", severity="error")
 
+# --- Button Handler Map ---
+ONNX_BUTTON_HANDLERS = {
+    "onnx-browse-python-button": handle_onnx_browse_python_button_pressed,
+    "onnx-browse-script-button": handle_onnx_browse_script_button_pressed,
+    "onnx-browse-model-button": handle_onnx_browse_model_button_pressed,
+    "onnx-start-server-button": handle_start_onnx_server_button_pressed,
+    "onnx-stop-server-button": handle_stop_onnx_server_button_pressed,
+}
+
 #
 # End of llm_management_events_onnx.py
 ########################################################################################################################

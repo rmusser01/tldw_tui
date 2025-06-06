@@ -1814,6 +1814,33 @@ async def handle_ingest_notes_import_now_button_pressed(app: 'TldwCli') -> None:
         group="file_operations",
         description="Importing selected note files."
     )
+
+
+# --- Button Handler Map ---
+INGEST_BUTTON_HANDLERS = {
+    # Prompts
+    "ingest-prompts-select-file-button": handle_ingest_prompts_select_file_button_pressed,
+    "ingest-prompts-clear-files-button": handle_ingest_prompts_clear_files_button_pressed,
+    "ingest-prompts-import-now-button": handle_ingest_prompts_import_now_button_pressed,
+    # Characters
+    "ingest-characters-select-file-button": handle_ingest_characters_select_file_button_pressed,
+    "ingest-characters-clear-files-button": handle_ingest_characters_clear_files_button_pressed,
+    "ingest-characters-import-now-button": handle_ingest_characters_import_now_button_pressed,
+    # Notes
+    "ingest-notes-select-file-button": handle_ingest_notes_select_file_button_pressed,
+    "ingest-notes-clear-files-button": handle_ingest_notes_clear_files_button_pressed,
+    "ingest-notes-import-now-button": handle_ingest_notes_import_now_button_pressed,
+    # TLDW API
+    "tldw-api-submit-video": handle_tldw_api_submit_button_pressed,
+    "tldw-api-submit-audio": handle_tldw_api_submit_button_pressed,
+    "tldw-api-submit-pdf": handle_tldw_api_submit_button_pressed,
+    "tldw-api-submit-ebook": handle_tldw_api_submit_button_pressed,
+    "tldw-api-submit-document": handle_tldw_api_submit_button_pressed,
+    "tldw-api-submit-xml": handle_tldw_api_submit_button_pressed,
+    "tldw-api-submit-mediawiki_dump": handle_tldw_api_submit_button_pressed,
+}
+
+
 #
 # End of tldw_chatbook/Event_Handlers/ingest_events.py
 #######################################################################################################################

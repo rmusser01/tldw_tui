@@ -686,6 +686,21 @@ async def handle_notes_list_view_selected(app: 'TldwCli', list_view_id: str, ite
     else:
         logger.debug("Notes ListView selection was empty or item lacked note_id/note_version.")
 
+# --- Button Handler Map ---
+NOTES_BUTTON_HANDLERS = {
+    "toggle-notes-sidebar-left": handle_notes_tab_sidebar_toggle,
+    "toggle-notes-sidebar-right": handle_notes_tab_sidebar_toggle,
+    "notes-import-button": handle_notes_import_button_pressed,
+    "notes-create-new-button": handle_notes_create_new_button_pressed,
+    "notes-edit-selected-button": handle_notes_edit_selected_button_pressed,
+    "notes-search-button": handle_notes_search_button_pressed,
+    "notes-load-selected-button": handle_notes_load_selected_button_pressed,
+    "notes-save-current-button": handle_notes_save_current_button_pressed,
+    "notes-main-save-button": handle_notes_main_save_button_pressed,
+    "notes-delete-button": handle_notes_delete_button_pressed,
+    "notes-save-keywords-button": handle_notes_save_keywords_button_pressed,
+}
+
 #
 # End of notes_events.py
 ########################################################################################################################

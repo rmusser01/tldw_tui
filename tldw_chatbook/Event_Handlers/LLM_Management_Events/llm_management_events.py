@@ -974,6 +974,23 @@ async def populate_llm_help_texts(app: 'TldwCli') -> None:
     except Exception as e:
         app.loguru_logger.error(f"Error populating Llamafile help: {e}", exc_info=True)
 
+# --- Button Handler Map ---
+LLM_MANAGEMENT_BUTTON_HANDLERS = {
+    # Llamafile
+    "llamafile-browse-exec-button": handle_llamafile_browse_exec_button_pressed,
+    "llamafile-browse-model-button": handle_llamafile_browse_model_button_pressed,
+    "llamafile-start-server-button": handle_start_llamafile_server_button_pressed,
+    "llamafile-stop-server-button": handle_stop_llamafile_server_button_pressed,
+    # Llama.cpp
+    "llamacpp-browse-exec-button": handle_llamacpp_browse_exec_button_pressed,
+    "llamacpp-browse-model-button": handle_llamacpp_browse_model_button_pressed,
+    "llamacpp-start-server-button": handle_start_llamacpp_server_button_pressed,
+    "llamacpp-stop-server-button": handle_stop_llamacpp_server_button_pressed,
+    # Model Download (Legacy)
+    "browse-models-dir-button": handle_browse_models_dir_button_pressed,
+    "start-model-download-button": handle_start_model_download_button_pressed,
+}
+
 #
 # End of llm_management_events.py
 ########################################################################################################################

@@ -262,6 +262,37 @@ def format_media_details(media_data: Dict[str, Any]) -> Text:
     # details.append(f"\nKeywords: ...\n", style="bold")
     return details
 
+# --- Button Handler Map ---
+MEDIA_BUTTON_HANDLERS = {
+    # Nav buttons
+    "media-nav-all-media": handle_media_nav_button_pressed,
+    "media-nav-video": handle_media_nav_button_pressed,
+    "media-nav-audio": handle_media_nav_button_pressed,
+    "media-nav-web-page": handle_media_nav_button_pressed,
+    "media-nav-pdf": handle_media_nav_button_pressed,
+    "media-nav-ebook": handle_media_nav_button_pressed,
+    "media-nav-document": handle_media_nav_button_pressed,
+    "media-nav-xml": handle_media_nav_button_pressed,
+    # Search buttons
+    "media-search-button-all-media": handle_media_search_button_pressed,
+    "media-search-button-video": handle_media_search_button_pressed,
+    "media-search-button-audio": handle_media_search_button_pressed,
+    "media-search-button-web-page": handle_media_search_button_pressed,
+    "media-search-button-pdf": handle_media_search_button_pressed,
+    "media-search-button-ebook": handle_media_search_button_pressed,
+    "media-search-button-document": handle_media_search_button_pressed,
+    "media-search-button-xml": handle_media_search_button_pressed,
+    # Load selected buttons
+    "media-load-selected-button-all-media": handle_media_load_selected_button_pressed,
+    "media-load-selected-button-video": handle_media_load_selected_button_pressed,
+    "media-load-selected-button-audio": handle_media_load_selected_button_pressed,
+    "media-load-selected-button-web-page": handle_media_load_selected_button_pressed,
+    "media-load-selected-button-pdf": handle_media_load_selected_button_pressed,
+    "media-load-selected-button-ebook": handle_media_load_selected_button_pressed,
+    "media-load-selected-button-document": handle_media_load_selected_button_pressed,
+    "media-load-selected-button-xml": handle_media_load_selected_button_pressed,
+}
+
 #
 # End of media_events.py
 ########################################################################################################################

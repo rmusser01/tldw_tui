@@ -225,6 +225,12 @@ async def handle_stop_mlx_server_button_pressed(app: "TldwCli") -> None:
             log_output_widget.write(f"An unexpected error occurred while stopping the server: {e}")
         app.notify(f"An unexpected error occurred: {e}", severity="error")
 
+# --- Button Handler Map ---
+MLX_LM_BUTTON_HANDLERS = {
+    "mlx-start-server-button": handle_start_mlx_server_button_pressed,
+    "mlx-stop-server-button": handle_stop_mlx_server_button_pressed,
+}
+
 #
 # End of llm_management_events_mlx-lm.py
 ########################################################################################################################

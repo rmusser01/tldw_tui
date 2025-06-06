@@ -24,6 +24,17 @@ async def handle_tab_button_pressed(app: 'TldwCli', button_id: str) -> None:
     else:
         logging.debug(f"Already on tab '{new_tab_id}'. Ignoring.")
 
+# --- Button Handler Map ---
+TAB_BUTTON_HANDLERS = {
+    "tab-chat": handle_tab_button_pressed,
+    "tab-notes": handle_tab_button_pressed,
+    "tab-ccp": handle_tab_button_pressed,
+    "tab-media": handle_tab_button_pressed,
+    "tab-llm-management": handle_tab_button_pressed,
+    "tab-ingest": handle_tab_button_pressed,
+    "tab-app-log": handle_tab_button_pressed,
+}
+
 #
 # End of tab_events.py
 ########################################################################################################################

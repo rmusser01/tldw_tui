@@ -67,6 +67,17 @@ async def handle_llm_nav_button_pressed(app: "TldwCli", button_id: str) -> None:
     # Splitting it can help isolate where QueryErrors happen (nav pane vs content pane switching).
     # The specific handlers (like handle_ollama_nav_button_pressed) have their own try-except.
 
+# --- Button Handler Map ---
+LLM_NAV_BUTTON_HANDLERS = {
+    "llm-nav-llamafile": handle_llm_nav_button_pressed,
+    "llm-nav-llamacpp": handle_llm_nav_button_pressed,
+    "llm-nav-ollama": handle_llm_nav_button_pressed,
+    "llm-nav-vllm": handle_llm_nav_button_pressed,
+    "llm-nav-transformers": handle_llm_nav_button_pressed,
+    "llm-nav-mlx-lm": handle_llm_nav_button_pressed,
+    "llm-nav-onnx": handle_llm_nav_button_pressed,
+}
+
 #
 # End of llm_nav_events.py
 #######################################################################################################################

@@ -63,7 +63,10 @@ async def handle_copy_logs_button_pressed(app: 'TldwCli') -> None:
         app.notify(f"Error copying logs: {str(e)}", title="Error", severity="error", timeout=6)
         logger.error(f"Failed to copy logs: {e}", exc_info=True)
 
-
+# --- Button Handler Map ---
+APP_LIFECYCLE_BUTTON_HANDLERS = {
+    "copy-logs-button": handle_copy_logs_button_pressed,
+}
 
 #
 # End of app_lifecycle.py

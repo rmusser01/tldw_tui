@@ -311,5 +311,13 @@ async def handle_transformers_browse_models_dir_button_pressed(app: "TldwCli") -
     )
 
 
+# --- Button Handler Map ---
+TRANSFORMERS_BUTTON_HANDLERS = {
+    "transformers-list-local-models-button": handle_transformers_list_local_models_button_pressed,
+    "transformers-download-model-button": handle_transformers_download_model_button_pressed,
+    "transformers-browse-models-dir-button": handle_transformers_browse_models_dir_button_pressed,
+}
 
-
+#
+# End of llm_management_events_transformers.py
+########################################################################################################################
