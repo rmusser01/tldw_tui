@@ -2633,6 +2633,38 @@ async def populate_chat_conversation_character_filter_select(app: 'TldwCli') -> 
     except Exception as e_unexp:
         logging.error(f"Unexpected error populating char filter select (Chat Tab): {e_unexp}", exc_info=True)
 
+
+# --- Button Handler Map ---
+# This maps button IDs to their async handler functions.
+CHAT_BUTTON_HANDLERS = {
+    "send-chat": lambda app: handle_chat_send_button_pressed(app, "chat"),
+    "respond-for-me-button": handle_respond_for_me_button_pressed,
+    "stop-chat-generation": handle_stop_chat_generation_pressed,
+    "chat-new-conversation-button": handle_chat_new_conversation_button_pressed,
+    "chat-new-temp-chat-button": handle_chat_new_conversation_button_pressed,  # Reuses handler
+    "chat-save-current-chat-button": handle_chat_save_current_chat_button_pressed,
+    "chat-save-conversation-details-button": handle_chat_save_details_button_pressed,
+    "chat-conversation-load-selected-button": handle_chat_load_selected_button_pressed,
+    "chat-prompt-load-selected-button": handle_chat_view_selected_prompt_button_pressed,
+    "chat-prompt-copy-system-button": handle_chat_copy_system_prompt_button_pressed,
+    "chat-prompt-copy-user-button": handle_chat_copy_user_prompt_button_pressed,
+    "chat-load-character-button": handle_chat_load_character_button_pressed,
+    "chat-clear-active-character-button": handle_chat_clear_active_character_button_pressed,
+
+    # --- Sidebar Toggles ---
+    "toggle-chat-left-sidebar": lambda app: handle_chat_tab_sidebar_toggle(app, "toggle-chat-left-sidebar"),
+    "toggle-chat-right-sidebar": lambda app: handle_chat_tab_sidebar_toggle(app, "toggle-chat-right-sidebar"),
+
+    # --- Sidebar Media Buttons (from chat_events_sidebar.py) ---
+    "chat-media-load-selected-button": 'chat_events_sidebar.handle_chat_media_load_selected_button_pressed',
+    "chat-media-copy-title-button": 'chat_events_sidebar.handle_chat_media_copy_title_button_pressed',
+    "chat-media-copy-content-button": 'chat_events_sidebar.handle_chat_media_copy_content_button_pressed',
+    "chat-media-copy-author-button": 'chat_events_sidebar.handle_chat_media_copy_author_button_pressed',
+    "chat-media-copy-url-button": 'chat_events_sidebar.handle_chat_media_copy_url_button_pressed',
+
+    # --- Note: ChatMessage action buttons (like edit, copy, delete) are handled separately by _get_chat_message_widget_from_button ---
+}
+
 #
 # End of chat_events.py
 ########################################################################################################################

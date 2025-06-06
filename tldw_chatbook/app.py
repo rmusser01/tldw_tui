@@ -570,73 +570,20 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     #
     ###########################################################
     def compose_content_area(self) -> ComposeResult:
-        self.loguru_logger.info(f"--- ENTERING COMPOSE CONTENT AREA (Direct Yield Pattern with explicit Media/Search) ---")
-        self.loguru_logger.info(f"Initial _initial_tab_value: {self._initial_tab_value}")
-        self.loguru_logger.info(f"Constants.ALL_TABS content: {ALL_TABS}")
-
-        # This parent container is crucial
+        """Yields the main window component for each tab."""
         with Container(id="content"):
-            composed_window_ids = set()
-
-            def _yield_and_track(window_instance, tab_constant_val, actual_window_id_val):
-                nonlocal composed_window_ids
-                if self._initial_tab_value != tab_constant_val:
-                    window_instance.styles.display = "none"
-                else:
-                    window_instance.styles.display = "block"
-                yield window_instance
-                composed_window_ids.add(actual_window_id_val)
-                self.loguru_logger.debug(f"Yielded {window_instance.__class__.__name__}, ID: {actual_window_id_val}, Display: {window_instance.styles.display}")
-
-            self.loguru_logger.debug("Instantiating and yielding concrete tab windows...")
-
-            yield from _yield_and_track(ChatWindow(self, id="chat-window", classes="window"), TAB_CHAT, "chat-window")
-            yield from _yield_and_track(CCPWindow(self, id="conversations_characters_prompts-window", classes="window"), TAB_CCP, "conversations_characters_prompts-window")
-            yield from _yield_and_track(NotesWindow(self, id="notes-window", classes="window"), TAB_NOTES, "notes-window")
-            yield from _yield_and_track(IngestWindow(self, id="ingest-window", classes="window"), TAB_INGEST, "ingest-window")
-            yield from _yield_and_track(ToolsSettingsWindow(self, id="tools_settings-window", classes="window"), TAB_TOOLS_SETTINGS, "tools_settings-window")
-            yield from _yield_and_track(LLMManagementWindow(self, id="llm_management-window", classes="window"), TAB_LLM, "llm_management-window")
-            yield from _yield_and_track(LogsWindow(self, id="logs-window", classes="window"), TAB_LOGS, "logs-window")
-            yield from _yield_and_track(StatsWindow(self, id="stats-window", classes="window"), TAB_STATS, "stats-window")
-
-            # --- Pass fetched media types to MediaWindow ---
-            media_window_instance = MediaWindow(self, id="media-window", classes="window")
-            media_window_instance.media_types_from_db = self._media_types_for_ui # Set before compose
-            yield from _yield_and_track(media_window_instance, TAB_MEDIA, "media-window")
-            # --- End MediaWindow with passed types ---
-
-            yield from _yield_and_track(SearchWindow(self, id="search-window", classes="window"), TAB_SEARCH, "search-window")
-            yield from _yield_and_track(EvalsWindow(self, id="evals-window", classes="window"), TAB_EVALS, "evals-window") # Added EvalsWindow
-            yield from _yield_and_track(CodingWindow(self, id="coding-window", classes="window"), TAB_CODING, "coding-window")
-
-            self.loguru_logger.info(f"Finished yielding concrete windows. Composed IDs: {composed_window_ids}")
-
-            self.loguru_logger.info(f"Starting placeholder loop. ALL_TABS: {ALL_TABS}")
-            unique_tab_constants = set(ALL_TABS)
-            self.loguru_logger.info(f"Unique tab constants for placeholder loop: {unique_tab_constants}")
-            self.loguru_logger.info(f"Current composed_window_ids: {composed_window_ids}")
-
-            for tab_constant_for_placeholder in unique_tab_constants:
-                target_window_id = "llm_management-window" if tab_constant_for_placeholder == TAB_LLM else f"{tab_constant_for_placeholder}-window"
-                self.loguru_logger.debug(f"Placeholder Loop: tab_const='{tab_constant_for_placeholder}', target_id='{target_window_id}'")
-                if target_window_id not in composed_window_ids:
-                    self.loguru_logger.info(f"  --> CREATING placeholder for '{tab_constant_for_placeholder}' (ID '{target_window_id}') as it's not in composed_window_ids.")
-                    placeholder_container = Container(id=target_window_id, classes="window placeholder-window")
-                    if self._initial_tab_value != tab_constant_for_placeholder:
-                        placeholder_container.styles.display = "none"
-                    else:
-                        placeholder_container.styles.display = "block"
-                    with placeholder_container:
-                        yield Static(f"{tab_constant_for_placeholder.replace('_', ' ').capitalize()} Window Placeholder")
-                        yield Button("Coming Soon...", id=f"ph-btn-{tab_constant_for_placeholder}", disabled=True)
-                    yield placeholder_container
-                    composed_window_ids.add(target_window_id)
-                    self.loguru_logger.debug(f"  --> Yielded and added placeholder '{target_window_id}'. composed_window_ids: {composed_window_ids}")
-                else:
-                    self.loguru_logger.debug(f"  --> SKIPPING placeholder for '{target_window_id}', already in composed_window_ids.")
-            self._ui_ready = True
-            self.loguru_logger.info(f"--- FINISHED COMPOSE CONTENT AREA --- Final composed IDs: {composed_window_ids}")
-            self.loguru_logger.info("UI composition completed - watchers enabled")
+            yield ChatWindow(self, id="chat-window", classes="window")
+            yield CCPWindow(self, id="conversations_characters_prompts-window", classes="window")
+            yield NotesWindow(self, id="notes-window", classes="window")
+            yield MediaWindow(self, id="media-window", classes="window")
+            yield SearchWindow(self, id="search-window", classes="window")
+            yield IngestWindow(self, id="ingest-window", classes="window")
+            yield ToolsSettingsWindow(self, id="tools_settings-window", classes="window")
+            yield LLMManagementWindow(self, id="llm_management-window", classes="window")
+            yield LogsWindow(self, id="logs-window", classes="window")
+            yield StatsWindow(self, id="stats-window", classes="window")
+            yield EvalsWindow(self, id="evals-window", classes="window")
+            yield CodingWindow(self, id="coding-window", classes="window")
 
     # --- Watcher for CCP Active View ---
     def watch_ccp_active_view(self, old_view: Optional[str], new_view: str) -> None:
@@ -1188,6 +1135,15 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         # Schedule setup to run after initial rendering
         self.call_after_refresh(self._post_mount_setup)
+        self.call_after_refresh(self.hide_inactive_windows)
+
+    def hide_inactive_windows(self) -> None:
+        """Hides all windows that are not the current active tab."""
+        initial_tab = self._initial_tab_value
+        self.loguru_logger.debug(f"Hiding inactive windows, keeping '{initial_tab}-window' visible.")
+        for window in self.query(".window"):
+            is_active = window.id == f"{initial_tab}-window"
+            window.display = is_active
 
     async def _set_initial_tab(self) -> None:  # New method for deferred tab setting
         self.loguru_logger.info("Setting initial tab via call_later.")
