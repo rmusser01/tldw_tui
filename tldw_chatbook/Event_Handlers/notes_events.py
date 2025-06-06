@@ -288,7 +288,7 @@ async def _note_import_callback(app: 'TldwCli', selected_path: Optional[Path]) -
         app.notify("Note import cancelled.", severity="information", timeout=2)
 
 
-async def handle_notes_import_button_pressed(app: 'TldwCli') -> None:
+async def handle_notes_import_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     logger_instance = getattr(app, 'loguru_logger', logger)
     logger_instance.info("Notes 'Import Note' button pressed.")
 

@@ -458,7 +458,7 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
                 # to render it as is, without trying to parse for markup.
                 static_text_widget.update(Text(new_text))
                 # --- DO NOT REMOVE ---
-                static_text_widget.update(escape_markup(new_text))  # Update display with escaped text
+                #static_text_widget.update(escape_markup(new_text))  # Update display with escaped text
 
                 static_text_widget.display = True
                 action_widget._editing = False
@@ -1054,7 +1054,7 @@ async def handle_chat_load_selected_button_pressed(app: 'TldwCli', event: Button
         app.notify("Unexpected error loading chat.", severity="error")
 
 
-async def perform_chat_conversation_search(app: 'TldwCli', event: Button.Pressed) -> None:
+async def perform_chat_conversation_search(app: 'TldwCli') -> None:
     loguru_logger.debug("Performing chat conversation search...")
     try:
         search_bar = app.query_one("#chat-conversation-search-bar", Input)

@@ -168,17 +168,21 @@ class ChatMessage(Widget):
         if self.has_class("-ai"):
             try:
                 actions_container = self.query_one(".message-actions")
-                continue_button = self.query_one("#continue-response-button", Button)
-
                 if complete:
-                    actions_container.remove_class("-generating") # Makes the bar visible via CSS
-                    actions_container.styles.display = "block"    # Ensures bar is visible
-                    continue_button.display = True                # Makes continue button visible
+                    actions_container.remove_class("-generating")
+                    actions_container.styles.display = "block"
                 else:
-                    # This state typically occurs during initialization if generation_complete=False
-                    actions_container.add_class("-generating") # Hides the bar via CSS
-                    # actions_container.styles.display = "none" # CSS rule should handle this
-                    continue_button.display = False           # Hides continue button
+                    actions_container.add_class("-generating")
+
+                # Separately handle the continue button in its own try...except block
+                # This prevents an error here from stopping the whole function.
+                try:
+                    continue_button = self.query_one("#continue-response-button", Button)
+                    continue_button.display = complete
+                except QueryError:
+                    # It's okay if the continue button doesn't exist, as it's commented out.
+                    logging.debug("Continue button not found in ChatMessage, skipping visibility toggle.")
+
             except QueryError as qe:
                 # This might happen if the query runs before the widget is fully composed or if it's being removed.
                 logging.debug(f"ChatMessage (ID: {self.id}, Role: {self.role}): QueryError in watch__generation_complete_internal: {qe}. Widget might not be fully ready or is not an AI message with these components.")
