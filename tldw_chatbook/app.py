@@ -1448,6 +1448,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.call_later(ccp_handlers.perform_ccp_conversation_search, self) # Initial search/list for conversations
         elif new_tab == TAB_NOTES:
             self.call_later(notes_handlers.load_and_display_notes_handler, self)
+        elif new_tab == TAB_MEDIA:
+            if not self.media_active_view:
+                # Set the initial view for the media tab if one isn't already active.
+                # This triggers the watch_media_active_view to show the correct pane.
+                initial_slug = media_slugify("All Media") # Default to the "All Media" view
+                initial_view_id = f"media-view-{initial_slug}"
+                self.loguru_logger.debug(f"Switched to Media tab, activating initial view: {initial_view_id}")
+                self.media_active_view = initial_view_id
         elif new_tab == TAB_SEARCH:
             if not self.search_active_sub_tab: # If no sub-tab is active yet for Search tab
                 self.loguru_logger.debug(f"Switched to Search tab, activating initial sub-tab view: {self._initial_search_sub_tab_view}")

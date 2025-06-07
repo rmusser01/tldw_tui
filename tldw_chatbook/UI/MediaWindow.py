@@ -162,7 +162,7 @@ class MediaWindow(Container):
                                            classes="sidebar-textarea media-details-display", read_only=True)
 
                     # Hide all view areas by default; app.py watcher will manage visibility
-                    self.query_one(f"#media-view-{type_slug}", Container).styles.display = "none"
+                    #self.query_one(f"#media-view-{type_slug}", Container).styles.display = "none"
                 self.log.info(f"MediaWindow compose: Content pane composed for {len(self.media_types_from_db)} media types.")
 
 #
