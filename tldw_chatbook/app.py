@@ -334,6 +334,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     current_chat_note_id: Optional[str] = None
     current_chat_note_version: Optional[int] = None
 
+    # Shared state for tldw API requests
+    _last_tldw_api_request_context: Dict[str, Any] = {}
+
     def __init__(self):
         super().__init__()
         self.MediaDatabase = MediaDatabase
@@ -2001,6 +2004,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         self.loguru_logger.debug(f"Button pressed: ID='{button_id}' on Tab='{self.current_tab}'")
 
+        if button_id.startswith("tldw-api-browse-local-files-button-"):
+            try:
+                ingest_window = self.query_one(IngestWindow)
+                await ingest_window.on_button_pressed(event)
+                return # Event handled, stop further processing
+            except QueryError:
+                self.loguru_logger.error("Could not find IngestWindow to delegate browse button press.")
+
         # 1. Handle global tab switching first
         if button_id.startswith("tab-"):
             await tab_events.handle_tab_button_pressed(self, event)
@@ -2070,19 +2081,16 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     async def on_input_changed(self, event: Input.Changed) -> None:
         input_id = event.input.id
         current_active_tab = self.current_tab
-        # --- Chat Sidebar Prompt Search ---
-        if input_id == "chat-prompt-search-input" and current_active_tab == TAB_CHAT:
-            await chat_handlers.handle_chat_sidebar_prompt_search_input_changed(self, event.value)
         # --- Notes Search ---
-        elif input_id == "notes-search-input" and current_active_tab == TAB_NOTES:
+        if input_id == "notes-search-input" and current_active_tab == TAB_NOTES: # Changed from elif to if
             await notes_handlers.handle_notes_search_input_changed(self, event.value)
         # --- Chat Sidebar Conversation Search ---
         elif input_id == "chat-conversation-search-bar" and current_active_tab == TAB_CHAT:
             await chat_handlers.handle_chat_conversation_search_bar_changed(self, event.value)
         elif input_id == "conv-char-search-input" and current_active_tab == TAB_CCP:
-            await ccp_handlers.handle_ccp_conversation_search_input_changed(self, event.value)
+            await ccp_handlers.handle_ccp_conversation_search_input_changed(self, event)
         elif input_id == "ccp-prompt-search-input" and current_active_tab == TAB_CCP:
-            await ccp_handlers.handle_ccp_prompt_search_input_changed(self, event.value)
+            await ccp_handlers.handle_ccp_prompt_search_input_changed(self, event)
         elif input_id == "chat-prompt-search-input" and current_active_tab == TAB_CHAT: # New condition
             if self._chat_sidebar_prompt_search_timer: # Use the new timer variable
                 self._chat_sidebar_prompt_search_timer.stop()
@@ -2268,6 +2276,15 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             else:
                 self.loguru_logger.debug(f"Chat-related worker '{worker_name_attr}' in other state: {worker_state}")
 
+        #######################################################################
+        # --- Handle tldw server API Calls Worker (tldw API Ingestion) ---
+        #######################################################################
+        elif worker_group == "api_calls":
+            self.loguru_logger.info(f"TLDW API worker '{event.worker.name}' finished with state {event.state}.")
+            if worker_state == WorkerState.SUCCESS:
+                await ingest_events.handle_tldw_api_worker_success(self, event)
+            elif worker_state == WorkerState.ERROR:
+                await ingest_events.handle_tldw_api_worker_failure(self, event)
 
         #######################################################################
         # --- Handle Ollama API Worker ---
