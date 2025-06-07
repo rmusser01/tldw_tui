@@ -1121,7 +1121,8 @@ class PromptsDatabase:
     def get_prompt_by_id(self, prompt_id: int, include_deleted: bool = False) -> Optional[Dict]:
         query = "SELECT * FROM Prompts WHERE id = ?"
         params = [prompt_id]
-        if not include_deleted: query += " AND deleted = 0"
+        if not include_deleted:
+            query += " AND deleted = 0"
         try:
             cursor = self.execute_query(query, tuple(params))
             result = cursor.fetchone()
@@ -1133,7 +1134,8 @@ class PromptsDatabase:
     def get_prompt_by_uuid(self, prompt_uuid: str, include_deleted: bool = False) -> Optional[Dict]:
         query = "SELECT * FROM Prompts WHERE uuid = ?"
         params = [prompt_uuid]
-        if not include_deleted: query += " AND deleted = 0"
+        if not include_deleted:
+            query += " AND deleted = 0"
         try:
             cursor = self.execute_query(query, tuple(params))
             result = cursor.fetchone()
@@ -1145,7 +1147,8 @@ class PromptsDatabase:
     def get_prompt_by_name(self, name: str, include_deleted: bool = False) -> Optional[Dict]:
         query = "SELECT * FROM Prompts WHERE name = ?"
         params = [name]
-        if not include_deleted: query += " AND deleted = 0"
+        if not include_deleted:
+            query += " AND deleted = 0"
         try:
             cursor = self.execute_query(query, tuple(params))
             result = cursor.fetchone()
@@ -1268,6 +1271,7 @@ class PromptsDatabase:
 
             # FTS on prompt fields
             if fts_query_parts:
+                fts_conditions = []
                 fts_search_active = True
                 if not any("prompts_fts fts_p" in j_item for j_item in joins):
                     joins.append("JOIN prompts_fts fts_p ON fts_p.rowid = p.id")
@@ -1275,7 +1279,7 @@ class PromptsDatabase:
                 # For simple matching, just use the query directly if FTS table covers all these.
                 # The FTS table definition needs to match these fields.
                 # Assuming prompts_fts has 'name', 'author', 'details', 'system_prompt', 'user_prompt'
-                conditions.append("fts_p.prompts_fts MATCH ?")
+                fts_conditions.append("fts_p.prompts_fts MATCH ?")
                 params.append(search_query) # User provides FTS syntax or simple terms
 
             # FTS on keywords (if specified in search_fields)
@@ -1289,8 +1293,14 @@ class PromptsDatabase:
                 if not any("prompt_keywords_fts fts_k" in j_item for j_item in joins):
                     joins.append("JOIN prompt_keywords_fts fts_k ON fts_k.rowid = pkw.id")
 
-                conditions.append("fts_k.prompt_keywords_fts MATCH ?")
-                params.append(search_query) # Match against keywords
+                # Create an OR-ed condition for keywords
+                fts_conditions.append("fts_k.prompt_keywords_fts MATCH ?")
+                params.append(search_query)  # Re-add param for this clause
+
+            # Combine the FTS conditions with OR
+            if fts_conditions:
+                conditions.append(f"({' OR '.join(fts_conditions)})")
+                fts_search_active = True
 
         order_by_clause_str = "ORDER BY p.last_modified DESC, p.id DESC"
         if fts_search_active:
