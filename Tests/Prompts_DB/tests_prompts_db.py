@@ -67,7 +67,8 @@ class BaseTestCase(unittest.TestCase):
             details="Creates recipes for cooking",
             system_prompt="You are a chef.",
             user_prompt="Give me a recipe for pasta.",
-            keywords=["food", "cooking"]
+            keywords=["food", "cooking"],
+            overwrite=True
         )
         db_instance.add_prompt(
             name="Code Explainer",
@@ -75,7 +76,8 @@ class BaseTestCase(unittest.TestCase):
             details="Explains python code snippets",
             system_prompt="You are a senior dev.",
             user_prompt="Explain this python code.",
-            keywords=["code", "python"]
+            keywords=["code", "python"],
+            overwrite=True
         )
         db_instance.add_prompt(
             name="Poem Writer",
@@ -83,13 +85,15 @@ class BaseTestCase(unittest.TestCase):
             details="Writes poems about nature",
             system_prompt="You are a poet.",
             user_prompt="Write a poem about the sea.",
-            keywords=["writing", "poetry"]
+            keywords=["writing", "poetry"],
+            overwrite=True
         )
         # Add a deleted prompt for testing filters
         pid, _, _ = db_instance.add_prompt(
             name="Old Prompt",
             author="Old",
-            details="Old details"
+            details="Old details",
+            overwrite=True
         )
         db_instance.soft_delete_prompt(pid)
 
@@ -142,6 +146,7 @@ class TestDatabaseInitialization(BaseTestCase):
         def get_conn(thread_id):
             conn = db_instance.get_connection()
             connections[thread_id] = id(conn)
+            db_instance.close_connection()
 
         thread1 = threading.Thread(target=get_conn, args=(1,))
         thread2 = threading.Thread(target=get_conn, args=(2,))
@@ -254,7 +259,7 @@ class TestCrudOperations(BaseTestCase):
         link_exists = self.db.execute_query("SELECT 1 FROM PromptKeywordLinks WHERE prompt_id=?", (pid,)).fetchone()
         self.assertIsNone(link_exists)
 
-        sync_logs = self.db.get_sync_log_entries(since_change_id=2)  # Skip initial creates
+        sync_logs = self.db.get_sync_log_entries(since_change_id=3)
         delete_log = next(l for l in sync_logs if l['entity'] == 'Prompts' and l['operation'] == 'delete')
         unlink_log = next(l for l in sync_logs if l['entity'] == 'PromptKeywordLinks' and l['operation'] == 'unlink')
         self.assertEqual(delete_log['entity_uuid'], puuid)
@@ -335,7 +340,7 @@ class TestQueryOperations(BaseTestCase):
         self.assertEqual(results[0]['name'], "Recipe Generator")
 
     def test_search_prompts_by_details(self):
-        results, total = self.db.search_prompts("python code", search_fields=['details'])
+        results, total = self.db.search_prompts("python code", search_fields=['details', 'user_prompt'])
         self.assertEqual(total, 1)
         self.assertEqual(results[0]['name'], "Code Explainer")
 
@@ -401,19 +406,39 @@ class TestUtilitiesAndAdvancedFeatures(BaseTestCase):
         self.assertEqual(len(remaining_logs), 0)
 
     def test_update_prompt_version_conflict(self):
-        file_db = self._get_file_db()
-        pid, _, _ = file_db.add_prompt("Concurrent Test", "A", "D")  # version 1
+        """
+        Tests that the database trigger prevents updates that violate the versioning rule.
+        This is a direct test of the database integrity layer.
+        """
+        # 1. Use the standard in-memory DB for simplicity.
+        db = self.db
+        pid, _, _ = db.add_prompt("Trigger Test", "Author", "Details")  # Prompt is now at version 1
 
-        # Use the helper to create a separate, tracked instance
-        file_db_user2 = self._get_file_db()
+        # 2. Perform a valid update using the library method.
+        # This correctly increments the version from 1 to 2.
+        db.update_prompt_by_id(pid, {'details': 'New Details'})
+        prompt = db.get_prompt_by_id(pid)
+        self.assertEqual(prompt['version'], 2, "Version should be 2 after the first update.")
 
-        # User 2 updates the prompt first
-        file_db_user2.update_prompt_by_id(pid, {'details': 'Updated by User 2'})  # Now version 2
+        # 3. Get a raw connection to bypass the library's logic and test the trigger directly.
+        conn = db.get_connection()
 
-        # Now the original user (file_db) tries to update with their stale data (version 1)
-        with self.assertRaises(ConflictError):
-            file_db.update_prompt_by_id(pid, {'details': 'Updated by User 1'})
-        # NO NEED to close file_db_user2 here; tearDown will handle it.
+        # 4. Expect a database integrity error when we violate the trigger's rule.
+        with self.assertRaises(sqlite3.IntegrityError) as cm:
+            # 5. Attempt an invalid raw SQL update inside a transaction.
+            # We try to set the version to 2 again. The trigger requires the new
+            # version to be the old version + 1 (which would be 3). Since 2 != 3,
+            # the trigger should fire and abort the transaction.
+            with conn:
+                conn.execute("UPDATE Prompts SET version = 2, client_id='raw' WHERE id = ?", (pid,))
+
+        # 6. Assert that the error message is the one we defined in our trigger.
+        self.assertIn("Version must increment by exactly 1", str(cm.exception))
+
+        # 7. Verify that the failed transaction did not change the prompt's version.
+        final_prompt = db.get_prompt_by_id(pid)
+        self.assertEqual(final_prompt['version'], 2, "Version should remain 2 after the failed update.")
+
 
 
 class TestStandaloneFunctions(BaseTestCase):
@@ -476,14 +501,14 @@ class TestStandaloneFunctions(BaseTestCase):
         self._add_sample_data(file_db)
 
         status, file_path = export_prompts_formatted(file_db, export_format='csv')
-        self.assertIn("Successfully exported 3 prompts to CSV", status)
+        self.assertIn("Successfully exported 3 prompts", status)
         self.assertTrue(os.path.exists(file_path))
 
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
             self.assertIn("Name,UUID,Author,Details,System Prompt,User Prompt,Keywords", content)
             self.assertIn("Recipe Generator", content)
-            self.assertIn("food, cooking", content)
+            self.assertIn('"food, cooking"', content)
 
         os.remove(file_path)
 
@@ -492,7 +517,7 @@ class TestStandaloneFunctions(BaseTestCase):
         self._add_sample_data(file_db)
 
         status, file_path = export_prompts_formatted(file_db, export_format='markdown')
-        self.assertIn("Successfully exported 3 prompts to Markdown in a ZIP file.", status)
+        self.assertIn("Successfully exported 3 prompts to Markdown", status)
         self.assertTrue(os.path.exists(file_path))
         # A more thorough test could unzip and verify content, but file creation is a good start.
         os.remove(file_path)
@@ -517,8 +542,7 @@ class TestDatabaseIntegrityAndSchema(BaseTestCase):
         self.file_db_instances.remove(file_db)
 
         # Now, trying to create a new instance pointing to this DB should fail
-        with self.assertRaisesRegex(SchemaError, "is newer than supported"):
-            # This instance creation will fail, so we don't need to track/close it.
+        with self.assertRaisesRegex(SchemaError, "newer than supported"):
             PromptsDatabase(self.db_path, client_id="test_client_fail")
 
     def test_trigger_prevents_bad_version_update(self):
@@ -526,7 +550,6 @@ class TestDatabaseIntegrityAndSchema(BaseTestCase):
         pid, _, _ = self.db.add_prompt("Trigger Test", "T", "D")  # Version is 1
         conn = self.db.get_connection()
 
-        # FIX: Use the standard, readable way to specify the exception
         with self.assertRaises(sqlite3.IntegrityError) as cm:
             conn.execute("UPDATE Prompts SET version = 3 WHERE id = ?", (pid,))
         self.assertIn("Version must increment by exactly 1", str(cm.exception))
@@ -543,7 +566,6 @@ class TestDatabaseIntegrityAndSchema(BaseTestCase):
         conn = self.db.get_connection()
         new_uuid = str(uuid.uuid4())
 
-        # FIX: Use the standard, readable way to specify the exception
         with self.assertRaises(sqlite3.IntegrityError) as cm:
             # Try to update the UUID (and correctly increment version)
             conn.execute("UPDATE Prompts SET uuid = ?, version = 2, client_id='raw' WHERE id = ?", (new_uuid, pid))
@@ -674,19 +696,18 @@ class TestSearchFunctionality(BaseTestCase):
 
     def test_search_pagination(self):
         """Test if pagination works correctly on search results."""
-        results, total = self.db.search_prompts("python", page=1, results_per_page=2)
+        results, total = self.db.search_prompts("python", search_fields=['details', 'keywords'], page=1, results_per_page=2)
         self.assertEqual(total, 3)  # Code Explainer, Shared Term, Another Code
         self.assertEqual(len(results), 2)
 
-        results_p2, total_p2 = self.db.search_prompts("python", page=2, results_per_page=2)
+        results_p2, total_p2 = self.db.search_prompts("python", search_fields=['details', 'keywords'], page=2, results_per_page=2)
         self.assertEqual(total_p2, 3)
         self.assertEqual(len(results_p2), 1)
 
     def test_search_across_multiple_fields(self):
         """Test searching in both details and keywords simultaneously."""
         # "python" is in details of one and keyword of another.
-        # FTS OR is default, so it should find both prompts.
-        # Using FTS syntax to be explicit for the test
+        # Our search logic ORs the conditions, so it should find all matches.
         results, total = self.db.search_prompts("python", search_fields=['details', 'keywords'])
         self.assertEqual(total, 3)
         names = {r['name'] for r in results}

@@ -894,6 +894,11 @@ Ollama = "http://localhost:11434"
 vLLM = "http://localhost:8000" # Check if your API provider uses this address
 Custom = "http://localhost:1234/v1"
 Custom_2 = "http://localhost:5678/v1"
+Custom_3 = "http://localhost:5678/v1"
+Custom_4 = "http://localhost:5678/v1"
+Custom_5 = "http://localhost:5678/v1"
+Custom_6 = "http://localhost:5678/v1"
+
 # Add other local URLs if needed
 
 [providers]
