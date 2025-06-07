@@ -8,11 +8,13 @@ from typing import TYPE_CHECKING, List, Optional
 from loguru import logger
 from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll, Horizontal, Vertical
+from textual.css.query import QueryError
 from textual.reactive import reactive
 from textual.widgets import Static, Button, Label, Input, ListView, TextArea
 #
 # Local Imports
 from ..Utils.text import slugify
+from ..Event_Handlers import media_events
 if TYPE_CHECKING:
     from ..app import TldwCli
 #
@@ -50,6 +52,21 @@ class MediaWindow(Container):
             initial_slug = slugify("All Media")
             self.log.info(f"MediaWindow: Activating initial view for slug '{initial_slug}'")
             self.media_active_view = f"media-view-{initial_slug}"
+
+            # Set the filter slug and display name on the app so the search function has context
+            self.app_instance.current_media_type_filter_slug = initial_slug
+            self.app_instance.current_media_type_filter_display_name = "All Media"
+
+            # Set the active view to trigger the watcher that makes the pane visible
+            self.media_active_view = f"media-view-{initial_slug}"
+
+            # Now that the view is set, schedule the function that loads its content.
+            self.app_instance.call_later(
+                media_events.perform_media_search_and_display,
+                app=self.app_instance,
+                type_slug=initial_slug,
+                search_term=""
+            )
 
     def watch_media_active_view(self, old_view: Optional[str], new_view: Optional[str]) -> None:
         """Shows/hides media sub-views when the active view changes."""
@@ -104,7 +121,7 @@ class MediaWindow(Container):
                             yield ListView(id=f"media-list-view-{type_slug}", classes="media-items-list")
                             with Horizontal(classes="media-pagination-bar"):
                                 yield Button("Previous", id=f"media-prev-page-button-{type_slug}", disabled=True)
-                                yield Label("Page 1 / 1", id=f"media-page-label-{type_slug}")
+                                yield Label("Page 1 / 1", id=f"media-page-label-{type_slug}", classes="media-page-label")
                                 yield Button("Next", id=f"media-next-page-button-{type_slug}", disabled=True)
                         yield Button("Display Item Details", id=f"media-load-selected-button-{type_slug}", variant="primary")
                         with VerticalScroll(id=f"media-details-scroll-{type_slug}", classes="media-details-scroll"):

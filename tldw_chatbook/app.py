@@ -28,6 +28,8 @@ from textual.dom import DOMNode  # For type hinting if needed
 from textual.timer import Timer
 from textual.css.query import QueryError
 from pathlib import Path
+
+from tldw_chatbook.Utils.text import slugify
 #
 # --- Local API library Imports ---
 from .Event_Handlers.LLM_Management_Events import (llm_management_events, llm_management_events_mlx_lm,
@@ -49,7 +51,6 @@ from .config import (
     get_media_db_path,
 )
 from .Logging_Config import configure_application_logging
-from .UI.MediaWindow import slugify as media_slugify
 from tldw_chatbook.Constants import ALL_TABS, TAB_CCP, TAB_CHAT, TAB_LOGS, TAB_NOTES, TAB_STATS, TAB_TOOLS_SETTINGS, \
     TAB_INGEST, TAB_LLM, TAB_MEDIA, TAB_SEARCH, TAB_EVALS, LLAMA_CPP_SERVER_ARGS_HELP_TEXT, \
     LLAMAFILE_SERVER_ARGS_HELP_TEXT, TAB_CODING
@@ -264,9 +265,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
     # Media Tab
     _media_types_for_ui: List[str] = []
-    _initial_media_view_slug: Optional[str] = reactive(media_slugify("All Media"))  # Default to "All Media" slug
+    _initial_media_view_slug: Optional[str] = reactive(slugify("All Media"))  # Default to "All Media" slug
 
-    current_media_type_filter_slug: reactive[Optional[str]] = reactive(media_slugify("All Media"))  # Slug for filtering
+    current_media_type_filter_slug: reactive[Optional[str]] = reactive(slugify("All Media"))  # Slug for filtering
     current_media_type_filter_display_name: reactive[Optional[str]] = reactive("All Media")  # Display name
     media_current_page: reactive[int] = reactive(1) # Search results pagination
 
@@ -366,6 +367,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         self.ollama_server_process = None
         self.mlx_server_process = None
         self.onnx_server_process = None
+        self.media_current_page = 1
 
         # 1. Get the user name from the loaded settings
         # The fallback here should match what you expect if settings doesn't have it,
@@ -546,7 +548,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         # --- Media Tab Handlers (NEW DYNAMIC WAY) ---
         media_handlers_map = {}
         for media_type_name in self._media_types_for_ui:
-            slug = media_slugify(media_type_name)
+            slug = slugify(media_type_name)
             media_handlers_map[f"media-nav-{slug}"] = media_events.handle_media_nav_button_pressed
             media_handlers_map[f"media-load-selected-button-{slug}"] = media_events.handle_media_load_selected_button_pressed
             media_handlers_map[f"media-prev-page-button-{slug}"] = media_events.handle_media_page_change_button_pressed
@@ -608,7 +610,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             },
             TAB_MEDIA: {
                 **media_events.MEDIA_BUTTON_HANDLERS,
-                **{f"media-nav-{media_slugify(media_type)}": functools.partial(_handle_nav, prefix="media",
+                **{f"media-nav-{slugify(media_type)}": functools.partial(_handle_nav, prefix="media",
                                                                                reactive_attr="media_active_view")
                    for media_type in self._media_types_for_ui},
                 "media-nav-all-media": functools.partial(_handle_nav, prefix="media",

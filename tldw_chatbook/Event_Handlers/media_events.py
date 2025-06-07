@@ -4,7 +4,7 @@
 # Imports
 import logging
 import math
-from typing import TYPE_CHECKING, Optional, List, Dict, Any
+from typing import TYPE_CHECKING, Dict, Any
 #
 # 3rd-party Libraries
 from textual.widgets import ListView, Input, TextArea, Label, ListItem, Button  # Added ListItem
@@ -12,11 +12,11 @@ from textual.css.query import QueryError
 from rich.text import Text  # For formatting details
 #
 # Local Imports
-from ..UI.MediaWindow import MediaWindow
-from ..Utils.text import slugify
+from ..DB.Client_Media_DB_v2 import MediaDatabase, fetch_keywords_for_media
+
 if TYPE_CHECKING:
     from ..app import TldwCli
-    from ..DB.Client_Media_DB_v2 import MediaDatabase  # Correct import
+    from ..UI.MediaWindow import MediaWindow
 ########################################################################################################################
 #
 # Statics:
@@ -31,17 +31,17 @@ async def handle_media_nav_button_pressed(app: 'TldwCli', event: Button.Pressed)
     try:
         type_slug = button_id.replace("media-nav-", "")
         view_to_activate = f"media-view-{type_slug}"
-        logger.debug(
-            f"Media nav button '{button_id}' pressed. Activating view '{view_to_activate}', type filter: '{type_slug}'.")
+        logger.debug(f"Media nav button '{button_id}' pressed. Activating view '{view_to_activate}', type filter: '{type_slug}'.")
 
         nav_button = app.query_one(f"#{button_id}", Button)
         app.current_media_type_filter_display_name = str(nav_button.label)
 
-        # Instead of setting a property on the app, set it on the MediaWindow instance
-        app.query_one(MediaWindow).media_active_view = view_to_activate
+        # The query here works because MediaWindow is a type hint known to the checker,
+        # and at runtime, Textual's query engine looks for the class instance.
+        media_window = app.query_one("MediaWindow") # Query by class name as a string
+        media_window.media_active_view = view_to_activate
 
         app.current_media_type_filter_slug = type_slug
-
         app.media_current_page = 1
         await perform_media_search_and_display(app, type_slug, search_term="")
 
@@ -135,7 +135,7 @@ async def handle_media_page_change_button_pressed(app: 'TldwCli', event: Button.
 async def perform_media_search_and_display(app: 'TldwCli', type_slug: str, search_term: str = "") -> None:
     """Performs search in media DB and populates the ListView with pagination."""
     logger = app.loguru_logger
-    list_view_id = f"#media-list-view-{type_slug}"
+    list_view_id = f"media-list-view-{type_slug}"
 
     try:
         list_view = app.query_one(f"#{list_view_id}", ListView)
@@ -159,12 +159,34 @@ async def perform_media_search_and_display(app: 'TldwCli', type_slug: str, searc
             db_media_type = type_slug.replace('-', '_')
             media_types_filter = [db_media_type]
 
+        # Always provide a list of fields to search_fields. The DB function should ignore
+        # this list when search_query is None, but providing it satisfies the function's
+        # potential requirement for the parameter to exist.
+        query_arg = search_term if search_term else None
+        fields_arg = ['title', 'content', 'author', 'url', 'type']
+
+        logger.info("---EXECUTING MEDIA DB SEARCH---")
+        logger.info(f"  search_query: {query_arg!r}")
+        logger.info(f"  media_types: {media_types_filter!r}")
+        logger.info(f"  search_fields: {fields_arg!r}")
+        logger.info(f"  page: {app.media_current_page}")
+        logger.info("-------------------------------")
+
         results, total_matches = app.media_db.search_media_db(
-            search_query=search_term if search_term else None,
+            search_query=query_arg,
             media_types=media_types_filter,
+            search_fields=fields_arg,
+            sort_by="last_modified_desc",
             page=app.media_current_page,
-            results_per_page=RESULTS_PER_PAGE
+            results_per_page=RESULTS_PER_PAGE,
+            include_trash=False,
+            include_deleted=False
         )
+
+        logger.info(f"---DB SEARCH COMPLETE---")
+        logger.info(f"  Results received: {len(results)}")
+        logger.info(f"  Total matches reported: {total_matches}")
+        logger.info("------------------------")
 
         await list_view.clear() # Clear "Loading..." message
 
@@ -237,10 +259,17 @@ def format_media_details_as_markdown(app: 'TldwCli', media_data: Dict[str, Any])
     if not media_data:
         return "No media item loaded."
 
-    # Fetch keywords separately
-    # FIXME
-    keywords = app.media_db.get_keywords_for_media(media_data.get('id', ''))
-    keywords_str = ", ".join(keywords) if keywords else "N/A"
+    # Add a check to ensure media_db exists.
+    keywords_str = "N/A"
+    media_id = media_data.get('id')
+    if app.media_db and media_id:
+        try:
+            keywords = app.media_db.get_keywords_for_media(media_id)
+            if keywords:
+                keywords_str = ", ".join(keywords)
+        except Exception as e:
+            app.loguru_logger.error(f"Failed to fetch keywords for media ID {media_id}: {e}")
+            keywords_str = "Error fetching keywords"
 
     details = [
         f"### {media_data.get('title', 'N/A')}",
