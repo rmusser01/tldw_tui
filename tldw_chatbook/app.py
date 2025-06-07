@@ -263,12 +263,12 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # is_new_prompt can be inferred from current_prompt_id being None
 
     # Media Tab
-    media_active_view: reactive[Optional[str]] = reactive(None)
     _media_types_for_ui: List[str] = []
     _initial_media_view_slug: Optional[str] = reactive(media_slugify("All Media"))  # Default to "All Media" slug
 
     current_media_type_filter_slug: reactive[Optional[str]] = reactive(media_slugify("All Media"))  # Slug for filtering
     current_media_type_filter_display_name: reactive[Optional[str]] = reactive("All Media")  # Display name
+    media_current_page: reactive[int] = reactive(1) # Search results pagination
 
     # current_media_search_term: reactive[str] = reactive("") # Handled by inputs directly
     current_loaded_media_item: reactive[Optional[Dict[str, Any]]] = reactive(None)
@@ -456,7 +456,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         # --- Pre-fetch media types for UI ---
         try:
             if self.media_db:
-                self._media_types_for_ui = self.media_db.get_distinct_media_types(include_deleted=False, include_trash=False)
+                db_types = self.media_db.get_distinct_media_types(include_deleted=False, include_trash=False)
+                # Now, construct the final list for the UI, adding "All Media"
+                self._media_types_for_ui = ["All Media"] + sorted(list(set(db_types)))
                 self.loguru_logger.info(f"App __init__: Pre-fetched {len(self._media_types_for_ui)} media types for UI.")
             else:
                 self.loguru_logger.error("App __init__: self.media_db is None, cannot pre-fetch media types.")
@@ -540,17 +542,15 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             "toggle-chat-left-sidebar": functools.partial(_handle_sidebar_toggle, reactive_attr="chat_sidebar_collapsed"),
             "toggle-chat-right-sidebar": functools.partial(_handle_sidebar_toggle, reactive_attr="chat_right_sidebar_collapsed"),
         }
-        # --- Tools & Settings Handlers ---
-        tools_settings_handlers = {
-            "ts-nav-general-settings": functools.partial(_handle_nav, prefix="ts-view",
-                                                         reactive_attr="tools_settings_active_view"),
-            "ts-nav-config-file-settings": functools.partial(_handle_nav, prefix="ts-view",
-                                                             reactive_attr="tools_settings_active_view"),
-            "ts-nav-db-tools": functools.partial(_handle_nav, prefix="ts-view",
-                                                 reactive_attr="tools_settings_active_view"),
-            "ts-nav-appearance": functools.partial(_handle_nav, prefix="ts-view",
-                                                   reactive_attr="tools_settings_active_view"),
-        }
+
+        # --- Media Tab Handlers (NEW DYNAMIC WAY) ---
+        media_handlers_map = {}
+        for media_type_name in self._media_types_for_ui:
+            slug = media_slugify(media_type_name)
+            media_handlers_map[f"media-nav-{slug}"] = media_events.handle_media_nav_button_pressed
+            media_handlers_map[f"media-load-selected-button-{slug}"] = media_events.handle_media_load_selected_button_pressed
+            media_handlers_map[f"media-prev-page-button-{slug}"] = media_events.handle_media_page_change_button_pressed
+            media_handlers_map[f"media-next-page-button-{slug}"] = media_events.handle_media_page_change_button_pressed
 
         # --- Search Handlers ---
         search_handlers = {
@@ -564,17 +564,29 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                                                                 reactive_attr="search_active_sub_tab"),
         }
 
-        # --- Evals Handler ---
-        evals_handlers = {
-            "toggle-evals-sidebar": functools.partial(_handle_sidebar_toggle, reactive_attr="evals_sidebar_collapsed"),
-        }
-
         # --- Ingest Handlers ---
         ingest_handlers_map = {
             **ingest_events.INGEST_BUTTON_HANDLERS,
             # Add nav handlers using the helper
             **{button_id: functools.partial(_handle_nav, prefix="ingest", reactive_attr="ingest_active_view")
                for button_id in INGEST_NAV_BUTTON_IDS}
+        }
+
+        # --- Tools & Settings Handlers ---
+        tools_settings_handlers = {
+            "ts-nav-general-settings": functools.partial(_handle_nav, prefix="ts-view",
+                                                         reactive_attr="tools_settings_active_view"),
+            "ts-nav-config-file-settings": functools.partial(_handle_nav, prefix="ts-view",
+                                                             reactive_attr="tools_settings_active_view"),
+            "ts-nav-db-tools": functools.partial(_handle_nav, prefix="ts-view",
+                                                 reactive_attr="tools_settings_active_view"),
+            "ts-nav-appearance": functools.partial(_handle_nav, prefix="ts-view",
+                                                   reactive_attr="tools_settings_active_view"),
+        }
+
+        # --- Evals Handler ---
+        evals_handlers = {
+            "toggle-evals-sidebar": functools.partial(_handle_sidebar_toggle, reactive_attr="evals_sidebar_collapsed"),
         }
 
         # Master map organized by tab
@@ -982,6 +994,28 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.loguru_logger.error(f"Unexpected error in watch_search_active_sub_tab: {e_watch}", exc_info=True)
 
     # ############################################
+    # --- Media Loaded Item Watcher ---
+    # ############################################
+    def watch_current_loaded_media_item(self, media_data: Optional[Dict[str, Any]]) -> None:
+        """Watcher to display details when a media item is loaded."""
+        if not self._ui_ready: return
+
+        type_slug = self.current_media_type_filter_slug
+        if not type_slug: return
+
+        try:
+            details_display = self.query_one(f"#media-details-display-{type_slug}", TextArea)
+            if media_data:
+                formatted_markdown = media_events.format_media_details_as_markdown(self, media_data)
+                details_display.load_text(formatted_markdown)
+                self.notify(f"Details for '{media_data.get('title', 'N/A')}' displayed.")
+            else:
+                # This case is handled by the calling functions, but as a fallback:
+                details_display.load_text("")
+        except QueryError:
+            self.loguru_logger.warning(f"Could not find details display for slug '{type_slug}' to update.")
+
+    # ############################################
     # --- Ingest Tab Watcher ---
     # ############################################
     def watch_ingest_active_view(self, old_view: Optional[str], new_view: Optional[str]) -> None:
@@ -1124,37 +1158,6 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                                          exc_info=True)
         else:
             self.loguru_logger.debug("LLM Management active view is None, all LLM views hidden.")
-
-    # --- Media Tab Watcher ---
-    def watch_media_active_view(self, old_view: Optional[str], new_view: Optional[str]) -> None:
-        if not hasattr(self, "app") or not self.app:
-            return
-        if not self._ui_ready:
-            return
-        self.loguru_logger.debug(f"Media active view changing from '{old_view}' to: '{new_view}'")
-
-        try:
-            content_pane = self.query_one("#media-content-pane")
-        except QueryError:
-            self.loguru_logger.error("#media-content-pane not found. Cannot switch Media views.")
-            return
-
-        # Hide all media view areas first
-        for child in content_pane.query(".media-view-area"):
-            child.styles.display = "none"
-
-        if new_view: # new_view is the ID of the view container, e.g., "media-view-video-audio"
-            try:
-                target_view_id_selector = f"#{new_view}"
-                view_to_show = content_pane.query_one(target_view_id_selector, Container)
-                view_to_show.styles.display = "block" # Or "flex", etc.
-                self.loguru_logger.info(f"Switched Media view to: {new_view}")
-            except QueryError as e:
-                self.loguru_logger.error(f"UI component '{new_view}' not found in #media-content-pane: {e}", exc_info=True)
-        else:
-            self.loguru_logger.debug("Media active view is None, all media views hidden.")
-
-
 
     def watch_current_chat_is_ephemeral(self, is_ephemeral: bool) -> None:
         self.loguru_logger.debug(f"Chat ephemeral state changed to: {is_ephemeral}")
@@ -1449,13 +1452,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         elif new_tab == TAB_NOTES:
             self.call_later(notes_handlers.load_and_display_notes_handler, self)
         elif new_tab == TAB_MEDIA:
-            if not self.media_active_view:
-                # Set the initial view for the media tab if one isn't already active.
-                # This triggers the watch_media_active_view to show the correct pane.
-                initial_slug = media_slugify("All Media") # Default to the "All Media" view
-                initial_view_id = f"media-view-{initial_slug}"
-                self.loguru_logger.debug(f"Switched to Media tab, activating initial view: {initial_view_id}")
-                self.media_active_view = initial_view_id
+            try:
+                # Get the MediaWindow instance.
+                media_window = self.query_one(MediaWindow)
+                # Call the public method on the window to set its initial state.
+                # This ensures the window is mounted before we try to manipulate its children.
+                self.call_later(media_window.activate_initial_view)
+            except QueryError:
+                self.loguru_logger.error("Failed to find MediaWindow to activate its initial view.")
         elif new_tab == TAB_SEARCH:
             if not self.search_active_sub_tab: # If no sub-tab is active yet for Search tab
                 self.loguru_logger.debug(f"Switched to Search tab, activating initial sub-tab view: {self._initial_search_sub_tab_view}")
