@@ -1262,6 +1262,7 @@ class PromptsDatabase:
 
         fts_search_active = False
         if search_query:
+            fts_conditions = []  # FIX: Initialize here to prevent UnboundLocalError
             fts_query_parts = []
             if "name" in search_fields: fts_query_parts.append("name")
             if "author" in search_fields: fts_query_parts.append("author")
@@ -1271,7 +1272,6 @@ class PromptsDatabase:
 
             # FTS on prompt fields
             if fts_query_parts:
-                fts_conditions = []
                 fts_search_active = True
                 if not any("prompts_fts fts_p" in j_item for j_item in joins):
                     joins.append("JOIN prompts_fts fts_p ON fts_p.rowid = p.id")
