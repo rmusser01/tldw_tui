@@ -54,6 +54,8 @@ transformers = ["transformers"]
 dev = [ # Example for development dependencies
     "pytest",
     "textual-dev", # For Textual development tools
+    "hypothesis",
+    "pytest_asyncio",
 ]
 
 

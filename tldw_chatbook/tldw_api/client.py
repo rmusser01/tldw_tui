@@ -28,14 +28,19 @@ class TLDWAPIClient:
     def __init__(self, base_url: str, token: Optional[str] = None, timeout: float = 300.0):
         self.base_url = base_url.rstrip('/')
         self.token = token
+        self.bearer_token = None
         self.timeout = timeout
         self._client: Optional[httpx.AsyncClient] = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
             headers = {}
+            if self.bearer_token:
+                # Bearer Auth
+                headers["Authorization"] = f"Bearer {self.bearer_token}"
             if self.token:
-                headers["Authorization"] = f"Bearer {self.token}"
+                # Token Auth
+                headers["X-API-KEY"] = self.token
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
                 headers=headers,
@@ -130,31 +135,31 @@ class TLDWAPIClient:
     async def process_video(self, request_data: ProcessVideoRequest, file_paths: Optional[List[str]] = None) -> BatchMediaProcessResponse:
         form_data = model_to_form_data(request_data)
         httpx_files = prepare_files_for_httpx(file_paths, upload_field_name="files")
-        response_dict = await self._request("POST", "/api/v1/process-videos", data=form_data, files=httpx_files)
+        response_dict = await self._request("POST", "/api/v1/media/process-videos", data=form_data, files=httpx_files)
         return BatchMediaProcessResponse(**response_dict)
 
     async def process_audio(self, request_data: ProcessAudioRequest, file_paths: Optional[List[str]] = None) -> BatchMediaProcessResponse:
         form_data = model_to_form_data(request_data)
         httpx_files = prepare_files_for_httpx(file_paths, upload_field_name="files")
-        response_dict = await self._request("POST", "/api/v1/process-audios", data=form_data, files=httpx_files)
+        response_dict = await self._request("POST", "/api/v1/media/process-audios", data=form_data, files=httpx_files)
         return BatchMediaProcessResponse(**response_dict)
 
     async def process_pdf(self, request_data: ProcessPDFRequest, file_paths: Optional[List[str]] = None) -> BatchMediaProcessResponse:
         form_data = model_to_form_data(request_data)
         httpx_files = prepare_files_for_httpx(file_paths, upload_field_name="files")
-        response_dict = await self._request("POST", "/api/v1/process-pdfs", data=form_data, files=httpx_files)
+        response_dict = await self._request("POST", "/api/v1/media/process-pdfs", data=form_data, files=httpx_files)
         return BatchMediaProcessResponse(**response_dict)
 
     async def process_ebook(self, request_data: ProcessEbookRequest, file_paths: Optional[List[str]] = None) -> BatchMediaProcessResponse:
         form_data = model_to_form_data(request_data)
         httpx_files = prepare_files_for_httpx(file_paths, upload_field_name="files")
-        response_dict = await self._request("POST", "/api/v1/process-ebooks", data=form_data, files=httpx_files)
+        response_dict = await self._request("POST", "/api/v1/media/process-ebooks", data=form_data, files=httpx_files)
         return BatchMediaProcessResponse(**response_dict)
 
     async def process_document(self, request_data: ProcessDocumentRequest, file_paths: Optional[List[str]] = None) -> BatchMediaProcessResponse:
         form_data = model_to_form_data(request_data)
         httpx_files = prepare_files_for_httpx(file_paths, upload_field_name="files")
-        response_dict = await self._request("POST", "/api/v1/process-documents", data=form_data, files=httpx_files)
+        response_dict = await self._request("POST", "/api/v1/media/process-documents", data=form_data, files=httpx_files)
         return BatchMediaProcessResponse(**response_dict)
 
     async def process_xml(self, request_data: ProcessXMLRequest, file_path: str) -> BatchProcessXMLResponse: # XML expects single file
