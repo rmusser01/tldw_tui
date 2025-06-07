@@ -290,36 +290,68 @@ class TestDatabaseCRUDAndSync:
         assert log_entry['operation'] == 'create'
 
     def test_add_media_with_keywords_update(self, db_instance):
-        title = "Test Media Update"
+        """Test updating a media item with new content, title, and keywords."""
+        # Initial media setup
+        title1 = "Test Media Original"
+        title2 = "Test Media Updated"
         content1 = "Initial content."
         content2 = "Updated content."
         keywords1 = ["update_kw1"]
         keywords2 = ["update_kw2", "update_kw3"]
+        media_type = "article"  # Use consistent media_type across tests
 
-        media_id, media_uuid, _ = db_instance.add_media_with_keywords(
-            title=title, media_type="text", content=content1, keywords=keywords1
+        # Create initial media item
+        media_id, media_uuid, msg1 = db_instance.add_media_with_keywords(
+            title=title1, media_type=media_type, content=content1, keywords=keywords1
         )
+        assert "added" in msg1.lower(), f"Expected 'added' in message, got: {msg1}"
         initial_version = get_entity_version(db_instance, "Media", media_uuid)
+        assert initial_version == 1, f"Expected initial version 1, got {initial_version}"
 
-        # FIX: Fetch the created media item to get its URL, which is the stable identifier for the update.
+        # Fetch the created media to get its URL (stable identifier)
         created_media = db_instance.get_media_by_id(media_id)
-        assert created_media is not None, "Failed to retrieve the initially created media item for the test."
+        assert created_media is not None, "Failed to retrieve created media item"
         url_to_update = created_media['url']
 
-        _, _, msg = db_instance.add_media_with_keywords(
-            title=title + " Updated", media_type="text", content=content2,
-            keywords=keywords2, overwrite=True, url=url_to_update  # FIX: Pass the stable URL here instead of None
+        # Update the media item
+        updated_id, updated_uuid, msg2 = db_instance.add_media_with_keywords(
+            title=title2,
+            media_type=media_type,
+            content=content2,
+            keywords=keywords2,
+            overwrite=True,
+            url=url_to_update
         )
-        assert f"Media '{title}' updated to new version." in msg
 
-        cursor = db_instance.execute_query("SELECT content, version FROM Media WHERE id = ?", (media_id,))
+        # Verify update operation returned correct values
+        assert updated_id == media_id, "Update returned different media ID"
+        assert updated_uuid == media_uuid, "Update returned different UUID"
+        assert "updated" in msg2.lower(), f"Expected 'updated' in message, got: {msg2}"
+
+        # Verify content was updated
+        cursor = db_instance.execute_query("SELECT content, title, version FROM Media WHERE id = ?", (media_id,))
         media_row = cursor.fetchone()
-        assert media_row['content'] == content2
-        assert media_row['version'] == initial_version + 1
+        assert media_row['content'] == content2, "Content was not updated"
+        assert media_row['title'] == title2, "Title was not updated"
+        assert media_row['version'] == initial_version + 1, f"Version not incremented, expected {initial_version + 1}, got {media_row['version']}"
 
+        # Verify keywords were updated
+        cursor = db_instance.execute_query(
+            """
+            SELECT k.keyword FROM MediaKeywords mk
+            JOIN Keywords k ON mk.keyword_id = k.id
+            WHERE mk.media_id = ?
+            """,
+            (media_id,)
+        )
+        linked_keywords = [row['keyword'] for row in cursor.fetchall()]
+        assert set(kw.lower() for kw in linked_keywords) == set(kw.lower() for kw in keywords2), "Keywords were not updated correctly"
+
+        # Verify sync log was created for the update
         log_entry = get_latest_log(db_instance, media_uuid)
-        assert log_entry['operation'] == 'update'
-        assert log_entry['version'] == initial_version + 1
+        assert log_entry['operation'] == 'update', f"Expected 'update' operation, got {log_entry['operation']}"
+        assert log_entry['version'] == initial_version + 1, f"Log version mismatch: {log_entry['version']} vs {initial_version + 1}"
+        assert log_entry['entity'] == 'Media', f"Expected 'Media' entity, got {log_entry['entity']}"
 
     def test_soft_delete_media_cascade(self, db_instance):
         media_id, media_uuid, _ = db_instance.add_media_with_keywords(
@@ -425,3 +457,4 @@ class TestSyncLogManagement:
 #
 # End of test_media_db_v2.py
 ########################################################################################################################
+

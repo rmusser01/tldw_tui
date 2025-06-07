@@ -66,6 +66,13 @@ def db_factory(tmp_path: Path) -> Generator[Callable[[], MediaDatabase], Any, No
     for db in created_dbs:
         db.close_connection()
 
+@pytest.fixture
+def db_instance(db_factory: Callable[[], MediaDatabase]) -> MediaDatabase:
+    """
+    Provides a single, fresh MediaDatabase instance for a test function.
+    This fixture uses the `db_factory` to create and manage the instance.
+    """
+    return db_factory()
 
 # --- Hypothesis Strategies ---
 
@@ -232,7 +239,6 @@ class TestSearchProperties:
 class TestIdempotencyAndConstraints:
     """Tests for idempotency of operations and enforcement of DB constraints."""
 
-    # FIX: Add a settings decorator to handle variable I/O timing and prevent flaky deadline errors.
     @settings(deadline=None)
     @given(media_data=st_media_data())
     def test_mark_as_trash_is_idempotent(self, db_instance: MediaDatabase, media_data: dict):
@@ -251,35 +257,46 @@ class TestIdempotencyAndConstraints:
         item_still_v2 = db_instance.get_media_by_id(media_id, include_trash=True)
         assert item_still_v2['version'] == 2
 
-    @given(media1=st_media_data(), media2=st_media_data())
+    @given(
+        media1=st_media_data(),
+        media2=st_media_data(),
+        url_part1=st.uuids().map(str),
+        url_part2=st.uuids().map(str),
+    )
     def test_add_media_with_conflicting_hash_is_handled(self,
-                                                        tmp_path: Path,
+                                                        db_instance: MediaDatabase,
                                                         media1: dict,
-                                                        media2: dict):
-        db_file = tmp_path / f"prop_test_{uuid.uuid4().hex}.db"
-        client_id = f"client_{uuid.uuid4().hex[:8]}"
-        db_instance = MediaDatabase(db_path=db_file, client_id=client_id)
-        try:
-            assume(media1['title'] != media2['title'])
-            media2['content'] = media1['content']
+                                                        media2: dict,
+                                                        url_part1: str,
+                                                        url_part2: str):
+        # Ensure URLs will be different, a highly unlikely edge case otherwise
+        assume(url_part1 != url_part2)
+        # Ensure titles are different to test a metadata-only update.
+        assume(media1['title'] != media2['title'])
 
-            media1['url'] = f"http://example.com/url1_{uuid.uuid4().hex}"
-            media2['url'] = f"http://example.com/url2_{uuid.uuid4().hex}"
+        # Make content identical to trigger a content hash conflict.
+        media2['content'] = media1['content']
 
-            id1, _, _ = db_instance.add_media_with_keywords(**media1)
+        # Use the deterministic UUIDs from Hypothesis to build the URLs.
+        media1['url'] = f"http://example.com/{url_part1}"
+        media2['url'] = f"http://example.com/{url_part2}"
 
-            id2, _, msg2 = db_instance.add_media_with_keywords(**media2, overwrite=False)
-            assert id2 is None
-            assert "already exists. Overwrite not enabled." in msg2
+        id1, _, _ = db_instance.add_media_with_keywords(**media1)
 
-            id3, _, msg3 = db_instance.add_media_with_keywords(**media2, overwrite=True)
-            assert id3 == id1
-            assert "updated" in msg3
-            final_item = db_instance.get_media_by_id(id1)
-            assert final_item['title'] == media2['title']
+        # 1. Test with overwrite=False. Should fail due to conflict.
+        id2, _, msg2 = db_instance.add_media_with_keywords(**media2, overwrite=False)
+        assert id2 is None
+        assert "already exists. Overwrite not enabled." in msg2
 
-        finally:
-            db_instance.close_connection()
+        # 2. Test with overwrite=True. Should update the existing item's metadata.
+        id3, _, msg3 = db_instance.add_media_with_keywords(**media2, overwrite=True)
+        assert id3 == id1
+        assert "updated" in msg3
+
+        # 3. Verify the metadata was actually updated in the database.
+        final_item = db_instance.get_media_by_id(id1)
+        assert final_item is not None
+        assert final_item['title'] == media2['title']
 
 
 class TestTimeBasedAndSearchQueries:
