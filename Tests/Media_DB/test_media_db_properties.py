@@ -6,7 +6,7 @@
 #
 # Imports
 from datetime import datetime, timezone, timedelta
-from typing import Iterator
+from typing import Iterator, Callable
 import pytest
 import uuid
 from pathlib import Path
@@ -45,23 +45,26 @@ settings.load_profile("db_test_suite")
 # --- Pytest Fixtures ---
 
 
-@pytest.fixture(scope="function")
-def db_instance(tmp_path: Path) -> Iterator[MediaDatabase]:
+@pytest.fixture
+def db_factory(tmp_path: Path) -> Callable[[], MediaDatabase]:
     """
-    Creates a fresh, on-disk MediaDatabase instance for each test function.
-    The database file is created in a temporary directory that pytest manages
-    and automatically cleans up. This ensures complete test isolation.
+    A factory that creates fresh, isolated MediaDatabase instances on demand.
+    Manages cleanup of all created instances.
     """
-    db_file = tmp_path / f"prop_test_{uuid.uuid4().hex}.db"
-    client_id = f"client_{uuid.uuid4().hex[:8]}"
+    created_dbs = []
 
-    # The Database class handles directory creation.
-    db = MediaDatabase(db_path=db_file, client_id=client_id)
+    def _create_db_instance() -> MediaDatabase:
+        db_file = tmp_path / f"prop_test_{uuid.uuid4().hex}.db"
+        client_id = f"client_{uuid.uuid4().hex[:8]}"
+        db = MediaDatabase(db_path=db_file, client_id=client_id)
+        created_dbs.append(db)
+        return db
 
-    yield db
+    yield _create_db_instance
 
-    # Teardown: close connection before pytest deletes the temp directory.
-    db.close_connection()
+    # Teardown: close all connections that were created by the factory
+    for db in created_dbs:
+        db.close_connection()
 
 
 # --- Hypothesis Strategies ---
@@ -249,24 +252,34 @@ class TestIdempotencyAndConstraints:
         assert item_still_v2['version'] == 2
 
     @given(media1=st_media_data(), media2=st_media_data())
-    def test_add_media_with_conflicting_hash_is_handled(self, db_instance: MediaDatabase, media1: dict, media2: dict):
-        assume(media1['title'] != media2['title'])
-        media2['content'] = media1['content']
+    def test_add_media_with_conflicting_hash_is_handled(self,
+                                                        tmp_path: Path,
+                                                        media1: dict,
+                                                        media2: dict):
+        db_file = tmp_path / f"prop_test_{uuid.uuid4().hex}.db"
+        client_id = f"client_{uuid.uuid4().hex[:8]}"
+        db_instance = MediaDatabase(db_path=db_file, client_id=client_id)
+        try:
+            assume(media1['title'] != media2['title'])
+            media2['content'] = media1['content']
 
-        media1['url'] = f"http://example.com/url1_{uuid.uuid4().hex}"
-        media2['url'] = f"http://example.com/url2_{uuid.uuid4().hex}"
+            media1['url'] = f"http://example.com/url1_{uuid.uuid4().hex}"
+            media2['url'] = f"http://example.com/url2_{uuid.uuid4().hex}"
 
-        id1, _, _ = db_instance.add_media_with_keywords(**media1)
+            id1, _, _ = db_instance.add_media_with_keywords(**media1)
 
-        id2, _, msg2 = db_instance.add_media_with_keywords(**media2, overwrite=False)
-        assert id2 is None
-        assert "exists, not overwritten" in msg2
+            id2, _, msg2 = db_instance.add_media_with_keywords(**media2, overwrite=False)
+            assert id2 is None
+            assert "exists, not overwritten" in msg2
 
-        id3, _, msg3 = db_instance.add_media_with_keywords(**media2, overwrite=True)
-        assert id3 == id1
-        assert "updated" in msg3
-        final_item = db_instance.get_media_by_id(id1)
-        assert final_item['title'] == media2['title']
+            id3, _, msg3 = db_instance.add_media_with_keywords(**media2, overwrite=True)
+            assert id3 == id1
+            assert "updated" in msg3
+            final_item = db_instance.get_media_by_id(id1)
+            assert final_item['title'] == media2['title']
+
+        finally:
+            db_instance.close_connection()
 
 
 class TestTimeBasedAndSearchQueries:
