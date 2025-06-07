@@ -12,7 +12,7 @@ from textual.widgets import Static, TextArea, Label
 from rich.markup import escape as escape_markup
 #
 # Local Imports
-from Tests.Notes.conftest import InputError, CharactersRAGDBError
+from tldw_chatbook.DB.ChaChaNotes_DB import InputError, CharactersRAGDBError
 from tldw_chatbook.Constants import TAB_CHAT, TAB_CCP
 from tldw_chatbook.Event_Handlers.worker_events import StreamingChunk, StreamDone
 from tldw_chatbook.Character_Chat import Character_Chat_Lib as ccl
