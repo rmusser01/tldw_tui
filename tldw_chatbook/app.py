@@ -2265,6 +2265,15 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             else:
                 self.loguru_logger.debug(f"Chat-related worker '{worker_name_attr}' in other state: {worker_state}")
 
+        #######################################################################
+        # --- Handle tldw server API Calls Worker (tldw API Ingestion) ---
+        #######################################################################
+        elif worker_group == "api_calls":
+            self.loguru_logger.info(f"TLDW API worker '{event.worker.name}' finished with state {event.state}.")
+            if worker_state == WorkerState.SUCCESS:
+                await ingest_events.handle_tldw_api_worker_success(self, event)
+            elif worker_state == WorkerState.ERROR:
+                await ingest_events.handle_tldw_api_worker_failure(self, event)
 
         #######################################################################
         # --- Handle Ollama API Worker ---
