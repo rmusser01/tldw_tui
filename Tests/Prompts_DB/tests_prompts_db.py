@@ -178,9 +178,10 @@ class TestCrudOperations(BaseTestCase):
         self.assertEqual(log_entry['version'], 1)
 
         # Verify FTS
-        # FIX: Corrected FTS MATCH syntax
-        res = self.db.execute_query("SELECT * FROM prompt_keywords_fts WHERE prompt_keywords_fts MATCH ?",
-                                    ("test",)).fetchone()
+        res = self.db.execute_query(
+            "SELECT rowid FROM prompt_keywords_fts WHERE prompt_keywords_fts MATCH ?",
+            ("test",)
+        ).fetchone()
         self.assertIsNotNone(res)
         self.assertEqual(res['rowid'], kw_id)
 
@@ -214,7 +215,10 @@ class TestCrudOperations(BaseTestCase):
         self.assertEqual(prompt_create_log['entity_uuid'], puuid)
 
         # Verify FTS
-        res = self.db.execute_query("SELECT * FROM prompts_fts WHERE prompts_fts MATCH ?", ("My Prompt",)).fetchone()
+        res = self.db.execute_query(
+            "SELECT rowid FROM prompts_fts WHERE prompts_fts MATCH ?",
+            ("My Prompt",)
+            ).fetchone()
         self.assertIsNotNone(res)
         self.assertEqual(res['rowid'], pid)
 
@@ -248,7 +252,10 @@ class TestCrudOperations(BaseTestCase):
         self.assertEqual(deleted_prompt['deleted'], 1)
         self.assertEqual(deleted_prompt['version'], 2)
 
-        res = self.db.execute_query("SELECT * FROM prompts_fts WHERE rowid = ?", (pid,)).fetchone()
+        res = self.db.execute_query(
+            "SELECT rowid FROM prompts_fts WHERE prompts_fts MATCH ?",
+            ("To Be Deleted",)
+        ).fetchone()
         self.assertIsNone(res)
 
         link_exists = self.db.execute_query("SELECT 1 FROM PromptKeywordLinks WHERE prompt_id=?", (pid,)).fetchone()
@@ -269,7 +276,10 @@ class TestCrudOperations(BaseTestCase):
 
         self.assertIsNone(self.db.get_active_keyword_by_text("ephemeral"))
 
-        res = self.db.execute_query("SELECT * FROM prompt_keywords_fts WHERE rowid = ?", (kw_id,)).fetchone()
+        res = self.db.execute_query(
+            "SELECT rowid FROM prompt_keywords_fts WHERE prompt_keywords_fts MATCH ?",
+            ("ephemeral",)
+        ).fetchone()
         self.assertIsNone(res)
 
         prompt = self.db.get_prompt_by_name("Test Prompt")
@@ -295,7 +305,10 @@ class TestCrudOperations(BaseTestCase):
         self.assertIn("another_kw", keywords)
         self.assertNotIn("old_kw", keywords)
 
-        res = self.db.execute_query("SELECT * FROM prompts_fts WHERE prompts_fts MATCH ?", ("Updated Name",)).fetchone()
+        res = self.db.execute_query(
+            "SELECT rowid FROM prompts_fts WHERE prompts_fts MATCH ?",
+            ("Updated Name",)
+            ).fetchone()
         self.assertIsNotNone(res)
         self.assertEqual(res['rowid'], pid)
 
