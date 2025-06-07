@@ -310,7 +310,7 @@ class TestDatabaseCRUDAndSync:
             title=title + " Updated", media_type="text", content=content2,
             keywords=keywords2, overwrite=True, url=url_to_update  # FIX: Pass the stable URL here instead of None
         )
-        assert f"Media '{title + ' Updated'}' updated." in msg
+        assert f"Media '{title}' updated to new version." in msg
 
         cursor = db_instance.execute_query("SELECT content, version FROM Media WHERE id = ?", (media_id,))
         media_row = cursor.fetchone()

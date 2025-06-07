@@ -1703,31 +1703,24 @@ class MediaDatabase:
             logger.error(f"Unexpected error soft deleting media ID {media_id}: {e}", exc_info=True)
             raise DatabaseError(f"Unexpected error during soft delete: {e}") from e
 
-    def add_media_with_keywords(self,
-                                *,
-                                url: Optional[str] = None,
-                                title: Optional[str] = None,
-                                media_type: Optional[str] = None,
-                                content: Optional[str] = None,
-                                keywords: Optional[List[str]] = None,
-                                prompt: Optional[str] = None,
-                                analysis_content: Optional[str] = None,
-                                transcription_model: Optional[str] = None,
-                                author: Optional[str] = None,
-                                ingestion_date: Optional[str] = None,
-                                overwrite: bool = False,
-                                chunk_options: Optional[Dict] = None,
-                                chunks: Optional[List[Dict[str, Any]]] = None
-                                ) -> Tuple[Optional[int], Optional[str], str]:
-        """Add or update a media record, handle keyword links, optional chunks and full-text sync.
-
-        The public signature and behaviour stay identical to the legacy implementation; the
-        body is refactored for clarity and duplication‑reduction.  In addition, it now
-        *canonically upgrades* a previously‑imported **local://** placeholder URL to a real
-        URL when the same content hash is re‑submitted, even when ``overwrite`` is *False*.
-        This fixes the idempotency/constraint test that expects the first external URL for
-        already‑seen content to succeed rather than be treated as a duplicate.
-        """
+    def add_media_with_keywords(
+            self,
+            *,
+            url: Optional[str] = None,
+            title: Optional[str] = None,
+            media_type: Optional[str] = None,
+            content: Optional[str] = None,
+            keywords: Optional[List[str]] = None,
+            prompt: Optional[str] = None,
+            analysis_content: Optional[str] = None,
+            transcription_model: Optional[str] = None,
+            author: Optional[str] = None,
+            ingestion_date: Optional[str] = None,
+            overwrite: bool = False,
+            chunk_options: Optional[Dict] = None,
+            chunks: Optional[List[Dict[str, Any]]] = None,
+    ) -> Tuple[Optional[int], Optional[str], str]:
+        """Add or update a media record, handle keyword links, optional chunks and full-text sync."""
 
         # ---------------------------------------------------------------------
         # 1. Fast‑fail validation & normalisation
@@ -1745,7 +1738,9 @@ class MediaDatabase:
 
         content_hash = hashlib.sha256(content.encode()).hexdigest()
         url = url or f"local://{media_type}/{content_hash}"
-        initial_chunk_status = "processing" if chunks is not None else "pending"
+
+        # Determine the final chunk status before any DB operation
+        final_chunk_status = "completed" if chunks is not None else "pending"
 
         logging.info("add_media_with_keywords: url=%s, title=%s, client=%s", url, title, client_id)
 
@@ -1775,16 +1770,14 @@ class MediaDatabase:
             }
 
         def _persist_chunks(cnx: sqlite3.Connection, media_id: int) -> None:
-            """Delete/insert unvectorised chunks as requested and mark chunking complete."""
+            """Delete/insert un-vectorized chunks as requested. DOES NOT update parent Media."""
             if chunks is None:
                 return  # caller did not touch chunks
 
             if overwrite:
                 cnx.execute("DELETE FROM UnvectorizedMediaChunks WHERE media_id = ?", (media_id,))
 
-            # empty list → just a wipe
-            if not chunks:
-                cnx.execute("UPDATE Media SET chunking_status = 'completed' WHERE id = ?", (media_id,))
+            if not chunks:  # empty list means just wipe
                 return
 
             created = self._get_current_utc_timestamp_str()
@@ -1796,52 +1789,25 @@ class MediaDatabase:
                 chunk_uuid = self._generate_uuid()
                 cnx.execute(
                     """INSERT INTO UnvectorizedMediaChunks (media_id, chunk_text, chunk_index, start_char, end_char,
-                                                            chunk_type,
-                                                            creation_date, last_modified_orig, is_processed, metadata,
-                                                            uuid,
-                                                            last_modified, version, client_id, deleted, prev_version,
-                                                            merge_parent_uuid)
+                                                            chunk_type, creation_date, last_modified_orig, is_processed,
+                                                            metadata, uuid, last_modified, version, client_id, deleted,
+                                                            prev_version, merge_parent_uuid)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        media_id,
-                        ch["text"],
-                        idx,
-                        ch.get("start_char"),
-                        ch.get("end_char"),
-                        ch.get("chunk_type"),
-                        created,
-                        created,
-                        False,
+                        media_id, ch["text"], idx, ch.get("start_char"), ch.get("end_char"), ch.get("chunk_type"),
+                        created, created, False,
                         json.dumps(ch.get("metadata")) if isinstance(ch.get("metadata"), dict) else None,
-                        chunk_uuid,
-                        created,
-                        1,
-                        client_id,
-                        0,
-                        None,
-                        None,
+                        chunk_uuid, created, 1, client_id, 0, None, None,
                     ),
                 )
                 self._log_sync_event(
-                    cnx,
-                    "UnvectorizedMediaChunks",
-                    chunk_uuid,
-                    "create",
-                    1,
+                    cnx, "UnvectorizedMediaChunks", chunk_uuid, "create", 1,
                     {
-                        **ch,
-                        "media_id": media_id,
-                        "uuid": chunk_uuid,
-                        "chunk_index": idx,
-                        "creation_date": created,
-                        "last_modified": created,
-                        "version": 1,
-                        "client_id": client_id,
-                        "deleted": 0,
+                        **ch, "media_id": media_id, "uuid": chunk_uuid, "chunk_index": idx,
+                        "creation_date": created, "last_modified": created, "version": 1,
+                        "client_id": client_id, "deleted": 0,
                     },
                 )
-
-            cnx.execute("UPDATE Media SET chunking_status = 'completed' WHERE id = ?", (media_id,))
 
         # ------------------------------------------------------------------
         # 2. Main transactional block
@@ -1850,115 +1816,142 @@ class MediaDatabase:
             with self.transaction() as conn:
                 cur = conn.cursor()
 
-                # --- START OF FIX ---
-                # First, try to find an existing record by the most specific identifier: the URL.
+                # Find existing record by URL or content_hash
                 cur.execute(
-                    "SELECT id, uuid, version, url FROM Media WHERE url = ? AND deleted = 0 LIMIT 1",
+                    "SELECT id, uuid, version, url, content_hash FROM Media WHERE url = ? AND deleted = 0 LIMIT 1",
                     (url,),
                 )
                 row = cur.fetchone()
 
-                # If no record is found by URL, then check for a duplicate by content_hash.
                 if not row:
                     cur.execute(
-                        "SELECT id, uuid, version, url FROM Media WHERE content_hash = ? AND deleted = 0 LIMIT 1",
+                        "SELECT id, uuid, version, url, content_hash FROM Media WHERE content_hash = ? AND deleted = 0 LIMIT 1",
                         (content_hash,),
                     )
                     row = cur.fetchone()
-                # --- END OF FIX ---
 
-                # --------------------------------------------------------
-                # A) UPDATE / CANONICALISATION path
-                # --------------------------------------------------------
+                # --- Path A: Record exists, handle UPDATE, CANONICALIZATION, or SKIP ---
                 if row:
-                    media_id, media_uuid, current_ver, existing_url = (
-                        row["id"],
-                        row["uuid"],
-                        row["version"],
-                        row["url"],
-                    )
+                    media_id = row["id"]
+                    media_uuid = row["uuid"]
+                    current_ver = row["version"]
+                    existing_url = row["url"]
+                    existing_hash = row["content_hash"]
 
-                    canonicalise = (
-                            not overwrite
-                            and existing_url.startswith("local://")
-                            and not url.startswith("local://")
-                    )
+                    # Case A.1: Overwrite is requested.
+                    if overwrite:
+                        # Case A.1.a: Content is identical. No version bump needed for main content.
+                        if content_hash == existing_hash:
+                            logging.info(f"Media content for ID {media_id} is identical. Updating metadata/chunks only.")
 
-                    if not overwrite and not canonicalise:
-                        return None, None, f"Media '{title}' exists, not overwritten."
+                            # Update keywords and chunks without changing the main Media record yet.
+                            self.update_keywords_for_media(media_id, keywords_norm)
+                            _persist_chunks(conn, media_id)
 
-                    new_ver = current_ver + 1
-                    payload = _media_payload(media_uuid, new_ver, chunk_status="pending")
+                            # If new chunks were provided, the media's chunking status has changed,
+                            # which justifies a version bump on the parent Media record.
+                            if chunks is not None:
+                                logging.info(f"Chunks provided for identical media; updating media chunk_status and version for ID {media_id}.")
+                                new_ver = current_ver + 1
+                                cur.execute(
+                                    """UPDATE Media SET chunking_status = 'completed', version = ?, last_modified = ?
+                                       WHERE id = ? AND version = ?""",
+                                    (new_ver, now, media_id, current_ver)
+                                )
+                                if cur.rowcount == 0:
+                                    raise ConflictError(f"Media (updating chunk status for identical content id={media_id})", media_id)
+
+                                self._log_sync_event(conn, "Media", media_uuid, "update", new_ver, {"chunking_status": "completed", "last_modified": now})
+
+                            return media_id, media_uuid, f"Media '{title}' is already up-to-date."
+
+                        # Case A.1.b: Content is different. Proceed with a full versioned update.
+                        new_ver = current_ver + 1
+                        payload = _media_payload(media_uuid, new_ver, chunk_status=final_chunk_status)
+                        cur.execute(
+                            """UPDATE Media
+                               SET url=:url, title=:title, type=:type, content=:content, author=:author,
+                                   ingestion_date=:ingestion_date, transcription_model=:transcription_model,
+                                   content_hash=:content_hash, is_trash=:is_trash, trash_date=:trash_date,
+                                   chunking_status=:chunking_status, vector_processing=:vector_processing,
+                                   last_modified=:last_modified, version=:version, client_id=:client_id, deleted=:deleted
+                               WHERE id = :id AND version = :ver""",
+                            {**payload, "id": media_id, "ver": current_ver},
+                        )
+                        if cur.rowcount == 0:
+                            raise ConflictError(f"Media (full update id={media_id})", media_id)
+
+                        self._log_sync_event(conn, "Media", media_uuid, "update", new_ver, payload)
+                        self._update_fts_media(conn, media_id, payload["title"], payload["content"])
+                        self.update_keywords_for_media(media_id, keywords_norm)
+                        self.create_document_version(
+                            media_id=media_id, content=content, prompt=prompt, analysis_content=analysis_content
+                        )
+                        _persist_chunks(conn, media_id)
+                        return media_id, media_uuid, f"Media '{title}' updated to new version."
+
+                    # Case A.2: Overwrite is FALSE.
+                    else:
+                        is_canonicalisation = (
+                                existing_url.startswith("local://")
+                                and not url.startswith("local://")
+                                and content_hash == existing_hash
+                        )
+                        if is_canonicalisation:
+                            logging.info(f"Canonicalizing URL for media_id {media_id} to {url}")
+                            new_ver = current_ver + 1
+                            cur.execute(
+                                "UPDATE Media SET url = ?, last_modified = ?, version = ?, client_id = ? WHERE id = ? AND version = ?",
+                                (url, now, new_ver, client_id, media_id, current_ver),
+                            )
+                            if cur.rowcount == 0:
+                                raise ConflictError(f"Media (canonicalization id={media_id})", media_id)
+
+                            self._log_sync_event(
+                                conn, "Media", media_uuid, "update", new_ver, {"url": url, "last_modified": now}
+                            )
+                            return media_id, media_uuid, f"Media '{title}' URL canonicalized."
+
+                        return None, None, f"Media '{title}' already exists. Overwrite not enabled."
+
+                # --- Path B: Record does not exist, perform INSERT ---
+                else:
+                    media_uuid = self._generate_uuid()
+                    payload = _media_payload(media_uuid, 1, chunk_status=final_chunk_status)
 
                     cur.execute(
-                        """UPDATE Media
-                           SET url=:url,
-                               title=:title,
-                               type=:type,
-                               content=:content,
-                               author=:author,
-                               ingestion_date=:ingestion_date,
-                               transcription_model=:transcription_model,
-                               content_hash=:content_hash,
-                               is_trash=:is_trash,
-                               trash_date=:trash_date,
-                               chunking_status=:chunking_status,
-                               vector_processing=:vector_processing,
-                               last_modified=:last_modified,
-                               version=:version,
-                               client_id=:client_id,
-                               deleted=:deleted
-                           WHERE id = :id
-                             AND version = :ver""",
-                        {**payload, "id": media_id, "ver": current_ver},
+                        """INSERT INTO Media (url, title, type, content, author, ingestion_date,
+                                              transcription_model, content_hash, is_trash, trash_date,
+                                              chunking_status, vector_processing, uuid, last_modified,
+                                              version, client_id, deleted)
+                           VALUES (:url, :title, :type, :content, :author, :ingestion_date,
+                                   :transcription_model, :content_hash, :is_trash, :trash_date,
+                                   :chunking_status, :vector_processing, :uuid, :last_modified,
+                                   :version, :client_id, :deleted)""",
+                        payload,
                     )
-                    if cur.rowcount == 0:
-                        raise ConflictError("Media", media_id)
+                    media_id = cur.lastrowid
+                    if not media_id:
+                        raise DatabaseError("Failed to obtain new media ID.")
 
-                    self._log_sync_event(conn, "Media", media_uuid, "update", new_ver, payload)
+                    self._log_sync_event(conn, "Media", media_uuid, "create", 1, payload)
                     self._update_fts_media(conn, media_id, payload["title"], payload["content"])
                     self.update_keywords_for_media(media_id, keywords_norm)
-                    self.create_document_version(media_id=media_id, content=content, prompt=prompt,
-                                                 analysis_content=analysis_content)
+                    self.create_document_version(
+                        media_id=media_id, content=content, prompt=prompt, analysis_content=analysis_content
+                    )
                     _persist_chunks(conn, media_id)
                     if chunk_options:
                         logging.info("chunk_options ignored (placeholder): %s", chunk_options)
 
-                    return media_id, media_uuid, f"Media '{title}' updated." if overwrite else f"Media '{title}' canonicalised to external URL."
+                    return media_id, media_uuid, f"Media '{title}' added."
 
-                # --------------------------------------------------------
-                # B) INSERT path
-                # --------------------------------------------------------
-                media_uuid = self._generate_uuid()
-                payload = _media_payload(media_uuid, 1, chunk_status=initial_chunk_status)
-
-                cur.execute(
-                    """INSERT INTO Media (url, title, type, content, author, ingestion_date, transcription_model,
-                                          content_hash, is_trash, trash_date, chunking_status, vector_processing, uuid,
-                                          last_modified, version, client_id, deleted)
-                       VALUES (:url, :title, :type, :content, :author, :ingestion_date, :transcription_model,
-                               :content_hash, :is_trash, :trash_date, :chunking_status, :vector_processing,
-                               :uuid, :last_modified, :version, :client_id, :deleted)""",
-                    payload,
-                )
-                media_id = cur.lastrowid
-                if not media_id:
-                    raise DatabaseError("Failed to obtain new media ID.")
-
-                self._log_sync_event(conn, "Media", media_uuid, "create", 1, payload)
-                self._update_fts_media(conn, media_id, payload["title"], payload["content"])
-                self.update_keywords_for_media(media_id, keywords_norm)
-                self.create_document_version(media_id=media_id, content=content, prompt=prompt,
-                                             analysis_content=analysis_content)
-                _persist_chunks(conn, media_id)
-                if chunk_options:
-                    logging.info("chunk_options ignored (placeholder): %s", chunk_options)
-
-                return media_id, media_uuid, f"Media '{title}' added."
-
-        except (InputError, ConflictError, DatabaseError, sqlite3.Error):
-            raise
+        except (InputError, ConflictError, sqlite3.IntegrityError) as e:
+            # Catch the specific IntegrityError from the trigger and re-raise as a more descriptive error if you want
+            logging.error(f"Transaction failed, rolling back: {type(e).__name__} - {e}")
+            raise  # Re-raise the original exception
         except Exception as exc:
+            logging.error(f"Unexpected error in transaction: {type(exc).__name__} - {exc}")
             raise DatabaseError(f"Unexpected error processing media: {exc}") from exc
 
 
@@ -3799,7 +3792,7 @@ def check_database_integrity(db_path): # Standalone check is fine
         db_path (str): The path to the SQLite database file.
 
     Returns:
-        bool: True if the integrity check returns 'ok', False otherwise or if
+        bool: True if the integrity check returns 'ok', False otherwise, or if
               an error occurs during the check.
     """
     logger.info(f"Checking integrity of database: {db_path}")

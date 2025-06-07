@@ -6,7 +6,7 @@
 #
 # Imports
 from datetime import datetime, timezone, timedelta
-from typing import Iterator, Callable
+from typing import Iterator, Callable, Any, Generator
 import pytest
 import uuid
 from pathlib import Path
@@ -46,7 +46,7 @@ settings.load_profile("db_test_suite")
 
 
 @pytest.fixture
-def db_factory(tmp_path: Path) -> Callable[[], MediaDatabase]:
+def db_factory(tmp_path: Path) -> Generator[Callable[[], MediaDatabase], Any, None]:
     """
     A factory that creates fresh, isolated MediaDatabase instances on demand.
     Manages cleanup of all created instances.
@@ -270,7 +270,7 @@ class TestIdempotencyAndConstraints:
 
             id2, _, msg2 = db_instance.add_media_with_keywords(**media2, overwrite=False)
             assert id2 is None
-            assert "exists, not overwritten" in msg2
+            assert "already exists. Overwrite not enabled." in msg2
 
             id3, _, msg3 = db_instance.add_media_with_keywords(**media2, overwrite=True)
             assert id3 == id1

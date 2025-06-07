@@ -334,6 +334,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     current_chat_note_id: Optional[str] = None
     current_chat_note_version: Optional[int] = None
 
+    # Shared state for tldw API requests
+    _last_tldw_api_request_context: Dict[str, Any] = {}
+
     def __init__(self):
         super().__init__()
         self.MediaDatabase = MediaDatabase
@@ -2000,6 +2003,14 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             return
 
         self.loguru_logger.debug(f"Button pressed: ID='{button_id}' on Tab='{self.current_tab}'")
+
+        if button_id.startswith("tldw-api-browse-local-files-button-"):
+            try:
+                ingest_window = self.query_one(IngestWindow)
+                await ingest_window.on_button_pressed(event)
+                return # Event handled, stop further processing
+            except QueryError:
+                self.loguru_logger.error("Could not find IngestWindow to delegate browse button press.")
 
         # 1. Handle global tab switching first
         if button_id.startswith("tab-"):
