@@ -13,12 +13,9 @@ from textual.app import App
 from textual.css.query import QueryError
 from textual.logging import TextualHandler
 from textual.widgets import RichLog
-
-from tldw_chatbook.config import get_cli_log_file_path, get_cli_setting
-
-
 #
 # Local Imports
+from tldw_chatbook.config import get_cli_log_file_path, get_cli_setting
 #
 ########################################################################################################################
 #

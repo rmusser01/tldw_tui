@@ -43,6 +43,9 @@ from tldw_chatbook.LLM_Calls.Local_Summarization_Lib import (
     summarize_with_custom_openai_2
 )
 from tldw_chatbook.Logging_Config import logging
+from tldw_chatbook.config import get_cli_setting
+
+
 # FIXME
 def load_and_log_configs():
     pass
@@ -50,10 +53,8 @@ def load_and_log_configs():
 #######################################################################################################################
 # Function Definitions
 #
-
-loaded_config_data = load_and_log_configs()
-openai_api_key = loaded_config_data.get('openai_api', {}).get('api_key', None)
-
+api_key = get_cli_setting('openai_api', 'api_key', "")
+#
 #######################################################################################################################
 # Helper Function Definitions
 #
@@ -550,26 +551,15 @@ def summarize_with_openai(api_key, input_data, custom_prompt_arg, temp=None, sys
         if not api_key or api_key.strip() == "":
             logging.info("OpenAI Summarize: API key not provided as parameter")
             logging.info("OpenAI Summarize: Attempting to use API key from config file")
-            loaded_config_data = load_and_log_configs()
-            api_key = loaded_config_data.get('openai_api', {}).get('api_key', "")
+            api_key = get_cli_setting('openai_api', 'api_key', "")
             logging.debug(f"OpenAI Summarize: Using API key from config file: {api_key[:5]}...{api_key[-5:]}")
 
-        if not api_key or api_key.strip() == "":
-            logging.error("OpenAI: #2 API key not found or is empty")
-            return "OpenAI: API Key Not Provided/Found in Config file or is empty"
-
-        # API key handling: prioritize parameter, then config
-        effective_api_key = api_key
-        if not effective_api_key or not effective_api_key.strip():
-            logging.info("OpenAI Summarize: API key not provided or empty, using config.")
-            effective_api_key = loaded_config_data.get('openai_api', {}).get('api_key', "")
-
-        if not effective_api_key or not effective_api_key.strip():
+        if not api_key or not api_key.strip():
             logging.error("OpenAI: API key not found or is empty (checked param and config).")
             return "Error: OpenAI API Key Not Provided/Found or is empty."
 
         # Model handling: load from config
-        openai_model = loaded_config_data.get('openai_api', {}).get('model') or "gpt-4o" # Default model
+        openai_model = get_cli_setting('openai_api', 'model', "gpt-4o") # Default model
         logging.debug(f"OpenAI: Using model: {openai_model}")
 
         # NOTE: input_data passed to this function should *already be the extracted text*
@@ -582,12 +572,12 @@ def summarize_with_openai(api_key, input_data, custom_prompt_arg, temp=None, sys
         logging.debug(f"OpenAI: Temperature: {temp}, System Message: {system_message}, Streaming: {streaming}")
 
         headers = {
-            'Authorization': f'Bearer {effective_api_key}',
+            'Authorization': f'Bearer {api_key}',
             'Content-Type': 'application/json'
         }
 
         logging.debug(
-            f"OpenAI API Key: {openai_api_key[:5]}...{openai_api_key[-5:] if openai_api_key else None}")
+            f"OpenAI API Key: {api_key[:5]}...{api_key[-5:] if api_key else None}")
         logging.debug("openai: Preparing data + prompt for submittal")
         openai_prompt = f"{text} \n\n\n\n{custom_prompt_arg}"
         if temp is None: temp = 0.7
@@ -613,8 +603,8 @@ def summarize_with_openai(api_key, input_data, custom_prompt_arg, temp=None, sys
 
         # --- Retry Logic --- (Copied from original, seems reasonable)
         session = requests.Session()
-        retry_count = loaded_config_data.get('openai_api', {}).get('api_retries', 3)
-        retry_delay = loaded_config_data.get('openai_api', {}).get('api_retry_delay', 1) # Using 1s default backoff factor
+        retry_count = int(get_cli_setting('openai_api', 'api_retries', 3))
+        retry_delay = int(get_cli_setting('openai_api', 'api_retry_delay', 1)) # Using 1s default backoff factor
         retry_strategy = Retry(
             total=retry_count,
             backoff_factor=retry_delay,
@@ -624,7 +614,7 @@ def summarize_with_openai(api_key, input_data, custom_prompt_arg, temp=None, sys
         session.mount("https://", adapter)
         session.mount("http://", adapter) # Mount for http too if needed
 
-        api_url = loaded_config_data.get('openai_api', {}).get('api_base_url', 'https://api.openai.com/v1') + '/chat/completions'
+        api_url = get_cli_setting('openai_api', 'api_base_url', 'https://api.openai.com/v1') + '/chat/completions'
 
 
         logging.debug(f"OpenAI: Posting request to {api_url}")
@@ -633,7 +623,7 @@ def summarize_with_openai(api_key, input_data, custom_prompt_arg, temp=None, sys
             headers=headers,
             json=payload,
             stream=streaming,
-            timeout=loaded_config_data.get('openai_api', {}).get('api_timeout', 120) # Add timeout
+            timeout=int(get_cli_setting('openai_api', 'api_timeout', 120))
         )
         response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
 
@@ -686,22 +676,17 @@ def summarize_with_anthropic(api_key, input_data, custom_prompt_arg, temp=None, 
     logging.debug("Anthropic: Summarization process starting...")
     try:
         logging.debug("Anthropic: Loading and validating configurations")
-        loaded_config_data = load_and_log_configs()
-        if loaded_config_data is None:
-            logging.error("Failed to load configuration data")
-            anthropic_api_key = None
+        # Prioritize the API key passed as a parameter
+        if api_key and api_key.strip():
+            anthropic_api_key = api_key
+            logging.info("Anthropic: Using API key provided as parameter")
         else:
-            # Prioritize the API key passed as a parameter
-            if api_key and api_key.strip():
-                anthropic_api_key = api_key
-                logging.info("Anthropic: Using API key provided as parameter")
+            # If no parameter is provided, use the key from the config
+            anthropic_api_key = get_cli_setting('anthropic_api', 'api_key')
+            if anthropic_api_key:
+                logging.info("Anthropic: Using API key from config file")
             else:
-                # If no parameter is provided, use the key from the config
-                anthropic_api_key = loaded_config_data['anthropic_api'].get('api_key')
-                if anthropic_api_key:
-                    logging.info("Anthropic: Using API key from config file")
-                else:
-                    logging.warning("Anthropic: No API key found in config file")
+                logging.warning("Anthropic: No API key found in config file")
 
         # Final check to ensure we have a valid API key
         if not anthropic_api_key or not anthropic_api_key.strip():
@@ -751,7 +736,7 @@ def summarize_with_anthropic(api_key, input_data, custom_prompt_arg, temp=None, 
             "content": f"{text} \n\n\n\n{anthropic_prompt}"
         }
 
-        model = loaded_config_data['anthropic_api']['model']
+        model = get_cli_setting('anthropic_api', 'model', 'claude-3-haiku-20240307')
 
         data = {
             "model": model,
@@ -774,8 +759,8 @@ def summarize_with_anthropic(api_key, input_data, custom_prompt_arg, temp=None, 
                 session = requests.Session()
 
                 # Load config values
-                retry_count = loaded_config_data['anthropic_api']['api_retries']
-                retry_delay = loaded_config_data['anthropic_api']['api_retry_delay']
+                retry_count = int(get_cli_setting('anthropic_api', 'api_retries', 3))
+                retry_delay = int(get_cli_setting('anthropic_api', 'api_retry_delay', 5))
 
                 # Configure the retry strategy
                 retry_strategy = Retry(
@@ -878,22 +863,17 @@ def summarize_with_cohere(api_key, input_data, custom_prompt_arg, temp=None, sys
     logging.debug("Cohere: Summarization process starting...")
     try:
         logging.debug("Cohere: Loading and validating configurations")
-        loaded_config_data = load_and_log_configs()
-        if loaded_config_data is None:
-            logging.error("Failed to load configuration data")
-            cohere_api_key = None
+        # Prioritize the API key passed as a parameter
+        if api_key and api_key.strip():
+            cohere_api_key = api_key
+            logging.info("Cohere: Using API key provided as parameter")
         else:
-            # Prioritize the API key passed as a parameter
-            if api_key and api_key.strip():
-                cohere_api_key = api_key
-                logging.info("Cohere: Using API key provided as parameter")
+            # If no parameter is provided, use the key from the config
+            cohere_api_key = get_cli_setting('cohere_api', 'api_key')
+            if cohere_api_key:
+                logging.info("Cohere: Using API key from config file")
             else:
-                # If no parameter is provided, use the key from the config
-                cohere_api_key = loaded_config_data['cohere_api'].get('api_key')
-                if cohere_api_key:
-                    logging.info("Cohere: Using API key from config file")
-                else:
-                    logging.warning("Cohere: No API key found in config file")
+                logging.warning("Cohere: No API key found in config file")
 
         # Final check to ensure we have a valid API key
         if not cohere_api_key or not cohere_api_key.strip():
@@ -929,7 +909,7 @@ def summarize_with_cohere(api_key, input_data, custom_prompt_arg, temp=None, sys
         else:
             raise ValueError("Cohere: Invalid input data format")
 
-        cohere_model = loaded_config_data['cohere_api']['model']
+        cohere_model = get_cli_setting('cohere_api', 'model', 'command-r-plus')
 
         if temp is None:
             temp = 0.3
@@ -960,8 +940,8 @@ def summarize_with_cohere(api_key, input_data, custom_prompt_arg, temp=None, sys
             session = requests.Session()
 
             # Load config values
-            retry_count = loaded_config_data['cohere_api']['api_retries']
-            retry_delay = loaded_config_data['cohere_api']['api_retry_delay']
+            retry_count = int(get_cli_setting('cohere_api', 'api_retries', 3))
+            retry_delay = int(get_cli_setting('cohere_api', 'api_retry_delay', 5))
 
             # Configure the retry strategy
             retry_strategy = Retry(
@@ -1014,8 +994,8 @@ def summarize_with_cohere(api_key, input_data, custom_prompt_arg, temp=None, sys
             session = requests.Session()
 
             # Load config values
-            retry_count = loaded_config_data['cohere_api']['api_retries']
-            retry_delay = loaded_config_data['cohere_api']['api_retry_delay']
+            retry_count = int(get_cli_setting('cohere_api', 'api_retries', 3))
+            retry_delay = int(get_cli_setting('cohere_api', 'api_retry_delay', 5))
 
             # Configure the retry strategy
             retry_strategy = Retry(
@@ -1063,22 +1043,17 @@ def summarize_with_groq(api_key, input_data, custom_prompt_arg, temp=None, syste
     logging.debug("Groq: Summarization process starting...")
     try:
         logging.debug("Groq: Loading and validating configurations")
-        loaded_config_data = load_and_log_configs()
-        if loaded_config_data is None:
-            logging.error("Failed to load configuration data")
-            groq_api_key = None
+        # Prioritize the API key passed as a parameter
+        if api_key and api_key.strip():
+            groq_api_key = api_key
+            logging.info("Groq: Using API key provided as parameter")
         else:
-            # Prioritize the API key passed as a parameter
-            if api_key and api_key.strip():
-                groq_api_key = api_key
-                logging.info("Groq: Using API key provided as parameter")
+            # If no parameter is provided, use the key from the config
+            groq_api_key = get_cli_setting('groq_api', 'api_key')
+            if groq_api_key:
+                logging.info("Groq: Using API key from config file")
             else:
-                # If no parameter is provided, use the key from the config
-                groq_api_key = loaded_config_data['groq_api'].get('api_key')
-                if groq_api_key:
-                    logging.info("Groq: Using API key from config file")
-                else:
-                    logging.warning("Groq: No API key found in config file")
+                logging.warning("Groq: No API key found in config file")
 
         # Final check to ensure we have a valid API key
         if not groq_api_key or not groq_api_key.strip():
@@ -1109,7 +1084,7 @@ def summarize_with_groq(api_key, input_data, custom_prompt_arg, temp=None, syste
             raise ValueError("Groq: Invalid input data format")
 
         # Set the model to be used
-        groq_model = loaded_config_data['groq_api']['model']
+        groq_model = get_cli_setting('groq_api', 'model', 'llama3-70b-8192')
 
         if temp is None:
             temp = 0.2
@@ -1147,8 +1122,8 @@ def summarize_with_groq(api_key, input_data, custom_prompt_arg, temp=None, syste
             session = requests.Session()
 
             # Load config values
-            retry_count = loaded_config_data['groq_api']['api_retries']
-            retry_delay = loaded_config_data['groq_api']['api_retry_delay']
+            retry_count = int(get_cli_setting('groq_api', 'api_retries', 3))
+            retry_delay = int(get_cli_setting('groq_api', 'api_retry_delay', 5))
 
             # Configure the retry strategy
             retry_strategy = Retry(
@@ -1200,8 +1175,8 @@ def summarize_with_groq(api_key, input_data, custom_prompt_arg, temp=None, syste
             session = requests.Session()
 
             # Load config values
-            retry_count = loaded_config_data['groq_api']['api_retries']
-            retry_delay = loaded_config_data['groq_api']['api_retry_delay']
+            retry_count = int(get_cli_setting('groq_api', 'api_retries', 3))
+            retry_delay = int(get_cli_setting('groq_api', 'api_retry_delay', 5))
 
             # Configure the retry strategy
             retry_strategy = Retry(
@@ -1245,30 +1220,23 @@ def summarize_with_groq(api_key, input_data, custom_prompt_arg, temp=None, syste
 def summarize_with_openrouter(api_key, input_data, custom_prompt_arg, temp=None, system_message=None, streaming=False,):
     import requests
     import json
-    global openrouter_model, openrouter_api_key
     try:
-        logging.debug("OpenRouter: Loading and validating configurations")
-        loaded_config_data = load_and_log_configs()
-        if loaded_config_data is None:
-            logging.error("Failed to load configuration data")
-            openrouter_api_key = None
+        # Prioritize the API key passed as a parameter
+        if api_key and api_key.strip():
+            openrouter_api_key = api_key
+            logging.info("OpenRouter: Using API key provided as parameter")
         else:
-            # Prioritize the API key passed as a parameter
-            if api_key and api_key.strip():
-                openrouter_api_key = api_key
-                logging.info("OpenRouter: Using API key provided as parameter")
+            # If no parameter is provided, use the key from the config
+            openrouter_api_key = get_cli_setting('openrouter_api', 'api_key')
+            if openrouter_api_key:
+                logging.info("OpenRouter: Using API key from config file")
             else:
-                # If no parameter is provided, use the key from the config
-                openrouter_api_key = loaded_config_data['openrouter_api'].get('api_key')
-                if openrouter_api_key:
-                    logging.info("OpenRouter: Using API key from config file")
-                else:
-                    logging.warning("OpenRouter: No API key found in config file")
+                logging.warning("OpenRouter: No API key found in config file")
 
         # Model Selection validation
         logging.debug("OpenRouter: Validating model selection")
         loaded_config_data = load_and_log_configs()
-        openrouter_model = loaded_config_data['openrouter_api']['model']
+        openrouter_model = get_cli_setting('openrouter_api', 'model', 'mistralai/mistral-7b-instruct')
         logging.debug(f"OpenRouter: Using model from config file: {openrouter_model}")
 
         # Final check to ensure we have a valid API key
@@ -1318,8 +1286,8 @@ def summarize_with_openrouter(api_key, input_data, custom_prompt_arg, temp=None,
             session = requests.Session()
 
             # Load config values
-            retry_count = loaded_config_data['openrouter_api']['api_retries']
-            retry_delay = loaded_config_data['openrouter_api']['api_retry_delay']
+            retry_count = int(get_cli_setting('openrouter_api', 'api_retries', 3))
+            retry_delay = int(get_cli_setting('openrouter_api', 'api_retry_delay', 5))
 
             # Configure the retry strategy
             retry_strategy = Retry(
@@ -1373,7 +1341,7 @@ def summarize_with_openrouter(api_key, input_data, custom_prompt_arg, temp=None,
                                     delta = json_data['choices'][0].get('delta', {})
                                     if 'content' in delta:
                                         content = delta['content']
-                                        logging.info(content, end='', flush=True)  # Print streaming output
+                                        logging.info(content)
                                         full_response += content
                             except json.JSONDecodeError:
                                 continue
@@ -1395,8 +1363,8 @@ def summarize_with_openrouter(api_key, input_data, custom_prompt_arg, temp=None,
             session = requests.Session()
 
             # Load config values
-            retry_count = loaded_config_data['openrouter_api']['api_retries']
-            retry_delay = loaded_config_data['openrouter_api']['api_retry_delay']
+            retry_count = int(get_cli_setting('openrouter_api', 'api_retries', 3))
+            retry_delay = int(get_cli_setting('openrouter_api', 'api_retry_delay', 5))
 
             # Configure the retry strategy
             retry_strategy = Retry(
@@ -1455,31 +1423,23 @@ def summarize_with_huggingface(api_key, input_data, custom_prompt_arg, temp=None
     # https://huggingface.co/docs/api-inference/tasks/chat-completion
     loaded_config_data = load_and_log_configs()
     logging.debug("HuggingFace: Summarization process starting...")
-    try:
-        logging.debug("HuggingFace: Loading and validating configurations")
-        if loaded_config_data is None:
-            logging.error("Failed to load configuration data")
-            huggingface_api_key = None
+    # Prioritize the API key passed as a parameter
+    if api_key and api_key.strip():
+        huggingface_api_key = api_key
+        logging.info("HuggingFace: Using API key provided as parameter")
+    else:
+        # If no parameter is provided, use the key from the config
+        huggingface_api_key = get_cli_setting('huggingface_api', 'api_key')
+        if huggingface_api_key:
+            logging.info("HuggingFace: Using API key from config file")
         else:
-            # Prioritize the API key passed as a parameter
-            if api_key and api_key.strip():
-                huggingface_api_key = api_key
-                logging.info("HuggingFace: Using API key provided as parameter")
-            else:
-                # If no parameter is provided, use the key from the config
-                huggingface_api_key = loaded_config_data['huggingface_api'].get('api_key')
-                logging.debug(f"HuggingFace: API key from config: {huggingface_api_key[:5]}...{huggingface_api_key[-5:]}")
-                if huggingface_api_key:
-                    logging.info("HuggingFace: Using API key from config file")
-                else:
-                    logging.warning("HuggingFace: No API key found in config file")
+            logging.warning("HuggingFace: No API key found in config file")
 
+    try:
         # Final check to ensure we have a valid API key
         if not huggingface_api_key or not huggingface_api_key.strip():
             logging.error("HuggingFace: No valid API key available")
-            # You might want to raise an exception here or handle this case as appropriate for your application
-            # FIXME
-            # For example: raise ValueError("No valid Anthropic API key available")
+            raise ValueError("No valid Anthropic API key available")
 
         logging.debug(f"HuggingFace: Using API Key: {huggingface_api_key[:5]}...{huggingface_api_key[-5:]}")
 
@@ -1507,7 +1467,7 @@ def summarize_with_huggingface(api_key, input_data, custom_prompt_arg, temp=None
         headers = {
             "Authorization": f"Bearer {huggingface_api_key}"
         }
-        huggingface_model = loaded_config_data['huggingface_api']['model']
+        huggingface_model = get_cli_setting('huggingface_api', 'model', 'mistralai/Mistral-7B-Instruct-v0.2')
         API_URL = f"https://api-inference.huggingface.co/models/{huggingface_model}"
         if temp is None:
             temp = 0.1
@@ -1527,8 +1487,8 @@ def summarize_with_huggingface(api_key, input_data, custom_prompt_arg, temp=None
             session = requests.Session()
 
             # Load config values
-            retry_count = loaded_config_data['huggingface_api']['api_retries']
-            retry_delay = loaded_config_data['huggingface_api']['api_retry_delay']
+            retry_count = int(get_cli_setting('huggingface_api', 'api_retries', 3))
+            retry_delay = int(get_cli_setting('huggingface_api', 'api_retry_delay', 5))
 
             # Configure the retry strategy
             retry_strategy = Retry(
@@ -1577,8 +1537,8 @@ def summarize_with_huggingface(api_key, input_data, custom_prompt_arg, temp=None
             session = requests.Session()
 
             # Load config values
-            retry_count = loaded_config_data['huggingface_api']['api_retries']
-            retry_delay = loaded_config_data['huggingface_api']['api_retry_delay']
+            retry_count = int(get_cli_setting('huggingface_api', 'api_retries', 3))
+            retry_delay = int(get_cli_setting('huggingface_api', 'api_retry_delay', 5))
 
             # Configure the retry strategy
             retry_strategy = Retry(
@@ -1621,23 +1581,17 @@ def summarize_with_deepseek(api_key, input_data, custom_prompt_arg, temp=None, s
     # https://api-docs.deepseek.com/api/create-chat-completion
     logging.debug("DeepSeek: Summarization process starting...")
     try:
-        logging.debug("DeepSeek: Loading and validating configurations")
-        loaded_config_data = load_and_log_configs()
-        if loaded_config_data is None:
-            logging.error("Failed to load configuration data")
-            deepseek_api_key = None
+        # Prioritize the API key passed as a parameter
+        if api_key and api_key.strip():
+            deepseek_api_key = api_key
+            logging.info("DeepSeek: Using API key provided as parameter")
         else:
-            # Prioritize the API key passed as a parameter
-            if api_key and api_key.strip():
-                deepseek_api_key = api_key
-                logging.info("DeepSeek: Using API key provided as parameter")
+            # If no parameter is provided, use the key from the config
+            deepseek_api_key = get_cli_setting('deepseek_api', 'api_key')
+            if deepseek_api_key:
+                logging.info("DeepSeek: Using API key from config file")
             else:
-                # If no parameter is provided, use the key from the config
-                deepseek_api_key = loaded_config_data['deepseek_api'].get('api_key')
-                if deepseek_api_key:
-                    logging.info("DeepSeek: Using API key from config file")
-                else:
-                    logging.warning("DeepSeek: No API key found in config file")
+                logging.warning("DeepSeek: No API key found in config file")
 
         # Final check to ensure we have a valid API key
         if not deepseek_api_key or not deepseek_api_key.strip():
@@ -1667,7 +1621,7 @@ def summarize_with_deepseek(api_key, input_data, custom_prompt_arg, temp=None, s
         else:
             raise ValueError("DeepSeek: Invalid input data format")
 
-        deepseek_model = loaded_config_data['deepseek_api']['model'] or "deepseek-chat"
+        deepseek_model = get_cli_setting('deepseek_api', 'model', "deepseek-chat")
 
         if temp is None:
             temp = 0.1
@@ -1699,8 +1653,8 @@ def summarize_with_deepseek(api_key, input_data, custom_prompt_arg, temp=None, s
             session = requests.Session()
 
             # Load config values
-            retry_count = loaded_config_data['deepseek_api']['api_retries']
-            retry_delay = loaded_config_data['deepseek_api']['api_retry_delay']
+            retry_count = int(get_cli_setting('deepseek_api', 'api_retries', 3))
+            retry_delay = int(get_cli_setting('deepseek_api', 'api_retry_delay', 5))
 
             # Configure the retry strategy
             retry_strategy = Retry(
@@ -1753,8 +1707,8 @@ def summarize_with_deepseek(api_key, input_data, custom_prompt_arg, temp=None, s
             session = requests.Session()
 
             # Load config values
-            retry_count = loaded_config_data['deepseek_api']['api_retries']
-            retry_delay = loaded_config_data['deepseek_api']['api_retry_delay']
+            retry_count = int(get_cli_setting('deepseek_api', 'api_retries', 3))
+            retry_delay = int(get_cli_setting('deepseek_api', 'api_retry_delay', 5))
 
             # Configure the retry strategy
             retry_strategy = Retry(
@@ -1794,22 +1748,17 @@ def summarize_with_mistral(api_key, input_data, custom_prompt_arg, temp=None, sy
     logging.debug("Mistral: Summarization process starting...")
     try:
         logging.debug("Mistral: Loading and validating configurations")
-        loaded_config_data = load_and_log_configs()
-        if loaded_config_data is None:
-            logging.error("Failed to load configuration data")
-            mistral_api_key = None
+        # Prioritize the API key passed as a parameter
+        if api_key and api_key.strip():
+            mistral_api_key = api_key
+            logging.info("Mistral: Using API key provided as parameter")
         else:
-            # Prioritize the API key passed as a parameter
-            if api_key and api_key.strip():
-                mistral_api_key = api_key
-                logging.info("Mistral: Using API key provided as parameter")
+            # If no parameter is provided, use the key from the config
+            mistral_api_key = get_cli_setting('mistral_api', 'api_key')
+            if mistral_api_key:
+                logging.info("Mistral: Using API key from config file")
             else:
-                # If no parameter is provided, use the key from the config
-                mistral_api_key = loaded_config_data['mistral_api'].get('api_key')
-                if mistral_api_key:
-                    logging.info("Mistral: Using API key from config file")
-                else:
-                    logging.warning("Mistral: No API key found in config file")
+                logging.warning("Mistral: No API key found in config file")
 
         # Final check to ensure we have a valid API key
         if not mistral_api_key or not mistral_api_key.strip():
@@ -1839,7 +1788,7 @@ def summarize_with_mistral(api_key, input_data, custom_prompt_arg, temp=None, sy
         else:
             raise ValueError("Mistral: Invalid input data format")
 
-        mistral_model = loaded_config_data['mistral_api']['model'] or "mistral-large-latest"
+        mistral_model = get_cli_setting('mistral_api', 'model', "mistral-large-latest")
 
         if temp is None:
             temp = 0.2
@@ -1873,8 +1822,8 @@ def summarize_with_mistral(api_key, input_data, custom_prompt_arg, temp=None, sy
             session = requests.Session()
 
             # Load config values
-            retry_count = loaded_config_data['mistral_api']['api_retries']
-            retry_delay = loaded_config_data['mistral_api']['api_retry_delay']
+            retry_count = int(get_cli_setting('mistral_api', 'api_retries', 3))
+            retry_delay = int(get_cli_setting('mistral_api', 'api_retry_delay', 5))
 
             # Configure the retry strategy
             retry_strategy = Retry(
@@ -1936,8 +1885,8 @@ def summarize_with_mistral(api_key, input_data, custom_prompt_arg, temp=None, sy
             session = requests.Session()
 
             # Load config values
-            retry_count = loaded_config_data['mistral_api']['api_retries']
-            retry_delay = loaded_config_data['mistral_api']['api_retry_delay']
+            retry_count = int(get_cli_setting('mistral_api', 'api_retries', 3))
+            retry_delay = int(get_cli_setting('mistral_api', 'api_retry_delay', 5))
 
             # Configure the retry strategy
             retry_strategy = Retry(
@@ -1984,7 +1933,7 @@ def summarize_with_google(api_key, input_data, custom_prompt_arg, temp=None, sys
         if not api_key or api_key.strip() == "":
             logging.info("Google: #1 API key not provided as parameter")
             logging.info("Google: Attempting to use API key from config file")
-            api_key = loaded_config_data['google_api']['api_key']
+            api_key = get_cli_setting('google_api', 'api_key')
 
         if not api_key or api_key.strip() == "":
             logging.error("Google: #2 API key not found or is empty")
@@ -2034,7 +1983,7 @@ def summarize_with_google(api_key, input_data, custom_prompt_arg, temp=None, sys
         logging.debug(f"Google: Extracted text (first 500 chars): {text[:500]}...")
         logging.debug(f"Google: Custom prompt: {custom_prompt_arg}")
 
-        google_model = loaded_config_data['google_api']['model'] or "gemini-1.5-pro"
+        google_model = get_cli_setting('google_api', 'model', "gemini-1.5-pro")
         logging.debug(f"Google: Using model: {google_model}")
 
         headers = {
@@ -2067,8 +2016,8 @@ def summarize_with_google(api_key, input_data, custom_prompt_arg, temp=None, sys
             session = requests.Session()
 
             # Load config values
-            retry_count = loaded_config_data['google_api']['api_retries']
-            retry_delay = loaded_config_data['google_api']['api_retry_delay']
+            retry_count = int(get_cli_setting('google_api', 'api_retries', 3))
+            retry_delay = int(get_cli_setting('google_api', 'api_retry_delay', 5))
 
             # Configure the retry strategy
             retry_strategy = Retry(
@@ -2118,8 +2067,8 @@ def summarize_with_google(api_key, input_data, custom_prompt_arg, temp=None, sys
             session = requests.Session()
 
             # Load config values
-            retry_count = loaded_config_data['google_api']['api_retries']
-            retry_delay = loaded_config_data['google_api']['api_retry_delay']
+            retry_count = int(get_cli_setting('google_api', 'api_retries', 3))
+            retry_delay = int(get_cli_setting('google_api', 'api_retry_delay', 5))
 
             # Configure the retry strategy
             retry_strategy = Retry(
@@ -2291,40 +2240,6 @@ def format_input_with_metadata(metadata, content):
     formatted_input += content
     return formatted_input
 
-
-
-def extract_text_from_input(input_data):
-    if isinstance(input_data, str):
-        try:
-            # Try to parse as JSON
-            data = json.loads(input_data)
-        except json.JSONDecodeError:
-            # If not valid JSON, treat as plain text
-            return input_data
-    elif isinstance(input_data, dict):
-        data = input_data
-    else:
-        return str(input_data)
-
-    # Extract relevant fields from the JSON object
-    text_parts = []
-    if 'title' in data:
-        text_parts.append(f"Title: {data['title']}")
-    if 'description' in data:
-        text_parts.append(f"Description: {data['description']}")
-    if 'transcription' in data:
-        if isinstance(data['transcription'], list):
-            transcription_text = ' '.join([segment.get('Text', '') for segment in data['transcription']])
-        elif isinstance(data['transcription'], str):
-            transcription_text = data['transcription']
-        else:
-            transcription_text = str(data['transcription'])
-        text_parts.append(f"Transcription: {transcription_text}")
-    elif 'segments' in data:
-        segments_text = extract_text_from_segments(data['segments'])
-        text_parts.append(f"Segments: {segments_text}")
-
-    return '\n\n'.join(text_parts)
 
 
 #
