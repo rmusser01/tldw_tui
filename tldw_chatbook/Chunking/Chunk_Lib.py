@@ -26,6 +26,9 @@ from sklearn.metrics.pairwise import cosine_similarity
 from tldw_chatbook.config import load_settings
 from tldw_chatbook.config import global_default_chunk_language
 #
+# FIXME
+def load_and_log_configs():
+    pass
 #######################################################################################################################
 # Custom Exceptions
 class ChunkingError(Exception):

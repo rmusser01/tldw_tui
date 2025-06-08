@@ -48,6 +48,18 @@ dependencies = [
 vllm = ["vllm"]
 mlx = ["mlx-lm"]
 transformers = ["transformers"]
+websearch = [
+    "lxml",
+    "bs4",#beautifulsoup
+    "pandas",
+    "playwright",
+    #"playwright_stealth",
+    "trafilatura",
+    "langdetect",
+    "nltk",
+    "scikit-learn",
+
+]
 # For groups like local_ingestion, local_rag, etc., if they have actual packages:
 # local_ingestion = ["some-ingestion-package"]
 # local_rag = ["some-rag-package"]

@@ -42,20 +42,18 @@ from playwright.sync_api import sync_playwright
 import requests
 import trafilatura
 from tqdm import tqdm
-
-from tldw_Server_API.app.core.DB_Management.DB_Manager import ingest_article_to_db
 #
 # Import Local
-from tldw_Server_API.app.core.LLM_Calls.Summarization_General_Lib import analyze
-from tldw_Server_API.app.core.Metrics.metrics_logger import log_histogram, log_counter
-from tldw_Server_API.app.core.Utils.Utils import logging
-from tldw_Server_API.app.core.config import load_and_log_configs
+from tldw_chatbook.LLM_Calls.Summarization_General_Lib import analyze
+from tldw_chatbook.Metrics.metrics_logger import log_histogram, log_counter
+from tldw_chatbook.Logging_Config import logging
+from tldw_chatbook.DB.Client_Media_DB_v2 import ingest_article_to_db_new
 
 #
 #######################################################################################################################
 # Function Definitions
 #
-
+load_and_log_configs = lambda: {}
 # FIXME - Add a config file option/check for the user agent
 web_scraping_user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
@@ -330,7 +328,7 @@ def scrape_and_no_summarize_then_ingest(url, keywords, custom_article_title):
         print(f"Title: {title}, Author: {author}, Content Length: {len(content)}")  # Debugging statement
 
         # Step 2: Ingest the article into the database
-        ingestion_result = ingest_article_to_db(url, title, author, content, keywords, ingestion_date, None, None)
+        ingestion_result = ingest_article_to_db_new(url, title, author, content, keywords, ingestion_date, None, None)
         log_counter("article_ingested", labels={"success": str(ingestion_result).lower(), "url": url})
 
         # When displaying content, we might want to strip metadata

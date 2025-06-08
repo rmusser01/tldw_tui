@@ -1311,6 +1311,33 @@ MetricsScreen Label.-info-message {
     height: 100%;
     align: center middle;
 }
+
+/* Web Search Specific Styles within Search Tab */
+#search-view-web-search {
+    /* Overriding the generic .search-view-area Static centering if needed */
+    /* For direct children like Input, Button, VerticalScroll, default layout (vertical) should be fine. */
+    padding: 1; /* Add some padding inside the web search view area */
+}
+
+#search-view-web-search > Input#web-search-input { /* Target Input directly inside */
+    margin-bottom: 1; /* Space below the input field */
+    width: 100%;
+}
+
+/* .search-action-button is used by #web-search-button */
+.search-action-button {
+    width: 100%;
+    margin-bottom: 1; /* Space below the button */
+    /* height: 3; /* Optional: Standard button height */
+}
+
+#search-view-web-search > VerticalScroll > Markdown#web-search-results { /* Target Markdown inside VS */
+    width: 100%; /* Take full width */
+    height: 1fr; /* Take remaining vertical space within its parent VerticalScroll */
+    border: round $primary-background-lighten-2;
+    padding: 1;
+    background: $surface; /* A slightly different background for the results area */
+}
 /* --- End of Search Tab --- */
 /* ----------------------------- ************************* ----------------------------- */
 
