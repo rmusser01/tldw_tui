@@ -16,6 +16,7 @@ from textual.widgets import Static, Button, Label, Input, ListView, TextArea, Ma
 # Local Imports
 from ..Utils.text import slugify
 from ..Event_Handlers import media_events
+from ..Utils.Emoji_Handling import get_char, EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE
 if TYPE_CHECKING:
     from ..app import TldwCli
 #
@@ -55,7 +56,7 @@ class MediaWindow(Container):
             nav_pane = self.query_one("#media-nav-pane")
             toggle_button = self.query_one("#media-sidebar-toggle-button")
             nav_pane.set_class(collapsed, "collapsed")
-            toggle_button.set_pseudo_class("collapsed", collapsed) # This answers your pseudo_class question!
+            toggle_button.set_class(collapsed, "collapsed") # This answers your pseudo_class question!
         except QueryError as e:
             self.log.warning(f"UI component not found during media sidebar collapse: {e}")
 
@@ -133,6 +134,11 @@ class MediaWindow(Container):
 
         # Main Content Pane
         with Container(classes="media-content-pane", id="media-content-pane"):
+            yield Button(
+                get_char(EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE),
+                id="media-sidebar-toggle-button",
+                classes="sidebar-toggle"
+            )
             # Create a view for "All Media"
             with Horizontal(id="media-view-all-media", classes="media-view-area"):
                 # --- LEFT PANE (for list and controls) ---

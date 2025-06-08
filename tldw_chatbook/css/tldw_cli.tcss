@@ -1213,6 +1213,15 @@ MetricsScreen Label.-info-message {
     overflow-x: hidden;
 }
 
+.media-nav-pane.collapsed {
+    width: 0 !important;
+    min-width: 0 !important;
+    border-right: none !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    display: none !important; /* Ensures it doesn't take space or grab focus */
+}
+
 .media-nav-pane .media-nav-button { /* Style for navigation buttons */
     width: 100%;
     margin-bottom: 1;
