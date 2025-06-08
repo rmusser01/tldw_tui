@@ -1243,6 +1243,14 @@ MetricsScreen Label.-info-message {
     width: 100%;
     height: 100%; /* Or auto if content dictates height */
 }
+
+.media-content-left-pane {
+    width: 35%;
+}
+
+.media-content-right-pane {
+    width: 65%;
+}
 /* --- End of Media Tab --- */
 /* ----------------------------- ************************* ----------------------------- */
 

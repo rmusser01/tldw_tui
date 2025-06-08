@@ -142,7 +142,7 @@ class MediaWindow(Container):
             # Create a view for "All Media"
             with Horizontal(id="media-view-all-media", classes="media-view-area"):
                 # --- LEFT PANE (for list and controls) ---
-                with VerticalScroll(classes="media-left-pane"):
+                with VerticalScroll(classes="media-content-left-pane"):
                     yield Label("All Media Management", classes="pane-title")
                     yield Input(placeholder="Search in All Media...", id="media-search-input-all-media",
                                 classes="sidebar-input media-search-input")
@@ -153,7 +153,7 @@ class MediaWindow(Container):
                         yield Button("Next", id="media-next-page-button-all-media", disabled=True)
 
                 # --- RIGHT PANE (for details) ---
-                with VerticalScroll(classes="media-right-pane"):
+                with VerticalScroll(classes="media-content-right-pane"):
                     yield Markdown(
                         "Select an item from the list to see its details.",
                         id=f"media-details-display-{type_slug}",
@@ -166,9 +166,9 @@ class MediaWindow(Container):
                 type_slug = slugify(media_type_display_name)
                 with Horizontal(id=f"media-view-{type_slug}", classes="media-view-area"):
                     # --- LEFT PANE ---
-                    with VerticalScroll(classes="media-left-pane"):
-                        yield Label(f"Reviewing Media Type: {media_type_display_name} Management", classes="pane-title")
-                        yield Input(placeholder=f"Search through your {media_type_display_name} collection...",
+                    with VerticalScroll(classes="media-content-left-pane"):
+                        yield Label(f"{media_type_display_name} Management", classes="pane-title")
+                        yield Input(placeholder=f"Search in {media_type_display_name}...",
                                     id=f"media-search-input-{type_slug}", classes="sidebar-input media-search-input")
                         yield ListView(id=f"media-list-view-{type_slug}", classes="sidebar-listview media-items-list")
                         with Horizontal(classes="media-pagination-bar"):
@@ -177,7 +177,7 @@ class MediaWindow(Container):
                             yield Button("Next", id=f"media-next-page-button-{type_slug}", disabled=True)
 
                     # --- RIGHT PANE ---
-                    with VerticalScroll(classes="media-right-pane"):
+                    with VerticalScroll(classes="media-content-right-pane"):
                         # We are creating a detailed layout with specific, styleable widgets
                         yield Label("Select an item to view details", id="details-title")
                         yield Static(id="details-meta-block")
