@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, List, Optional
 #
 # Third-party Libraries
 from loguru import logger
+from textual import on
 from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll, Horizontal, Vertical
 from textual.css.query import QueryError
@@ -34,9 +35,11 @@ MEDIA_SUB_TABS = [
 
 class MediaWindow(Container):
     """
-    Container for the Media Tab's UI, featuring a left navigation pane
-    and content areas for different media types.
+    A fully self-contained component for the Media Tab, featuring a collapsible
+    sidebar and a two-pane browser for media types.
     """
+    # --- STATE LIVES HERE NOW ---
+    media_sidebar_collapsed: reactive[bool] = reactive(False)
     media_active_view: reactive[Optional[str]] = reactive(None)
 
     def __init__(self, app_instance: 'TldwCli', **kwargs):
@@ -45,44 +48,62 @@ class MediaWindow(Container):
         self.media_types_from_db: List[str] = getattr(self.app_instance, '_media_types_for_ui', [])
         self.log.debug(f"MediaWindow __init__: Received media types: {self.media_types_from_db}")
 
-    def activate_initial_view(self) -> None:
-        """Sets the initial active view for the media tab. Called by the app."""
-        # This method is called from the app after this window is mounted.
-        if not self.media_active_view and self.media_types_from_db:
-            initial_slug = slugify("All Media")
-            self.log.info(f"MediaWindow: Activating initial view for slug '{initial_slug}'")
-            self.media_active_view = f"media-view-{initial_slug}"
-
-            # Set the filter slug and display name on the app so the search function has context
-            self.app_instance.current_media_type_filter_slug = initial_slug
-            self.app_instance.current_media_type_filter_display_name = "All Media"
-
-            # Set the active view to trigger the watcher that makes the pane visible
-            self.media_active_view = f"media-view-{initial_slug}"
-
-            # Now that the view is set, schedule the function that loads its content.
-            self.app_instance.call_later(
-                media_events.perform_media_search_and_display,
-                app=self.app_instance,
-                type_slug=initial_slug,
-                search_term=""
-            )
+    # --- WATCHERS LIVE HERE NOW ---
+    def watch_media_sidebar_collapsed(self, collapsed: bool) -> None:
+        """Dynamically adjusts the media browser panes when the sidebar is collapsed or expanded."""
+        try:
+            nav_pane = self.query_one("#media-nav-pane")
+            toggle_button = self.query_one("#media-sidebar-toggle-button")
+            nav_pane.set_class(collapsed, "collapsed")
+            toggle_button.set_pseudo_class("collapsed", collapsed) # This answers your pseudo_class question!
+        except QueryError as e:
+            self.log.warning(f"UI component not found during media sidebar collapse: {e}")
 
     def watch_media_active_view(self, old_view: Optional[str], new_view: Optional[str]) -> None:
-        """Shows/hides media sub-views when the active view changes."""
-        self.log.debug(f"MediaWindow active view changing from '{old_view}' to: '{new_view}'")
-
-        # Since this watcher is inside MediaWindow, it can safely query its own children.
-        for child in self.query(".media-view-area"):
-            child.styles.display = "none"
-
+        """Shows/hides the relevant content view when the active view slug changes."""
+        if old_view:
+            try:
+                self.query_one(f"#{old_view}").styles.display = "none"
+            except QueryError: pass
         if new_view:
             try:
                 view_to_show = self.query_one(f"#{new_view}")
                 view_to_show.styles.display = "block"
-                self.log.info(f"Switched Media view to: {new_view}")
-            except QueryError as e:
-                self.log.error(f"UI component '{new_view}' not found within MediaWindow: {e}", exc_info=True)
+                # Trigger a search for the new view
+                type_slug = new_view.replace("media-view-", "")
+                self.app_instance.call_later(media_events.perform_media_search_and_display, self.app_instance, type_slug, "")
+            except QueryError:
+                self.log.error(f"Could not find new media view to display: #{new_view}")
+
+    # --- EVENT HANDLERS LIVE HERE NOW ---
+    @on(Button.Pressed, "#media-sidebar-toggle-button")
+    def handle_sidebar_toggle(self) -> None:
+        """Toggles the sidebar's collapsed state."""
+        self.media_sidebar_collapsed = not self.media_sidebar_collapsed
+
+    @on(Button.Pressed, ".media-nav-button")
+    def handle_nav_button_press(self, event: Button.Pressed) -> None:
+        """Handles a click on a media type navigation button."""
+        if event.button.id:
+            type_slug = event.button.id.replace("media-nav-", "")
+            self.media_active_view = f"media-view-{type_slug}"
+            # Also reset page number when switching views
+            self.app_instance.media_current_page = 1
+
+    @on(ListView.Selected, ".media-items-list")
+    async def handle_list_item_selection(self, event: ListView.Selected) -> None:
+        """Calls the event handler to load details when an item is selected."""
+        # We delegate to the existing function in media_events.py
+        await media_events.handle_media_list_item_selected(self.app_instance, event)
+
+    # --- This method is the key to fixing the crash ---
+    def activate_initial_view(self) -> None:
+        """Sets the initial active view. Called by the app when the tab becomes visible."""
+        # The check for self.media_active_view will now work because the attribute exists.
+        if not self.media_active_view and self.media_types_from_db:
+            initial_slug = slugify("All Media")
+            self.log.info(f"MediaWindow: Activating initial view for slug '{initial_slug}'.")
+            self.media_active_view = f"media-view-{initial_slug}"
 
     def on_mount(self) -> None:
         """Called when the widget is mounted."""

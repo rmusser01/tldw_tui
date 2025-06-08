@@ -407,6 +407,9 @@ MEDIA_BUTTON_HANDLERS = {
     "media-load-selected-button-ebook": handle_media_load_selected_button_pressed,
     "media-load-selected-button-document": handle_media_load_selected_button_pressed,
     "media-load-selected-button-xml": handle_media_load_selected_button_pressed,
+    # Pagination buttons
+    "media-prev-page-button-all-media": handle_media_page_change_button_pressed,
+    "media-next-page-button-all-media": handle_media_page_change_button_pressed,
 }
 
 #

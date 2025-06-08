@@ -1455,13 +1455,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.call_later(notes_handlers.load_and_display_notes_handler, self)
         elif new_tab == TAB_MEDIA:
             try:
-                # Get the MediaWindow instance.
                 media_window = self.query_one(MediaWindow)
-                # Call the public method on the window to set its initial state.
-                # This ensures the window is mounted before we try to manipulate its children.
-                self.call_later(media_window.activate_initial_view)
+                media_window.activate_initial_view()
             except QueryError:
-                self.loguru_logger.error("Failed to find MediaWindow to activate its initial view.")
+                self.loguru_logger.error("Could not find MediaWindow to activate its initial view.")
         elif new_tab == TAB_SEARCH:
             if not self.search_active_sub_tab: # If no sub-tab is active yet for Search tab
                 self.loguru_logger.debug(f"Switched to Search tab, activating initial sub-tab view: {self._initial_search_sub_tab_view}")
