@@ -264,49 +264,73 @@ async def perform_media_search_and_display(app: 'TldwCli', type_slug: str, searc
 
 async def handle_media_list_item_selected(app: 'TldwCli', event: ListView.Selected) -> None:
     """
-    Handles a media item being selected in the ListView, automatically fetching
-    and displaying its full details.
+    Handles a media item being selected in the ListView, populating the
+    new structured details pane.
     """
-    global details_display
     logger = app.loguru_logger
 
-    # Figure out which view we're in from the list view's ID
-    list_view_id = event.list_view.id
-    if not list_view_id: return
-    type_slug = list_view_id.replace("media-list-view-", "")
-
+    # Get a reference to the parent MediaView to query within it
     try:
-        details_display = app.query_one(f"#media-details-display-{type_slug}", Markdown)
+        # NOTE: The query selectors are now static IDs because only one view is visible at a time.
+        title_widget = app.query_one("#details-title", Label)
+        meta_widget = app.query_one("#details-meta-block", Static)
+        timestamp_widget = app.query_one("#details-timestamp-block", Static)
+        content_header_widget = app.query_one("#details-content-header", Label)
+        content_widget = app.query_one("#details-content-area", TextArea)
+    except QueryError as e:
+        logger.error(f"Could not find a details widget during selection: {e}")
+        return
 
-        if not hasattr(event.item, 'media_data'):
-            await details_display.update("This item has no data to display.")
-            return
+    # Clear previous details
+    title_widget.update("Loading...")
+    meta_widget.update("")
+    timestamp_widget.update("")
+    content_header_widget.display = False
+    content_widget.load_text("")
 
-        await details_display.update("### Loading full details...")
+    if not hasattr(event.item, 'media_data'):
+        title_widget.update("This item has no data to display.")
+        return
 
-        lightweight_media_data = event.item.media_data
-        media_id = int(lightweight_media_data.get('id', 0))
+    lightweight_media_data = event.item.media_data
+    media_id = int(lightweight_media_data.get('id', 0))
 
-        if not media_id or not app.media_db:
-            await details_display.update("### Error\n\nCannot load details. Missing ID or DB connection.")
-            return
+    if not media_id or not app.media_db:
+        title_widget.update("Error: Cannot load details.")
+        return
 
-        full_media_data = app.media_db.get_media_by_id(media_id, include_trash=True)
+    full_media_data = app.media_db.get_media_by_id(media_id, include_trash=True)
 
-        if full_media_data is None:
-            await details_display.update(f"### Error\n\nCould not find media item with ID `{media_id}`.")
-            return
+    if full_media_data is None:
+        title_widget.update(f"Error: Could not find media item with ID {media_id}.")
+        return
 
-        app.current_loaded_media_item = full_media_data
-        markdown_details = format_media_details_as_markdown(app, full_media_data)
+    # --- POPULATE THE NEW WIDGETS ---
+    app.current_loaded_media_item = full_media_data
 
-        await details_display.update(markdown_details)
-        details_display.scroll_home(animate=False)
+    # 1. Title
+    title_widget.update(full_media_data.get('title', 'Untitled'))
 
-    except Exception as e:
-        logger.error(f"Error handling media item selection for slug '{type_slug}': {e}", exc_info=True)
-        if 'details_display' in locals():
-            await details_display.update(f"### An unexpected error occurred\n\n```\n{e}\n```")
+    # 2. Metadata Block
+    keywords_str = ", ".join(fetch_keywords_for_media(app.media_db, media_id)) or "N/A"
+    meta_text = (
+        f"[b]ID:[/] {full_media_data.get('id', 'N/A')}  [b]UUID:[/] {full_media_data.get('uuid', 'N/A')}\n"
+        f"[b]Type:[/] {full_media_data.get('type', 'N/A')}  [b]Author:[/] {full_media_data.get('author', 'N/A')}\n"
+        f"[b]URL:[/] {full_media_data.get('url', 'N/A')}\n"
+        f"[b]Keywords:[/] {keywords_str}"
+    )
+    meta_widget.update(Text.from_markup(meta_text))
+
+    # 3. Timestamp Block
+    timestamp_text = (
+        f"[dim]Ingested: {full_media_data.get('ingestion_date', 'N/A')} | "
+        f"Modified: {full_media_data.get('last_modified', 'N/A')}[/dim]"
+    )
+    timestamp_widget.update(Text.from_markup(timestamp_text))
+
+    # 4. Content
+    content_header_widget.display = True
+    content_widget.load_text(full_media_data.get('content', 'No content available.'))
 
 def format_media_details(media_data: Dict[str, Any]) -> Text:
     """Formats media item details into a Rich Text object for display."""
@@ -350,7 +374,7 @@ def format_media_details_as_markdown(app: 'TldwCli', media_data: Dict[str, Any])
     media_id = media_data.get('id')
     if app.media_db and media_id:
         try:
-            keywords = app.media_db.get_keywords_for_media(media_id)
+            keywords = fetch_keywords_for_media(app.media_db, media_id)
             keywords_str = ", ".join(keywords) if keywords else "N/A"
         except Exception as e:
             keywords_str = f"*Error fetching keywords: {e}*"

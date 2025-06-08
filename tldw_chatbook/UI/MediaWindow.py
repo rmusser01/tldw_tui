@@ -178,8 +178,13 @@ class MediaWindow(Container):
 
                     # --- RIGHT PANE ---
                     with VerticalScroll(classes="media-right-pane"):
-                        yield Markdown("Select an item from the list to see its details.",
-                                       id=f"media-details-display-{type_slug}")
+                        # We are creating a detailed layout with specific, styleable widgets
+                        yield Label("Select an item to view details", id="details-title")
+                        yield Static(id="details-meta-block")
+                        yield Static(id="details-timestamp-block")
+                        yield Label("\nContent", id="details-content-header")
+                        # Use a read-only TextArea for the main content block for better scrolling and selection
+                        yield TextArea(id="details-content-area", read_only=True)
 
             # Hide all views by default; app.py watcher will manage visibility
             for view_area in self.query(".media-view-area"):
