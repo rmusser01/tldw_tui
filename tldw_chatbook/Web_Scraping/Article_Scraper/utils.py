@@ -123,3 +123,7 @@ def convert_html_to_markdown(html: str) -> str:
     from bs4 import BeautifulSoup
     soup = BeautifulSoup(html, 'html.parser')
     return soup.get_text(separator='\n\n').strip()
+
+#
+# End of article_scraper/utils.py
+#######################################################################################################################
