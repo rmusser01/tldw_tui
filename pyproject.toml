@@ -45,9 +45,11 @@ dependencies = [
 
 # --- Optional Dependencies ---
 [project.optional-dependencies]
-vllm = ["vllm"]
-mlx = ["mlx-lm"]
-transformers = ["transformers"]
+chunker = [
+    "langdetect",
+    "nltk",
+    "scikit-learn",
+]
 websearch = [
     "lxml",
     "bs4",#beautifulsoup
@@ -58,11 +60,10 @@ websearch = [
     "langdetect",
     "nltk",
     "scikit-learn",
-
 ]
-# For groups like local_ingestion, local_rag, etc., if they have actual packages:
-# local_ingestion = ["some-ingestion-package"]
-# local_rag = ["some-rag-package"]
+local_vllm = ["vllm"]
+local_mlx = ["mlx-lm"]
+local_transformers = ["transformers"]
 dev = [ # Example for development dependencies
     "pytest",
     "textual-dev", # For Textual development tools
