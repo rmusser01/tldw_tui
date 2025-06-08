@@ -17,14 +17,10 @@ from textual.widgets import (
 )
 from textual.containers import VerticalScroll
 from textual.css.query import QueryError
-
-from tldw_chatbook.Event_Handlers.Chat_Events.chat_events_sidebar import (
-    handle_chat_media_load_selected_button_pressed, handle_chat_media_copy_title_button_pressed,
-    handle_chat_media_copy_content_button_pressed, handle_chat_media_copy_author_button_pressed,
-    handle_chat_media_copy_url_button_pressed)
-from tldw_chatbook.Utils.Utils import safe_float, safe_int
 #
 # Local Imports
+from tldw_chatbook.Event_Handlers.Chat_Events import chat_events_sidebar
+from tldw_chatbook.Utils.Utils import safe_float, safe_int
 from tldw_chatbook.Widgets.chat_message import ChatMessage
 from tldw_chatbook.Widgets.titlebar import TitleBar
 from tldw_chatbook.Utils.Emoji_Handling import (
@@ -38,8 +34,6 @@ from tldw_chatbook.Prompt_Management import Prompts_Interop as prompts_interop
 #
 if TYPE_CHECKING:
     from tldw_chatbook.app import TldwCli
-
-
 #
 ########################################################################################################################
 #
@@ -2656,11 +2650,7 @@ CHAT_BUTTON_HANDLERS = {
     "chat-clear-active-character-button": handle_chat_clear_active_character_button_pressed,
     "toggle-chat-left-sidebar": handle_chat_tab_sidebar_toggle,
     "toggle-chat-right-sidebar": handle_chat_tab_sidebar_toggle,
-    "chat-media-load-selected-button": handle_chat_media_load_selected_button_pressed,
-    "chat-media-copy-title-button": handle_chat_media_copy_title_button_pressed,
-    "chat-media-copy-content-button": handle_chat_media_copy_content_button_pressed,
-    "chat-media-copy-author-button": handle_chat_media_copy_author_button_pressed,
-    "chat-media-copy-url-button": handle_chat_media_copy_url_button_pressed,
+    **chat_events_sidebar.CHAT_SIDEBAR_BUTTON_HANDLERS,
 }
 
 #

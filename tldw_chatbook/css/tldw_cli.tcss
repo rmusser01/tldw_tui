@@ -1532,3 +1532,39 @@ AppFooterStatus {
 /* --- End of Window Footer Widget --- */
 /* ----------------------------- ************************* ----------------------------- */
 
+
+
+/* Chat Sidebar Media Search Section Specific Styles */
+#chat-media-collapsible .sidebar-listview {
+    min-height: 5;
+    max-height: 15;
+    height: 10;
+    border: round $surface;
+    margin-bottom: 1;
+}
+
+.pagination-controls {
+    layout: horizontal;
+    height: auto;
+    width: 100%;
+    align-horizontal: center;
+    margin-bottom: 1;
+}
+.pagination-controls Button {
+    width: 8;
+    min-width: 0;
+}
+.pagination-controls Label {
+    width: 1fr;
+    text-align: center;
+}
+
+.detail-field-container {
+    layout: horizontal;
+    height: auto;
+    align: center middle;
+}
+.detail-field-container .detail-label { width: 1fr; }
+.detail-field-container .copy-button { width: auto; height: 1; border: none; }
+.detail-textarea { height: 5; margin-bottom: 1; }
+.detail-textarea.content-display { height: 10; }

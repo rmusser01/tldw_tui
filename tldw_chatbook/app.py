@@ -36,14 +36,6 @@ from .Event_Handlers.LLM_Management_Events import (llm_management_events, llm_ma
     llm_management_events_ollama, llm_management_events_onnx, llm_management_events_transformers,
                                                    llm_management_events_vllm)
 from tldw_chatbook.Event_Handlers.Chat_Events.chat_streaming_events import handle_streaming_chunk, handle_stream_done
-from tldw_chatbook.Event_Handlers.Chat_Events.chat_events_sidebar import (
-    handle_chat_media_search_input_changed,
-    handle_chat_media_load_selected_button_pressed,
-    handle_chat_media_copy_title_button_pressed,
-    handle_chat_media_copy_content_button_pressed,
-    handle_chat_media_copy_author_button_pressed,
-    handle_chat_media_copy_url_button_pressed,
-)
 from tldw_chatbook.Event_Handlers.worker_events import StreamingChunk, StreamDone
 from .Widgets.AppFooterStatus import AppFooterStatus
 from .Utils import Utils
@@ -2115,8 +2107,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         elif input_id == "chat-character-name-edit" and current_active_tab == TAB_CHAT:
             await chat_handlers.handle_chat_character_attribute_changed(self, event)
         # --- Chat Tab Media Search Input ---
-        elif input_id == "chat-media-search-input" and current_active_tab == TAB_CHAT:
-            await handle_chat_media_search_input_changed(self, event.input)
+        # elif input_id == "chat-media-search-input" and current_active_tab == TAB_CHAT:
+        #     await handle_chat_media_search_input_changed(self, event.input)
         # Add more specific input handlers if needed, e.g., for title inputs if they need live validation/reaction
 
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
