@@ -154,8 +154,11 @@ class MediaWindow(Container):
 
                 # --- RIGHT PANE (for details) ---
                 with VerticalScroll(classes="media-right-pane"):
-                    yield Markdown("Select an item from the list to see its details.",
-                                   id="media-details-display-all-media")
+                    yield Markdown(
+                        "Select an item from the list to see its details.",
+                        id=f"media-details-display-{type_slug}",
+                        classes="media-details-theme"
+                    )
 
             # Create views for each specific media type
             for media_type_display_name in self.media_types_from_db:

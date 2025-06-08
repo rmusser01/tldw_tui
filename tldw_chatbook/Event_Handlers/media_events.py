@@ -197,9 +197,9 @@ async def perform_media_search_and_display(app: 'TldwCli', type_slug: str, searc
         # Also clear the details panel for this view
         try:
             details_display = app.query_one(f"#media-details-display-{type_slug}", Markdown)
-            details_display.update("Select an item from the list to see its details.")
+            await details_display.update("### Select an item to see details")
         except QueryError:
-            logger.warning(f"Could not find details display for slug '{type_slug}' to clear it.")
+            pass
 
         if not app.media_db:
             raise RuntimeError("Media DB service not available.")
@@ -224,25 +224,26 @@ async def perform_media_search_and_display(app: 'TldwCli', type_slug: str, searc
         )
 
         if not results:
-            msg = "No media items found."
-            if search_term: msg += f" matching '{search_term}'"
-            await list_view.append(ListItem(Label(msg)))
+            await list_view.append(ListItem(Label("No media items found.")))
         else:
             for item in results:
                 title = item.get('title', 'Untitled')
-                ingestion_date = item.get('ingestion_date', '').split('T')[0]  # Get just the date part
-                content_snippet = (item.get('content') or "No content available.")[:80] + "..."
+                ingestion_date_str = item.get('ingestion_date', '')
+                ingestion_date = ingestion_date_str.split('T')[0] if ingestion_date_str else 'N/A'
 
-                # Create a richer ListItem with more info
-                list_item = ListItem(
+                content = item.get('content', '').strip()
+                snippet = (content[:80] + '...') if content else "No content available."
+
+                # Create a richer ListItem with a Vertical layout
+                rich_list_item = ListItem(
                     Vertical(
                         Label(f"{title}", classes="media-item-title"),
-                        Static(content_snippet, classes="media-item-snippet"),
+                        Static(snippet, classes="media-item-snippet"),
                         Static(f"Type: {item.get('type')}  |  Ingested: {ingestion_date}", classes="media-item-meta")
                     )
                 )
-                list_item.media_data = item  # Attach data for selection
-                await list_view.append(list_item)
+                rich_list_item.media_data = item  # Attach data for selection
+                await list_view.append(rich_list_item)
 
         # Update pagination controls
         try:
@@ -250,17 +251,15 @@ async def perform_media_search_and_display(app: 'TldwCli', type_slug: str, searc
             page_label = app.query_one(f"#media-page-label-{type_slug}", Label)
             prev_button = app.query_one(f"#media-prev-page-button-{type_slug}", Button)
             next_button = app.query_one(f"#media-next-page-button-{type_slug}", Button)
-
             current_page = getattr(app, 'media_current_page', 1)
             page_label.update(f"Page {current_page} / {total_pages}")
             prev_button.disabled = (current_page <= 1)
             next_button.disabled = (current_page >= total_pages)
         except QueryError:
-            logger.warning(f"Could not find pagination controls for slug '{type_slug}'.")
+            pass
 
     except (QueryError, RuntimeError, Exception) as e:
         logger.error(f"Error during media search for type '{type_slug}': {e}", exc_info=True)
-        # Handle error display in the list view
 
 
 async def handle_media_list_item_selected(app: 'TldwCli', event: ListView.Selected) -> None:
@@ -343,40 +342,48 @@ def format_media_details(media_data: Dict[str, Any]) -> Text:
 
 
 def format_media_details_as_markdown(app: 'TldwCli', media_data: Dict[str, Any]) -> str:
-    """Formats media item details into a Markdown string for display."""
+    """Formats media item details into a clean, scannable Markdown string."""
     if not media_data:
-        return "No media item loaded."
+        return "### No Media Item Loaded"
 
-    # Add a check to ensure media_db exists.
     keywords_str = "N/A"
     media_id = media_data.get('id')
     if app.media_db and media_id:
         try:
             keywords = app.media_db.get_keywords_for_media(media_id)
-            if keywords:
-                keywords_str = ", ".join(keywords)
+            keywords_str = ", ".join(keywords) if keywords else "N/A"
         except Exception as e:
-            app.loguru_logger.error(f"Failed to fetch keywords for media ID {media_id}: {e}")
-            keywords_str = "Error fetching keywords"
+            keywords_str = f"*Error fetching keywords: {e}*"
 
-    details = [
-        f"### {media_data.get('title', 'N/A')}",
-        f"**ID:** `{media_data.get('id', 'N/A')}`",
-        f"**UUID:** `{media_data.get('uuid', 'N/A')}`",
-        f"**Type:** {media_data.get('type', 'N/A')}",
-        f"**Author:** {media_data.get('author', 'N/A')}",
-        f"**URL:** {media_data.get('url', 'N/A')}",
-        f"**Keywords:** {keywords_str}",
-        "---",
-        f"**Ingested:** {media_data.get('ingestion_date', 'N/A')}",
-        f"**Modified:** {media_data.get('last_modified', 'N/A')}",
-        "---",
-        "#### Content",
-        "```text",
-        (media_data.get('content', 'N/A') or 'N/A'),
+    title = media_data.get('title', 'Untitled')
+
+    # Create a compact, multi-line metadata block
+    meta_header = (
+        f"**ID:** `{media_data.get('id', 'N/A')}`  **UUID:** `{media_data.get('uuid', 'N/A')}`\n"
+        f"**Type:** `{media_data.get('type', 'N/A')}`  **Author:** `{media_data.get('author', 'N/A')}`\n"
+        f"**URL:** `{media_data.get('url', 'N/A')}`\n"
+        f"**Keywords:** {keywords_str}"
+    )
+
+    # Format timestamps
+    ingested = f"**Ingested:** `{media_data.get('ingestion_date', 'N/A')}`"
+    modified = f"**Modified:** `{media_data.get('last_modified', 'N/A')}`"
+
+    content = media_data.get('content', 'N/A') or 'N/A'
+
+    # Assemble the final markdown string
+    final_markdown = (
+        f"## {title}\n\n"
+        f"{meta_header}\n\n"
+        "---\n\n"
+        f"{ingested}\n{modified}\n\n"
+        "### Content\n\n"
+        "```text\n"
+        f"{content}\n"
         "```"
-    ]
-    return "\n".join(details)
+    )
+
+    return final_markdown
 
 # --- Button Handler Map ---
 MEDIA_BUTTON_HANDLERS = {

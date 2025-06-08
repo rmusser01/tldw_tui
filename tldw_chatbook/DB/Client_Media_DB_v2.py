@@ -4614,7 +4614,7 @@ def permanently_delete_item(db_instance: MediaDatabase, media_id: int) -> bool:
 
 
 # Keyword read functions use instance methods or query directly
-def fetch_keywords_for_media(media_id: int, db_instance: MediaDatabase) -> List[str]:
+def fetch_keywords_for_media(db_instance: MediaDatabase, media_id: int) -> List[str]:
     """
        Fetches all active keywords associated with a specific active media item.
 
@@ -4647,7 +4647,7 @@ def fetch_keywords_for_media(media_id: int, db_instance: MediaDatabase) -> List[
         raise DatabaseError(f"Failed fetch keywords {media_id}") from e
 
 
-def fetch_keywords_for_media_batch(media_ids: List[int], db_instance: MediaDatabase) -> Dict[int, List[str]]:
+def fetch_keywords_for_media_batch(db_instance: MediaDatabase, media_ids: List[int]) -> Dict[int, List[str]]:
     """
        Fetches active keywords for multiple active media items in a single query.
 
