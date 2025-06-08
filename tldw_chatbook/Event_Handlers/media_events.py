@@ -2,23 +2,20 @@
 #
 #
 # Imports
-import logging
 import math
 from typing import TYPE_CHECKING, Dict, Any
-
-from textual.containers import Vertical
 #
 # 3rd-party Libraries
+from textual.containers import Vertical
 from textual.widgets import ListView, Input, TextArea, Label, ListItem, Button, Markdown, Static  # Added ListItem
 from textual.css.query import QueryError
 from rich.text import Text  # For formatting details
 #
 # Local Imports
-from ..DB.Client_Media_DB_v2 import MediaDatabase, fetch_keywords_for_media
-
+from ..DB.Client_Media_DB_v2 import fetch_keywords_for_media
+#
 if TYPE_CHECKING:
     from ..app import TldwCli
-    from ..UI.MediaWindow import MediaWindow
 ########################################################################################################################
 #
 # Statics:

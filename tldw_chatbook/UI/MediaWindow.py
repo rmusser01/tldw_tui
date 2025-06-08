@@ -167,8 +167,8 @@ class MediaWindow(Container):
                 with Horizontal(id=f"media-view-{type_slug}", classes="media-view-area"):
                     # --- LEFT PANE ---
                     with VerticalScroll(classes="media-left-pane"):
-                        yield Label(f"{media_type_display_name} Management", classes="pane-title")
-                        yield Input(placeholder=f"Search in {media_type_display_name}...",
+                        yield Label(f"Reviewing Media Type: {media_type_display_name} Management", classes="pane-title")
+                        yield Input(placeholder=f"Search through your {media_type_display_name} collection...",
                                     id=f"media-search-input-{type_slug}", classes="sidebar-input media-search-input")
                         yield ListView(id=f"media-list-view-{type_slug}", classes="sidebar-listview media-items-list")
                         with Horizontal(classes="media-pagination-bar"):
