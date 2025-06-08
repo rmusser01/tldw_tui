@@ -23,12 +23,13 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 #
 # Import Local
-from tldw_chatbook.config import load_settings
+from tldw_chatbook.config import load_settings, get_cli_setting
 from tldw_chatbook.config import global_default_chunk_language
 #
 # FIXME
 def load_and_log_configs():
     pass
+#######################################################################################################################
 #######################################################################################################################
 # Custom Exceptions
 class ChunkingError(Exception):
@@ -65,38 +66,53 @@ def ensure_nltk_data():
             # For now, we'll let it proceed, and sent_tokenize will fail later if needed.
 ensure_nltk_data()
 
-# Load configuration (used for default options)
-# We keep this here for now to get default values, but the Chunker class will manage its own options.
-_global_config = load_and_log_configs()
-_default_chunk_options_from_config = {
-    'method': _global_config['chunking_config'].get('chunking_method', 'words'),
-    'max_size': int(_global_config['chunking_config'].get('chunk_max_size', 400)),
-    'overlap': int(_global_config['chunking_config'].get('chunk_overlap', 200)),
-    'adaptive': _global_config['chunking_config'].get('adaptive_chunking', False),
-    'multi_level': _global_config['chunking_config'].get('multi_level', False),
-    'language': _global_config['chunking_config'].get('chunk_language', None), # Can be None
-    'custom_chapter_pattern': _global_config['chunking_config'].get('custom_chapter_pattern', None),
-    'semantic_similarity_threshold': float(_global_config['chunking_config'].get('semantic_similarity_threshold', 0.5)),
-    'semantic_overlap_sentences': int(_global_config['chunking_config'].get('semantic_overlap_sentences', 3)),
-    'base_adaptive_chunk_size': int(_global_config['chunking_config'].get('base_adaptive_chunk_size', 1000)),
-    'min_adaptive_chunk_size': int(_global_config['chunking_config'].get('min_adaptive_chunk_size', 500)),
-    'max_adaptive_chunk_size': int(_global_config['chunking_config'].get('max_adaptive_chunk_size', 2000)),
-    'tokenizer_name_or_path': _global_config['chunking_config'].get('tokenizer_name_or_path', "gpt2"),  # Add this
-    'summarization_detail': float(_global_config['chunking_config'].get('summarization_detail', 0.5)),
-    'summarize_min_chunk_tokens': int(_global_config['chunking_config'].get('summarize_min_chunk_tokens', 500)),
-    'summarize_chunk_delimiter': _global_config['chunking_config'].get('summarize_chunk_delimiter', "."),
-    'summarize_recursively': _global_config['chunking_config'].get('summarize_recursively', False),
-    'summarize_verbose': _global_config['chunking_config'].get('summarize_verbose', False),
-    'summarize_system_prompt': _global_config['chunking_config'].get('summarize_system_prompt', "Rewrite this text in summarized form."),
-    'summarize_additional_instructions': _global_config['chunking_config'].get('summarize_additional_instructions', None),
-    'summarize_temperature': float(_global_config['chunking_config'].get('summarize_temperature', 0.1)),
-    'summarization_llm_provider': _global_config['chunking_config'].get('summarization_llm_provider', 'openai'),
-    'summarization_llm_model': _global_config['chunking_config'].get('summarization_llm_model', 'gpt-4o')
-}
-# Expose the library's default options for the endpoint to use
-DEFAULT_CHUNK_OPTIONS = _default_chunk_options_from_config.copy()
 
-# openai_api_key = _global_config.get('API', 'openai_api_key') # Will handle this later with OpenAI client
+### REWRITTEN SECTION: New Configuration Loading ###
+# This section replaces the old `load_and_log_configs` function and `_global_config` variable.
+# We now build the default options dictionary directly using the central `get_cli_setting` function.
+
+def _get_bool_setting(section: str, key: str, default: bool) -> bool:
+    """Helper to reliably parse boolean values from config which might be strings."""
+    val = get_cli_setting(section, key, default)
+    if isinstance(val, bool):
+        return val
+    # Handles string representations like 'true', '1', 'yes'
+    return str(val).lower() in ('true', '1', 't', 'y', 'yes')
+
+# Load configuration from the central config system.
+# This dictionary holds the default values for chunking, loaded from the config file.
+# The Chunker class will use these as its base, allowing for per-instance overrides.
+_default_chunk_options_from_config = {
+    'method': get_cli_setting('chunking_config', 'chunking_method', 'words'),
+    'max_size': int(get_cli_setting('chunking_config', 'chunk_max_size', 400)),
+    'overlap': int(get_cli_setting('chunking_config', 'chunk_overlap', 200)),
+    'adaptive': _get_bool_setting('chunking_config', 'adaptive_chunking', False),
+    'multi_level': _get_bool_setting('chunking_config', 'multi_level', False),
+    'language': get_cli_setting('chunking_config', 'chunk_language', None), # Can be None, will be auto-detected
+    'custom_chapter_pattern': get_cli_setting('chunking_config', 'custom_chapter_pattern', None),
+    'semantic_similarity_threshold': float(get_cli_setting('chunking_config', 'semantic_similarity_threshold', 0.5)),
+    'semantic_overlap_sentences': int(get_cli_setting('chunking_config', 'semantic_overlap_sentences', 3)),
+    'base_adaptive_chunk_size': int(get_cli_setting('chunking_config', 'base_adaptive_chunk_size', 1000)),
+    'min_adaptive_chunk_size': int(get_cli_setting('chunking_config', 'min_adaptive_chunk_size', 500)),
+    'max_adaptive_chunk_size': int(get_cli_setting('chunking_config', 'max_adaptive_chunk_size', 2000)),
+    'tokenizer_name_or_path': get_cli_setting('chunking_config', 'tokenizer_name_or_path', "gpt2"),
+    'summarization_detail': float(get_cli_setting('chunking_config', 'summarization_detail', 0.5)),
+    'summarize_min_chunk_tokens': int(get_cli_setting('chunking_config', 'summarize_min_chunk_tokens', 500)),
+    'summarize_chunk_delimiter': get_cli_setting('chunking_config', 'summarize_chunk_delimiter', "."),
+    'summarize_recursively': _get_bool_setting('chunking_config', 'summarize_recursively', False),
+    'summarize_verbose': _get_bool_setting('chunking_config', 'summarize_verbose', False),
+    'summarize_system_prompt': get_cli_setting('chunking_config', 'summarize_system_prompt', "Rewrite this text in summarized form."),
+    'summarize_additional_instructions': get_cli_setting('chunking_config', 'summarize_additional_instructions', None),
+    'summarize_temperature': float(get_cli_setting('chunking_config', 'summarize_temperature', 0.1)),
+    'summarization_llm_provider': get_cli_setting('chunking_config', 'summarization_llm_provider', 'openai'),
+    'summarization_llm_model': get_cli_setting('chunking_config', 'summarization_llm_model', 'gpt-4o')
+}
+logger.info("Chunking library defaults loaded from config.")
+logger.debug(f"Default chunking options: {_default_chunk_options_from_config}")
+
+
+# Expose the library's default options for other modules (e.g., API endpoints) to use
+DEFAULT_CHUNK_OPTIONS = _default_chunk_options_from_config.copy()
 
 #
 # End of settings
@@ -145,13 +161,15 @@ class Chunker:
         logger.debug(f"Chunker initialized with options: {self.options}")
 
         try:
-            self.tokenizer: PreTrainedTokenizerBase = AutoTokenizer.from_pretrained(tokenizer_name_or_path)
-            logger.info(f"Tokenizer '{tokenizer_name_or_path}' loaded successfully.")
+            # Use the tokenizer specified in options if available, otherwise use the argument
+            tokenizer_to_load = self.options.get('tokenizer_name_or_path', tokenizer_name_or_path)
+            self.tokenizer: PreTrainedTokenizerBase = AutoTokenizer.from_pretrained(tokenizer_to_load)
+            logger.info(f"Tokenizer '{tokenizer_to_load}' loaded successfully.")
         except Exception as e:
-            logger.error(f"Failed to load tokenizer '{tokenizer_name_or_path}': {e}. Some token-based methods may fail.")
+            logger.error(f"Failed to load tokenizer '{self.options.get('tokenizer_name_or_path', tokenizer_name_or_path)}': {e}. Some token-based methods may fail.")
             # Fallback or raise error? For now, set to None and let methods handle it.
             self.tokenizer = None
-            # raise ChunkingError(f"Failed to load tokenizer '{tokenizer_name_or_path}': {e}") from e
+            # raise ChunkingError(f"Failed to load tokenizer: {e}") from e
 
     def _get_option(self, key: str, default_override: Optional[Any] = None) -> Any:
         """Helper to get an option, allowing for a dynamic default."""
@@ -177,9 +195,6 @@ class Chunker:
             logger.warning("Attempted to detect language from empty or whitespace-only text. Defaulting to 'en'.")
             return self._get_option('language', 'en') # Use option if available, else 'en'
         try:
-            # langdetect can be sensitive to very short texts.
-            # Add a minimum length check if it becomes an issue.
-            # For example: if len(text) < 20: return 'en' (or self.options.get('language', 'en'))
             lang = detect(text)
             logger.debug(f"Detected language: {lang}")
             return lang
@@ -202,7 +217,6 @@ class Chunker:
         if instance_lang_opt:
             return instance_lang_opt
         return self.detect_language(text)
-
 
     def _post_process_chunks(self, chunks: List[str]) -> List[str]:
         """
@@ -305,11 +319,8 @@ class Chunker:
                 additional_instructions=self._get_option('summarize_additional_instructions', None)
             )
             return [summary]  # Wrap in list
-        # Add 'hybrid' if you still need it. It was similar to token based.
-        # def chunk_text_hybrid(text: str, max_tokens: int = 1000, overlap: int = 0) -> List[str]:
         else:
             logger.warning(f"Unknown chunking method '{chunk_method}'. Returning full text as a single chunk.")
-            # return [text] # Previous behavior
             raise InvalidChunkingMethodError(f"Unsupported chunking method: '{chunk_method}'")
 
 
@@ -763,9 +774,10 @@ class Chunker:
         # In tldw_Server_API/app/core/Utils/Chunk_Lib.py
 
     def _chunk_ebook_by_chapters(self, text: str, max_size: int, overlap: int, custom_pattern: Optional[str],
-                                 language: str = global_default_chunk_language) -> List[Dict[str, Any]]:
+                                 language: str) -> List[Dict[str, Any]]:
         logger.debug(f"Chunking Ebook by Chapters. Custom pattern: {custom_pattern}, Lang: {language}")
 
+        # ... The rest of this method's implementation is unchanged ...
         chapter_patterns = [
             custom_pattern,
             r'^\s*chapter\s+\d+([:.\-\s].*)?$',
@@ -774,10 +786,9 @@ class Chunker:
             r'^\s*\d+\s*([:.\-\s][^\r\n]{1,150}|[^\r\n]{1,150})?$',
             r'^\s*#{1,4}\s+[^\r\n]+',
             r'^\s*(PREFACE|INTRODUCTION|CONTENTS|APPENDIX|EPILOGUE|PROLOGUE|ACKNOWLEDGMENTS?|SECTION\s*\d*|UNIT\s*\d*)\s*$',
-            # r'^\s*(?=[A-Za-z])[A-Z0-9:.,!?\'\s]{5,100}\s*$' # This was too greedy and commented out
         ]
         active_patterns = [p for p in chapter_patterns if p is not None]
-        if not active_patterns:  # pragma: no cover
+        if not active_patterns:
             logger.warning("No chapter patterns available for ebook chunking.")
             if text.strip():
                 return [{'text': text,
@@ -787,10 +798,8 @@ class Chunker:
         lines = text.splitlines()
         chapter_splits: List[Dict[str, Any]] = []
         chapter_number = 0
-
         first_heading_index = -1
         first_heading_title_text = "Preface or Introduction"
-
         current_scan_patterns = list(active_patterns)
         for line_idx, line_content in enumerate(lines):
             for pattern_str in list(current_scan_patterns):
@@ -799,14 +808,13 @@ class Chunker:
                         first_heading_index = line_idx
                         first_heading_title_text = line_content.strip()
                         break
-                except re.error as re_e:  # pragma: no cover
+                except re.error as re_e:
                     logger.warning(
                         f"Regex error in chapter pattern '{pattern_str}' during initial scan: {re_e}. Disabling this pattern.")
                     if pattern_str in current_scan_patterns: current_scan_patterns.remove(pattern_str)
                     if pattern_str in active_patterns: active_patterns.remove(pattern_str)
             if first_heading_index != -1:
                 break
-
         if first_heading_index > 0:
             preface_content_lines = lines[:first_heading_index]
             preface_text = "\n".join(preface_content_lines).strip()
@@ -817,77 +825,63 @@ class Chunker:
                     'metadata': {
                         'chunk_type': 'preface',
                         'chapter_number': chapter_number,
-                        'chapter_title': "Preface/Introduction",  # Standardized title for this type of preface
+                        'chapter_title': "Preface/Introduction",
                         'detected_chapter_pattern': 'preface_heuristic',
                     }
                 })
-        elif first_heading_index == -1:  # pragma: no cover
+        elif first_heading_index == -1:
             if text.strip():
                 logger.warning(
                     "No chapter headings found using patterns. Returning document as a single chapter chunk.")
                 return [{'text': text,
                          'metadata': {'chunk_type': 'single_document_no_chapters', 'chapter_title': 'Full Document'}}]
             return []
-
         start_line_of_current_chapter_content = first_heading_index
         current_chapter_title = first_heading_title_text
-
         current_chapter_pattern_str = "unknown"
         if first_heading_index != -1 and first_heading_index < len(lines):
             for p_str in active_patterns:
                 if re.match(p_str, lines[first_heading_index], re.IGNORECASE):
                     current_chapter_pattern_str = p_str
                     break
-
         for line_idx in range(first_heading_index + 1, len(lines)):
             line_content = lines[line_idx]
             is_new_chapter_heading = False
             new_heading_pattern_str = None
-
             for pattern_str in active_patterns:
                 try:
                     if re.match(pattern_str, line_content, re.IGNORECASE):
                         is_new_chapter_heading = True
                         new_heading_pattern_str = pattern_str
                         break
-                except re.error as re_e_inner:  # pragma: no cover
+                except re.error as re_e_inner:
                     logger.warning(f"Regex error (inner loop) for pattern '{pattern_str}': {re_e_inner}.")
-
             if is_new_chapter_heading:
                 chapter_content_lines = lines[start_line_of_current_chapter_content: line_idx]
                 chapter_text = "\n".join(chapter_content_lines).strip()
-
                 if chapter_text:
                     chapter_number += 1
                     chunk_type = 'chapter'
-                    # Determine if this block should be considered a preface based on its content/title
-                    # This logic is specifically for cases where the preface *is* the first detected heading block
                     if chapter_number == 1 and first_heading_index == 0 and \
                             (current_chapter_title.lower() == "preface" or
                              current_chapter_title.lower() == "introduction" or
                              current_chapter_title == "Preface or Introduction"):
                         chunk_type = 'preface'
-
-                    # Set the final title for metadata
                     final_metadata_title = current_chapter_title
                     if chunk_type == 'preface':
                         final_metadata_title = "Preface/Introduction"
-
                     chapter_splits.append({
                         'text': chapter_text,
                         'metadata': {
                             'chunk_type': chunk_type,
                             'chapter_number': chapter_number,
-                            'chapter_title': final_metadata_title,  # MODIFIED LINE
+                            'chapter_title': final_metadata_title,
                             'detected_chapter_pattern': current_chapter_pattern_str,
                         }
                     })
-
                 start_line_of_current_chapter_content = line_idx
                 current_chapter_title = line_content.strip()
                 current_chapter_pattern_str = new_heading_pattern_str or "unknown"
-
-        # Add the last chapter
         if start_line_of_current_chapter_content < len(lines):
             last_chapter_content_lines = lines[start_line_of_current_chapter_content:]
             last_chapter_text = "\n".join(last_chapter_content_lines).strip()
@@ -895,43 +889,37 @@ class Chunker:
                 chapter_number += 1
                 chunk_type = 'chapter'
                 is_first_processed_block = not chapter_splits
-
-                # Determine if this last block (if it's the only/first block) should be a preface
                 condition_is_first_block_and_preface_like_title = \
                     (is_first_processed_block or (chapter_number == 1 and first_heading_index == 0)) and \
                     (current_chapter_title.lower() == "preface" or \
                      current_chapter_title.lower() == "introduction" or \
                      current_chapter_title == "Preface or Introduction")
-
                 if condition_is_first_block_and_preface_like_title:
                     chunk_type = 'preface'
-
-                # Set the final title for metadata
                 final_metadata_title = current_chapter_title
                 if chunk_type == 'preface':
                     final_metadata_title = "Preface/Introduction"
-
                 chapter_splits.append({
                     'text': last_chapter_text,
                     'metadata': {
                         'chunk_type': chunk_type,
                         'chapter_number': chapter_number,
-                        'chapter_title': final_metadata_title,  # MODIFIED LINE
+                        'chapter_title': final_metadata_title,
                         'detected_chapter_pattern': current_chapter_pattern_str,
                     }
                 })
-
         final_chapter_chunks: List[Dict[str, Any]] = []
         for i, chap_data in enumerate(chapter_splits):
             chap_data['metadata']['chunk_index_in_book'] = i + 1
             chap_data['metadata']['total_chapters_detected'] = len(chapter_splits)
-
             tokenizer_available = hasattr(self, 'tokenizer') and self.tokenizer and hasattr(self.tokenizer,
                                                                                             'encode') and callable(
                 self.tokenizer.encode)
             if max_size > 0 and tokenizer_available and len(
-                    self.tokenizer.encode(chap_data['text'])) > max_size:  # pragma: no cover
+                    # FIXME
+                    self.tokenizer.encode(chap_data['text'])) > max_size:
                 logger.info(
+                    # FIXME
                     f"Chapter '{chap_data['metadata']['chapter_title']}' (length {len(self.tokenizer.encode(chap_data['text']))} tokens) exceeds max_size {max_size}. Sub-chunking.")
                 sub_chunks = self._chunk_text_by_tokens(chap_data['text'], max_tokens=max_size,
                                                         overlap=overlap if overlap < max_size else max_size // 5)
@@ -943,7 +931,6 @@ class Chunker:
                     final_chapter_chunks.append({'text': sub_chunk_text, 'metadata': sub_chunk_metadata})
             else:
                 final_chapter_chunks.append(chap_data)
-
         return final_chapter_chunks
 
 
