@@ -2130,15 +2130,22 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             f"ListView.Selected: list_view_id='{list_view_id}', current_tab='{current_active_tab}', {item_details}"
         )
 
-        if list_view_id == "notes-list-view" and current_active_tab == TAB_NOTES:
+        if list_view_id and list_view_id.startswith("media-list-view-") and current_active_tab == TAB_MEDIA:
+            self.loguru_logger.debug("Dispatching to media_events.handle_media_list_item_selected")
+            await media_events.handle_media_list_item_selected(self, event)
+
+        elif list_view_id == "notes-list-view" and current_active_tab == TAB_NOTES:
             self.loguru_logger.debug("Dispatching to notes_handlers.handle_notes_list_view_selected")
             await notes_handlers.handle_notes_list_view_selected(self, list_view_id, event.item)
+
         elif list_view_id == "ccp-prompts-listview" and current_active_tab == TAB_CCP:
             self.loguru_logger.debug("Dispatching to ccp_handlers.handle_ccp_prompts_list_view_selected")
             await ccp_handlers.handle_ccp_prompts_list_view_selected(self, list_view_id, event.item)
+
         elif list_view_id == "chat-sidebar-prompts-listview" and current_active_tab == TAB_CHAT:
             self.loguru_logger.debug("Dispatching to chat_handlers.handle_chat_sidebar_prompts_list_view_selected")
             await ccp_handlers.handle_ccp_prompts_list_view_selected(self, list_view_id, event.item)
+
         # Note: chat-conversation-search-results-list and conv-char-search-results-list selections
         # are typically handled by their respective "Load Selected" buttons rather than direct on_list_view_selected.
         else:

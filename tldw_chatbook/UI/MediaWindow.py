@@ -10,7 +10,7 @@ from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll, Horizontal, Vertical
 from textual.css.query import QueryError
 from textual.reactive import reactive
-from textual.widgets import Static, Button, Label, Input, ListView, TextArea
+from textual.widgets import Static, Button, Label, Input, ListView, TextArea, Markdown
 #
 # Local Imports
 from ..Utils.text import slugify
@@ -93,9 +93,14 @@ class MediaWindow(Container):
     def compose(self) -> ComposeResult:
         self.log.debug(f"MediaWindow composing. Initial types from __init__: {self.media_types_from_db}")
 
+        # Left Navigation Pane
         with VerticalScroll(classes="media-nav-pane", id="media-nav-pane"):
             yield Static("Media Types", classes="sidebar-title")
-            if not self.media_types_from_db or any(err_msg in self.media_types_from_db for err_msg in ["Error Loading Types", "DB Error", "Service Error", "DB Error or No Media in DB", "No media types loaded."]):
+            if not self.media_types_from_db or (
+                    len(self.media_types_from_db) == 1 and self.media_types_from_db[0] in ["Error Loading Types",
+                                                                                           "DB Error", "Service Error",
+                                                                                           "DB Error or No Media in DB",
+                                                                                           "No media types loaded."]):
                 error_message = "No media types loaded."
                 if self.media_types_from_db and isinstance(self.media_types_from_db[0], str):
                     error_message = self.media_types_from_db[0]
@@ -105,27 +110,50 @@ class MediaWindow(Container):
                     type_slug = slugify(media_type_display_name)
                     yield Button(media_type_display_name, id=f"media-nav-{type_slug}", classes="media-nav-button")
 
+        # Main Content Pane
         with Container(classes="media-content-pane", id="media-content-pane"):
-            if not self.media_types_from_db or any(err_msg in self.media_types_from_db for err_msg in ["Error Loading Types", "DB Error", "Service Error", "DB Error or No Media in DB", "No media types loaded."]):
-                yield Static("No media content areas to display due to issues loading media types.", classes="placeholder-window")
-            else:
-                for media_type_display_name in self.media_types_from_db:
-                    type_slug = slugify(media_type_display_name)
-                    with VerticalScroll(id=f"media-view-{type_slug}", classes="media-view-area"):
-                        yield Label(f"{media_type_display_name.title()} Management", classes="pane-title")
-                        with Horizontal(classes="media-controls-bar"):
-                            yield Input(placeholder=f"Search in {media_type_display_name.title()}...",
-                                        id=f"media-search-input-{type_slug}",
-                                        classes="media-search-input")
-                        with Vertical(classes="media-list-container"):
-                            yield ListView(id=f"media-list-view-{type_slug}", classes="media-items-list")
-                            with Horizontal(classes="media-pagination-bar"):
-                                yield Button("Previous", id=f"media-prev-page-button-{type_slug}", disabled=True)
-                                yield Label("Page 1 / 1", id=f"media-page-label-{type_slug}", classes="media-page-label")
-                                yield Button("Next", id=f"media-next-page-button-{type_slug}", disabled=True)
-                        yield Button("Display Item Details", id=f"media-load-selected-button-{type_slug}", variant="primary")
-                        with VerticalScroll(id=f"media-details-scroll-{type_slug}", classes="media-details-scroll"):
-                            yield TextArea("", id=f"media-details-display-{type_slug}", classes="media-details-display", read_only=True, language="markdown")
+            # Create a view for "All Media"
+            with Horizontal(id="media-view-all-media", classes="media-view-area"):
+                # --- LEFT PANE (for list and controls) ---
+                with VerticalScroll(classes="media-left-pane"):
+                    yield Label("All Media Management", classes="pane-title")
+                    yield Input(placeholder="Search in All Media...", id="media-search-input-all-media",
+                                classes="sidebar-input media-search-input")
+                    yield ListView(id="media-list-view-all-media", classes="sidebar-listview media-items-list")
+                    with Horizontal(classes="media-pagination-bar"):
+                        yield Button("Previous", id="media-prev-page-button-all-media", disabled=True)
+                        yield Label("Page 1 / 1", id="media-page-label-all-media", classes="media-page-label")
+                        yield Button("Next", id="media-next-page-button-all-media", disabled=True)
+
+                # --- RIGHT PANE (for details) ---
+                with VerticalScroll(classes="media-right-pane"):
+                    yield Markdown("Select an item from the list to see its details.",
+                                   id="media-details-display-all-media")
+
+            # Create views for each specific media type
+            for media_type_display_name in self.media_types_from_db:
+                if media_type_display_name == "All Media": continue  # Already created above
+                type_slug = slugify(media_type_display_name)
+                with Horizontal(id=f"media-view-{type_slug}", classes="media-view-area"):
+                    # --- LEFT PANE ---
+                    with VerticalScroll(classes="media-left-pane"):
+                        yield Label(f"{media_type_display_name} Management", classes="pane-title")
+                        yield Input(placeholder=f"Search in {media_type_display_name}...",
+                                    id=f"media-search-input-{type_slug}", classes="sidebar-input media-search-input")
+                        yield ListView(id=f"media-list-view-{type_slug}", classes="sidebar-listview media-items-list")
+                        with Horizontal(classes="media-pagination-bar"):
+                            yield Button("Previous", id=f"media-prev-page-button-{type_slug}", disabled=True)
+                            yield Label("Page 1 / 1", id=f"media-page-label-{type_slug}", classes="media-page-label")
+                            yield Button("Next", id=f"media-next-page-button-{type_slug}", disabled=True)
+
+                    # --- RIGHT PANE ---
+                    with VerticalScroll(classes="media-right-pane"):
+                        yield Markdown("Select an item from the list to see its details.",
+                                       id=f"media-details-display-{type_slug}")
+
+            # Hide all views by default; app.py watcher will manage visibility
+            for view_area in self.query(".media-view-area"):
+                view_area.styles.display = "none"
 
 #
 # End of MediaWindow.py

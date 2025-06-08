@@ -5,9 +5,11 @@
 import logging
 import math
 from typing import TYPE_CHECKING, Dict, Any
+
+from textual.containers import Vertical
 #
 # 3rd-party Libraries
-from textual.widgets import ListView, Input, TextArea, Label, ListItem, Button  # Added ListItem
+from textual.widgets import ListView, Input, TextArea, Label, ListItem, Button, Markdown, Static  # Added ListItem
 from textual.css.query import QueryError
 from rich.text import Text  # For formatting details
 #
@@ -86,28 +88,78 @@ async def handle_media_search_input_changed(app: 'TldwCli', input_id: str, value
 
 
 async def handle_media_load_selected_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
-    """Handles loading a selected media item's details."""
+    """
+    Handles loading a selected media item's full details and displaying them
+    as rendered Markdown.
+    """
     logger = app.loguru_logger
     button_id = event.button.id
+
     try:
         type_slug = button_id.replace("media-load-selected-button-", "")
         list_view = app.query_one(f"#media-list-view-{type_slug}", ListView)
-        details_display = app.query_one(f"#media-details-display-{type_slug}", TextArea)
+        # Query for the Markdown widget instead of TextArea
+        details_display = app.query_one(f"#media-details-display-{type_slug}", Markdown)
 
         if not list_view.highlighted_child or not hasattr(list_view.highlighted_child, 'media_data'):
             app.notify("No media item selected.", severity="warning")
-            details_display.load_text("No item selected.")
+            # Use the .update() method for the Markdown widget
+            await details_display.update("No item selected.")
             app.current_loaded_media_item = None
             return
 
-        details_display.load_text("Loading details...")
-        media_data: Dict[str, Any] = list_view.highlighted_child.media_data
-        app.current_loaded_media_item = media_data
-        logger.info(f"Loaded media item ID {media_data.get('id')} into reactive state.")
+        # Use .update() to show a loading message
+        await details_display.update("### Loading full details...")
+
+        # 1. Get the lightweight data from the list item and safely extract the ID
+        lightweight_media_data = list_view.highlighted_child.media_data
+        media_id_raw = lightweight_media_data.get('id')
+
+        if media_id_raw is None:
+            await details_display.update("### Error: Selected item has no ID.")
+            return
+
+        # 2. Ensure the ID is an integer before querying the database
+        try:
+            media_id = int(media_id_raw)
+        except (ValueError, TypeError):
+            await details_display.update(f"### Error: Invalid media ID format '{media_id_raw}'.")
+            return
+
+        if not app.media_db:
+            await details_display.update("### Error: Database connection is not available.")
+            return
+
+        # 3. Fetch the FULL media item from the database using the existing DB function.
+        #    We set include_trash=True so you can view items that are in the trash.
+        logger.info(f"Fetching full details for media item ID: {media_id}")
+        full_media_data = app.media_db.get_media_by_id(media_id, include_trash=True)
+
+        if full_media_data is None:
+            await details_display.update(
+                f"### Error\n\nCould not find media item with ID `{media_id}` in the database. It may have been permanently deleted.")
+            app.current_loaded_media_item = None
+            return
+
+        # 4. Update the reactive variable and format the COMPLETE data for display
+        app.current_loaded_media_item = full_media_data
+        logger.info(f"Loaded full media item ID {media_id} into reactive state.")
+
+        markdown_details_string = format_media_details_as_markdown(app, full_media_data)
+
+        # Use the .update() method to render the final Markdown string
+        await details_display.update(markdown_details_string)
+        details_display.scroll_home(animate=False)
 
     except QueryError as e:
         logger.error(f"UI component not found for media load selected '{button_id}': {e}", exc_info=True)
         app.notify("Load details UI error.", severity="error")
+    except Exception as e:
+        logger.error(f"An unexpected error occurred while loading media details: {e}", exc_info=True)
+        # Check if details_display was defined before trying to use it
+        if 'details_display' in locals():
+            await details_display.update(f"### An unexpected error occurred\n\n```\n{e}\n```")
+        app.notify("Error loading details.", severity="error")
 
 
 async def handle_media_page_change_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
@@ -132,63 +184,44 @@ async def handle_media_page_change_button_pressed(app: 'TldwCli', event: Button.
     logger.info(f"Changing to page {app.media_current_page} for type '{type_slug}'")
     await perform_media_search_and_display(app, type_slug, search_term)
 
+
 async def perform_media_search_and_display(app: 'TldwCli', type_slug: str, search_term: str = "") -> None:
-    """Performs search in media DB and populates the ListView with pagination."""
+    """Performs search in media DB and populates the ListView with rich, informative items."""
     logger = app.loguru_logger
     list_view_id = f"media-list-view-{type_slug}"
 
     try:
         list_view = app.query_one(f"#{list_view_id}", ListView)
         await list_view.clear()
-        loading_item = ListItem(Label("Loading items..."))
-        loading_item.disabled = True
-        await list_view.append(loading_item)
 
-        # Also clear details display
-        app.query_one(f"#media-details-display-{type_slug}", TextArea).load_text("")
-        app.current_loaded_media_item = None
+        # Also clear the details panel for this view
+        try:
+            details_display = app.query_one(f"#media-details-display-{type_slug}", Markdown)
+            details_display.update("Select an item from the list to see its details.")
+        except QueryError:
+            logger.warning(f"Could not find details display for slug '{type_slug}' to clear it.")
 
         if not app.media_db:
             raise RuntimeError("Media DB service not available.")
 
-        # Determine media type filter based on the reliable slug
         media_types_filter = None
         if type_slug != "all-media":
-            # The slug (e.g., 'document') is the correct value for the DB query.
-            # Replace hyphen with underscore for types like 'web-page' -> 'web_page'
             db_media_type = type_slug.replace('-', '_')
             media_types_filter = [db_media_type]
 
-        # Always provide a list of fields to search_fields. The DB function should ignore
-        # this list when search_query is None, but providing it satisfies the function's
-        # potential requirement for the parameter to exist.
         query_arg = search_term if search_term else None
         fields_arg = ['title', 'content', 'author', 'url', 'type']
-
-        logger.info("---EXECUTING MEDIA DB SEARCH---")
-        logger.info(f"  search_query: {query_arg!r}")
-        logger.info(f"  media_types: {media_types_filter!r}")
-        logger.info(f"  search_fields: {fields_arg!r}")
-        logger.info(f"  page: {app.media_current_page}")
-        logger.info("-------------------------------")
 
         results, total_matches = app.media_db.search_media_db(
             search_query=query_arg,
             media_types=media_types_filter,
             search_fields=fields_arg,
             sort_by="last_modified_desc",
-            page=app.media_current_page,
+            page=getattr(app, 'media_current_page', 1),
             results_per_page=RESULTS_PER_PAGE,
             include_trash=False,
             include_deleted=False
         )
-
-        logger.info(f"---DB SEARCH COMPLETE---")
-        logger.info(f"  Results received: {len(results)}")
-        logger.info(f"  Total matches reported: {total_matches}")
-        logger.info("------------------------")
-
-        await list_view.clear() # Clear "Loading..." message
 
         if not results:
             msg = "No media items found."
@@ -197,29 +230,84 @@ async def perform_media_search_and_display(app: 'TldwCli', type_slug: str, searc
         else:
             for item in results:
                 title = item.get('title', 'Untitled')
-                label = f"[{item.get('type')}] {title}" if type_slug == "all-media" else title
-                list_item = ListItem(Label(label))
-                list_item.media_data = item
+                ingestion_date = item.get('ingestion_date', '').split('T')[0]  # Get just the date part
+                content_snippet = (item.get('content') or "No content available.")[:80] + "..."
+
+                # Create a richer ListItem with more info
+                list_item = ListItem(
+                    Vertical(
+                        Label(f"{title}", classes="media-item-title"),
+                        Static(content_snippet, classes="media-item-snippet"),
+                        Static(f"Type: {item.get('type')}  |  Ingested: {ingestion_date}", classes="media-item-meta")
+                    )
+                )
+                list_item.media_data = item  # Attach data for selection
                 await list_view.append(list_item)
 
         # Update pagination controls
-        total_pages = math.ceil(total_matches / RESULTS_PER_PAGE) if total_matches > 0 else 1
-        page_label = app.query_one(f"#media-page-label-{type_slug}", Label)
-        prev_button = app.query_one(f"#media-prev-page-button-{type_slug}", Button)
-        next_button = app.query_one(f"#media-next-page-button-{type_slug}", Button)
+        try:
+            total_pages = math.ceil(total_matches / RESULTS_PER_PAGE) if total_matches > 0 else 1
+            page_label = app.query_one(f"#media-page-label-{type_slug}", Label)
+            prev_button = app.query_one(f"#media-prev-page-button-{type_slug}", Button)
+            next_button = app.query_one(f"#media-next-page-button-{type_slug}", Button)
 
-        page_label.update(f"Page {app.media_current_page} / {total_pages}")
-        prev_button.disabled = (app.media_current_page <= 1)
-        next_button.disabled = (app.media_current_page >= total_pages)
+            current_page = getattr(app, 'media_current_page', 1)
+            page_label.update(f"Page {current_page} / {total_pages}")
+            prev_button.disabled = (current_page <= 1)
+            next_button.disabled = (current_page >= total_pages)
+        except QueryError:
+            logger.warning(f"Could not find pagination controls for slug '{type_slug}'.")
 
     except (QueryError, RuntimeError, Exception) as e:
         logger.error(f"Error during media search for type '{type_slug}': {e}", exc_info=True)
-        try:
-            lv_widget_err = app.query_one(f"#{list_view_id}", ListView)
-            await lv_widget_err.clear()
-            await lv_widget_err.append(ListItem(Label(f"Error: {e}")))
-        except QueryError: pass
+        # Handle error display in the list view
 
+
+async def handle_media_list_item_selected(app: 'TldwCli', event: ListView.Selected) -> None:
+    """
+    Handles a media item being selected in the ListView, automatically fetching
+    and displaying its full details.
+    """
+    global details_display
+    logger = app.loguru_logger
+
+    # Figure out which view we're in from the list view's ID
+    list_view_id = event.list_view.id
+    if not list_view_id: return
+    type_slug = list_view_id.replace("media-list-view-", "")
+
+    try:
+        details_display = app.query_one(f"#media-details-display-{type_slug}", Markdown)
+
+        if not hasattr(event.item, 'media_data'):
+            await details_display.update("This item has no data to display.")
+            return
+
+        await details_display.update("### Loading full details...")
+
+        lightweight_media_data = event.item.media_data
+        media_id = int(lightweight_media_data.get('id', 0))
+
+        if not media_id or not app.media_db:
+            await details_display.update("### Error\n\nCannot load details. Missing ID or DB connection.")
+            return
+
+        full_media_data = app.media_db.get_media_by_id(media_id, include_trash=True)
+
+        if full_media_data is None:
+            await details_display.update(f"### Error\n\nCould not find media item with ID `{media_id}`.")
+            return
+
+        app.current_loaded_media_item = full_media_data
+        markdown_details = format_media_details_as_markdown(app, full_media_data)
+
+        await details_display.update(markdown_details)
+        details_display.scroll_home(animate=False)
+
+    except Exception as e:
+        logger.error(f"Error handling media item selection for slug '{type_slug}': {e}", exc_info=True)
+        if 'details_display' in locals():
+            await details_display.update(f"### An unexpected error occurred\n\n```\n{e}\n```")
 
 def format_media_details(media_data: Dict[str, Any]) -> Text:
     """Formats media item details into a Rich Text object for display."""
