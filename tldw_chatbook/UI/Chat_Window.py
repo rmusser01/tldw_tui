@@ -48,8 +48,8 @@ class ChatWindow(Container):
                 yield Button(get_char(EMOJI_SEND, FALLBACK_SEND), id="send-chat", classes="send-button")
                 yield Button("💡", id="respond-for-me-button", classes="action-button suggest-button") # Suggest button
                 self.app_instance.loguru_logger.debug("ChatWindow: 'respond-for-me-button' composed.")
-                #yield Button(get_char(EMOJI_STOP, FALLBACK_STOP), id="stop-chat-generation", classes="stop-button",
-                #             disabled=True)
+                yield Button(get_char(EMOJI_STOP, FALLBACK_STOP), id="stop-chat-generation", classes="stop-button",
+                             disabled=True)
                 yield Button(get_char(EMOJI_CHARACTER_ICON, FALLBACK_CHARACTER_ICON), id="toggle-chat-right-sidebar",
                              classes="sidebar-toggle")
 

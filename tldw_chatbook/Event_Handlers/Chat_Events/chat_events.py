@@ -414,7 +414,9 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', event: Button.Pressed)
         strategy="sorted_evenly", # Default or get from config/UI
         strip_thinking_tags=strip_thinking_tags_value # Pass the new setting
     )
-    app.run_worker(worker_target, name=f"API_Call_{prefix}", group="api_calls", thread=True,
+    app.run_worker(worker_target, name=f"API_Call_{prefix}",
+                   group="api_calls",
+                   thread=True,
                    description=f"Calling {selected_provider}")
 
 
