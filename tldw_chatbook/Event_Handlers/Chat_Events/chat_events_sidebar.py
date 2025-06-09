@@ -135,6 +135,25 @@ async def perform_media_search(app: 'TldwCli'):
     keywords_list = [kw.strip() for kw in keywords_str.split(',') if kw.strip()]
     logger.debug(f"Media Search - Term: '{search_term}', Keywords: {keywords_list}")
 
+    # Store the original search term for LIKE queries
+    original_search_term = search_term
+
+    # For very short search terms (1-2 characters), skip exact phrase matching
+    # as it's likely to be too restrictive for partial matches
+    if search_term and len(search_term) <= 2:
+        logger.debug(f"Short search term '{search_term}' detected, skipping exact phrase matching")
+        # Keep the original search term for LIKE queries
+        pass
+    # For longer search terms, if they don't already have quotes and don't contain any special characters,
+    # wrap them in quotes to enable exact phrase matching in FTS
+    elif search_term and not search_term.startswith('"') and not search_term.endswith('"'):
+        # Check if it's a simple phrase without special FTS syntax
+        if not any(char in search_term for char in '*+-()'):
+            # Wrap in quotes for exact phrase matching
+            exact_search_term = f'"{search_term}"'
+            logger.debug(f"Converting search term to exact phrase: '{exact_search_term}'")
+            search_term = exact_search_term
+
 
     if not app.media_db:
         logger.error("app.media_db is not available.")
@@ -163,8 +182,9 @@ async def perform_media_search(app: 'TldwCli'):
         # Only apply keyword filtering if keywords were explicitly provided
         must_have_keywords_param = keywords_list if keywords_list else None
 
-        logger.debug(f"Media Search - Parameters: search_query={search_term if search_term else 'None'}, must_have_keywords={must_have_keywords_param}")
+        logger.debug(f"Media Search - Parameters: search_query={search_term if search_term else 'None'}, original_term={original_search_term if original_search_term else 'None'}, must_have_keywords={must_have_keywords_param}")
 
+        # Try with the exact phrase search first (quoted term)
         media_items, total_matches = db_instance.search_media_db(
             search_query=search_term if search_term else None,
             search_fields=search_fields,
@@ -179,6 +199,24 @@ async def perform_media_search(app: 'TldwCli'):
             include_trash=False,
             include_deleted=False,
         )
+
+        # If no results with exact phrase, try with the original term (without quotes)
+        if total_matches == 0 and search_term != original_search_term:
+            logger.debug(f"No results with exact phrase search, trying with original term: '{original_search_term}'")
+            media_items, total_matches = db_instance.search_media_db(
+                search_query=original_search_term,
+                search_fields=search_fields,
+                media_types=media_types_filter,
+                date_range=None,  # No date range filtering
+                must_have_keywords=must_have_keywords_param,
+                must_not_have_keywords=None,
+                sort_by="last_modified_desc",  # Default sort order
+                media_ids_filter=None,  # No specific media IDs to filter
+                page=app.media_search_current_page, # Use current page from app
+                results_per_page=RESULTS_PER_PAGE,
+                include_trash=False,
+                include_deleted=False,
+            )
         logger.debug(f"Media Search - DB returned total_matches: {total_matches}, items_for_page: {len(media_items)}")
 
         # Calculate total pages
