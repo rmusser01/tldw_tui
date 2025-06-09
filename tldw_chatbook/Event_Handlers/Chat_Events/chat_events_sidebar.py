@@ -48,6 +48,68 @@ def _clear_and_disable_media_display(app: 'TldwCli'):
          logger.warning(f"Could not find a media display/copy widget to clear/disable: {e}")
 
 
+async def perform_media_sidebar_search(app: 'TldwCli', search_term: str = ""):
+    """
+    Performs a search for media items based on the given search term and populates the results.
+    This function is used by tests and is a simplified version of perform_media_search.
+    """
+    logger.debug(f"Performing media sidebar search with term: '{search_term}'")
+    try:
+        results_list_view = app.query_one("#chat-media-search-results-listview", ListView)
+    except QueryError as e:
+        logger.error(f"Error querying media search UI elements: {e}")
+        app.notify(f"Error accessing media search UI: {e}", severity="error")
+        return
+
+    await results_list_view.clear()
+    _clear_and_disable_media_display(app)
+
+    if not search_term.strip():
+        logger.debug("Search term is empty, clearing results.")
+        return
+
+    if not app.media_db:
+        logger.error("app.media_db is not available.")
+        app.notify("Media database service not initialized.", severity="error")
+        return
+
+    try:
+        search_fields = ['title', 'content', 'author', 'keywords', 'notes']
+        media_types_filter = None
+
+        media_items = app.media_db.search_media_db(
+            search_query=search_term,
+            search_fields=search_fields,
+            media_types=media_types_filter,
+            include_trash=False,
+            include_deleted=False,
+            page=1,
+            results_per_page=50
+        )
+
+        if not media_items:
+            # FIX: Await the async append method.
+            await results_list_view.append(ListItem(Label("No media found.")))
+        else:
+            for item_dict in media_items:
+                if isinstance(item_dict, dict):
+                    title = item_dict.get('title', 'Untitled')
+                    media_id = item_dict.get('media_id', 'Unknown ID')
+                    display_label = f"{title} (ID: {media_id})"
+                    list_item = ListItem(Label(display_label))
+                    setattr(list_item, 'media_data', item_dict)
+                    await results_list_view.append(list_item)
+                else:
+                    logger.warning(f"Skipping non-dictionary item from DB search results: {item_dict}")
+
+    except Exception as e:
+        logger.error(f"Exception during media search: {e}", exc_info=True)
+        app.notify(f"Error during media search: {e}", severity="error")
+        await results_list_view.clear()
+        # FIX: Await the async append method.
+        await results_list_view.append(ListItem(Label(f"Search error.")))
+
+
 async def perform_media_search(app: 'TldwCli'):
     """
     Performs a search for media items based on sidebar inputs and populates the results.
@@ -71,13 +133,7 @@ async def perform_media_search(app: 'TldwCli'):
     search_term = search_input.value.strip()
     keywords_str = keyword_input.value.strip()
     keywords_list = [kw.strip() for kw in keywords_str.split(',') if kw.strip()]
-
-    if not search_term and not keywords_list:
-        logger.debug("Search term and keywords are empty, clearing results.")
-        page_label.update("Page 1/1")
-        prev_button.disabled = True
-        next_button.disabled = True
-        return
+    logger.debug(f"Media Search - Term: '{search_term}', Keywords: {keywords_list}")
 
 
     if not app.media_db:
@@ -96,7 +152,18 @@ async def perform_media_search(app: 'TldwCli'):
         search_fields = ['title', 'content', 'author', 'keywords', 'notes']
         media_types_filter = None
 
-        logger.debug(f"Searching media DB with term: '{search_term}', fields: {search_fields}, types: {media_types_filter}")
+        # If no keywords are provided, use all keywords
+        if not keywords_list and not search_term:
+            try:
+                all_keywords = db_instance.fetch_all_keywords()
+                keywords_list = all_keywords
+                logger.debug(f"No keywords provided, using all keywords: {len(keywords_list)} keywords")
+            except Exception as e:
+                logger.error(f"Error fetching all keywords: {e}")
+                # Continue with empty keywords list if fetching all keywords fails
+
+        logger.debug(f"Media Search - Requesting page: {app.media_search_current_page}")
+        # logger.debug(f"Searching media DB with term: '{search_term}', fields: {search_fields}, types: {media_types_filter}") # This is a bit redundant with the one above
 
         media_items, total_matches = db_instance.search_media_db(
             search_query=search_term if search_term else None,
@@ -107,12 +174,29 @@ async def perform_media_search(app: 'TldwCli'):
             must_not_have_keywords=None,
             sort_by="last_modified_desc",  # Default sort order
             media_ids_filter=None,  # No specific media IDs to filter
-            page=1,  # Default to first page
-            results_per_page=RESULTS_PER_PAGE,  # Limit results to 100 for performance
+            page=app.media_search_current_page, # Use current page from app
+            results_per_page=RESULTS_PER_PAGE,
             include_trash=False,
             include_deleted=False,
         )
-        logger.debug(f"DB search returned {len(media_items)} results, total matches: {total_matches}.")
+        logger.debug(f"Media Search - DB returned total_matches: {total_matches}, items_for_page: {len(media_items)}")
+
+        # Calculate total pages
+        if total_matches > 0:
+            app.media_search_total_pages = math.ceil(total_matches / RESULTS_PER_PAGE)
+        else:
+            app.media_search_total_pages = 1 # Ensure at least 1 page even if no results
+
+        logger.debug(f"Media Search - Calculated total_pages: {app.media_search_total_pages}")
+        # logger.info(f"Media search: current_page={app.media_search_current_page}, total_matches={total_matches}, total_pages={app.media_search_total_pages}") # logger.info is a bit verbose for this
+
+        # Update page label
+        page_label.update(f"Page {app.media_search_current_page}/{app.media_search_total_pages}")
+
+        # Enable/disable pagination buttons
+        prev_button.disabled = app.media_search_current_page == 1
+        next_button.disabled = app.media_search_current_page >= app.media_search_total_pages
+        logger.debug(f"Media Search - Prev button disabled: {prev_button.disabled}, Next button disabled: {next_button.disabled}")
 
         if not media_items:
             # FIX: Await the async append method.
@@ -259,6 +343,13 @@ async def handle_chat_media_copy_url_button_pressed(app: 'TldwCli', event: Butto
         logger.warning("No media URL available to copy.")
 
 
+async def handle_chat_media_search_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
+    """Handles the search button press in the media search section of the chat sidebar."""
+    logger.debug("Media search button pressed.")
+    app.media_search_current_page = 1  # Reset to page 1 for new search
+    await perform_media_search(app)
+
+
 
 # --- Button Handler Map ---
 CHAT_SIDEBAR_BUTTON_HANDLERS = {
@@ -268,6 +359,7 @@ CHAT_SIDEBAR_BUTTON_HANDLERS = {
     "chat-media-copy-url-button": handle_chat_media_copy_url_button_pressed,
     "chat-media-prev-page-button": lambda app, event: handle_media_page_change(app, -1),
     "chat-media-next-page-button": lambda app, event: handle_media_page_change(app, 1),
+    "chat-media-search-button": handle_chat_media_search_button_pressed,
 }
 
 

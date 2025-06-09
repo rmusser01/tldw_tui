@@ -1182,6 +1182,15 @@ class MediaDatabase:
                 conditions.append("fts.media_fts MATCH ?")
                 params.append(search_query) # search_query already contains quotes for exact phrase if needed
 
+                # Add LIKE search for 'title' and 'content' to ensure partial matches work
+                title_content_like_parts = []
+                for field in ["title", "content"]:
+                    if field in sanitized_text_search_fields:
+                        title_content_like_parts.append(f"m.{field} LIKE ? COLLATE NOCASE")
+                        params.append(f"%{search_query}%")
+                if title_content_like_parts:
+                    conditions.append(f"({' OR '.join(title_content_like_parts)})")
+
             # LIKE search for 'author', 'type'
             like_fields_to_search = [f for f in sanitized_text_search_fields if f in ["author", "type"]]
             if like_fields_to_search:
@@ -1199,6 +1208,10 @@ class MediaDatabase:
                                                       # If search_query is "\"exact phrase\"", LIKE will try to match that literally.
                 if like_parts:
                     conditions.append(f"({' OR '.join(like_parts)})")
+        elif sanitized_text_search_fields:
+            # If no search query but fields are specified, add a condition that always evaluates to true
+            # This ensures all records are considered when no search query is provided
+            conditions.append("1=1")
 
         # Order By Clause
         order_by_clause_str = ""

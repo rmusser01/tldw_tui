@@ -109,6 +109,11 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
                     placeholder="e.g., python, tutorial",
                     classes="sidebar-input"
                 )
+                yield Button(
+                    "Search",
+                    id="chat-media-search-button",
+                    classes="sidebar-button"
+                )
                 yield ListView(id="chat-media-search-results-listview", classes="sidebar-listview")
 
                 with Horizontal(classes="pagination-controls", id="chat-media-pagination-controls"):

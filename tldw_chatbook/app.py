@@ -360,6 +360,8 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         self.mlx_server_process = None
         self.onnx_server_process = None
         self.media_current_page = 1
+        self.media_search_current_page = 1
+        self.media_search_total_pages = 1
 
         # 1. Get the user name from the loaded settings
         # The fallback here should match what you expect if settings doesn't have it,
@@ -473,16 +475,12 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
 
         # --- Assign DB instances for event handlers ---
         if self.prompts_service_initialized:
-            # Assuming prompts_interop holds the db instance after initialization
-            # This might need adjustment based on how PromptsDatabase is exposed by prompts_interop
-            if hasattr(prompts_interop, 'db_instance') and prompts_interop.db_instance:
-                self.prompts_db = prompts_interop.db_instance
-                logging.info("Assigned prompts_interop.db_instance to self.prompts_db")
-            elif hasattr(prompts_interop, 'db') and prompts_interop.db: # Alternative common name
-                self.prompts_db = prompts_interop.db
-                logging.info("Assigned prompts_interop.db to self.prompts_db")
-            else:
-                logging.error("prompts_interop initialized, but prompts_db instance (db_instance or db) not found/assigned in app.__init__.")
+            # Get the database instance using the get_db_instance() function
+            try:
+                self.prompts_db = prompts_interop.get_db_instance()
+                logging.info("Assigned prompts_interop.get_db_instance() to self.prompts_db")
+            except RuntimeError as e:
+                logging.error(f"Error getting prompts_db instance: {e}")
                 self.prompts_db = None # Explicitly set to None
         else:
             self.prompts_db = None # Ensure it's None if service failed
