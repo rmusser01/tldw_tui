@@ -1188,8 +1188,8 @@ class MediaDatabase:
                     # Add suffix wildcard for better partial matching with short terms
                     fts_query_parts.append(f"{search_query}*")
 
-                    # Add prefix wildcard for terms like "Do" that might match the end of words like "ToDo"
-                    fts_query_parts.append(f"*{search_query}")
+                    # Note: SQLite FTS5 doesn't support prefix wildcards (*term)
+                    # We'll handle "ends with" matching using LIKE conditions instead
 
                     # Add case-insensitive versions if needed
                     if search_query.lower() != search_query:
@@ -1205,6 +1205,7 @@ class MediaDatabase:
                 # Combine all FTS query parts with OR
                 combined_fts_query = " OR ".join(fts_query_parts)
                 logging.debug(f"Combined FTS query: '{combined_fts_query}'")
+                logging.info(f"Search using FTS with query parts: {fts_query_parts}")
 
                 # Add a single MATCH condition
                 conditions.append("fts.media_fts MATCH ?")
@@ -1214,8 +1215,14 @@ class MediaDatabase:
                 title_content_like_parts = []
                 for field in ["title", "content"]:
                     if field in sanitized_text_search_fields:
+                        # Contains matching (standard)
                         title_content_like_parts.append(f"m.{field} LIKE ? COLLATE NOCASE")
                         like_params.append(f"%{search_query}%")
+
+                        # For short search terms, also add "ends with" matching to catch cases like "ToDo" when searching for "Do"
+                        if len(search_query) <= 2 and not (search_query.startswith('"') and search_query.endswith('"')):
+                            title_content_like_parts.append(f"m.{field} LIKE ? COLLATE NOCASE")
+                            like_params.append(f"%{search_query}")
                 if title_content_like_parts:
                     like_conditions.append(f"({' OR '.join(title_content_like_parts)})")
 
@@ -1228,13 +1235,21 @@ class MediaDatabase:
                     if field == "type" and media_types:
                         logging.debug(f"LIKE search on 'type' skipped due to active 'media_types' filter.")
                         continue
+
+                    # Contains matching (standard)
                     like_parts.append(f"m.{field} LIKE ? COLLATE NOCASE")
                     like_params.append(f"%{search_query}%") # search_query here should be the raw query, not the FTS one
+
+                    # For short search terms, also add "ends with" matching to catch cases like "ToDo" when searching for "Do"
+                    if len(search_query) <= 2 and not (search_query.startswith('"') and search_query.endswith('"')):
+                        like_parts.append(f"m.{field} LIKE ? COLLATE NOCASE")
+                        like_params.append(f"%{search_query}")
                 if like_parts:
                     like_conditions.append(f"({' OR '.join(like_parts)})")
 
             # Add LIKE conditions to the main conditions list
             if like_conditions:
+                logging.info(f"Search using LIKE with patterns: {like_params}")
                 conditions.append(f"({' OR '.join(like_conditions)})")
                 params.extend(like_params)
 
