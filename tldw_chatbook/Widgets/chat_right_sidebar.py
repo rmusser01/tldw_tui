@@ -124,7 +124,7 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
                 yield Static("--- Selected Media Details ---", classes="sidebar-label", id="chat-media-details-header")
 
                 media_details_view = VerticalScroll(id="chat-media-details-view")
-                media_details_view.styles.height = 30  # Set height to 30 lines minimum
+                media_details_view.styles.height = 50  # Set height to 50 lines to eliminate need for second scrollbar
                 with media_details_view:
                     with Horizontal(classes="detail-field-container"):
                         yield Label("Title:", classes="detail-label")
