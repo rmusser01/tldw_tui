@@ -2133,6 +2133,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.loguru_logger.debug("Dispatching to chat_handlers.handle_chat_sidebar_prompts_list_view_selected")
             await ccp_handlers.handle_ccp_prompts_list_view_selected(self, list_view_id, event.item)
 
+        elif list_view_id == "chat-media-search-results-listview" and current_active_tab == TAB_CHAT:
+            self.loguru_logger.debug("Dispatching to chat_events_sidebar.handle_media_item_selected")
+            await chat_events_sidebar.handle_media_item_selected(self, event.item)
+
         # Note: chat-conversation-search-results-list and conv-char-search-results-list selections
         # are typically handled by their respective "Load Selected" buttons rather than direct on_list_view_selected.
         else:
