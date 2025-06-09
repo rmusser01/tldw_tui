@@ -152,25 +152,25 @@ async def perform_media_search(app: 'TldwCli'):
         search_fields = ['title', 'content', 'author', 'keywords', 'notes']
         media_types_filter = None
 
-        # If no keywords are provided, use all keywords
+        # If no search criteria provided, we'll do a general search without keyword filtering
         if not keywords_list and not search_term:
-            try:
-                all_keywords = db_instance.fetch_all_keywords()
-                keywords_list = all_keywords
-                logger.debug(f"No keywords provided, using all keywords: {len(keywords_list)} keywords")
-            except Exception as e:
-                logger.error(f"Error fetching all keywords: {e}")
-                # Continue with empty keywords list if fetching all keywords fails
+            logger.debug("No search term or keywords provided, performing general search")
+            # We'll leave both search_query and must_have_keywords as None to get all results
 
         logger.debug(f"Media Search - Requesting page: {app.media_search_current_page}")
         # logger.debug(f"Searching media DB with term: '{search_term}', fields: {search_fields}, types: {media_types_filter}") # This is a bit redundant with the one above
+
+        # Only apply keyword filtering if keywords were explicitly provided
+        must_have_keywords_param = keywords_list if keywords_list else None
+
+        logger.debug(f"Media Search - Parameters: search_query={search_term if search_term else 'None'}, must_have_keywords={must_have_keywords_param}")
 
         media_items, total_matches = db_instance.search_media_db(
             search_query=search_term if search_term else None,
             search_fields=search_fields,
             media_types=media_types_filter,
             date_range=None,  # No date range filtering
-            must_have_keywords=keywords_list if keywords_list else None,
+            must_have_keywords=must_have_keywords_param,
             must_not_have_keywords=None,
             sort_by="last_modified_desc",  # Default sort order
             media_ids_filter=None,  # No specific media IDs to filter
@@ -202,11 +202,33 @@ async def perform_media_search(app: 'TldwCli'):
             # FIX: Await the async append method.
             await results_list_view.append(ListItem(Label("No media found.")))
         else:
+            # Get all media IDs to fetch keywords in batch
+            media_ids = [item.get('id') for item in media_items if isinstance(item, dict) and item.get('id')]
+
+            # Fetch keywords for all media items in one batch operation
+            keywords_map = {}
+            if media_ids:
+                try:
+                    keywords_map = db_instance.fetch_keywords_for_media_batch(media_ids)
+                    logger.debug(f"Fetched keywords for {len(keywords_map)} media items")
+                except Exception as e:
+                    logger.error(f"Error fetching keywords batch: {e}")
+                    # Continue without keywords if fetching fails
+
             for item_dict in media_items:
                 if isinstance(item_dict, dict):
                     title = item_dict.get('title', 'Untitled')
-                    media_id = item_dict.get('media_id', 'Unknown ID')
-                    display_label = f"{title} (ID: {media_id[:8]}...)"
+                    author = item_dict.get('author', 'Unknown Author')
+                    uuid_value = item_dict.get('uuid', 'Unknown')
+
+                    # Get keywords for this media item
+                    media_id = item_dict.get('id')
+                    keywords = keywords_map.get(media_id, []) if media_id else []
+                    keywords_str = ", ".join(keywords) if keywords else "None"
+
+                    # Create a formatted display with all required fields
+                    display_label = f"Title: {title}\nAuthor: {author}\nID: {uuid_value}\nKeywords: {keywords_str}"
+
                     list_item = ListItem(Label(display_label))
                     setattr(list_item, 'media_data', item_dict)
                     await results_list_view.append(list_item)

@@ -2,143 +2,190 @@
 #
 # Imports
 import functools
+import sys
 import time
 from datetime import datetime, timezone
+from typing import Any, Optional, Dict, Union, Callable
 import psutil
 #
 # Third-party Imports
 #
 # Local Imports
-import logging
+from loguru import logger
 #
 ############################################################################################################
 #
 # Functions:
 
-def log_counter(metric_name, labels=None, value=1):
-    log_entry = {
-        "event": metric_name,
-        "type": "counter",
-        "value": value,
-        "labels": labels or {},
-        # datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
-        # FIXME
-        "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
-    }
-    logging.info("metric", extra=log_entry)
+# 1. Refined Type Hinting for clarity and correctness
+LabelValue = Union[str, int, float, bool]
+LabelDict = Dict[str, LabelValue]
+
+# 2. (Gold Standard) Define a custom "METRIC" level for powerful filtering
+# This allows separating metrics from regular application logs at the sink level.
+logger.level("METRIC", no=25, color="<blue>", icon="📊")
 
 
-def log_histogram(metric_name, value, labels=None):
-    log_entry = {
-        "event": metric_name,
-        "type": "histogram",
-        "value": value,
-        "labels": labels or {},
-        # datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
-        # FIXME
-        "timestamp": datetime.now(timezone.utc).isoformat() + "Z"
-    }
-    logging.info("metric", extra=log_entry)
-
-
-def timeit(func):
+def _log_metric(
+        metric_name: str,
+        metric_type: str,
+        value: Any,
+        labels: Optional[LabelDict] = None,
+):
     """
-    Decorator that times the execution of the wrapped function
-    and logs the result using log_histogram. Optionally, you could also
-    log a counter each time the function is called.
+    Private helper to log a structured metric using idiomatic loguru binding.
     """
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        start = time.time()
-        result = func(*args, **kwargs)
-        elapsed = time.time() - start
-
-        # Print to console (optional)
-        logging.info(f"{func.__name__} executed in {elapsed:.2f} seconds.")
-
-        # Log how long the function took (histogram)
-        log_histogram(
-            metric_name=f"{func.__name__}_duration_seconds",
-            value=elapsed,
-            labels={"function": func.__name__}
-        )
-
-        # (Optional) log how many times the function has been called
-        log_counter(
-            metric_name=f"{func.__name__}_calls",
-            labels={"function": func.__name__}
-        )
-
-        return result
-    return wrapper
-    # Add '@timeit' decorator to functions you want to time
+    # 3. Bind each piece of data to the top level for a flatter, queryable JSON
+    bound_logger = logger.bind(
+        event=metric_name,
+        type=metric_type,
+        value=value,
+        labels=labels or {},
+        timestamp=datetime.now(timezone.utc).isoformat(),
+    )
+    # Use the custom METRIC level
+    bound_logger.log("METRIC", f"{metric_type.capitalize()} '{metric_name}': {value}")
 
 
-def log_resource_usage():
-    process = psutil.Process()
-    memory = process.memory_info().rss / (1024 ** 2)  # Convert to MB
-    cpu = process.cpu_percent(interval=0.1)
-    logging.info(f"Memory: {memory:.2f} MB, CPU: {cpu:.2f}%")
+def timeit(
+        metric_name: Optional[str] = None,
+        labels: Optional[LabelDict] = None,
+        log_summary: bool = True,
+        log_call_count: bool = False,
+):
+    """
+    A robust decorator that times a function, logging a histogram and status.
 
-#
-# End of Functions
-############################################################################################################
+    Args:
+        metric_name (str, optional): Custom name for the metric. Defaults to function name.
+        labels (dict, optional): Extra labels to add to the metric.
+        log_summary (bool): If True, logs a human-readable summary at INFO level.
+        log_call_count (bool): If True, also logs a counter metric for each call.
+    """
 
-# # Prometheus
-# # metrics_logger.py (Prometheus version)
-# from prometheus_client import Counter, Histogram, start_http_server
-# import logging
-# from functools import wraps
-# import time
-#
-# # Initialize Prometheus metrics
-# VIDEOS_PROCESSED = Counter('videos_processed_total', 'Total number of videos processed', ['whisper_model', 'api_name'])
-# VIDEOS_FAILED = Counter('videos_failed_total', 'Total number of videos failed to process', ['whisper_model', 'api_name'])
-# TRANSCRIPTIONS_GENERATED = Counter('transcriptions_generated_total', 'Total number of transcriptions generated', ['whisper_model'])
-# SUMMARIES_GENERATED = Counter('summaries_generated_total', 'Total number of summaries generated', ['whisper_model'])
-# VIDEO_PROCESSING_TIME = Histogram('video_processing_time_seconds', 'Time spent processing videos', ['whisper_model', 'api_name'])
-# TOTAL_PROCESSING_TIME = Histogram('total_processing_time_seconds', 'Total time spent processing all videos', ['whisper_model', 'api_name'])
-#
-# def init_metrics_server(port=8000):
-#     start_http_server(port)
-#
-# def log_counter(metric_name, labels=None, value=1):
-#     if metric_name == "videos_processed_total":
-#         VIDEOS_PROCESSED.labels(**(labels or {})).inc(value)
-#     elif metric_name == "videos_failed_total":
-#         VIDEOS_FAILED.labels(**(labels or {})).inc(value)
-#     elif metric_name == "transcriptions_generated_total":
-#         TRANSCRIPTIONS_GENERATED.labels(**(labels or {})).inc(value)
-#     elif metric_name == "summaries_generated_total":
-#         SUMMARIES_GENERATED.labels(**(labels or {})).inc(value)
-#
-# def log_histogram(metric_name, value, labels=None):
-#     if metric_name == "video_processing_time_seconds":
-#         VIDEO_PROCESSING_TIME.labels(**(labels or {})).observe(value)
-#     elif metric_name == "total_processing_time_seconds":
-#         TOTAL_PROCESSING_TIME.labels(**(labels or {})).observe(value)
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            # 4. Robust timing and status tracking
+            m_name = metric_name or f"{func.__name__}_duration_seconds"
+            all_labels = {"function": func.__name__}
+            if labels:
+                all_labels.update(labels)
+
+            start_time = time.perf_counter()
+            status = "success"
+            try:
+                result = func(*args, **kwargs)
+                return result
+            except Exception:
+                status = "failure"
+                raise  # Re-raise the exception after marking status
+            finally:
+                elapsed_time = time.perf_counter() - start_time
+                final_labels = {**all_labels, "status": status}
+
+                # Log the primary histogram metric
+                _log_metric(m_name, "histogram", elapsed_time, final_labels)
+
+                # Optionally log a separate counter metric
+                if log_call_count:
+                    counter_name = f"{func.__name__}_calls_total"
+                    _log_metric(counter_name, "counter", 1, final_labels)
+
+                if log_summary:
+                    logger.info(
+                        f"Function '{func.__name__}' finished in {elapsed_time:.4f}s "
+                        f"with status '{status}'."
+                    )
+
+        return wrapper
+
+    return decorator
 
 
-# # main.py or equivalent entry point
-# from metrics_logger import init_metrics_server
-#
-#
-# def main():
-#     # Start Prometheus metrics server on port 8000
-#     init_metrics_server(port=8000)
-#
-#     # Initialize and launch your Gradio app
-#     create_video_transcription_tab()
-#
-#
+class MetricsLogger:
+    """
+    5. A class-based API for providing context (base labels) to a set of metrics.
+
+    This is useful for grouping all metrics from a specific module or request.
+    """
+
+    def __init__(self, base_labels: Optional[LabelDict] = None):
+        self._base_labels = base_labels or {}
+
+    def _get_labels(self, labels: Optional[LabelDict]) -> LabelDict:
+        """Merge instance labels with call-specific labels."""
+        final_labels = self._base_labels.copy()
+        if labels:
+            final_labels.update(labels)
+        return final_labels
+
+    def log_counter(self, name: str, value: int = 1, labels: Optional[LabelDict] = None):
+        _log_metric(name, "counter", value, self._get_labels(labels))
+
+    def log_gauge(self, name: str, value: float, labels: Optional[LabelDict] = None):
+        _log_metric(name, "gauge", value, self._get_labels(labels))
+
+    def log_histogram(self, name: str, value: float, labels: Optional[LabelDict] = None):
+        _log_metric(name, "histogram", value, self._get_labels(labels))
+
+    def log_resource_usage(self, labels: Optional[LabelDict] = None):
+        process = psutil.Process()
+        combined_labels = self._get_labels(labels)
+        self.log_gauge("process_memory_mb", process.memory_info().rss / (1024 ** 2), combined_labels)
+        self.log_gauge("process_cpu_percent", process.cpu_percent(interval=0.1), combined_labels)
+
+
+# For convenience, a default instance for simple, one-off logging
+default_metrics = MetricsLogger()
+log_counter = default_metrics.log_counter
+log_gauge = default_metrics.log_gauge
+log_histogram = default_metrics.log_histogram
+log_resource_usage = default_metrics.log_resource_usage
+
+# # Example usage block to demonstrate the new features
 # if __name__ == "__main__":
-#     main()
-
-# prometheus.yml
-# scrape_configs:
-#   - job_name: 'video_transcription_app'
-#     static_configs:
-#       - targets: ['localhost:8000']  # Replace with your application's host and port
+#     from logger_config import setup_logger
+#
+#     # Configure sinks. One for console, one just for metrics.
+#     logger.remove()
+#     logger.add(sys.stdout, level="INFO", format="{level.icon} {level.name}: {message}")
+#     logger.add(
+#         "test_metrics_only.json",
+#         level="METRIC",  # This sink will ONLY capture our metrics!
+#         serialize=True
+#     )
+#
+#     logger.info("--- Testing Advanced Metrics Logger ---")
+#
+#
+#     # 1. Test the robust @timeit decorator
+#     @timeit(log_call_count=True)
+#     def successful_task():
+#         time.sleep(0.1)
+#
+#
+#     @timeit
+#     def failing_task():
+#         time.sleep(0.1)
+#         raise ValueError("Something went wrong")
+#
+#
+#     successful_task()
+#     try:
+#         failing_task()
+#     except ValueError as e:
+#         logger.warning(f"Caught expected exception: {e}")
+#
+#     # 2. Test the class-based logger with context
+#     api_logger = MetricsLogger(base_labels={"component": "api", "version": "v2"})
+#     api_logger.log_counter("requests_total", labels={"endpoint": "/users"})
+#     api_logger.log_counter("requests_total", labels={"endpoint": "/data"})
+#
+#     # 3. Test the default instance for one-off metrics
+#     log_resource_usage()
+#
+#     logger.info("--- Test complete. Check 'test_metrics_only.json' ---")
 
 #
 # End of metrics_logger.py
