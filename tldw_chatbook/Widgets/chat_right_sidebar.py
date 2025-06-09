@@ -127,23 +127,31 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
                     with Horizontal(classes="detail-field-container"):
                         yield Label("Title:", classes="detail-label")
                         yield Button("Copy", id="chat-media-copy-title-button", classes="copy-button", disabled=True)
-                    yield TextArea("", id="chat-media-title-display", read_only=True, classes="detail-textarea")
+                    title_display_ta = TextArea("", id="chat-media-title-display", read_only=True, classes="detail-textarea")
+                    title_display_ta.styles.height = 3  # Set height to 3 lines for title
+                    yield title_display_ta
 
                     with Horizontal(classes="detail-field-container"):
                         yield Label("Content:", classes="detail-label")
                         yield Button("Copy", id="chat-media-copy-content-button", classes="copy-button", disabled=True)
-                    yield TextArea("", id="chat-media-content-display", read_only=True,
+                    content_display_ta = TextArea("", id="chat-media-content-display", read_only=True,
                                    classes="detail-textarea content-display")
+                    content_display_ta.styles.height = 20  # Set height to 20 lines minimum
+                    yield content_display_ta
 
                     with Horizontal(classes="detail-field-container"):
                         yield Label("Author:", classes="detail-label")
                         yield Button("Copy", id="chat-media-copy-author-button", classes="copy-button", disabled=True)
-                    yield TextArea("", id="chat-media-author-display", read_only=True, classes="detail-textarea")
+                    author_display_ta = TextArea("", id="chat-media-author-display", read_only=True, classes="detail-textarea")
+                    author_display_ta.styles.height = 2  # Set height to 2 lines for author
+                    yield author_display_ta
 
                     with Horizontal(classes="detail-field-container"):
                         yield Label("URL:", classes="detail-label")
                         yield Button("Copy", id="chat-media-copy-url-button", classes="copy-button", disabled=True)
-                    yield TextArea("", id="chat-media-url-display", read_only=True, classes="detail-textarea")
+                    url_display_ta = TextArea("", id="chat-media-url-display", read_only=True, classes="detail-textarea")
+                    url_display_ta.styles.height = 2  # Set height to 2 lines for URL
+                    yield url_display_ta
         # ===================================================================
         # Prompts (only for chat tab)
         # ===================================================================
