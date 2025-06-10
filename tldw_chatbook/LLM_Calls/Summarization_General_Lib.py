@@ -23,14 +23,12 @@ import time
 from typing import Optional, Union, Generator, Any, Dict, List, Callable
 #
 # 3rd-Party Imports
+from loguru import logger
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3 import Retry
 #
 # Import Local
-from tldw_chatbook.Chunking.Chunk_Lib import (
-    improved_chunking_process
-)
 from tldw_chatbook.LLM_Calls.Local_Summarization_Lib import (
     summarize_with_llama,
     summarize_with_kobold,
@@ -44,7 +42,14 @@ from tldw_chatbook.LLM_Calls.Local_Summarization_Lib import (
 )
 from tldw_chatbook.Logging_Config import logging
 from tldw_chatbook.config import get_cli_setting
-
+try:
+    from tldw_chatbook.Chunking.Chunk_Lib import (
+    improved_chunking_process
+    )
+    CHUNKER_AVAILABLE = True
+except ImportError:
+    logger.warning("Failed to import chunking library. Will not be available.")
+    CHUNKER_AVAILABLE = False
 
 # FIXME
 def load_and_log_configs():
@@ -418,82 +423,83 @@ def analyze(
         default_chunk_opts = {'method': 'sentences', 'max_size': 500, 'overlap': 200}
         current_chunk_options = chunk_options if isinstance(chunk_options, dict) else default_chunk_opts
 
-        if recursive_summarization:
-            logging.info("Performing recursive summarization.")
-            chunks_data = improved_chunking_process(text_content, current_chunk_options) # Renamed variable for clarity
-            if not chunks_data:
-                logging.warning("Recursive summarization: Chunking produced no chunks.")
-                return "Error: Recursive summarization failed - no chunks generated."
+        if CHUNKER_AVAILABLE == True:
+            if recursive_summarization:
+                logging.info("Performing recursive summarization.")
+                chunks_data = improved_chunking_process(text_content, current_chunk_options) # Renamed variable for clarity
+                if not chunks_data:
+                    logging.warning("Recursive summarization: Chunking produced no chunks.")
+                    return "Error: Recursive summarization failed - no chunks generated."
 
-            # Extract just the text from the chunk data
-            text_chunks = [chunk['text'] for chunk in chunks_data]
-            logging.debug(f"Generated {len(text_chunks)} text chunks for recursive summarization.")
+                # Extract just the text from the chunk data
+                text_chunks = [chunk['text'] for chunk in chunks_data]
+                logging.debug(f"Generated {len(text_chunks)} text chunks for recursive summarization.")
 
-            # Define the summarizer function for recursive_summarize_chunks
-            # It must accept ONE argument (the text) and return the summary string.
-            # It captures necessary variables (api_name, key, temp, prompts, etc.) from the outer scope (closure).
-            # It must handle potential errors from the API call and return an error string if needed.
-            def recursive_step_processor(text_to_summarize: str) -> str:
-                logging.debug(f"recursive_step_processor called with text length: {len(text_to_summarize)}")
-                # Force non-streaming for internal steps and consume immediately
-                api_result = _dispatch_to_api(
-                    text_to_summarize,
-                    custom_prompt_arg,  # Custom prompt is handled by _dispatch_to_api
-                    api_name,
-                    api_key,
-                    temp,
-                    system_message,  # System message is handled by _dispatch_to_api
-                    streaming=False  # IMPORTANT: Force non-streaming for internal recursive steps
+                # Define the summarizer function for recursive_summarize_chunks
+                # It must accept ONE argument (the text) and return the summary string.
+                # It captures necessary variables (api_name, key, temp, prompts, etc.) from the outer scope (closure).
+                # It must handle potential errors from the API call and return an error string if needed.
+                def recursive_step_processor(text_to_summarize: str) -> str:
+                    logging.debug(f"recursive_step_processor called with text length: {len(text_to_summarize)}")
+                    # Force non-streaming for internal steps and consume immediately
+                    api_result = _dispatch_to_api(
+                        text_to_summarize,
+                        custom_prompt_arg,  # Custom prompt is handled by _dispatch_to_api
+                        api_name,
+                        api_key,
+                        temp,
+                        system_message,  # System message is handled by _dispatch_to_api
+                        streaming=False  # IMPORTANT: Force non-streaming for internal recursive steps
+                    )
+                    # consume_generator handles both strings and generators, returning a string
+                    processed_result = consume_generator(api_result)
+
+                    # Ensure the result is a string (consume_generator should do this)
+                    if not isinstance(processed_result, str):
+                        logging.error(f"API dispatch/consumption did not return a string. Got: {type(processed_result)}")
+                        # Return an error string that recursive_summarize_chunks can detect
+                        return f"Error: Internal summarization step failed to produce string output (got {type(processed_result)})"
+
+                    logging.debug(f"recursive_step_processor finished. Result length: {len(processed_result)}")
+                    # Return the result string (which could be a summary or an error message from consume_generator)
+                    return processed_result
+
+                # Call the simplified recursive_summarize_chunks utility
+                # It now only needs the list of text chunks and the processing function
+                final_result = recursive_summarize_chunks(
+                    chunks=text_chunks,
+                    summarize_func=recursive_step_processor
                 )
-                # consume_generator handles both strings and generators, returning a string
-                processed_result = consume_generator(api_result)
+                # The result of recursive_summarize_chunks is now the final string summary or an error string
 
-                # Ensure the result is a string (consume_generator should do this)
-                if not isinstance(processed_result, str):
-                    logging.error(f"API dispatch/consumption did not return a string. Got: {type(processed_result)}")
-                    # Return an error string that recursive_summarize_chunks can detect
-                    return f"Error: Internal summarization step failed to produce string output (got {type(processed_result)})"
+            elif chunked_summarization:
+                logging.info("Performing chunked summarization (summarize each, then combine).")
+                chunks = improved_chunking_process(text_content, current_chunk_options)
+                if not chunks:
+                    logging.warning("Chunked summarization: Chunking produced no chunks.")
+                    return "Error: Chunked summarization failed - no chunks generated."
+                logging.debug(f"Generated {len(chunks)} chunks for chunked summarization.")
 
-                logging.debug(f"recursive_step_processor finished. Result length: {len(processed_result)}")
-                # Return the result string (which could be a summary or an error message from consume_generator)
-                return processed_result
+                chunk_summaries = []
+                for i, chunk in enumerate(chunks):
+                    logging.debug(f"Summarizing chunk {i+1}/{len(chunks)}")
+                    # Summarize each chunk - force non-streaming for API call
+                    chunk_summary_result = _dispatch_to_api(
+                        chunk['text'], custom_prompt_arg, api_name, api_key,
+                        temp, system_message, streaming=False # Force non-streaming
+                    )
+                    # Consume generator immediately
+                    processed_chunk_summary = consume_generator(chunk_summary_result)
 
-            # Call the simplified recursive_summarize_chunks utility
-            # It now only needs the list of text chunks and the processing function
-            final_result = recursive_summarize_chunks(
-                chunks=text_chunks,
-                summarize_func=recursive_step_processor
-            )
-            # The result of recursive_summarize_chunks is now the final string summary or an error string
+                    if isinstance(processed_chunk_summary, str) and not processed_chunk_summary.startswith("Error:"):
+                        chunk_summaries.append(processed_chunk_summary)
+                    else:
+                        error_detail = processed_chunk_summary if isinstance(processed_chunk_summary, str) else "Unknown error"
+                        logging.warning(f"Failed to summarize chunk {i+1}: {error_detail}")
+                        chunk_summaries.append(f"[Error summarizing chunk {i+1}: {error_detail}]") # Add error placeholder
 
-        elif chunked_summarization:
-            logging.info("Performing chunked summarization (summarize each, then combine).")
-            chunks = improved_chunking_process(text_content, current_chunk_options)
-            if not chunks:
-                logging.warning("Chunked summarization: Chunking produced no chunks.")
-                return "Error: Chunked summarization failed - no chunks generated."
-            logging.debug(f"Generated {len(chunks)} chunks for chunked summarization.")
-
-            chunk_summaries = []
-            for i, chunk in enumerate(chunks):
-                logging.debug(f"Summarizing chunk {i+1}/{len(chunks)}")
-                # Summarize each chunk - force non-streaming for API call
-                chunk_summary_result = _dispatch_to_api(
-                    chunk['text'], custom_prompt_arg, api_name, api_key,
-                    temp, system_message, streaming=False # Force non-streaming
-                )
-                # Consume generator immediately
-                processed_chunk_summary = consume_generator(chunk_summary_result)
-
-                if isinstance(processed_chunk_summary, str) and not processed_chunk_summary.startswith("Error:"):
-                    chunk_summaries.append(processed_chunk_summary)
-                else:
-                    error_detail = processed_chunk_summary if isinstance(processed_chunk_summary, str) else "Unknown error"
-                    logging.warning(f"Failed to summarize chunk {i+1}: {error_detail}")
-                    chunk_summaries.append(f"[Error summarizing chunk {i+1}: {error_detail}]") # Add error placeholder
-
-            # Combine the summaries
-            final_result = "\n\n---\n\n".join(chunk_summaries) # Join with a separator
+                # Combine the summaries
+                final_result = "\n\n---\n\n".join(chunk_summaries) # Join with a separator
 
         else:
             # No chunking - direct summarization
