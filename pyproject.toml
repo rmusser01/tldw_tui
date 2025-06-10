@@ -35,12 +35,12 @@ dependencies = [
     "loguru",
     "textual>=3.3.0",
     "requests",
-     "rich",
-    "Pillow",
+    "rich",
+    "pillow",
     "PyYAML",
     "pydantic",
     "psutil",
-    # "toml", # Only if writing TOML. For reading in Python 3.11+, tomllib is built-in.
+    "toml",
 ]
 
 # --- Optional Dependencies ---
@@ -49,6 +49,10 @@ chunker = [
     "langdetect",
     "nltk",
     "scikit-learn",
+    "fugashi",
+    "transformers",
+    "tqdm",
+    "jieba",
 ]
 websearch = [
     "lxml",
