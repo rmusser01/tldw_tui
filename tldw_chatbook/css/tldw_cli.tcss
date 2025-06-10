@@ -1567,7 +1567,16 @@ AppFooterStatus {
 /* --- End of Window Footer Widget --- */
 /* ----------------------------- ************************* ----------------------------- */
 
+/* ----------------------------- ************************* ----------------------------- */
+/* --- Utility/Not-Tab Specific --- */
 
+.disabled {
+    /* Make it look faded and non-interactive */
+    opacity: 0.5;
+    filter: grayscale(80%);
+}
+/* --- End of Utility/Not-Tab Specific --- */
+/* ----------------------------- ************************* ----------------------------- */
 
 /* Chat Sidebar Media Search Section Specific Styles */
 #chat-media-collapsible .sidebar-listview {
