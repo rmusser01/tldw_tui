@@ -173,13 +173,20 @@ class ChatMessage(Widget):
         Watcher for the internal generation status.
         Updates the actions bar visibility and the continue button visibility for AI messages.
         """
+        logging.info(f"watch__generation_complete_internal called with complete={complete} for ChatMessage (ID: {self.id}, Role: {self.role})")
         if self.has_class("-ai"):
+            logging.info(f"ChatMessage has -ai class")
             try:
                 actions_container = self.query_one(".message-actions")
+                logging.info(f"Found actions_container: {actions_container}")
                 if complete:
+                    logging.info(f"Setting actions_container to visible")
                     actions_container.remove_class("-generating")
                     actions_container.styles.display = "block"
+                    # Force update the DOM to ensure changes are applied
+                    self.refresh()
                 else:
+                    logging.info(f"Setting actions_container to hidden")
                     actions_container.add_class("-generating")
 
                 # Separately handle the continue button in its own try...except block
@@ -193,10 +200,11 @@ class ChatMessage(Widget):
 
             except QueryError as qe:
                 # This might happen if the query runs before the widget is fully composed or if it's being removed.
-                logging.debug(f"ChatMessage (ID: {self.id}, Role: {self.role}): QueryError in watch__generation_complete_internal: {qe}. Widget might not be fully ready or is not an AI message with these components.")
+                logging.warning(f"ChatMessage (ID: {self.id}, Role: {self.role}): QueryError in watch__generation_complete_internal: {qe}. Widget might not be fully ready or is not an AI message with these components.")
             except Exception as e:
                 logging.error(f"Error in watch__generation_complete_internal for ChatMessage (ID: {self.id}): {e}", exc_info=True)
         else: # Not an AI message
+            logging.info(f"ChatMessage does not have -ai class")
             try: # Ensure continue button is hidden for non-AI messages if it somehow got queried
                 continue_button = self.query_one("#continue-response-button", Button)
                 continue_button.display = False
@@ -216,8 +224,12 @@ class ChatMessage(Widget):
         Marks the AI message generation as complete.
         This will trigger the watcher for _generation_complete_internal to update UI.
         """
+        logging.info(f"mark_generation_complete called for ChatMessage (ID: {self.id}, Role: {self.role})")
         if self.has_class("-ai"):
+            logging.info(f"Setting _generation_complete_internal to True")
             self._generation_complete_internal = True
+            # Force a refresh to ensure UI updates
+            self.refresh()
 
     def on_mount(self) -> None:
         """Ensure initial state of continue button and actions bar is correct after mounting."""
