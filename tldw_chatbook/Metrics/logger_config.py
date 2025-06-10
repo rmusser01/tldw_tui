@@ -5,6 +5,8 @@ import json
 import sys
 import os
 from datetime import datetime
+from typing import Optional
+
 #
 # 3rd-Party Imports
 from loguru import logger
@@ -15,7 +17,18 @@ from loguru import logger
 #
 # Functions:
 
-log_metrics_file = '~/.local/tldw_cli/Logs/tldw_metrics_logs.json'
+# Sensible default locations for logs
+DEFAULT_APP_LOG_PATH = '~/.local/tldw_cli/Logs/tldw_app.log'
+DEFAULT_METRICS_LOG_PATH = '~/.local/tldw_cli/Logs/tldw_metrics.json'
+
+def _ensure_log_dir_exists(file_path: str):
+    """Ensure the directory for the log file exists."""
+    # Expand the user's home directory if '~' is used
+    expanded_path = os.path.expanduser(file_path)
+    log_dir = os.path.dirname(expanded_path)
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+    return expanded_path
 
 def retention_function(files):
     """
@@ -68,64 +81,62 @@ def json_formatter(record):
         })
 
 
-def setup_logger(args):
+def setup_logger(
+    log_level: str = "DEBUG",
+    console_format: str = "{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}",
+    app_log_path: Optional[str] = DEFAULT_APP_LOG_PATH,
+    metrics_log_path: Optional[str] = DEFAULT_METRICS_LOG_PATH,
+):
     """
-    Sets up Loguru using command-line arguments (if provided)
-    and configuration file settings.
+    Sets up Loguru sinks for console, a standard application log, and a JSON metrics log.
 
-    This function adds:
-      - A console sink with a simple human‑readable format.
-      - A file sink for standard logs.
-      - Optionally, a file sink with JSON formatting for metrics.
+    Args:
+        log_level (str): The minimum log level to output (e.g., "DEBUG", "INFO").
+        console_format (str): The format string for console output.
+        app_log_path (Optional[str]): Path for the standard text log file. If None, this sink is disabled.
+        metrics_log_path (Optional[str]): Path for the structured JSON metrics log. If None, this sink is disabled.
+
+    Returns:
+        The configured logger instance.
     """
-    # Remove any previously added sinks.
+    # Start with a clean slate
     logger.remove()
 
-    # Determine the log level (from args; default to DEBUG)
-    log_level = args.log_level.upper() if hasattr(args, "log_level") else "DEBUG"
-
-    # Console sink with simple format
+    # 1. Console Sink (always enabled)
     logger.add(
         sys.stdout,
-        level=log_level,
-        format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}"
+        level=log_level.upper(),
+        format=console_format
     )
 
-    # Determine the file sink for standard logs.
-    # Prefer the command-line argument if provided; otherwise, use the config.
-    if hasattr(args, "log_file") and args.log_file:
-        file_log_path = args.log_file
-        logger.info(f"Log file created at: {file_log_path}")
-    else:
-        file_log_path = '~/.local/tldw_cli/Logs/tldw_app_logs.json'
-        logger.info(f"No logfile provided via command-line. Using default: {file_log_path}")
-
-    # Ensure directory exists
-    log_dir = os.path.dirname(file_log_path)
-    if log_dir and not os.path.exists(log_dir):
-        os.makedirs(log_dir, exist_ok=True)
-
-    # Standard file sink
-    logger.add(
-        file_log_path,
-        level=log_level,
-        format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}"
-    )
-
-    if log_metrics_file:
-        metrics_dir = os.path.dirname(log_metrics_file)
-        if metrics_dir and not os.path.exists(metrics_dir):
-            os.makedirs(metrics_dir, exist_ok=True)
-
+    # 2. Standard Application File Sink
+    if app_log_path:
+        path = _ensure_log_dir_exists(app_log_path)
         logger.add(
-            log_metrics_file,
-            level="DEBUG",
-            format="{time} - {level} - {message}",  # Simple format for JSON sink
-            serialize=True,  # This enables JSON serialization
-            rotation="10 MB",
-            # Loguru’s built-in retention can be a simple number (e.g., 5) meaning “keep 5 files”
-            retention=5,
+            path,
+            level=log_level.upper(),
+            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+            rotation="10 MB",  # Rotate file when it reaches 10 MB
+            retention="7 days", # Keep logs for 7 days
+            enqueue=True,      # Make logging non-blocking
+            backtrace=True,    # Show full stack trace on exceptions
+            diagnose=True,     # Add exception variable values
         )
+        logger.info(f"Application logs will be written to: {path}")
+
+    # 3. JSON Metrics File Sink
+    if metrics_log_path:
+        path = _ensure_log_dir_exists(metrics_log_path)
+        logger.add(
+            path,
+            level="DEBUG",     # Typically, you want all levels for metrics
+            serialize=True,    # This is the key for JSON output
+            rotation="10 MB",
+            retention=5,       # Keeps the 5 most recent log files
+            enqueue=True,
+        )
+        logger.info(f"JSON metrics logs will be written to: {path}")
+
     return logger
 
 # def setup_logger(log_file_path="tldw_app_logs.json"):

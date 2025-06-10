@@ -21,10 +21,10 @@ from requests.adapters import HTTPAdapter
 from urllib3 import Retry
 #
 # Local Imports
-from tldw_Server_API.app.core.Utils.Utils import loaded_config_data, logging
-from tldw_Server_API.app.core.Web_Scraping.Article_Extractor_Lib import scrape_article
-from tldw_Server_API.app.core.Chat.Chat_Functions import chat_api_call
-from tldw_Server_API.app.core.LLM_Calls.Summarization_General_Lib import analyze
+from tldw_chatbook.Web_Scraping.Article_Extractor_Lib import scrape_article
+from tldw_chatbook.Chat.Chat_Functions import chat_api_call
+from tldw_chatbook.LLM_Calls.Summarization_General_Lib import analyze
+from tldw_chatbook.Logging_Config import logging
 #
 #######################################################################################################################
 #
@@ -34,7 +34,7 @@ from tldw_Server_API.app.core.LLM_Calls.Summarization_General_Lib import analyze
 #######################################################################################################################
 #
 # Functions:
-
+loaded_config_data = "dummy data"
 ######################### Main Orchestration Workflow #########################
 #
 # FIXME - Add Logging

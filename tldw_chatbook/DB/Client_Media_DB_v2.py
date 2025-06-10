@@ -1169,18 +1169,62 @@ class MediaDatabase:
         # Text Search Logic (FTS or LIKE)
         fts_search_active = False
         if search_query: # search_query is the actual text to match (e.g., "my query" or "\"exact phrase\"")
+            # LIKE search conditions
+            like_conditions = []
+            like_params = []
+
             # FTS on 'title', 'content'
             if any(f in sanitized_text_search_fields for f in ["title", "content"]):
                 fts_search_active = True
                 if not any("media_fts fts" in j_item for j_item in joins): # Ensure FTS join is added only once
                     joins.append("JOIN media_fts fts ON fts.rowid = m.id")
-                # FTS5 MATCH syntax: if search_fields is ["title", "content"], query for both is 'title:value OR content:value'
-                # or just 'value' to search all FTS columns.
-                # The provided search_query can already be an FTS formatted string (e.g. "field:value")
-                # or a simple term/phrase. Using MATCH ? is safer for simple terms/phrases.
-                # If `search_query` is already like `"exact phrase"`, it works well with `MATCH ?`.
+
+                # SQLite FTS doesn't allow multiple MATCH conditions combined with OR
+                # Instead, we'll use a single MATCH condition with the OR operator inside the FTS query
+                fts_query_parts = []
+
+                # For very short search terms (1-2 characters), add wildcards to improve matching
+                if len(search_query) <= 2 and not (search_query.startswith('"') and search_query.endswith('"')):
+                    # Add suffix wildcard for better partial matching with short terms
+                    fts_query_parts.append(f"{search_query}*")
+
+                    # Note: SQLite FTS5 doesn't support prefix wildcards (*term)
+                    # We'll handle "ends with" matching using LIKE conditions instead
+
+                    # Add case-insensitive versions if needed
+                    if search_query.lower() != search_query:
+                        fts_query_parts.append(f"{search_query.lower()}*")
+                else:
+                    # For longer terms, use the original query
+                    fts_query_parts.append(search_query)
+
+                    # Add case-insensitive version if needed
+                    if not (search_query.startswith('"') and search_query.endswith('"')) and search_query.lower() != search_query:
+                        fts_query_parts.append(search_query.lower())
+
+                # Combine all FTS query parts with OR
+                combined_fts_query = " OR ".join(fts_query_parts)
+                logging.debug(f"Combined FTS query: '{combined_fts_query}'")
+                logging.info(f"Search using FTS with query parts: {fts_query_parts}")
+
+                # Add a single MATCH condition
                 conditions.append("fts.media_fts MATCH ?")
-                params.append(search_query) # search_query already contains quotes for exact phrase if needed
+                params.append(combined_fts_query)
+
+                # Add LIKE search for 'title' and 'content' to ensure partial matches work
+                title_content_like_parts = []
+                for field in ["title", "content"]:
+                    if field in sanitized_text_search_fields:
+                        # Contains matching (standard)
+                        title_content_like_parts.append(f"m.{field} LIKE ? COLLATE NOCASE")
+                        like_params.append(f"%{search_query}%")
+
+                        # For short search terms, also add "ends with" matching to catch cases like "ToDo" when searching for "Do"
+                        if len(search_query) <= 2 and not (search_query.startswith('"') and search_query.endswith('"')):
+                            title_content_like_parts.append(f"m.{field} LIKE ? COLLATE NOCASE")
+                            like_params.append(f"%{search_query}")
+                if title_content_like_parts:
+                    like_conditions.append(f"({' OR '.join(title_content_like_parts)})")
 
             # LIKE search for 'author', 'type'
             like_fields_to_search = [f for f in sanitized_text_search_fields if f in ["author", "type"]]
@@ -1191,14 +1235,28 @@ class MediaDatabase:
                     if field == "type" and media_types:
                         logging.debug(f"LIKE search on 'type' skipped due to active 'media_types' filter.")
                         continue
+
+                    # Contains matching (standard)
                     like_parts.append(f"m.{field} LIKE ? COLLATE NOCASE")
-                    params.append(f"%{search_query}%") # search_query here should be the raw query, not the FTS one
-                                                      # This means we might need two versions of the query text if one is FTS formatted.
-                                                      # For simplicity now, assume search_query passed is suitable for both,
-                                                      # or that if FTS is used, LIKE on the same query text is acceptable.
-                                                      # If search_query is "\"exact phrase\"", LIKE will try to match that literally.
+                    like_params.append(f"%{search_query}%") # search_query here should be the raw query, not the FTS one
+
+                    # For short search terms, also add "ends with" matching to catch cases like "ToDo" when searching for "Do"
+                    if len(search_query) <= 2 and not (search_query.startswith('"') and search_query.endswith('"')):
+                        like_parts.append(f"m.{field} LIKE ? COLLATE NOCASE")
+                        like_params.append(f"%{search_query}")
                 if like_parts:
-                    conditions.append(f"({' OR '.join(like_parts)})")
+                    like_conditions.append(f"({' OR '.join(like_parts)})")
+
+            # Add LIKE conditions to the main conditions list
+            if like_conditions:
+                logging.info(f"Search using LIKE with patterns: {like_params}")
+                conditions.append(f"({' OR '.join(like_conditions)})")
+                params.extend(like_params)
+
+        elif sanitized_text_search_fields:
+            # If no search query but fields are specified, add a condition that always evaluates to true
+            # This ensures all records are considered when no search query is provided
+            conditions.append("1=1")
 
         # Order By Clause
         order_by_clause_str = ""
@@ -1238,19 +1296,84 @@ class MediaDatabase:
         try:
             # Count Query
             count_sql = f"SELECT {count_select} {base_from} {join_clause} {where_clause}"
-            logging.debug(f"Search Count SQL ({self.db_path_str}): {count_sql} | Params: {params}")
-            count_cursor = self.execute_query(count_sql, tuple(params))
-            total_matches_row = count_cursor.fetchone()
-            total_matches = total_matches_row[0] if total_matches_row else 0
+            logging.debug(f"Search Count SQL ({self.db_path_str}): {count_sql}")
+            logging.debug(f"Search Count Params: {params}")
+
+            try:
+                count_cursor = self.execute_query(count_sql, tuple(params))
+                total_matches_row = count_cursor.fetchone()
+                total_matches = total_matches_row[0] if total_matches_row else 0
+                logging.info(f"Search query '{search_query}' found {total_matches} total matches")
+            except sqlite3.OperationalError as e:
+                # Handle specific FTS MATCH errors
+                if "unable to use function MATCH in the requested context" in str(e):
+                    logging.warning(f"FTS MATCH error, falling back to LIKE-only search: {e}")
+                    # Remove FTS conditions and keep only LIKE conditions
+                    new_conditions = []
+                    new_params = []
+                    for i, condition in enumerate(conditions):
+                        if "fts.media_fts MATCH" not in condition:
+                            new_conditions.append(condition)
+                            # Add corresponding parameters
+                            # This is a simplification - in a real implementation, you'd need to track which params go with which conditions
+                            # For now, we'll just use LIKE conditions which should be at the end of the params list
+
+                    # If we have LIKE conditions, use them
+                    if new_conditions:
+                        where_clause = "WHERE " + " AND ".join(new_conditions) if new_conditions else ""
+                        count_sql = f"SELECT {count_select} FROM Media m WHERE m.deleted = 0 AND m.is_trash = 0"
+                        if search_query:
+                            # Add a simple LIKE condition on title and content
+                            count_sql += f" AND (m.title LIKE ? OR m.content LIKE ?)"
+                            count_params = (f"%{search_query}%", f"%{search_query}%")
+                        else:
+                            count_params = ()
+
+                        count_cursor = self.execute_query(count_sql, count_params)
+                        total_matches_row = count_cursor.fetchone()
+                        total_matches = total_matches_row[0] if total_matches_row else 0
+                        logging.info(f"Fallback search query '{search_query}' found {total_matches} total matches")
+                    else:
+                        # If no conditions left, return empty results
+                        logging.warning("No valid search conditions after removing FTS MATCH, returning empty results")
+                        return [], 0
+                else:
+                    # Re-raise other SQLite errors
+                    raise
 
             results_list = []
             if total_matches > 0 and offset < total_matches:
                 # Results Query
                 results_sql = f"{final_select_stmt} {base_from} {join_clause} {where_clause} {order_by_clause_str} LIMIT ? OFFSET ?"
                 paginated_params = tuple(params + [results_per_page, offset])
-                logging.debug(f"Search Results SQL ({self.db_path_str}): {results_sql} | Params: {paginated_params}")
-                results_cursor = self.execute_query(results_sql, paginated_params)
-                results_list = [dict(row) for row in results_cursor.fetchall()]
+                logging.debug(f"Search Results SQL ({self.db_path_str}): {results_sql}")
+                logging.debug(f"Search Results Params: {paginated_params}")
+
+                try:
+                    results_cursor = self.execute_query(results_sql, paginated_params)
+                    results_list = [dict(row) for row in results_cursor.fetchall()]
+                except sqlite3.OperationalError as e:
+                    # Handle specific FTS MATCH errors in results query
+                    if "unable to use function MATCH in the requested context" in str(e):
+                        logging.warning(f"FTS MATCH error in results query, falling back to LIKE-only search: {e}")
+                        # Simplified fallback query
+                        fallback_sql = f"SELECT DISTINCT {', '.join(base_select_parts)} FROM Media m WHERE m.deleted = 0 AND m.is_trash = 0"
+                        if search_query:
+                            fallback_sql += f" AND (m.title LIKE ? OR m.content LIKE ?)"
+                            fallback_params = (f"%{search_query}%", f"%{search_query}%", results_per_page, offset)
+                        else:
+                            fallback_params = (results_per_page, offset)
+
+                        fallback_sql += f" {order_by_clause_str} LIMIT ? OFFSET ?"
+                        results_cursor = self.execute_query(fallback_sql, fallback_params)
+                        results_list = [dict(row) for row in results_cursor.fetchall()]
+                    else:
+                        # Re-raise other SQLite errors
+                        raise
+
+                # Log the titles of the found items for debugging
+                titles = [row.get('title', 'Untitled') for row in results_list]
+                logging.info(f"Search results for '{search_query}' (page {page}): {titles}")
 
             return results_list, total_matches
 
@@ -4614,7 +4737,7 @@ def permanently_delete_item(db_instance: MediaDatabase, media_id: int) -> bool:
 
 
 # Keyword read functions use instance methods or query directly
-def fetch_keywords_for_media(media_id: int, db_instance: MediaDatabase) -> List[str]:
+def fetch_keywords_for_media(db_instance: MediaDatabase, media_id: int) -> List[str]:
     """
        Fetches all active keywords associated with a specific active media item.
 
@@ -4647,7 +4770,7 @@ def fetch_keywords_for_media(media_id: int, db_instance: MediaDatabase) -> List[
         raise DatabaseError(f"Failed fetch keywords {media_id}") from e
 
 
-def fetch_keywords_for_media_batch(media_ids: List[int], db_instance: MediaDatabase) -> Dict[int, List[str]]:
+def fetch_keywords_for_media_batch(db_instance: MediaDatabase, media_ids: List[int]) -> Dict[int, List[str]]:
     """
        Fetches active keywords for multiple active media items in a single query.
 

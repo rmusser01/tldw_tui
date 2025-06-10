@@ -97,38 +97,63 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
         # ===================================================================
         if id_prefix == "chat":
             with Collapsible(title="Search Media", collapsed=True, id=f"{id_prefix}-media-collapsible"):
-                yield Label("Search Your Media:", classes="sidebar-label")
+                yield Label("Search Term:", classes="sidebar-label")
                 yield Input(
                     id="chat-media-search-input",
-                    placeholder="Search media content...",
+                    placeholder="Search title, content...",
                     classes="sidebar-input"
                 )
-                media_results_list = ListView(
-                    id="chat-media-search-results-listview",
-                    classes="sidebar-listview"
+                yield Label("Filter by Keywords (comma-sep):", classes="sidebar-label")
+                yield Input(
+                    id="chat-media-keyword-filter-input",
+                    placeholder="e.g., python, tutorial",
+                    classes="sidebar-input"
                 )
-                media_results_list.styles.height = 7
-                yield media_results_list
-                with Horizontal(classes="sidebar-button-group"):
-                    yield Button(
-                        "View",
-                        id="chat-media-view-selected-button",
-                        classes="sidebar-button"
-                    )
-                    yield Button(
-                        "Copy to Chat",
-                        id="chat-media-copy-selected-button",
-                        classes="sidebar-button",
-                        variant="primary"
-                    )
-                yield Label("Selected Media Content:", classes="sidebar-label")
-                media_content_display = TextArea(
-                    "",
-                    id="chat-media-content-display",
-                    classes="sidebar-textarea media-display-textarea"
+                yield Button(
+                    "Search",
+                    id="chat-media-search-button",
+                    classes="sidebar-button"
                 )
-                media_content_display.styles.height = 15
-                yield media_content_display
+                yield ListView(id="chat-media-search-results-listview", classes="sidebar-listview")
+
+                with Horizontal(classes="pagination-controls", id="chat-media-pagination-controls"):
+                    yield Button("Prev", id="chat-media-prev-page-button", disabled=True)
+                    yield Label("Page 1/1", id="chat-media-page-label")
+                    yield Button("Next", id="chat-media-next-page-button", disabled=True)
+
+                yield Static("--- Selected Media Details ---", classes="sidebar-label", id="chat-media-details-header")
+
+                media_details_view = VerticalScroll(id="chat-media-details-view")
+                media_details_view.styles.height = 35  # Set height to 35 lines to fit content without excess space
+                with media_details_view:
+                    with Horizontal(classes="detail-field-container"):
+                        yield Label("Title:", classes="detail-label")
+                        yield Button("Copy", id="chat-media-copy-title-button", classes="copy-button", disabled=True)
+                    title_display_ta = TextArea("", id="chat-media-title-display", read_only=True, classes="detail-textarea")
+                    title_display_ta.styles.height = 3  # Set height to 3 lines for title
+                    yield title_display_ta
+
+                    with Horizontal(classes="detail-field-container"):
+                        yield Label("Content:", classes="detail-label")
+                        yield Button("Copy", id="chat-media-copy-content-button", classes="copy-button", disabled=True)
+                    content_display_ta = TextArea("", id="chat-media-content-display", read_only=True,
+                                   classes="detail-textarea content-display")
+                    content_display_ta.styles.height = 20  # Set height to 20 lines minimum
+                    yield content_display_ta
+
+                    with Horizontal(classes="detail-field-container"):
+                        yield Label("Author:", classes="detail-label")
+                        yield Button("Copy", id="chat-media-copy-author-button", classes="copy-button", disabled=True)
+                    author_display_ta = TextArea("", id="chat-media-author-display", read_only=True, classes="detail-textarea")
+                    author_display_ta.styles.height = 2  # Set height to 2 lines for author
+                    yield author_display_ta
+
+                    with Horizontal(classes="detail-field-container"):
+                        yield Label("URL:", classes="detail-label")
+                        yield Button("Copy", id="chat-media-copy-url-button", classes="copy-button", disabled=True)
+                    url_display_ta = TextArea("", id="chat-media-url-display", read_only=True, classes="detail-textarea")
+                    url_display_ta.styles.height = 2  # Set height to 2 lines for URL
+                    yield url_display_ta
         # ===================================================================
         # Prompts (only for chat tab)
         # ===================================================================
@@ -302,7 +327,7 @@ def create_chat_right_sidebar(id_prefix: str, initial_ephemeral_state: bool = Tr
             # yield Placeholder("Display Active Character Name") # Removed placeholder
             # Could add a select here to change the character for the *current* chat,
             # which would then influence the AI's persona for subsequent messages.
-            # This is a more advanced feature than just "regular" vs. "specific character" chats.
+            # This is a more advanced feature than just for filtering searches.
 
         with Collapsible(title="Other Character Tools", collapsed=True):
             yield Placeholder("Tool 1")

@@ -1213,6 +1213,15 @@ MetricsScreen Label.-info-message {
     overflow-x: hidden;
 }
 
+.media-nav-pane.collapsed {
+    width: 0 !important;
+    min-width: 0 !important;
+    border-right: none !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    display: none !important; /* Ensures it doesn't take space or grab focus */
+}
+
 .media-nav-pane .media-nav-button { /* Style for navigation buttons */
     width: 100%;
     margin-bottom: 1;
@@ -1233,6 +1242,14 @@ MetricsScreen Label.-info-message {
 .media-view-area { /* Class for individual content areas in Media tab */
     width: 100%;
     height: 100%; /* Or auto if content dictates height */
+}
+
+.media-content-left-pane {
+    width: 35%;
+}
+
+.media-content-right-pane {
+    width: 65%;
 }
 /* --- End of Media Tab --- */
 /* ----------------------------- ************************* ----------------------------- */
@@ -1293,6 +1310,33 @@ MetricsScreen Label.-info-message {
     width: 100%;
     height: 100%;
     align: center middle;
+}
+
+/* Web Search Specific Styles within Search Tab */
+#search-view-web-search {
+    /* Overriding the generic .search-view-area Static centering if needed */
+    /* For direct children like Input, Button, VerticalScroll, default layout (vertical) should be fine. */
+    padding: 1; /* Add some padding inside the web search view area */
+}
+
+#search-view-web-search > Input#web-search-input { /* Target Input directly inside */
+    margin-bottom: 1; /* Space below the input field */
+    width: 100%;
+}
+
+/* .search-action-button is used by #web-search-button */
+.search-action-button {
+    width: 100%;
+    margin-bottom: 1; /* Space below the button */
+    /* height: 3; /* Optional: Standard button height */
+}
+
+#search-view-web-search > VerticalScroll > Markdown#web-search-results { /* Target Markdown inside VS */
+    width: 100%; /* Take full width */
+    height: 1fr; /* Take remaining vertical space within its parent VerticalScroll */
+    border: round $primary-background-lighten-2;
+    padding: 1;
+    background: $surface; /* A slightly different background for the results area */
 }
 /* --- End of Search Tab --- */
 /* ----------------------------- ************************* ----------------------------- */
@@ -1523,3 +1567,56 @@ AppFooterStatus {
 /* --- End of Window Footer Widget --- */
 /* ----------------------------- ************************* ----------------------------- */
 
+/* ----------------------------- ************************* ----------------------------- */
+/* --- Utility/Not-Tab Specific --- */
+
+.disabled {
+    /* Make the button semi-transparent. This is the most effective way
+       to show it's inactive and works just like web CSS. */
+    opacity: 0.6;
+
+    /* To achieve a "grayscale" effect, we manually set the colors
+       to be less vibrant, using Textual's design tokens for theming. */
+    background: $panel-darken-2;
+    color: $text-muted;
+
+    /* You can also ensure the border is muted. */
+    border: round $primary-darken-2;
+}
+/* --- End of Utility/Not-Tab Specific --- */
+/* ----------------------------- ************************* ----------------------------- */
+
+/* Chat Sidebar Media Search Section Specific Styles */
+#chat-media-collapsible .sidebar-listview {
+    min-height: 5;
+    max-height: 15;
+    height: 10;
+    border: round $surface;
+    margin-bottom: 1;
+}
+
+.pagination-controls {
+    layout: horizontal;
+    height: auto;
+    width: 100%;
+    align-horizontal: center;
+    margin-bottom: 1;
+}
+.pagination-controls Button {
+    width: 8;
+    min-width: 0;
+}
+.pagination-controls Label {
+    width: 1fr;
+    text-align: center;
+}
+
+.detail-field-container {
+    layout: horizontal;
+    height: auto;
+    align: center middle;
+}
+.detail-field-container .detail-label { width: 1fr; }
+.detail-field-container .copy-button { width: auto; height: 1; border: none; }
+.detail-textarea { height: 5; margin-bottom: 1; }
+.detail-textarea.content-display { height: 10; }

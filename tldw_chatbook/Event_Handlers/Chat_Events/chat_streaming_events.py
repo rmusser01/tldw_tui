@@ -12,7 +12,7 @@ from textual.widgets import Static, TextArea, Label
 from rich.markup import escape as escape_markup
 #
 # Local Imports
-from Tests.Notes.conftest import InputError, CharactersRAGDBError
+from tldw_chatbook.DB.ChaChaNotes_DB import InputError, CharactersRAGDBError
 from tldw_chatbook.Constants import TAB_CHAT, TAB_CCP
 from tldw_chatbook.Event_Handlers.worker_events import StreamingChunk, StreamDone
 from tldw_chatbook.Character_Chat import Character_Chat_Lib as ccl
@@ -33,8 +33,9 @@ async def handle_streaming_chunk(self, event: StreamingChunk) -> None:
             # Append the clean text chunk
             self.current_ai_message_widget.message_text += event.text_chunk
 
-            # Update the display with the accumulated, escaped text
-            static_text_widget.update(escape_markup(self.current_ai_message_widget.message_text))
+            # --- Update the display by wrapping the text in a Text object ---
+            # This is safer than escape_markup for arbitrary streaming content.
+            static_text_widget.update(Text(self.current_ai_message_widget.message_text))
 
             # Scroll the chat log to the end, conditionally
             chat_log_id_to_query = None
@@ -59,7 +60,7 @@ async def handle_streaming_chunk(self, event: StreamingChunk) -> None:
         except QueryError as e:
             logger.error(f"Error accessing UI components during streaming chunk update: {e}", exc_info=True)
         except Exception as e_chunk:  # Catch any other unexpected error
-            logger.error(f"Unexpected error processing streaming chunk: {e_chunk}", exc_info=True)
+            logger.error("Unexpected error processing streaming chunk: {}", e_chunk, exc_info=True)
     else:
         logger.warning(
             "Received StreamingChunk but no current_ai_message_widget is active/mounted or tab is not Chat/CCP.")

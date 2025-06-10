@@ -313,6 +313,7 @@ class IngestWindow(Container):
             return
 
         if button_id.startswith("tldw-api-browse-local-files-button-"):
+            event.stop()
             media_type = button_id.replace("tldw-api-browse-local-files-button-", "")
             self._current_media_type_for_file_dialog = media_type
 

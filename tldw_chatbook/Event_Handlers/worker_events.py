@@ -50,13 +50,28 @@ class StreamDone(Message):
 # Event Handlers (called by app.py's on_worker_state_changed)
 #
 ########################################################################################################################
-
 async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.StateChanged) -> None:
     """Handles completion/failure of background API workers (chat calls and suggestions)."""
     logger = getattr(app, 'loguru_logger', logging)
     worker_name = event.worker.name or "Unknown Worker"
     worker_state = event.state  # Get state from event
     logger.debug(f"Worker '{worker_name}' state changed to {worker_state}")
+
+    stop_button_id_selector = "#stop-chat-generation"
+    if worker_name.startswith("API_Call_chat"): # Only for main chat workers
+        if worker_state == WorkerState.RUNNING:
+            try:
+                app.query_one(stop_button_id_selector, Button).disabled = False
+                logger.info(f"Button '{stop_button_id_selector}' ENABLED.")
+            except QueryError:
+                logger.error(f"Could not find button '{stop_button_id_selector}' to enable it.")
+            return # Don't process RUNNING state further
+        elif worker_state in [WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED]:
+            try:
+                app.query_one(stop_button_id_selector, Button).disabled = True
+                logger.info(f"Button '{stop_button_id_selector}' DISABLED.")
+            except QueryError:
+                logger.error(f"Could not find button '{stop_button_id_selector}' to disable it.")
 
     if worker_name == "respond_for_me_worker":
         logger.info(f"Handling state change for 'respond_for_me_worker'. State: {worker_state}")
@@ -187,6 +202,11 @@ async def handle_api_call_worker_state_changed(app: 'TldwCli', event: Worker.Sta
                         f"API call ({prefix}) for worker '{worker_name}' SUCCESS was handled with streaming events.")
                     # StreamDone will finalize.
                 else:  # Non-streaming result
+                    if ai_message_widget is None or not ai_message_widget.is_mounted:
+                        logger.error(
+                            f"Non-streaming worker '{worker_name}' finished, but its AI placeholder widget is missing or not mounted."
+                        )
+                        return
                     worker_result_content = result
                     logger.debug(
                         f"NON-STREAMING RESULT for '{prefix}' (worker '{worker_name}'): {str(worker_result_content)[:200]}...")
