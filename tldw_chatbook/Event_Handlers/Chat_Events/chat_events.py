@@ -1168,7 +1168,7 @@ async def handle_chat_conversation_search_bar_changed(app: 'TldwCli', event_valu
 
 
 async def handle_chat_search_checkbox_changed(app: 'TldwCli', checkbox_id: str, value: bool) -> None:
-    
+
     loguru_logger.debug(f"Chat search checkbox '{checkbox_id}' changed to {value}")
 
     if checkbox_id == "chat-conversation-search-all-characters-checkbox":
@@ -1884,6 +1884,103 @@ async def handle_chat_copy_user_prompt_button_pressed(app: 'TldwCli') -> None:
     except Exception as e:
         logger.error(f"Chat Tab: Error copying user prompt: {e}", exc_info=True)
         app.notify("Error copying user prompt.", severity="error")
+
+
+async def handle_chat_template_search_input_changed(app: 'TldwCli', event_value: str) -> None:
+    """Handle changes to the template search input in the Chat tab."""
+    from tldw_chatbook.Chat.prompt_template_manager import get_available_templates, load_template
+
+    logger = getattr(app, 'loguru_logger', logging)
+    search_term = event_value.strip().lower()
+    logger.debug(f"Chat Tab: Template search input changed to: '{search_term}'")
+
+    try:
+        template_list_view = app.query_one("#chat-template-list-view", ListView)
+        await template_list_view.clear()
+
+        # Get all available templates
+        all_templates = get_available_templates()
+
+        if not all_templates:
+            await template_list_view.append(ListItem(Label("No templates available.")))
+            logger.info("Chat Tab: No templates available.")
+            return
+
+        # Filter templates based on search term
+        filtered_templates = all_templates
+        if search_term:
+            filtered_templates = [t for t in all_templates if search_term in t.lower()]
+
+        if filtered_templates:
+            for template_name in filtered_templates:
+                list_item = ListItem(Label(template_name))
+                list_item.template_name = template_name
+                await template_list_view.append(list_item)
+            logger.info(f"Chat Tab: Template search for '{search_term}' yielded {len(filtered_templates)} results.")
+        else:
+            await template_list_view.append(ListItem(Label("No matching templates.")))
+            logger.info(f"Chat Tab: Template search for '{search_term}' found no results.")
+
+    except Exception as e:
+        logger.error(f"Chat Tab: Error during template search: {e}", exc_info=True)
+        try:
+            template_list_view = app.query_one("#chat-template-list-view", ListView)
+            await template_list_view.clear()
+            await template_list_view.append(ListItem(Label("Search error.")))
+        except Exception:
+            pass
+
+
+async def handle_chat_apply_template_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
+    """Handle the Apply Template button press in the Chat tab."""
+    from tldw_chatbook.Chat.prompt_template_manager import load_template
+
+    logger = getattr(app, 'loguru_logger', logging)
+    logger.debug("Chat Tab: Apply Template button pressed.")
+
+    try:
+        template_list_view = app.query_one("#chat-template-list-view", ListView)
+        selected_list_item = template_list_view.highlighted_child
+
+        if not selected_list_item:
+            app.notify("No template selected in the list.", severity="warning")
+            return
+
+        template_name = getattr(selected_list_item, 'template_name', None)
+
+        if template_name is None:
+            app.notify("Selected template item is invalid.", severity="error")
+            logger.error("Chat Tab: Selected template item missing template_name.")
+            return
+
+        logger.debug(f"Chat Tab: Loading template: {template_name}")
+        template = load_template(template_name)
+
+        if not template:
+            app.notify(f"Failed to load template: {template_name}", severity="error")
+            logger.error(f"Chat Tab: Failed to load template: {template_name}")
+            return
+
+        # Apply the template to the system prompt and user input
+        system_prompt_widget = app.query_one("#chat-system-prompt", TextArea)
+        chat_input_widget = app.query_one("#chat-input", TextArea)
+
+        if template.system_message_template:
+            system_prompt_widget.text = template.system_message_template
+
+        # If there's text in the chat input, apply the user message template to it
+        if chat_input_widget.text.strip() and template.user_message_content_template != "{message_content}":
+            # Save the original message content
+            original_content = chat_input_widget.text.strip()
+            # Apply the template, replacing {message_content} with the original content
+            chat_input_widget.text = template.user_message_content_template.replace("{message_content}", original_content)
+
+        app.notify(f"Applied template: {template_name}", severity="information")
+        logger.info(f"Chat Tab: Applied template: {template_name}")
+
+    except Exception as e:
+        logger.error(f"Chat Tab: Error applying template: {e}", exc_info=True)
+        app.notify("Error applying template.", severity="error")
 
 
 async def handle_chat_sidebar_prompt_search_changed(
@@ -2650,6 +2747,7 @@ CHAT_BUTTON_HANDLERS = {
     "chat-prompt-copy-user-button": handle_chat_copy_user_prompt_button_pressed,
     "chat-load-character-button": handle_chat_load_character_button_pressed,
     "chat-clear-active-character-button": handle_chat_clear_active_character_button_pressed,
+    "chat-apply-template-button": handle_chat_apply_template_button_pressed,
     "toggle-chat-left-sidebar": handle_chat_tab_sidebar_toggle,
     "toggle-chat-right-sidebar": handle_chat_tab_sidebar_toggle,
     **chat_events_sidebar.CHAT_SIDEBAR_BUTTON_HANDLERS,

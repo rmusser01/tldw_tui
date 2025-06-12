@@ -33,13 +33,13 @@ import threading
 import time
 from collections import OrderedDict
 from typing import (Any, Annotated, Callable, Dict, List, Literal, Optional,
-                    TypedDict, Union)
+                    Protocol, TypedDict, Union)
 #
 # Third-Party Libraries
 import numpy as np
 import requests
 import torch
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from torch import Tensor
 from torch.nn.functional import normalize
 from transformers import AutoModel, AutoTokenizer
@@ -53,6 +53,10 @@ __all__ = ["EmbeddingFactory", "EmbeddingConfigSchema"]
 LOGGER = logging.getLogger("embeddings_lib")
 LOGGER.addHandler(logging.NullHandler())
 #
+###############################################################################
+# Configuration schema (with Discriminated Union)
+###############################################################################
+
 ###############################################################################
 # Configuration schema (with Discriminated Union)
 ###############################################################################
@@ -77,14 +81,16 @@ class HFModelCfg(BaseModel):
     device: Optional[str] = None
     batch_size: int = 32
     pooling: Optional[PoolingFn] = None  # default: masked mean
+    dimension: Optional[int] = None
 
 
 class OpenAICfg(BaseModel):
     provider: Literal["openai"] = "openai"
     model_name_or_path: str = "text-embedding-3-small"
     api_key: Optional[str] = Field(default=None, repr=False)
+    dimension: Optional[int] = None
 
-    @validator("api_key", pre=True, always=True)
+    @field_validator("api_key", mode="before")
     def _default_api_key(cls, v: str | None) -> str:
         if v:
             return v
@@ -107,11 +113,21 @@ class EmbeddingConfigSchema(BaseModel):
     default_model_id: Optional[str] = None
     models: Dict[str, ModelCfg]
 
+
 ###############################################################################
 # Provider helpers
 ###############################################################################
 
-EmbedFn = Callable[[List[str], bool], Union[np.ndarray, List[List[float]]]]
+class EmbedFn(Protocol):
+    """A protocol defining a callable for embedding texts.
+
+    This ensures that any function used as an embedding function adheres to this
+    specific signature, including the keyword-only `as_list` argument.
+    """
+    def __call__(
+        self, texts: List[str], *, as_list: bool = False
+    ) -> Union[np.ndarray, List[List[float]]]:
+        ...
 
 class CacheRecord(TypedDict):
     """Strongly-typed structure for a cache entry."""
@@ -124,15 +140,23 @@ class _HuggingFaceEmbedder:
     """Wraps HF model/tokenizer; exposes poolable, dtype/device-aware embedding."""
 
     def __init__(self, cfg: HFModelCfg):
-        self._tok = AutoTokenizer.from_pretrained(
-            cfg.model_name_or_path, trust_remote_code=cfg.trust_remote_code
-        )
-        dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-        self._model = AutoModel.from_pretrained(
-            cfg.model_name_or_path,
-            torch_dtype=dtype,
-            trust_remote_code=cfg.trust_remote_code,
-        )
+        try:
+            self._tok = AutoTokenizer.from_pretrained(
+                cfg.model_name_or_path, trust_remote_code=cfg.trust_remote_code
+            )
+            dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+            self._model = AutoModel.from_pretrained(
+                cfg.model_name_or_path,
+                torch_dtype=dtype,
+                trust_remote_code=cfg.trust_remote_code,
+            )
+        # --- [FIX] Added robust error handling for model loading ---
+        except (OSError, requests.exceptions.RequestException) as e:
+            raise IOError(
+                f"Failed to download or load model '{cfg.model_name_or_path}'. "
+                "Check the model name and your network connection."
+            ) from e
+
         self._device = torch.device(
             cfg.device if cfg.device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
         )
@@ -149,7 +173,7 @@ class _HuggingFaceEmbedder:
     def embed(self, texts: List[str], *, as_list: bool = False) -> np.ndarray | List[List[float]]:
         vecs: List[Tensor] = []
         for i in range(0, len(texts), self._batch_size):
-            batch = texts[i : i + self._batch_size]
+            batch = texts[i: i + self._batch_size]
             tok = self._tok(
                 batch,
                 return_tensors="pt",
@@ -158,9 +182,11 @@ class _HuggingFaceEmbedder:
                 max_length=self._max_len,
             )
             tok = {k: v.to(self._device) for k, v in tok.items()}
-            vecs.append(self._forward(tok).cpu())
+            # --- [FIX] Performance: keep tensors on GPU during loop ---
+            vecs.append(self._forward(tok))
 
-        joined = torch.cat(vecs, dim=0).float().numpy()
+        # --- [FIX] Performance: concatenate on GPU, then move to CPU once ---
+        joined = torch.cat(vecs, dim=0).float().cpu().numpy()
         return joined.tolist() if as_list else joined
 
     def close(self) -> None:
@@ -168,11 +194,13 @@ class _HuggingFaceEmbedder:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
+
 # --------------------------------------------------------------------------
 
 _BACKOFF: tuple[float, ...] = (1, 2, 4, 8)
 
-def _openai_embedder(model: str, api_key: str) -> EmbedFn:
+
+def _openai_embedder(model: str, api_key: str) -> Callable[[list[str], Any, bool], Any]:
     session = requests.Session()
     session.headers.update(
         {"Authorization": f"Bearer {api_key}", "User-Agent": "EmbeddingsLib/4.0"}
@@ -196,9 +224,10 @@ def _openai_embedder(model: str, api_key: str) -> EmbedFn:
                     raise
                 LOGGER.warning("openai_embed retry %d/%d after %s: %s", attempt, len(_BACKOFF), wait, exc)
                 time.sleep(wait + random.random())
-        raise RuntimeError("Exhausted retries in OpenAI embedder") # Should be unreachable
+        raise RuntimeError("Exhausted retries in OpenAI embedder")  # Should be unreachable
 
     return _embed
+
 
 ###############################################################################
 # Factory
@@ -208,12 +237,12 @@ class EmbeddingFactory:
     """Thread‑safe LRU/idle cache with sync & async embedding methods."""
 
     def __init__(
-        self,
-        cfg: Dict[str, Any] | EmbeddingConfigSchema,
-        *,
-        max_cached: int = 2,
-        idle_seconds: int = 900,
-        allow_dynamic_hf: bool = True,
+            self,
+            cfg: Dict[str, Any] | EmbeddingConfigSchema,
+            *,
+            max_cached: int = 2,
+            idle_seconds: int = 900,
+            allow_dynamic_hf: bool = True,
     ) -> None:
         self._cfg = cfg if isinstance(cfg, EmbeddingConfigSchema) else EmbeddingConfigSchema(**cfg)
         self._max_cached = max_cached
@@ -236,11 +265,9 @@ class EmbeddingFactory:
         spec = self._get_spec(model_id)
         t0 = time.perf_counter()
         if spec.provider == "huggingface":
-            # No type ignore needed due to discriminated union
             hf = _HuggingFaceEmbedder(spec)
             rec = CacheRecord(embed=hf.embed, close=hf.close, last=time.monotonic())
         elif spec.provider == "openai":
-            # No type ignore needed
             fn = _openai_embedder(spec.model_name_or_path, spec.api_key)
             rec = CacheRecord(embed=fn, close=None, last=time.monotonic())
         else:
@@ -248,14 +275,20 @@ class EmbeddingFactory:
         LOGGER.debug("load %s in %.2fs", model_id, time.perf_counter() - t0)
         return rec
 
-    def embed(self, model_id: str, texts: List[str], *, as_list: bool = False):
+    def embed(
+            self, texts: List[str], *, model_id: Optional[str] = None, as_list: bool = False
+    ):
+        model_id_to_use = model_id or self._cfg.default_model_id
+        if not model_id_to_use:
+            raise ValueError("No model_id provided and no default_model_id is set.")
+
         if not texts:
             return [] if as_list else np.empty((0, 0), dtype=np.float32)
 
+        # --- The lock must be held during the embedding call to prevent use-after-free ---
         with self._lock:
             # First, check for idle models to evict.
             now = time.monotonic()
-            # Create a copy of items for safe iteration while modifying the dict
             for mid, rec in list(self._cache.items()):
                 if now - rec["last"] > self._idle:
                     LOGGER.debug("idle evict %s", mid)
@@ -264,7 +297,7 @@ class EmbeddingFactory:
                         rec["close"]()
 
             # Now, get the model, building it if it doesn't exist.
-            rec = self._cache.get(model_id)
+            rec = self._cache.get(model_id_to_use)
             if rec is None:
                 # If we need to load a model, make space for it *first*.
                 while len(self._cache) >= self._max_cached:
@@ -272,30 +305,39 @@ class EmbeddingFactory:
                     LOGGER.debug("LRU evict %s to make space", lru_mid)
                     if lru_rec["close"]:
                         lru_rec["close"]()
-                rec = self._build(model_id)
-                self._cache[model_id] = rec
+                rec = self._build(model_id_to_use)
+                self._cache[model_id_to_use] = rec
 
             # Mark as most recently used and get the function to call.
             rec["last"] = time.monotonic()
-            self._cache.move_to_end(model_id)
+            self._cache.move_to_end(model_id_to_use)
             embed_fn = rec["embed"]
 
-        # The lock is now released. The call is safe from race conditions.
-        t0 = time.perf_counter()
-        result = embed_fn(texts, as_list=as_list)
-        LOGGER.debug("embed %s %d texts in %.3fs", model_id, len(texts), time.perf_counter() - t0)
-        return result
+            # The embedding call itself is now inside the lock. This serializes
+            # all embedding calls, but guarantees that the model cannot be
+            # evicted by another thread while it is in use.
+            t0 = time.perf_counter()
+            result = embed_fn(texts, as_list=as_list)
+            LOGGER.debug("embed %s %d texts in %.3fs", model_id_to_use, len(texts), time.perf_counter() - t0)
+            return result
+        # The lock is released only after the work is complete.
 
-    async def async_embed(self, model_id: str, texts: List[str], *, as_list: bool = False):
+    async def async_embed(
+            self, texts: List[str], *, model_id: Optional[str] = None, as_list: bool = False
+    ):
         """Non-blocking version of `embed` for use in async contexts."""
-        return await asyncio.to_thread(self.embed, model_id, texts, as_list=as_list)
+        return await asyncio.to_thread(self.embed, texts, model_id=model_id, as_list=as_list)
 
-    def embed_one(self, model_id: str, text: str, *, as_list: bool = False):
-        vecs = self.embed(model_id, [text], as_list=as_list)
+    def embed_one(
+            self, text: str, *, model_id: Optional[str] = None, as_list: bool = False
+    ):
+        vecs = self.embed([text], model_id=model_id, as_list=as_list)
         return vecs[0] if as_list else vecs.squeeze(0)
 
-    async def async_embed_one(self, model_id: str, text: str, *, as_list: bool = False):
-        vecs = await self.async_embed(model_id, [text], as_list=as_list)
+    async def async_embed_one(
+            self, text: str, *, model_id: Optional[str] = None, as_list: bool = False
+    ):
+        vecs = await self.async_embed([text], model_id=model_id, as_list=as_list)
         return vecs[0] if as_list else vecs.squeeze(0)
 
     def prefetch(self, model_ids: List[str]):

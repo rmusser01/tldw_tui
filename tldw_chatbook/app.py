@@ -1434,15 +1434,18 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             try: self.query_one("#chat-input", TextArea).focus()
             except QueryError: pass
             # Add this line to populate prompts when chat tab is opened:
-            self.call_later(chat_handlers.handle_chat_sidebar_prompt_search_changed, self, "") # Call with empty search term
-            self.call_later(chat_handlers._populate_chat_character_search_list, self) # Populate character list
+            # Use call_after_refresh for async functions to ensure proper execution
+            self.call_after_refresh(chat_handlers.handle_chat_sidebar_prompt_search_changed, self, "") # Call with empty search term
+            self.call_after_refresh(chat_handlers._populate_chat_character_search_list, self) # Populate character list
         elif new_tab == TAB_CCP:
             # Initial population for CCP tab when switched to
-            self.call_later(ccp_handlers.populate_ccp_character_select, self)
-            self.call_later(ccp_handlers.populate_ccp_prompts_list_view, self)
-            self.call_later(ccp_handlers.perform_ccp_conversation_search, self) # Initial search/list for conversations
+            # Use call_after_refresh for async functions to ensure proper execution
+            self.call_after_refresh(ccp_handlers.populate_ccp_character_select, self)
+            self.call_after_refresh(ccp_handlers.populate_ccp_prompts_list_view, self)
+            self.call_after_refresh(ccp_handlers.perform_ccp_conversation_search, self) # Initial search/list for conversations
         elif new_tab == TAB_NOTES:
-            self.call_later(notes_handlers.load_and_display_notes_handler, self)
+            # Use call_after_refresh for async function
+            self.call_after_refresh(notes_handlers.load_and_display_notes_handler, self)
         elif new_tab == TAB_MEDIA:
             try:
                 media_window = self.query_one(MediaWindow)
@@ -1947,6 +1950,16 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 self.loguru_logger.error("Notes service not available in on_chat_notes_collapsible_toggle.")
                 return
 
+    @on(Collapsible.Toggled, "#chat-active-character-info-collapsible")
+    async def on_chat_active_character_info_collapsible_toggle(self, event: Collapsible.Toggled) -> None:
+        """Handles the expansion/collapse of the Active Character Info collapsible section in the chat sidebar."""
+        if not event.collapsible.collapsed:  # If the collapsible was just expanded
+            self.loguru_logger.info("Active Character Info collapsible opened in chat sidebar. Refreshing character list.")
+
+            # Call the function to populate the character list
+            from tldw_chatbook.Event_Handlers.Chat_Events import chat_events
+            await chat_events._populate_chat_character_search_list(self)
+
             try:
                 # 1. Clear ListView
                 notes_list_view = self.query_one("#chat-notes-listview", ListView)
@@ -1991,6 +2004,18 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 self.notify(f"Error listing notes: {type(e).__name__}", severity="error")
         else:
             self.loguru_logger.info("Notes collapsible closed in chat sidebar.")
+
+    @on(Collapsible.Toggled, "#chat-active-character-info-collapsible")
+    async def on_chat_active_character_info_collapsible_toggle(self, event: Collapsible.Toggled) -> None:
+        """Handles the expansion/collapse of the Active Character Info collapsible section in the chat sidebar."""
+        if not event.collapsible.collapsed:  # If the collapsible was just expanded
+            self.loguru_logger.info("Active Character Info collapsible opened in chat sidebar. Refreshing character list.")
+
+            # Call the function to populate the character list
+            from tldw_chatbook.Event_Handlers.Chat_Events import chat_events
+            await chat_events._populate_chat_character_search_list(self)
+        else:
+            self.loguru_logger.info("Active Character Info collapsible closed in chat sidebar.")
 
     ########################################################################
     #
@@ -2104,6 +2129,9 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             await chat_handlers.handle_chat_character_search_input_changed(self, event)
         elif input_id == "chat-character-name-edit" and current_active_tab == TAB_CHAT:
             await chat_handlers.handle_chat_character_attribute_changed(self, event)
+        elif input_id == "chat-template-search-input" and current_active_tab == TAB_CHAT:
+            # No debouncer here, direct call for template search
+            await chat_handlers.handle_chat_template_search_input_changed(self, event.value)
         # --- Chat Tab Media Search Input ---
         # elif input_id == "chat-media-search-input" and current_active_tab == TAB_CHAT:
         #     await handle_chat_media_search_input_changed(self, event.input)
