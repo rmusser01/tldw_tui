@@ -261,6 +261,10 @@ class EmbeddingFactory:
                 return HFModelCfg(model_name_or_path=model_id, trust_remote_code=False)
             raise
 
+    @property
+    def config(self) -> EmbeddingConfigSchema:
+        return self._cfg
+
     def _build(self, model_id: str) -> CacheRecord:
         spec = self._get_spec(model_id)
         t0 = time.perf_counter()

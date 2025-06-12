@@ -400,6 +400,16 @@ class ChromaDBManager:
                 prompt=prompt,
                 user_embedding_config=self.raw_user_embedding_config  # Pass the main config
             )
+            # api_name: str,
+            # input_data: Any,
+            # custom_prompt_arg: Optional[str],
+            # api_key: Optional[str] = None,
+            # system_message: Optional[str] = None,
+            # temp: Optional[float] = None,
+            # streaming: bool = False,
+            # recursive_summarization: bool = False,
+            # chunked_summarization: bool = False,  # Summarize chunks separately & combine
+            # chunk_options: Optional[dict] = None
             return response.strip() if response else ""
         except Exception as e:
             logger.error(f"User '{self.user_id}': Error in situate_context with LLM '{api_name_for_context}': {e}",
