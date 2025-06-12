@@ -731,7 +731,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                         self.query_one("#ccp-card-description-display", TextArea).text = details.get("description", "")
                         self.query_one("#ccp-card-personality-display", TextArea).text = details.get("personality", "")
                         self.query_one("#ccp-card-scenario-display", TextArea).text = details.get("scenario", "")
-                        self.query_one("#ccp-card-first-message-display", TextArea).text = details.get("first_mes", "")
+                        self.query_one("#ccp-card-first-message-display", TextArea).text = details.get("first_message", "")
 
                         image_placeholder = self.query_one("#ccp-card-image-placeholder", Static)
                         if self.current_ccp_character_image:
