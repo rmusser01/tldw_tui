@@ -231,12 +231,31 @@ def create_settings_sidebar(id_prefix: str, config: dict) -> ComposeResult:
             yield Static("Media settings will go here (placeholder)", classes="sidebar-placeholder")
 
         # ===================================================================
-        # 5. Search & Tools Settings – placeholders
+        # 5. Search & Tools Settings
         # ===================================================================
         with Collapsible(title="Search & Tools Settings", collapsed=True):
-            yield Static(
-                "Search & tools configuration will go here (placeholder)",
-                classes="sidebar-placeholder",
+            yield Static("Tool Usage", classes="sidebar-label")
+            yield TextArea(id=f"{id_prefix}-llm-tools", text="[]", classes="sidebar-textarea")
+            yield Static("Tool Choice", classes="sidebar-label")
+            yield Input(id=f"{id_prefix}-llm-tool-choice", placeholder="e.g., auto, none, or specific tool",
+                        classes="sidebar-input")
+
+            yield Static("Chat Templates", classes="sidebar-label")
+            yield Input(
+                id=f"{id_prefix}-template-search-input",
+                placeholder="Search templates...",
+                classes="sidebar-input"
+            )
+            template_list_view = ListView(
+                id=f"{id_prefix}-template-list-view",
+                classes="sidebar-listview"
+            )
+            template_list_view.styles.height = 7
+            yield template_list_view
+            yield Button(
+                "Apply Template",
+                id=f"{id_prefix}-apply-template-button",
+                classes="sidebar-button"
             )
 
         # ===================================================================
