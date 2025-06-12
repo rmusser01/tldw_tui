@@ -10,6 +10,7 @@ from chromadb.errors import ChromaError, InvalidDimensionException
 from tldw_chatbook.Chunking.Chunk_Lib import chunk_for_embedding
 from tldw_chatbook.Embeddings.Embeddings_Lib import EmbeddingFactory, EmbeddingConfigSchema
 from tldw_chatbook.LLM_Calls.Summarization_General_Lib import analyze
+from tldw_chatbook.config import get_chachanotes_db_path
 
 """Light‑weight ChromaDB helper for single‑user, local‑first apps.
 
@@ -97,12 +98,17 @@ class ChromaDBManager:
             logger.critical(f"Failed to initialize EmbeddingFactory for user '{self.user_id}': {e}", exc_info=True)
             raise RuntimeError(f"EmbeddingFactory initialization failed: {e}") from e
 
-        user_db_base_dir_str = self.raw_user_embedding_config.get("USER_DB_BASE_DIR")
-        if not user_db_base_dir_str:
-            logger.critical("USER_DB_BASE_DIR not found. ChromaDBManager cannot be initialized.")
-            raise ValueError("USER_DB_BASE_DIR not configured.")
+        # Get the base directory for all user data from the central CLI configuration.
+        try:
+            # This function from config.py resolves the user's data directory.
+            # We take its parent to get the root folder for all user data.
+            user_db_base_dir = get_chachanotes_db_path().parent
+        except Exception as e:
+            logger.critical(f"Failed to determine user DB base directory from config.py: {e}", exc_info=True)
+            raise RuntimeError("Could not establish the base directory for user data.") from e
 
-        self.user_chroma_path: Path = (Path(user_db_base_dir_str) / self.user_id / "chroma_storage").resolve()
+        # Construct the specific path for this user's ChromaDB storage.
+        self.user_chroma_path: Path = (user_db_base_dir / self.user_id / "chroma_storage").resolve()
         try:
             self.user_chroma_path.mkdir(parents=True, exist_ok=True)
         except OSError as e:

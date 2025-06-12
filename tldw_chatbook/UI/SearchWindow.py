@@ -15,6 +15,7 @@ from loguru import logger
 # Local Imports
 from tldw_chatbook.Embeddings.Chroma_Lib import ChromaDBManager
 from tldw_chatbook.Embeddings.Embeddings_Lib import EmbeddingFactory, EmbeddingConfigSchema
+from tldw_chatbook.config import get_chachanotes_db_path
 if TYPE_CHECKING:
     from ..app import TldwCli
 try:
@@ -68,6 +69,20 @@ class SearchWindow(Container):
         self._chroma_manager = None
         # Store selected embedding ID for management
         self._selected_embedding_id = None
+
+    async def on_mount(self) -> None:
+        """Called when the window is first mounted in the DOM."""
+        self.app_instance.log.info("SearchWindow.on_mount called")
+        # Set the initial active view to the Embeddings Creation view
+        await self._switch_to_view(SEARCH_VIEW_EMBEDDINGS_CREATION)
+
+        # Initialize the Embeddings Creation view
+        await self._initialize_embeddings_creation_view()
+
+        # Also set the app's reactive variable to trigger the app's view switching mechanism
+        if hasattr(self.app_instance, 'search_active_sub_tab'):
+            self.app_instance.search_active_sub_tab = SEARCH_VIEW_EMBEDDINGS_CREATION
+
 
     def compose(self) -> ComposeResult:
         # Main horizontal layout for the Search tab.
@@ -221,6 +236,8 @@ class SearchWindow(Container):
         """Handle the embeddings creation navigation button press to switch views."""
         self.app_instance.log.info(f"Button {event.button.id} pressed. Switching to Embeddings Creation view.")
         await self._switch_to_view(SEARCH_VIEW_EMBEDDINGS_CREATION)
+        # Initialize the Embeddings Creation view
+        await self._initialize_embeddings_creation_view()
 
     @on(Button.Pressed, f"#{SEARCH_NAV_EMBEDDINGS_MANAGEMENT}")
     async def handle_embeddings_management_nav_button_pressed(self, event: Button.Pressed) -> None:
@@ -258,7 +275,7 @@ class SearchWindow(Container):
             # Using query() which returns a list, safer if an ID is missing
             for view in self.query(f"#{view_id}"):
                 is_target_view = (view_id == target_view_id)
-                view.display = is_target_view
+                view.styles.display = "block" if is_target_view else "none"
 
     async def _get_chroma_manager(self) -> ChromaDBManager:
         """Get or create a ChromaDBManager instance."""
@@ -292,6 +309,8 @@ class SearchWindow(Container):
             user_id = getattr(self.app_instance, "notes_user_id", "default_user")
 
             try:
+                # Create ChromaDBManager with the updated constructor requirements
+                # The constructor now uses get_chachanotes_db_path().parent to determine the user database base directory
                 self._chroma_manager = ChromaDBManager(user_id=user_id, user_embedding_config=user_embedding_config)
                 self.app_instance.log.info(f"Created ChromaDBManager for user {user_id}")
             except Exception as e:
@@ -299,6 +318,39 @@ class SearchWindow(Container):
                 self.app_instance.notify(f"Failed to initialize embedding system: {e}", severity="error")
 
         return self._chroma_manager
+
+    async def _initialize_embeddings_creation_view(self) -> None:
+        """Initialize the Embeddings Creation view."""
+        try:
+            # Ensure the ChromaDBManager is initialized
+            await self._get_chroma_manager()
+
+            # Set default values for the model select
+            model_select = self.query_one("#embeddings-model-select", Select)
+            if not model_select.value:
+                model_select.value = "all-MiniLM-L6-v2"
+
+            # Clear the input fields
+            content_input = self.query_one("#embeddings-content-input", Input)
+            collection_input = self.query_one("#embeddings-collection-input", Input)
+            content_input.value = ""
+            collection_input.value = ""
+
+            # Update the status display
+            status_display = self.query_one("#embeddings-status-display", Static)
+            status_display.update("Status: Ready")
+
+        except Exception as e:
+            self.app_instance.log.error(f"Failed to initialize embeddings creation view: {e}", exc_info=True)
+            self.app_instance.notify(f"Failed to initialize embeddings creation view: {e}", severity="error")
+
+            # Update the status display with the error
+            try:
+                status_display = self.query_one("#embeddings-status-display", Static)
+                status_display.update(f"Status: Error initializing view: {e}")
+            except Exception:
+                # If we can't update the status display, just log the error
+                self.app_instance.log.error("Failed to update status display", exc_info=True)
 
     async def _refresh_collections_list(self) -> None:
         """Refresh the list of collections in the embeddings management view."""
@@ -336,7 +388,7 @@ class SearchWindow(Container):
             results_container = self.query_one("#embeddings-management-results-container", VerticalScroll)
 
             # Clear the container
-            await results_container.remove_children()
+            results_container.remove_children()
 
             # Get the ChromaDBManager
             chroma_manager = await self._get_chroma_manager()

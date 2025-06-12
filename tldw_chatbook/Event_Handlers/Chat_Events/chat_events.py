@@ -1850,7 +1850,7 @@ async def _populate_chat_character_search_list(app: 'TldwCli', search_term: Opti
         # Avoid app.notify here as well.
 
 
-async def handle_chat_copy_system_prompt_button_pressed(app: 'TldwCli') -> None:
+async def handle_chat_copy_system_prompt_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     logger = getattr(app, 'loguru_logger', logging)
     logger.debug("Chat Tab: Copy System Prompt button pressed.")
     try:
@@ -1868,7 +1868,7 @@ async def handle_chat_copy_system_prompt_button_pressed(app: 'TldwCli') -> None:
         app.notify("Error copying system prompt.", severity="error")
 
 
-async def handle_chat_copy_user_prompt_button_pressed(app: 'TldwCli') -> None:
+async def handle_chat_copy_user_prompt_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     logger = getattr(app, 'loguru_logger', logging)
     logger.debug("Chat Tab: Copy User Prompt button pressed.")
     try:
