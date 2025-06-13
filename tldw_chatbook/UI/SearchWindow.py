@@ -8,7 +8,7 @@ from textual.containers import Container, Vertical, Horizontal, VerticalScroll
 from textual.widgets import Static, Button, Input, Markdown, Select
 #
 # Third-Party Libraries
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 import asyncio
 from loguru import logger
 #
@@ -62,64 +62,43 @@ class SearchWindow(Container):
     def __init__(self, app_instance: 'TldwCli', **kwargs):
         super().__init__(**kwargs)
         self.app_instance = app_instance
-        # Ensure the main window has the ID used in app.py for tab switching
-        # The id="search-window" is set when this class is instantiated in app.py's compose_content_area
-
-        # Store ChromaDBManager instance
-        self._chroma_manager = None
-        # Store selected embedding ID for management
-        self._selected_embedding_id = None
+        self._chroma_manager: Union["ChromaDBManager", None] = None
+        self._selected_embedding_id: Union[str, None] = None
 
     async def on_mount(self) -> None:
-        """Called when the window is first mounted in the DOM."""
-        self.app_instance.log.info("SearchWindow.on_mount called")
-        # Set the initial active view to the Embeddings Creation view
-        await self._switch_to_view(SEARCH_VIEW_EMBEDDINGS_CREATION)
-
-        # Initialize the Embeddings Creation view
-        await self._initialize_embeddings_creation_view()
-
-        # Also set the app's reactive variable to trigger the app's view switching mechanism
+        """Called when the window is first mounted. Sets the initial view via the app's reactive state."""
+        self.app_instance.log.info("SearchWindow.on_mount: Setting initial active sub-tab.")
+        # FIX: Set the app's reactive variable. The watcher in app.py will handle showing the view.
+        # This is the single source of truth for which view is active.
         if hasattr(self.app_instance, 'search_active_sub_tab'):
             self.app_instance.search_active_sub_tab = SEARCH_VIEW_EMBEDDINGS_CREATION
 
+        # Initialize the view that is now visible.
+        await self._initialize_embeddings_creation_view()
 
     def compose(self) -> ComposeResult:
-        # Main horizontal layout for the Search tab.
-        # The SearchWindow itself (id="search-window") will have layout: horizontal from .window class.
-
-        # Left Vertical Tab Bar
         with Vertical(id="search-left-nav-pane", classes="search-nav-pane"):
             yield Button("RAG QA", id=SEARCH_NAV_RAG_QA, classes="search-nav-button")
             yield Button("RAG Chat", id=SEARCH_NAV_RAG_CHAT, classes="search-nav-button")
             yield Button("Embeddings Creation", id=SEARCH_NAV_EMBEDDINGS_CREATION, classes="search-nav-button")
             yield Button("RAG Management", id=SEARCH_NAV_RAG_MANAGEMENT, classes="search-nav-button")
             yield Button("Embeddings Management", id=SEARCH_NAV_EMBEDDINGS_MANAGEMENT, classes="search-nav-button")
-
-            ### MODIFIED: Conditionally create the Web Search button
             if WEB_SEARCH_AVAILABLE:
                 yield Button("Web Search", id=SEARCH_NAV_WEB_SEARCH, classes="search-nav-button")
             else:
-                # Use a different ID and a 'disabled' class for styling
                 yield Button("Web Search", id="search-nav-web-search-disabled", classes="search-nav-button disabled")
 
-        # Right Content Pane
         with Container(id="search-content-pane", classes="search-content-pane"):
-            # Individual view areas, only one visible at a time. Watcher handles display.
             yield Container(Static("RAG QA Content - Coming Soon!"), id=SEARCH_VIEW_RAG_QA, classes="search-view-area")
             yield Container(Static("RAG Chat Content - Coming Soon!"), id=SEARCH_VIEW_RAG_CHAT,
                             classes="search-view-area")
+
             # Embeddings Creation View
             yield Container(
                 Static("Create New Embeddings", classes="search-view-title"),
                 Horizontal(
                     Static("Select Embedding Model:", classes="search-label"),
-                    Select(
-                        [(model_id, model_id) for model_id in ["all-MiniLM-L6-v2", "text-embedding-3-small", "text-embedding-3-large"]],
-                        id="embeddings-model-select",
-                        prompt="Select a model...",
-                        value="all-MiniLM-L6-v2"
-                    ),
+                    Select([], id="embeddings-model-select", prompt="Select a model..."),
                     classes="search-input-row"
                 ),
                 Horizontal(
@@ -141,19 +120,18 @@ class SearchWindow(Container):
                 id=SEARCH_VIEW_EMBEDDINGS_CREATION,
                 classes="search-view-area"
             )
+
             yield Container(Static("RAG Management Content - Coming Soon!"), id=SEARCH_VIEW_RAG_MANAGEMENT,
                             classes="search-view-area")
+
             # Embeddings Management View
             yield Container(
                 Static("Manage Existing Embeddings", classes="search-view-title"),
                 Horizontal(
                     Static("Collection:", classes="search-label"),
-                    Select(
-                        [],  # Will be populated dynamically
-                        id="embeddings-management-collection-select",
-                        prompt="Select a collection..."
-                    ),
-                    Button("Refresh Collections", id="embeddings-management-refresh-button", classes="search-action-button"),
+                    Select([], id="embeddings-management-collection-select", prompt="Select a collection..."),
+                    Button("Refresh Collections", id="embeddings-management-refresh-button",
+                           classes="search-action-button"),
                     classes="search-input-row"
                 ),
                 Horizontal(
@@ -163,10 +141,7 @@ class SearchWindow(Container):
                     classes="search-input-row"
                 ),
                 Static("Embeddings:", classes="search-section-title"),
-                VerticalScroll(
-                    id="embeddings-management-results-container",
-                    classes="search-results-container"
-                ),
+                VerticalScroll(id="embeddings-management-results-container", classes="search-results-container"),
                 Horizontal(
                     Static("Selected Embedding:", classes="search-label"),
                     Input(id="embeddings-management-selected-id", disabled=True),
@@ -177,26 +152,11 @@ class SearchWindow(Container):
                     Button("Delete", id="embeddings-management-delete-button", classes="search-action-button"),
                     classes="search-button-row"
                 ),
-                Static("Recreate Embeddings:", classes="search-section-title"),
-                Horizontal(
-                    Static("New Model:", classes="search-label"),
-                    Select(
-                        [(model_id, model_id) for model_id in ["all-MiniLM-L6-v2", "text-embedding-3-small", "text-embedding-3-large"]],
-                        id="embeddings-management-model-select",
-                        prompt="Select a model...",
-                        value="all-MiniLM-L6-v2"
-                    ),
-                    classes="search-input-row"
-                ),
-                Horizontal(
-                    Button("Recreate Selected", id="embeddings-management-recreate-selected-button", classes="search-action-button"),
-                    Button("Recreate All", id="embeddings-management-recreate-all-button", classes="search-action-button"),
-                    classes="search-button-row"
-                ),
                 Static("Status: Ready", id="embeddings-management-status-display"),
                 id=SEARCH_VIEW_EMBEDDINGS_MANAGEMENT,
                 classes="search-view-area"
             )
+
             if WEB_SEARCH_AVAILABLE:
                 yield Container(
                     Input(placeholder="Enter search query...", id="web-search-input"),
@@ -206,23 +166,29 @@ class SearchWindow(Container):
                     classes="search-view-area"
                 )
             else:
-                # This is the "disabled" view that will be shown instead.
-                # It uses the same ID so the view-switching logic still works.
                 yield Container(
-                    Markdown(
-                        "### Web Search/Scraping Is Not Currently Installed\n\n"
-                        "To enable this feature, please install the required dependencies. "
-                        "It is recommended to do this in your project's virtual environment.\n\n"
-                        "```bash\n"
-                        "# Install required Python packages\n"
-                        "pip install requests lxml beautifulsoup4 trafilatura playwright\n\n"
-                        "# Install Playwright's browser drivers\n"
-                        "playwright install\n"
-                        "```"
-                    ),
+                    Markdown("### Web Search/Scraping Is Not Currently Installed\n\n..."),
                     id=SEARCH_VIEW_WEB_SEARCH,
                     classes="search-view-area"
                 )
+
+    @on(Button.Pressed, ".search-nav-button")
+    async def handle_search_nav_button_pressed(self, event: Button.Pressed) -> None:
+        """Handles all navigation button presses within the search tab."""
+        event.stop()
+        button_id = event.button.id
+        if not button_id: return
+
+        self.app_instance.log.info(f"Search nav button '{button_id}' pressed.")
+
+        target_view_id = button_id.replace("-nav-", "-view-").replace("-disabled", "")
+        self.app_instance.search_active_sub_tab = target_view_id
+
+        # Perform view-specific initialization after switching
+        if target_view_id == SEARCH_VIEW_EMBEDDINGS_CREATION:
+            await self._initialize_embeddings_creation_view()
+        elif target_view_id == SEARCH_VIEW_EMBEDDINGS_MANAGEMENT:
+            await self._refresh_collections_list()
 
     ### Navigation handlers for all search tab views
     @on(Button.Pressed, f"#{SEARCH_NAV_WEB_SEARCH}, #search-nav-web-search-disabled")
@@ -277,108 +243,98 @@ class SearchWindow(Container):
                 is_target_view = (view_id == target_view_id)
                 view.styles.display = "block" if is_target_view else "none"
 
-    async def _get_chroma_manager(self) -> ChromaDBManager:
-        """Get or create a ChromaDBManager instance."""
+    async def _get_chroma_manager(self) -> "ChromaDBManager":
+        """Get or create a ChromaDBManager instance using the app's configuration."""
         if self._chroma_manager is None:
-            # Default embedding config with common models
-            embedding_config = {
-                "default_model_id": "all-MiniLM-L6-v2",
-                "models": {
-                    "all-MiniLM-L6-v2": {
-                        "provider": "huggingface",
-                        "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
-                        "trust_remote_code": False,
-                        "max_length": 512
-                    },
-                    "text-embedding-3-small": {
-                        "provider": "openai",
-                        "model_name_or_path": "text-embedding-3-small"
-                    },
-                    "text-embedding-3-large": {
-                        "provider": "openai",
-                        "model_name_or_path": "text-embedding-3-large"
-                    }
-                }
-            }
-
-            user_embedding_config = {
-                "embedding_config": embedding_config
-            }
-
-            # Use the app's user ID if available, otherwise use a default
-            user_id = getattr(self.app_instance, "notes_user_id", "default_user")
-
+            self.app_instance.log.info("ChromaDBManager instance not found, creating a new one.")
+            logger.info("ChromaDBManager instance not found, creating a new one.")
             try:
-                # Create ChromaDBManager with the updated constructor requirements
-                # The constructor now uses get_chachanotes_db_path().parent to determine the user database base directory
-                self._chroma_manager = ChromaDBManager(user_id=user_id, user_embedding_config=user_embedding_config)
-                self.app_instance.log.info(f"Created ChromaDBManager for user {user_id}")
+                # Use the app's central configuration
+                user_config = self.app_instance.app_config
+                user_id = self.app_instance.notes_user_id
+
+                # Your ChromaDBManager expects the whole config dictionary
+                from ..Embeddings.Chroma_Lib import ChromaDBManager
+                self._chroma_manager = ChromaDBManager(user_id=user_id, user_embedding_config=user_config)
+
+                self.app_instance.log.info(f"Successfully created ChromaDBManager for user '{user_id}'.")
+                logger.info(f"Successfully created ChromaDBManager for user '{user_id}'.")
             except Exception as e:
                 self.app_instance.log.error(f"Failed to create ChromaDBManager: {e}", exc_info=True)
-                self.app_instance.notify(f"Failed to initialize embedding system: {e}", severity="error")
-
+                logger.error(f"Failed to create ChromaDBManager: {e}")
+                self.app_instance.notify(f"Failed to initialize embedding system: {e}", severity="error", timeout=10)
+                logger.error(f"Failed to notify user about embedding system initialization error: {e}")
+                # Re-raise to prevent dependent functions from running with a None manager
+                raise
         return self._chroma_manager
 
     async def _initialize_embeddings_creation_view(self) -> None:
         """Initialize the Embeddings Creation view."""
+        self.app_instance.log.info("Initializing Embeddings Creation view.")
         try:
-            # Ensure the ChromaDBManager is initialized
-            await self._get_chroma_manager()
+            chroma_manager = await self._get_chroma_manager()
+            if not chroma_manager: return
 
-            # Set default values for the model select
+            # Populate the model select from the config
             model_select = self.query_one("#embeddings-model-select", Select)
-            if not model_select.value:
-                model_select.value = "all-MiniLM-L6-v2"
+            embedding_models = chroma_manager.embedding_config_schema.models.keys()
+            default_model = chroma_manager.embedding_config_schema.default_model_id
 
-            # Clear the input fields
-            content_input = self.query_one("#embeddings-content-input", Input)
-            collection_input = self.query_one("#embeddings-collection-input", Input)
-            content_input.value = ""
-            collection_input.value = ""
+            model_select.set_options([(model, model) for model in embedding_models])
+            if default_model and default_model in embedding_models:
+                model_select.value = default_model
+            elif embedding_models:
+                model_select.value = next(iter(embedding_models))  # Select the first one
 
-            # Update the status display
-            status_display = self.query_one("#embeddings-status-display", Static)
-            status_display.update("Status: Ready")
-
+            self.query_one("#embeddings-content-input", Input).value = ""
+            self.query_one("#embeddings-collection-input", Input).value = ""
+            self.query_one("#embeddings-status-display", Static).update("Status: Ready")
         except Exception as e:
             self.app_instance.log.error(f"Failed to initialize embeddings creation view: {e}", exc_info=True)
-            self.app_instance.notify(f"Failed to initialize embeddings creation view: {e}", severity="error")
-
-            # Update the status display with the error
             try:
-                status_display = self.query_one("#embeddings-status-display", Static)
-                status_display.update(f"Status: Error initializing view: {e}")
-            except Exception:
-                # If we can't update the status display, just log the error
-                self.app_instance.log.error("Failed to update status display", exc_info=True)
+                self.query_one("#embeddings-status-display", Static).update(f"Status: Error - {e}")
+            except Exception as e_status:
+                self.app_instance.log.error(f"Failed to update status display: {e_status}")
 
     async def _refresh_collections_list(self) -> None:
         """Refresh the list of collections in the embeddings management view."""
+        collection_select = self.query_one("#embeddings-management-collection-select", Select)
+        status_display = self.query_one("#embeddings-management-status-display", Static)
+
         try:
-            # Get the select widget
-            collection_select = self.query_one("#embeddings-management-collection-select", Select)
-
-            # Get the ChromaDBManager
             chroma_manager = await self._get_chroma_manager()
+            if not chroma_manager:
+                status_display.update("Status: Embedding system not available.")
+                collection_select.set_options([])  # Clear any old options
+                return
 
-            # Get the list of collections
+            # 1. Get the list of Collection objects
             collections = chroma_manager.list_collections()
 
-            # Update the select widget
-            collection_select.clear()
-            for collection in collections:
-                collection_select.add_option((collection, collection))
+            # 2. Create a list of (label, value) tuples from the collection names
+            #    This is the core of the fix.
+            collection_options = [(collection.name, collection.name) for collection in collections]
 
-            # Update the status display
-            status_display = self.query_one("#embeddings-management-status-display", Static)
-            status_display.update(f"Status: Found {len(collections)} collections")
+            # 3. Preserve the currently selected value if it exists in the new list
+            current_selection = collection_select.value
+
+            # 4. Set the new options on the widget all at once.
+            #    This replaces collection_select.clear() and the loop.
+            collection_select.set_options(collection_options)
+
+            # 5. Re-apply the selection if it's still a valid option
+            if current_selection and any(opt[1] == current_selection for opt in collection_options):
+                collection_select.value = current_selection
+            else:
+                # If the old selection is gone, clear it.
+                collection_select.value = None  # This will show the prompt
+
+            status_display.update(f"Status: Found {len(collections)} collections.")
 
         except Exception as e:
             self.app_instance.log.error(f"Failed to refresh collections list: {e}", exc_info=True)
+            logger.error(f"Failed to refresh collections list: {e}")
             self.app_instance.notify(f"Failed to refresh collections: {e}", severity="error")
-
-            # Update the status display
-            status_display = self.query_one("#embeddings-management-status-display", Static)
             status_display.update(f"Status: Error refreshing collections: {e}")
 
     async def _update_embeddings_list(self, collection_name: str, search_query: str = "") -> None:
@@ -388,7 +344,7 @@ class SearchWindow(Container):
             results_container = self.query_one("#embeddings-management-results-container", VerticalScroll)
 
             # Clear the container
-            results_container.remove_children()
+            await results_container.remove_children()
 
             # Get the ChromaDBManager
             chroma_manager = await self._get_chroma_manager()
@@ -432,11 +388,12 @@ class SearchWindow(Container):
             # Update the status display
             status_display = self.query_one("#embeddings-management-status-display", Static)
             status_display.update(f"Status: Found {len(results)} embeddings in collection '{collection_name}'")
+            logger.info(f"Found {len(results)} embeddings in collection '{collection_name}'")
 
         except Exception as e:
             self.app_instance.log.error(f"Failed to update embeddings list: {e}", exc_info=True)
             self.app_instance.notify(f"Failed to update embeddings: {e}", severity="error")
-
+            logger.error(f"Failed to update embeddings list: {e}")
             # Update the status display
             status_display = self.query_one("#embeddings-management-status-display", Static)
             status_display.update(f"Status: Error updating embeddings: {e}")
@@ -447,62 +404,50 @@ class SearchWindow(Container):
     async def handle_embeddings_create_button_pressed(self, event: Button.Pressed) -> None:
         """Handle the Create Embeddings button press."""
         self.app_instance.log.info("Create Embeddings button pressed.")
-
+        logger.info("Create Embeddings button pressed in SearchWindow.")
+        status_display = self.query_one("#embeddings-status-display", Static)
         try:
-            # Get the input values
             model_select = self.query_one("#embeddings-model-select", Select)
             content_input = self.query_one("#embeddings-content-input", Input)
             collection_input = self.query_one("#embeddings-collection-input", Input)
-            status_display = self.query_one("#embeddings-status-display", Static)
 
-            # Validate inputs
-            if not model_select.value:
-                status_display.update("Status: Please select an embedding model.")
-                self.app_instance.notify("Please select an embedding model.", severity="warning")
+            if not model_select.value or not content_input.value:
+                self.app_instance.notify("Model and Content are required.", severity="warning")
+                status_display.update("Status: Model and Content are required.")
+                logger.warning("Model and Content are required for embeddings creation.")
                 return
 
-            if not content_input.value:
-                status_display.update("Status: Please enter content to embed.")
-                self.app_instance.notify("Please enter content to embed.", severity="warning")
-                return
-
-            # Update status
             status_display.update("Status: Creating embeddings...")
-
-            # Get the ChromaDBManager
             chroma_manager = await self._get_chroma_manager()
 
-            # Get the collection name (use default if not provided)
-            collection_name = collection_input.value if collection_input.value else None
-
-            # Get the content
+            collection_name = collection_input.value or None
             content = content_input.value
 
-            # Create a unique ID for this embedding
-            import time
-            import hashlib
-            content_hash = hashlib.md5(content.encode()).hexdigest()
-            embedding_id = f"embed_{int(time.time())}_{content_hash[:8]}"
+            import time, hashlib
+            media_id = f"manual_{hashlib.md5(content.encode()).hexdigest()[:8]}_{int(time.time())}"
 
-            # Process and store the content
-            chroma_manager.process_and_store_content(
-                content=content,
-                media_id=embedding_id,
-                file_name=f"manual_embed_{embedding_id}",
-                collection_name=collection_name,
-                embedding_model_id_override=model_select.value
-            )
+            # Using a worker to avoid blocking the UI
+            def create_embeddings_sync():
+                chroma_manager.process_and_store_content(
+                    content=content,
+                    media_id=media_id,
+                    file_name=f"manual_entry_{media_id}",
+                    collection_name=collection_name,
+                    embedding_model_id_override=str(model_select.value)
+                )
+                return f"Successfully created embedding for media_id '{media_id}'"
 
-            # Update status
-            status_display.update(f"Status: Successfully created embeddings with model {model_select.value}")
-            self.app_instance.notify(f"Successfully created embeddings with model {model_select.value}", severity="information")
+            loop = asyncio.get_running_loop()
+            result_message = await loop.run_in_executor(None, create_embeddings_sync, )
+
+            status_display.update(f"Status: {result_message}")
+            self.app_instance.notify(result_message, severity="information")
+            logger.info(f"Successfully created embedding: {result_message}")
 
         except Exception as e:
             self.app_instance.log.error(f"Failed to create embeddings: {e}", exc_info=True)
             self.app_instance.notify(f"Failed to create embeddings: {e}", severity="error")
-
-            # Update status
-            status_display = self.query_one("#embeddings-status-display", Static)
+            logger.error(f"Failed to create embeddings: {e}")
             status_display.update(f"Status: Error creating embeddings: {e}")
 
     @on(Button.Pressed, "#embeddings-clear-button")

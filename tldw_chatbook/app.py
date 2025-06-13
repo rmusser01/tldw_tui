@@ -544,17 +544,17 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             media_handlers_map[f"media-prev-page-button-{slug}"] = media_events.handle_media_page_change_button_pressed
             media_handlers_map[f"media-next-page-button-{slug}"] = media_events.handle_media_page_change_button_pressed
 
-        # --- Search Handlers ---
-        search_handlers = {
-            SEARCH_NAV_RAG_QA: functools.partial(_handle_nav, prefix="search", reactive_attr="search_active_sub_tab"),
-            SEARCH_NAV_RAG_CHAT: functools.partial(_handle_nav, prefix="search", reactive_attr="search_active_sub_tab"),
-            SEARCH_NAV_EMBEDDINGS_CREATION: functools.partial(_handle_nav, prefix="search",
-                                                              reactive_attr="search_active_sub_tab"),
-            SEARCH_NAV_RAG_MANAGEMENT: functools.partial(_handle_nav, prefix="search",
-                                                         reactive_attr="search_active_sub_tab"),
-            SEARCH_NAV_EMBEDDINGS_MANAGEMENT: functools.partial(_handle_nav, prefix="search",
-                                                                reactive_attr="search_active_sub_tab"),
-        }
+        # # --- Search Handlers ---
+        # search_handlers = {
+        #     SEARCH_NAV_RAG_QA: functools.partial(_handle_nav, prefix="search", reactive_attr="search_active_sub_tab"),
+        #     SEARCH_NAV_RAG_CHAT: functools.partial(_handle_nav, prefix="search", reactive_attr="search_active_sub_tab"),
+        #     SEARCH_NAV_EMBEDDINGS_CREATION: functools.partial(_handle_nav, prefix="search",
+        #                                                       reactive_attr="search_active_sub_tab"),
+        #     SEARCH_NAV_RAG_MANAGEMENT: functools.partial(_handle_nav, prefix="search",
+        #                                                  reactive_attr="search_active_sub_tab"),
+        #     SEARCH_NAV_EMBEDDINGS_MANAGEMENT: functools.partial(_handle_nav, prefix="search",
+        #                                                         reactive_attr="search_active_sub_tab"),
+        # }
 
         # --- Ingest Handlers ---
         ingest_handlers_map = {
@@ -610,7 +610,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             TAB_LLM: llm_handlers_map,
             TAB_LOGS: app_lifecycle.APP_LIFECYCLE_BUTTON_HANDLERS,
             TAB_TOOLS_SETTINGS: tools_settings_handlers,
-            TAB_SEARCH: search_handlers,
+            #TAB_SEARCH: search_handlers,
             TAB_EVALS: evals_handlers,
         }
 

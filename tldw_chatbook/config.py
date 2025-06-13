@@ -883,6 +883,7 @@ chachanotes_db_path = "~/.local/share/tldw_cli/tldw_chatbook_ChaChaNotes.db"
 prompts_db_path = "~/.local/share/tldw_cli/tldw_cli_prompts.db"
 # Path to the Media V2 database.
 media_db_path = "~/.local/share/tldw_cli/tldw_cli_media_v2.db"
+USER_DB_BASE_DIR = "~/.local/share/tldw_cli/"
 
 [api_endpoints]
 # Optional: Specify URLs for local/custom endpoints if they differ from library defaults
@@ -1322,6 +1323,25 @@ temperature = 0.8
 top_p = 0.9
 min_p = 0.0 # Check if API supports this
 top_k = 100 # Check if API supports this
+
+# Embedding Configuration
+[embedding_config]
+default_model_id = "e5-small-v2"
+default_llm_for_contextualization = "gpt-3.5-turbo"
+
+    # Define each model under the 'models' sub-table
+    [embedding_config.models.e5-small-v2]
+    provider = "huggingface"
+    model_name_or_path = "intfloat/multilingual-e5-large-instruct"
+    dimension = 1024
+    trust_remote_code = false
+    max_length = 512
+
+    [embedding_config.models.openai-ada]
+    provider = "openai"
+    model_name_or_path = "text-embedding-ada-002"
+    dimension = 1536
+    api_key = "<API_KEY_HERE>>" # Or set OPENAI_API_KEY environment variable
 
 # --- Sections below are placeholders based on config.txt, integrate as needed ---
 # [tts_settings]
