@@ -89,6 +89,8 @@ class SearchWindow(Container):
         self._selected_embedding_id: Union[str, None] = None
         # State to hold the mapping from display choice in dropdown to actual item ID, like in Gradio
         self._item_mapping: dict[str, str] = {}
+        # Similar mapping for creation view
+        self._creation_item_mapping: dict[str, str] = {}
         self._selected_item_display_name: Optional[str] = None
 
     async def on_mount(self) -> None:
@@ -163,7 +165,7 @@ class SearchWindow(Container):
             if EMBEDDINGS_GENERATION_AVAILABLE and VECTORDB_AVAILABLE:
                 with Container(id=SEARCH_VIEW_EMBEDDINGS_CREATION, classes="search-view-area"):
                     with VerticalScroll(classes="search-form-container"):
-                        yield Static("Create Embeddings for All Content", classes="search-view-title")
+                        yield Static("Create Embeddings", classes="search-view-title")
 
                         yield Markdown("Select a database and configure embedding settings below. Embeddings allow semantic search and retrieval of your content.", id="creation-help-text")
 
@@ -183,6 +185,33 @@ class SearchWindow(Container):
                         with Horizontal(classes="search-form-row"):
                             yield Static("Collection Name:", classes="search-form-label")
                             yield Input(id="creation-collection-name-input", placeholder="Enter a name for the collection...")
+
+                        yield Static("Content Selection", classes="search-section-title")
+                        yield Markdown("Choose how you want to select content for embedding creation.", id="creation-selection-help-text")
+                        with Horizontal(classes="search-form-row"):
+                            yield Static("Selection Mode:", classes="search-form-label")
+                            yield Select(
+                                [("All Items", "all"), ("Keyword Filter", "keyword"), ("Individual Selection", "individual")],
+                                id="creation-selection-mode-select",
+                                value="all"
+                            )
+
+                        # Keyword filter (initially hidden)
+                        with Horizontal(id="creation-keyword-filter-container", classes="search-form-row hidden"):
+                            yield Static("Keyword:", classes="search-form-label")
+                            yield Input(id="creation-keyword-input", placeholder="Enter keywords to filter items...")
+
+                        # Individual item selection (initially hidden)
+                        with Container(id="creation-individual-selection-container", classes="hidden"):
+                            with Horizontal(classes="search-form-row"):
+                                yield Static("", classes="search-form-label")
+                                yield Button("Refresh Item List", id="creation-refresh-list-button", variant="primary")
+
+                            with Horizontal(classes="search-form-row"):
+                                yield Static("Items:", classes="search-form-label")
+                                yield Select([], id="creation-item-select", prompt="Select an item...")
+
+                            yield Markdown("Select an item from the dropdown above.", id="creation-item-selection-help-text")
 
                         yield Static("Embedding Model", classes="search-section-title")
                         with Horizontal(classes="search-form-row"):
@@ -217,7 +246,7 @@ class SearchWindow(Container):
                             yield Checkbox("Use adaptive chunking (recommended)", id="creation-adaptive-chunking-checkbox")
 
                         yield Static("", classes="search-section-title")
-                        yield Button("Create All Embeddings", id="creation-create-all-button", variant="primary")
+                        yield Button("Create Embeddings", id="creation-create-all-button", variant="primary")
                         yield Markdown("Status: Ready to create embeddings. Click the button above to start the process.", id="creation-status-output")
             else:
                 with Container(id=SEARCH_VIEW_EMBEDDINGS_CREATION, classes="search-view-area"):
@@ -440,9 +469,35 @@ class SearchWindow(Container):
         custom_input = self.query_one("#creation-custom-model-input", Input)
         custom_input.display = provider == "huggingface" and model == "custom"
 
+    @on(Select.Changed, "#creation-selection-mode-select")
+    def on_creation_selection_mode_select(self, event: Select.Changed) -> None:
+        """Handle selection mode changes in creation view."""
+        mode = str(event.value)
+
+        # Get the containers
+        keyword_container = self.query_one("#creation-keyword-filter-container")
+        individual_container = self.query_one("#creation-individual-selection-container")
+
+        # Hide both containers initially
+        keyword_container.add_class("hidden")
+        individual_container.add_class("hidden")
+
+        # Show the appropriate container based on the selected mode
+        if mode == "keyword":
+            keyword_container.remove_class("hidden")
+        elif mode == "individual":
+            individual_container.remove_class("hidden")
+
+            # Refresh the item list if it's empty
+            item_select = self.query_one("#creation-item-select", Select)
+            # Check if the Select widget has any options by trying to get its value
+            # If it has no options, value will be None or Select.BLANK
+            if item_select.value is Select.BLANK:
+                asyncio.create_task(self._refresh_creation_item_list())
+
     @on(Button.Pressed, "#creation-create-all-button")
     async def on_creation_create_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle the Create All Embeddings button press."""
+        """Handle the Create Embeddings button press."""
         # Get all the configuration values
         db_select = self.query_one("#creation-db-select", Select)
         db_type = str(db_select.value)
@@ -456,6 +511,27 @@ class SearchWindow(Container):
         if not collection_name:
             collection_name = db_type
             collection_name_input.value = collection_name
+
+        # Get selection mode
+        selection_mode_select = self.query_one("#creation-selection-mode-select", Select)
+        selection_mode = str(selection_mode_select.value)
+
+        # Get keyword or selected items based on selection mode
+        keyword = None
+        selected_items = None
+
+        if selection_mode == "keyword":
+            keyword_input = self.query_one("#creation-keyword-input", Input)
+            keyword = keyword_input.value.strip()
+            if not keyword:
+                await self.query_one("#creation-status-output", Markdown).update("❌ Please enter a keyword to filter items.")
+                return
+        elif selection_mode == "individual":
+            item_select = self.query_one("#creation-item-select", Select)
+            if not item_select.value:
+                await self.query_one("#creation-status-output", Markdown).update("❌ Please select at least one item.")
+                return
+            selected_items = [str(item_select.value)]
 
         provider_select = self.query_one("#creation-embedding-provider-select", Select)
         provider = str(provider_select.value)
@@ -503,14 +579,36 @@ class SearchWindow(Container):
                 }
             }
 
-            # Update status
-            await status_output.update(f"⏳ Creating embeddings for {db_type} with collection name '{collection_name}'...\n\nThis may take some time depending on the size of your database.")
+            # Update status based on selection mode
+            if selection_mode == "all":
+                status_message = f"⏳ Creating embeddings for all items in {db_type} with collection name '{collection_name}'..."
+            elif selection_mode == "keyword":
+                status_message = f"⏳ Creating embeddings for items matching keyword '{keyword}' in {db_type} with collection name '{collection_name}'..."
+            else:  # individual
+                status_message = f"⏳ Creating embeddings for {len(selected_items)} selected items in {db_type} with collection name '{collection_name}'..."
 
-            # Call the embedding creation function
-            await self._create_embeddings(db_type, db_path, embedding_config, collection_name)
+            await status_output.update(f"{status_message}\n\nThis may take some time depending on the size of your database.")
+
+            # Call the embedding creation function with the appropriate parameters
+            await self._create_embeddings(
+                db_type, 
+                db_path, 
+                embedding_config, 
+                collection_name,
+                selection_mode=selection_mode,
+                keyword=keyword,
+                selected_items=selected_items
+            )
 
             # Update status with success message
-            await status_output.update(f"✅ Successfully created embeddings for {db_type} with collection name '{collection_name}'!\n\nYou can now use these embeddings for semantic search and retrieval.")
+            if selection_mode == "all":
+                success_message = f"✅ Successfully created embeddings for all items in {db_type}!"
+            elif selection_mode == "keyword":
+                success_message = f"✅ Successfully created embeddings for items matching keyword '{keyword}' in {db_type}!"
+            else:  # individual
+                success_message = f"✅ Successfully created embeddings for {len(selected_items)} selected items in {db_type}!"
+
+            await status_output.update(f"{success_message}\n\nYou can now use these embeddings for semantic search and retrieval.")
 
         except Exception as e:
             logger.error(f"Error creating embeddings: {e}", exc_info=True)
@@ -527,6 +625,11 @@ class SearchWindow(Container):
     async def on_mgmt_refresh_button_pressed(self, event: Button.Pressed) -> None:
         """Handles the refresh button in the management view."""
         await self._refresh_mgmt_item_list()
+
+    @on(Button.Pressed, "#creation-refresh-list-button")
+    async def on_creation_refresh_button_pressed(self, event: Button.Pressed) -> None:
+        """Handles the refresh button in the creation view."""
+        await self._refresh_creation_item_list()
 
     @on(Select.Changed, "#mgmt-item-select")
     async def on_mgmt_item_select(self, event: Select.Changed) -> None:
@@ -622,6 +725,74 @@ class SearchWindow(Container):
         except Exception as e:
             logger.error(f"Error refreshing collections list: {e}", exc_info=True)
 
+    async def _refresh_creation_item_list(self) -> None:
+        """Fetches items for the selected DB and populates the creation item selection dropdown."""
+        item_select = self.query_one("#creation-item-select", Select)
+        db_select = self.query_one("#creation-db-select", Select)
+        status_output = self.query_one("#creation-status-output", Markdown)
+
+        db_type = str(db_select.value)
+        db_name = self.DB_DISPLAY_NAMES.get(db_type, "Unknown Database")
+
+        await status_output.update(f"⏳ Loading items from {db_name}...")
+
+        # This is where you would call your backend functions like `get_all_content_from_database`
+        # For this example, I'll use placeholder data similar to the management view.
+        await asyncio.sleep(0.1)  # Simulate async call
+
+        # ---- Placeholder Logic ----
+        # In a real app, replace this with your actual DB calls
+        items = [
+            {'id': 'media_1', 'title': 'My First Video'},
+            {'id': 'media_2', 'title': 'Interesting Article'},
+        ] if db_type == "media_db" else [
+            {'id': 'conv_1', 'title': 'Chat about AGI'},
+        ]
+        # ---- End Placeholder Logic ----
+
+        # Now, check embedding status for each item
+        try:
+            chroma_manager = await self._get_chroma_manager()
+            collection_name = db_type  # Simplified name for example
+
+            choices = []
+            new_mapping = {}
+
+            # Check if the collection exists
+            collections = chroma_manager.client.list_collections()
+            collection_exists = any(collection.name == collection_name for collection in collections)
+
+            for item in items:
+                item_id = item['id']
+                # This is a simplified check. Your real logic would be more robust.
+                if not collection_exists:
+                    status = "❓"  # Collection doesn't exist
+                else:
+                    try:
+                        result = chroma_manager.client.get_collection(name=collection_name).get(ids=[f"{item_id}_chunk_0"])
+                        status = "✅" if result and result['ids'] else "❌"
+                    except Exception:
+                        status = "⚠️"  # Error checking
+
+                display_name = f"{item['title']} ({status})"
+                choices.append((display_name, item_id))  # Use item_id as value for easier processing
+                new_mapping[display_name] = item_id
+
+            # Store the mapping for later use
+            self._creation_item_mapping = new_mapping
+
+            # Set the options for the multi-select dropdown
+            item_select.set_options(choices)
+
+            if len(items) > 0:
+                await status_output.update(f"✅ Found {len(items)} items in {db_name}. Select items to create embeddings for.")
+            else:
+                await status_output.update(f"ℹ️ No items found in {db_name}. Try another database or check your data.")
+
+        except Exception as e:
+            logger.error(f"Error refreshing item list: {e}", exc_info=True)
+            await status_output.update(f"❌ Error loading items: {escape(str(e))}")
+
     async def _refresh_mgmt_item_list(self) -> None:
         """Fetches items for the selected DB and populates the management dropdown."""
         item_select = self.query_one("#mgmt-item-select", Select)
@@ -694,7 +865,8 @@ class SearchWindow(Container):
             await status_md.update(f"❌ Error loading items: {escape(str(e))}")
             await mgmt_status.update(f"Error: Failed to load items from {db_name}. See logs for details.")
 
-    async def _create_embeddings(self, db_type: str, db_path: str, embedding_config: dict, collection_name: str) -> None:
+    async def _create_embeddings(self, db_type: str, db_path: str, embedding_config: dict, collection_name: str, 
+                           selection_mode: str = "all", keyword: str = None, selected_items: list = None) -> None:
         """
         Creates embeddings for the specified database with the given configuration and collection name.
 
@@ -703,23 +875,40 @@ class SearchWindow(Container):
             db_path: The path to the database
             embedding_config: Configuration for the embedding model and chunking
             collection_name: Custom name for the collection
+            selection_mode: Mode of item selection ("all", "keyword", or "individual")
+            keyword: Keyword to filter items by (used when selection_mode is "keyword")
+            selected_items: List of item IDs to create embeddings for (used when selection_mode is "individual")
         """
-        logger.info(f"Creating embeddings for {db_type} with collection name '{collection_name}'")
+        logger.info(f"Creating embeddings for {db_type} with collection name '{collection_name}', selection mode: {selection_mode}")
 
         try:
             # Get ChromaDB manager
             chroma_manager = await self._get_chroma_manager()
 
             # In a real implementation, you would:
-            # 1. Load data from the database
+            # 1. Load data from the database based on selection mode
             # 2. Create embeddings using the specified configuration
             # 3. Store the embeddings in ChromaDB with the specified collection name
+
+            # For demonstration purposes, we'll log what would happen in each mode
+            if selection_mode == "all":
+                logger.info(f"Would create embeddings for ALL items in {db_type}")
+                # In a real implementation, you would load all items from the database
+                # items = load_all_items_from_database(db_type, db_path)
+            elif selection_mode == "keyword":
+                logger.info(f"Would create embeddings for items matching keyword '{keyword}' in {db_type}")
+                # In a real implementation, you would filter items by keyword
+                # items = load_items_matching_keyword(db_type, db_path, keyword)
+            else:  # individual
+                logger.info(f"Would create embeddings for {len(selected_items)} selected items in {db_type}: {selected_items}")
+                # In a real implementation, you would load only the selected items
+                # items = load_specific_items(db_type, db_path, selected_items)
 
             # For now, we'll just simulate the process with a delay
             await asyncio.sleep(2)
 
             # Log success
-            logger.info(f"Successfully created embeddings for {db_type} with collection name '{collection_name}'")
+            logger.info(f"Successfully created embeddings for {db_type} with collection name '{collection_name}', selection mode: {selection_mode}")
 
         except Exception as e:
             logger.error(f"Error in _create_embeddings: {e}", exc_info=True)
