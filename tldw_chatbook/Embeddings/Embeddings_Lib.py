@@ -39,7 +39,7 @@ from typing import (Any, Annotated, Callable, Dict, List, Literal, Optional,
 import numpy as np
 import requests
 import torch
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, HttpUrl, ValidationError
 from torch import Tensor
 from torch.nn.functional import normalize
 from transformers import AutoModel, AutoTokenizer
@@ -50,8 +50,8 @@ from transformers import AutoModel, AutoTokenizer
 #
 __all__ = ["EmbeddingFactory", "EmbeddingConfigSchema"]
 #
-LOGGER = logging.getLogger("embeddings_lib")
-LOGGER.addHandler(logging.NullHandler())
+logger = logging.getLogger("embeddings_lib")
+logger.addHandler(logging.NullHandler())
 #
 ###############################################################################
 # Configuration schema (with Discriminated Union)
@@ -61,7 +61,7 @@ PoolingFn = Callable[[Tensor, Tensor], Tensor]
 
 class EmbeddingConfigSchema(BaseModel):
     default_model_id: Optional[str] = None
-    models: Dict[str, ModelCfg]
+    models: Dict[str, 'ModelCfg'] # Forward reference for ModelCfg
 
     @model_validator(mode='after')
     def check_default_model_exists(self) -> 'EmbeddingConfigSchema':
@@ -98,17 +98,27 @@ class OpenAICfg(BaseModel):
     provider: Literal["openai"] = "openai"
     model_name_or_path: str = "text-embedding-3-small"
     api_key: Optional[str] = Field(default=None, repr=False)
+    base_url: Optional[HttpUrl] = Field(default=None) # CHANGED: Added base_url, made it HttpUrl for validation
     dimension: Optional[int] = None
 
     @field_validator("api_key", mode="before")
-    def _default_api_key(cls, v: str | None) -> str:
+    def _default_api_key(cls, v: Optional[str], values: Any) -> Optional[str]: # Ensure values is available if needed
+        # If a base_url is provided (likely for a local/custom OpenAI-compatible API),
+        # an API key might not be required or might be a placeholder.
+        # This validator makes the API key truly optional if base_url is set.
+        if values.data.get("base_url"): # Check if base_url is present in the input data
+            return v # Return the provided value (None or actual key)
+
+        # Original logic: API key is required if no base_url pointing to a local server
         if v:
             return v
         from os import getenv
-
         env = getenv("OPENAI_API_KEY")
         if not env:
-            raise ValueError("OPENAI_API_KEY env-var missing and api_key not set")
+            # Only raise ValueError if it's for the actual OpenAI API (no base_url)
+            # and no key is provided and no env var is set.
+            if not values.data.get("base_url"):
+                 raise ValueError("OPENAI_API_KEY env-var missing and api_key not set for OpenAI provider (and no base_url specified).")
         return env
 
 
@@ -118,10 +128,8 @@ ModelCfg = Annotated[
     Field(discriminator="provider")
 ]
 
-
-class EmbeddingConfigSchema(BaseModel):
-    default_model_id: Optional[str] = None
-    models: Dict[str, ModelCfg]
+# Update the forward reference now that ModelCfg is fully defined
+EmbeddingConfigSchema.model_rebuild()
 
 
 ###############################################################################
@@ -210,31 +218,43 @@ class _HuggingFaceEmbedder:
 _BACKOFF: tuple[float, ...] = (1, 2, 4, 8)
 
 
-def _openai_embedder(model: str, api_key: str) -> Callable[[list[str], Any, bool], Any]:
+def _openai_embedder(cfg: OpenAICfg) -> Callable[[list[str], Any, bool], Any]: # CHANGED: Takes OpenAICfg
     session = requests.Session()
-    session.headers.update(
-        {"Authorization": f"Bearer {api_key}", "User-Agent": "EmbeddingsLib/4.0"}
-    )
+
+    # CHANGED: Use cfg.api_key and handle its potential None value if base_url is set
+    if cfg.api_key:
+        session.headers.update(
+            {"Authorization": f"Bearer {cfg.api_key}", "User-Agent": "EmbeddingsLib/4.0"}
+        )
+    else:
+        # If no API key (e.g., for local server), just set User-Agent
+        session.headers.update({"User-Agent": "EmbeddingsLib/4.0"})
+
+    # CHANGED: Determine the endpoint URL
+    endpoint_url_base = str(cfg.base_url) if cfg.base_url else "https://api.openai.com/v1"
+    embeddings_endpoint = f"{endpoint_url_base.rstrip('/')}/embeddings"
+    logger.info(f"OpenAI embedder configured for endpoint: {embeddings_endpoint} with model {cfg.model_name_or_path}")
+
 
     def _embed(texts: List[str], *, as_list: bool = False) -> np.ndarray | List[List[float]]:
-        payload = {"input": texts, "model": model}
+        payload = {"input": texts, "model": cfg.model_name_or_path} # CHANGED: Use cfg.model_name_or_path
         for attempt, wait in enumerate(_BACKOFF, 1):
             t0 = time.perf_counter()
             try:
-                resp = session.post("https://api.openai.com/v1/embeddings", json=payload, timeout=30)
+                resp = session.post(embeddings_endpoint, json=payload, timeout=30) # CHANGED: Use dynamic endpoint
                 resp.raise_for_status()
                 data = resp.json()["data"]
                 arr = np.asarray([d["embedding"] for d in data], dtype=np.float32)
                 latency = time.perf_counter() - t0
-                LOGGER.debug("openai_embed[%s] %d texts in %.3fs", model, len(texts), latency)
+                logger.debug("openai_embed[%s] %d texts in %.3fs via %s", cfg.model_name_or_path, len(texts), latency, embeddings_endpoint)
                 return arr.tolist() if as_list else arr
             except requests.RequestException as exc:
                 if attempt == len(_BACKOFF):
-                    LOGGER.error("openai_embed failed after %d retries: %s", attempt, exc)
+                    logger.error("openai_embed failed after %d retries for %s: %s", attempt, embeddings_endpoint, exc)
                     raise
-                LOGGER.warning("openai_embed retry %d/%d after %s: %s", attempt, len(_BACKOFF), wait, exc)
+                logger.warning("openai_embed retry %d/%d after %s for %s: %s", attempt, len(_BACKOFF), wait, embeddings_endpoint, exc)
                 time.sleep(wait + random.random())
-        raise RuntimeError("Exhausted retries in OpenAI embedder")  # Should be unreachable
+        raise RuntimeError(f"Exhausted retries in OpenAI embedder for {embeddings_endpoint}")  # Should be unreachable
 
     return _embed
 
@@ -254,22 +274,30 @@ class EmbeddingFactory:
             idle_seconds: int = 900,
             allow_dynamic_hf: bool = True,
     ) -> None:
-        self._cfg = cfg if isinstance(cfg, EmbeddingConfigSchema) else EmbeddingConfigSchema(**cfg)
+        try:
+            self._cfg = cfg if isinstance(cfg, EmbeddingConfigSchema) else EmbeddingConfigSchema(**cfg)
+        except ValidationError as e_pydantic:  # Catch Pydantic validation errors
+            logger.critical(f"Invalid embedding configuration provided to EmbeddingFactory: {e_pydantic}")
+            raise ValueError(f"Embedding configuration error: {e_pydantic}") from e_pydantic
+
         self._max_cached = max_cached
         self._idle = idle_seconds
         self._allow_dynamic_hf = allow_dynamic_hf
         self._cache: "OrderedDict[str, CacheRecord]" = OrderedDict()
         self._lock = threading.Lock()
-        LOGGER.debug("factory initialised max_cached=%d idle=%ds", max_cached, idle_seconds)
+        logger.debug("factory initialised max_cached=%d idle=%ds", max_cached, idle_seconds)
 
     def _get_spec(self, model_id: str) -> ModelCfg:
         try:
             return self._cfg.models[model_id]
         except KeyError:
             if self._allow_dynamic_hf:
-                LOGGER.info("dynamic HF model %s", model_id)
-                return HFModelCfg(model_name_or_path=model_id, trust_remote_code=False)
-            raise
+                logger.info("dynamic HF model %s (model_id used as model_name_or_path)", model_id)
+                # This assumes any unknown model_id passed when allow_dynamic_hf is True
+                # should be treated as a HuggingFace model path.
+                return HFModelCfg(model_name_or_path=model_id, provider="huggingface")
+            raise ValueError(f"Model ID '{model_id}' not found in configuration and dynamic HF loading is disabled.")
+
 
     @property
     def config(self) -> EmbeddingConfigSchema:
@@ -279,14 +307,22 @@ class EmbeddingFactory:
         spec = self._get_spec(model_id)
         t0 = time.perf_counter()
         if spec.provider == "huggingface":
+            # Ensure spec is correctly typed for HFModelCfg
+            if not isinstance(spec, HFModelCfg):
+                raise TypeError(f"Expected HFModelCfg for provider 'huggingface', got {type(spec)} for model_id '{model_id}'")
             hf = _HuggingFaceEmbedder(spec)
             rec = CacheRecord(embed=hf.embed, close=hf.close, last=time.monotonic())
         elif spec.provider == "openai":
-            fn = _openai_embedder(spec.model_name_or_path, spec.api_key)
+            # Ensure spec is correctly typed for OpenAICfg
+            if not isinstance(spec, OpenAICfg):
+                raise TypeError(f"Expected OpenAICfg for provider 'openai', got {type(spec)} for model_id '{model_id}'")
+            fn = _openai_embedder(spec) # CHANGED: Pass the whole spec object
             rec = CacheRecord(embed=fn, close=None, last=time.monotonic())
         else:
-            raise ValueError(f"Unsupported provider: {spec.provider}")
-        LOGGER.debug("load %s in %.2fs", model_id, time.perf_counter() - t0)
+            # This should ideally not be reached if Pydantic validation is working with discriminated unions
+            # However, it's a good safeguard.
+            raise ValueError(f"Unsupported provider: {spec.provider} for model_id '{model_id}'")
+        logger.debug("load %s in %.2fs", model_id, time.perf_counter() - t0)
         return rec
 
     def embed(
@@ -305,7 +341,7 @@ class EmbeddingFactory:
             now = time.monotonic()
             for mid, rec in list(self._cache.items()):
                 if now - rec["last"] > self._idle:
-                    LOGGER.debug("idle evict %s", mid)
+                    logger.debug("idle evict %s", mid)
                     self._cache.pop(mid)
                     if rec["close"]:
                         rec["close"]()
@@ -316,7 +352,7 @@ class EmbeddingFactory:
                 # If we need to load a model, make space for it *first*.
                 while len(self._cache) >= self._max_cached:
                     lru_mid, lru_rec = self._cache.popitem(last=False)
-                    LOGGER.debug("LRU evict %s to make space", lru_mid)
+                    logger.debug("LRU evict %s to make space", lru_mid)
                     if lru_rec["close"]:
                         lru_rec["close"]()
                 rec = self._build(model_id_to_use)
@@ -332,7 +368,7 @@ class EmbeddingFactory:
             # evicted by another thread while it is in use.
             t0 = time.perf_counter()
             result = embed_fn(texts, as_list=as_list)
-            LOGGER.debug("embed %s %d texts in %.3fs", model_id_to_use, len(texts), time.perf_counter() - t0)
+            logger.debug("embed %s %d texts in %.3fs", model_id_to_use, len(texts), time.perf_counter() - t0)
             return result
         # The lock is released only after the work is complete.
 
@@ -362,7 +398,7 @@ class EmbeddingFactory:
                     continue
                 # Note: This can temporarily exceed max_cached, which is acceptable for a startup operation.
                 self._cache[mid] = self._build(mid)
-            LOGGER.info("prefetched %s", mid)
+            logger.info("prefetched %s", mid)
 
     def close(self) -> None:
         """Close all models and clear the cache."""
@@ -371,7 +407,7 @@ class EmbeddingFactory:
                 if rec["close"]:
                     rec["close"]()
             self._cache.clear()
-            LOGGER.debug("factory closed")
+            logger.debug("factory closed")
 
     def __enter__(self):
         return self

@@ -54,6 +54,12 @@ chunker = [
     "tqdm",
     "jieba",
 ]
+embeddings_rag = [
+    "torch",
+    "numpy",
+    "pydantic",
+    "transformers",
+]
 websearch = [
     "lxml",
     "bs4",#beautifulsoup

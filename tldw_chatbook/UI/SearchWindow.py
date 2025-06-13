@@ -69,6 +69,9 @@ SEARCH_NAV_RAG_MANAGEMENT = "search-nav-rag-management"
 SEARCH_NAV_EMBEDDINGS_MANAGEMENT = "search-nav-embeddings-management"
 SEARCH_NAV_WEB_SEARCH = "search-nav-web-search"
 
+# UI Constant for "Local Server" provider display name
+LOCAL_SERVER_PROVIDER_DISPLAY_NAME = "Local OpenAI-Compliant Server"
+LOCAL_SERVER_PROVIDER_INTERNAL_ID = "local_openai_compliant" # Internal ID to distinguish
 
 class SearchWindow(Container):
     """
