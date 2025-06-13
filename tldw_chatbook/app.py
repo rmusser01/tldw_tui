@@ -99,8 +99,7 @@ from .UI.Tab_Bar import TabBar
 from .UI.MediaWindow import MediaWindow
 from .UI.SearchWindow import SearchWindow
 from .UI.SearchWindow import ( # Import new constants from SearchWindow.py
-    SEARCH_VIEW_RAG_QA, SEARCH_NAV_RAG_QA, SEARCH_NAV_RAG_CHAT, SEARCH_NAV_EMBEDDINGS_CREATION,
-    SEARCH_NAV_RAG_MANAGEMENT, SEARCH_NAV_EMBEDDINGS_MANAGEMENT
+    SEARCH_VIEW_RAG_QA
 )
 API_IMPORTS_SUCCESSFUL = True
 #
@@ -615,7 +614,31 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         }
 
     def _setup_logging(self):
-        configure_application_logging(self)
+        """Set up logging for the application.
+
+        If early logging was already initialized, this will just set up the RichLogHandler
+        for the UI log display widget.
+        """
+        # Check if we're running as a module (via entry point) or as a script
+        if hasattr(self, '_early_logging_initialized') and self._early_logging_initialized:
+            # Early logging was already initialized, just set up the RichLogHandler
+            logging.info("Logging already initialized early, setting up UI log handlers only")
+            try:
+                log_display_widget = self.query_one("#app-log-display", RichLog)
+                if not self._rich_log_handler:
+                    self._rich_log_handler = RichLogHandler(log_display_widget)
+                    rich_log_handler_level_str = self.app_config.get("logging", {}).get("rich_log_level", "DEBUG").upper()
+                    rich_log_handler_level = getattr(logging, rich_log_handler_level_str, logging.DEBUG)
+                    self._rich_log_handler.setLevel(rich_log_handler_level)
+                    logging.getLogger().addHandler(self._rich_log_handler)
+                    logging.info(f"Added RichLogHandler to existing logging setup (Level: {logging.getLevelName(self._rich_log_handler.level)}).")
+            except QueryError:
+                logging.error("!!! ERROR: Failed to find #app-log-display widget for RichLogHandler setup.")
+            except Exception as e:
+                logging.error(f"!!! ERROR setting up RichLogHandler: {e}", exc_info=True)
+        else:
+            # No early logging, do full initialization
+            configure_application_logging(self)
 
     def compose(self) -> ComposeResult:
         logging.debug("App composing UI...")
@@ -2029,21 +2052,46 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             return
 
         self.loguru_logger.debug(f"Button pressed: ID='{button_id}' on Tab='{self.current_tab}'")
-        #
-        # if button_id.startswith("tldw-api-browse-local-files-button-"):
-        #     try:
-        #         ingest_window = self.query_one(IngestWindow)
-        #         await ingest_window.on_button_pressed(event)
-        #         return # Event handled, stop further processing
-        #     except QueryError:
-        #         self.loguru_logger.error("Could not find IngestWindow to delegate browse button press.")
 
         # 1. Handle global tab switching first
         if button_id.startswith("tab-"):
             await tab_events.handle_tab_button_pressed(self, event)
             return
 
-        # 2. Use the handler map for all other tab-specific buttons
+        # 2. Try to delegate to the appropriate window component
+        try:
+            # Determine which window component should handle this button press based on current tab
+            window_id_map = {
+                TAB_CHAT: "chat-window",
+                TAB_CCP: "conversations_characters_prompts-window",
+                TAB_NOTES: "notes-window",
+                TAB_MEDIA: "media-window",
+                TAB_SEARCH: "search-window",
+                TAB_INGEST: "ingest-window",
+                TAB_TOOLS_SETTINGS: "tools_settings-window",
+                TAB_LLM: "llm_management-window",
+                TAB_LOGS: "logs-window",
+                TAB_STATS: "stats-window",
+                TAB_EVALS: "evals-window",
+                TAB_CODING: "coding-window"
+            }
+
+            window_id = window_id_map.get(self.current_tab)
+            if window_id:
+                window = self.query_one(f"#{window_id}")
+                # Check if the window has an on_button_pressed method
+                if hasattr(window, "on_button_pressed") and callable(window.on_button_pressed):
+                    window.on_button_pressed(event)
+                    # If the event was stopped by the window, return
+                    if event.is_stopped:
+                        return
+
+        except QueryError:
+            self.loguru_logger.error(f"Could not find window component for tab '{self.current_tab}'")
+        except Exception as e:
+            self.loguru_logger.error(f"Error delegating button press to window component: {e}", exc_info=True)
+
+        # 3. Use the handler map for buttons not handled by window components
         current_tab_handlers = self.button_handler_map.get(self.current_tab, {})
         handler = current_tab_handlers.get(button_id)
 
@@ -2064,7 +2112,7 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 self.loguru_logger.error(f"Handler for button '{button_id}' is not callable: {handler}")
             return  # The button press was handled (or an error occurred).
 
-        # 3. Fallback for unmapped buttons
+        # 4. Fallback for unmapped buttons
         self.loguru_logger.warning(f"Unhandled button press for ID '{button_id}' on tab '{self.current_tab}'.")
 
     async def on_text_area_changed(self, event: TextArea.Changed) -> None:
@@ -2809,8 +2857,33 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # --- End of Watchers and Helper Methods ---
     # ######################################################
 
+# Initialize logging at the earliest possible point
+def initialize_early_logging():
+    """Initialize logging as early as possible to capture all logs from startup."""
+    from .Logging_Config import configure_application_logging
+    # Create a temporary app-like object with just enough attributes for configure_application_logging
+    class EarlyLoggingApp:
+        def __init__(self):
+            self.app_config = load_settings()
+            self._rich_log_handler = None
+
+        def query_one(self, *args, **kwargs):
+            # This will fail in configure_application_logging, but that's expected
+            # for early logging - we just want to set up file and console logging
+            raise QueryError("Early logging setup - UI not available yet")
+
+    # Configure logging with our minimal app-like object
+    early_app = EarlyLoggingApp()
+    configure_application_logging(early_app)
+    logging.info("Early logging initialization complete")
+    loguru_logger.info("Early logging initialization complete (loguru)")
+    return early_app
+
 # --- Main execution block ---
 if __name__ == "__main__":
+    # Initialize logging first
+    early_logging_app = initialize_early_logging()
+
     # Ensure config file exists (create default if missing)
     try:
         if not DEFAULT_CONFIG_PATH.exists():
@@ -2840,7 +2913,64 @@ if __name__ == "__main__":
     except Exception as e_css_main:
         logging.error(f"Error handling CSS file: {e_css_main}", exc_info=True)
 
-    app_instance = TldwCli() # Create instance
+    # Create instance with early logging flag
+    app_instance = TldwCli()
+    # Set the early logging flag so _setup_logging knows logging was already initialized
+    app_instance._early_logging_initialized = True
+    try:
+        app_instance.run()
+    except Exception as e:
+        loguru_logger.exception("--- CRITICAL ERROR DURING app.run() ---")
+        traceback.print_exc()  # Make sure traceback prints
+    finally:
+        # This might run even if app exits early internally in run()
+        loguru_logger.info("--- FINALLY block after app.run() ---")
+
+    loguru_logger.info("--- AFTER app.run() call (if not crashed hard) ---")
+
+# Entry point for the tldw-cli command
+def main_cli_runner():
+    """Entry point for the tldw-cli command.
+
+    This function is referenced in pyproject.toml as the entry point for the tldw-cli command.
+    It initializes logging early and then runs the TldwCli app.
+    """
+    # Initialize logging first
+    early_logging_app = initialize_early_logging()
+
+    # Ensure config file exists (create default if missing)
+    try:
+        if not DEFAULT_CONFIG_PATH.exists():
+            logging.info(f"Config file not found at {DEFAULT_CONFIG_PATH}, creating default.")
+            DEFAULT_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with open(DEFAULT_CONFIG_PATH, "w", encoding='utf-8') as f:
+                f.write(CONFIG_TOML_CONTENT)
+    except Exception as e_cfg_main:
+        logging.error(f"Could not ensure creation of default config file: {e_cfg_main}", exc_info=True)
+
+    # --- Emoji Check ---
+    emoji_is_supported = supports_emoji() # Call it once
+    loguru_logger.info(f"Terminal emoji support detected: {emoji_is_supported}")
+    loguru_logger.info(f"Using brain: {get_char(EMOJI_TITLE_BRAIN, FALLBACK_TITLE_BRAIN)}")
+    loguru_logger.info("-" * 30)
+
+    # --- CSS File Handling ---
+    try:
+        from .Constants import css_content
+        css_dir = Path(__file__).parent / "css"
+        css_dir.mkdir(exist_ok=True)
+        css_file_path = css_dir / "tldw_cli.tcss"
+        if not css_file_path.exists():
+            with open(css_file_path, "w", encoding='utf-8') as f:
+                f.write(css_content)
+            logging.info(f"Created default CSS file: {css_file_path}")
+    except Exception as e_css_main:
+        logging.error(f"Error handling CSS file: {e_css_main}", exc_info=True)
+
+    # Create instance with early logging flag
+    app_instance = TldwCli()
+    # Set the early logging flag so _setup_logging knows logging was already initialized
+    app_instance._early_logging_initialized = True
     try:
         app_instance.run()
     except Exception as e:

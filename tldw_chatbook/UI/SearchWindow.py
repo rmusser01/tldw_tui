@@ -65,6 +65,55 @@ class SearchWindow(Container):
         self._chroma_manager: Union["ChromaDBManager", None] = None
         self._selected_embedding_id: Union[str, None] = None
 
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        """
+        Central handler for button presses in the SearchWindow.
+        Delegates to specific handlers based on button ID.
+        """
+        button_id = event.button.id
+        if not button_id:
+            return
+
+        # Map button IDs to their handler methods
+        button_handlers = {
+            # Navigation buttons
+            SEARCH_NAV_RAG_QA: self.handle_rag_qa_nav_button_pressed,
+            SEARCH_NAV_RAG_CHAT: self.handle_rag_chat_nav_button_pressed,
+            SEARCH_NAV_EMBEDDINGS_CREATION: self.handle_embeddings_creation_nav_button_pressed,
+            SEARCH_NAV_RAG_MANAGEMENT: self.handle_rag_management_nav_button_pressed,
+            SEARCH_NAV_EMBEDDINGS_MANAGEMENT: self.handle_embeddings_management_nav_button_pressed,
+            SEARCH_NAV_WEB_SEARCH: self.handle_web_search_nav_button_pressed,
+
+            # Embeddings creation buttons
+            "embeddings-create-button": self.handle_embeddings_create_button_pressed,
+            "embeddings-clear-button": self.handle_embeddings_clear_button_pressed,
+
+            # Embeddings management buttons
+            "embeddings-management-refresh-button": self.handle_embeddings_management_refresh_button_pressed,
+            "embeddings-management-search-button": self.handle_embeddings_management_search_button_pressed,
+            "embeddings-management-view-button": self.handle_embeddings_management_view_button_pressed,
+            "embeddings-management-delete-button": self.handle_embeddings_management_delete_button_pressed,
+
+            # Web search buttons
+            "web-search-button": self.handle_perform_web_search_button_pressed,
+        }
+
+        # Check if we have a handler for this button
+        handler = button_handlers.get(button_id)
+        if handler:
+            # Call the handler
+            result = handler(event)
+            # If the handler returns an awaitable, await it
+            if asyncio.iscoroutine(result):
+                await result
+            # Stop the event from propagating
+            event.stop()
+        else:
+            # Check if it's an embedding item button
+            if button_id and button_id.startswith("embedding-item-"):
+                await self.handle_embedding_item_button_pressed(event)
+                event.stop()
+
     async def on_mount(self) -> None:
         """Called when the window is first mounted. Sets the initial view via the app's reactive state."""
         self.app_instance.log.info("SearchWindow.on_mount: Setting initial active sub-tab.")
@@ -152,6 +201,8 @@ class SearchWindow(Container):
                     Button("Delete", id="embeddings-management-delete-button", classes="search-action-button"),
                     classes="search-button-row"
                 ),
+                Static("Content:", classes="search-section-title"),
+                VerticalScroll(Markdown("", id="embeddings-management-view-content"), classes="search-results-container"),
                 Static("Status: Ready", id="embeddings-management-status-display"),
                 id=SEARCH_VIEW_EMBEDDINGS_MANAGEMENT,
                 classes="search-view-area"
@@ -210,6 +261,16 @@ class SearchWindow(Container):
         """Handle the embeddings management navigation button press to switch views."""
         self.app_instance.log.info(f"Button {event.button.id} pressed. Switching to Embeddings Management view.")
         await self._switch_to_view(SEARCH_VIEW_EMBEDDINGS_MANAGEMENT)
+
+        # Clear the selected embedding ID and content area
+        self._selected_embedding_id = None
+        selected_id_input = self.query_one("#embeddings-management-selected-id", Input)
+        selected_id_input.value = ""
+
+        # Clear the content area
+        content_widget = self.query_one("#embeddings-management-view-content", Markdown)
+        await content_widget.update("")
+
         # When switching to this view, refresh the collections list
         await self._refresh_collections_list()
 
@@ -254,6 +315,9 @@ class SearchWindow(Container):
                 user_id = self.app_instance.notes_user_id
 
                 # Your ChromaDBManager expects the whole config dictionary
+                logger.critical("--- DEBUGGING CONFIGURATION OBJECT ---")
+                logger.critical(user_config)
+                logger.critical("--- END DEBUGGING CONFIGURATION ---")
                 from ..Embeddings.Chroma_Lib import ChromaDBManager
                 self._chroma_manager = ChromaDBManager(user_id=user_id, user_embedding_config=user_config)
 
@@ -322,12 +386,13 @@ class SearchWindow(Container):
             #    This replaces collection_select.clear() and the loop.
             collection_select.set_options(collection_options)
 
-            # 5. Re-apply the selection if it's still a valid option
-            if current_selection and any(opt[1] == current_selection for opt in collection_options):
+            # Re-apply the selection if it's still a valid option, otherwise clear it
+            if current_selection is not Select.BLANK and any(opt[1] == current_selection for opt in collection_options):
+                # The selection is still valid, so re-apply it
                 collection_select.value = current_selection
             else:
-                # If the old selection is gone, clear it.
-                collection_select.value = None  # This will show the prompt
+                # THE FIX: Use Select.BLANK to clear the selection and show the prompt.
+                collection_select.value = Select.BLANK
 
             status_display.update(f"Status: Found {len(collections)} collections.")
 
@@ -476,12 +541,31 @@ class SearchWindow(Container):
     async def handle_embeddings_management_refresh_button_pressed(self, event: Button.Pressed) -> None:
         """Handle the Refresh Collections button press."""
         self.app_instance.log.info("Refresh Collections button pressed.")
+
+        # Clear the selected embedding ID and content area
+        self._selected_embedding_id = None
+        selected_id_input = self.query_one("#embeddings-management-selected-id", Input)
+        selected_id_input.value = ""
+
+        # Clear the content area
+        content_widget = self.query_one("#embeddings-management-view-content", Markdown)
+        await content_widget.update("")
+
         await self._refresh_collections_list()
 
     @on(Select.Changed, "#embeddings-management-collection-select")
     async def handle_embeddings_management_collection_select_changed(self, event: Select.Changed) -> None:
         """Handle the Collection select change."""
         self.app_instance.log.info(f"Collection select changed to {event.value}.")
+
+        # Clear the selected embedding ID and content area
+        self._selected_embedding_id = None
+        selected_id_input = self.query_one("#embeddings-management-selected-id", Input)
+        selected_id_input.value = ""
+
+        # Clear the content area
+        content_widget = self.query_one("#embeddings-management-view-content", Markdown)
+        await content_widget.update("")
 
         if event.value:
             # Update the embeddings list for the selected collection
@@ -500,6 +584,15 @@ class SearchWindow(Container):
             if not collection_select.value:
                 self.app_instance.notify("Please select a collection first.", severity="warning")
                 return
+
+            # Clear the selected embedding ID and content area
+            self._selected_embedding_id = None
+            selected_id_input = self.query_one("#embeddings-management-selected-id", Input)
+            selected_id_input.value = ""
+
+            # Clear the content area
+            content_widget = self.query_one("#embeddings-management-view-content", Markdown)
+            await content_widget.update("")
 
             # Update the embeddings list with the search query
             await self._update_embeddings_list(collection_select.value, search_input.value)
@@ -520,6 +613,10 @@ class SearchWindow(Container):
             # Update the selected ID input
             selected_id_input = self.query_one("#embeddings-management-selected-id", Input)
             selected_id_input.value = self._selected_embedding_id
+
+            # Clear the content area
+            content_widget = self.query_one("#embeddings-management-view-content", Markdown)
+            await content_widget.update("")
 
         except Exception as e:
             self.app_instance.log.error(f"Failed to handle embedding item selection: {e}", exc_info=True)
@@ -619,10 +716,21 @@ class SearchWindow(Container):
             details += f"Source: {metadata.get('source', 'Unknown')}\n"
             details += f"Model: {metadata.get('embedding_model', 'Unknown')}\n"
             details += f"Created: {metadata.get('created_at', 'Unknown')}\n"
-            details += f"Content: {content[:500]}{'...' if len(content) > 500 else ''}"
 
-            # Show the details in a notification
-            self.app_instance.notify(details, severity="information", timeout=20)
+            # Format the content as markdown
+            markdown_content = f"## Embedding Details\n\n"
+            markdown_content += f"**ID:** {self._selected_embedding_id}\n\n"
+            markdown_content += f"**Source:** {metadata.get('source', 'Unknown')}\n\n"
+            markdown_content += f"**Model:** {metadata.get('embedding_model', 'Unknown')}\n\n"
+            markdown_content += f"**Created:** {metadata.get('created_at', 'Unknown')}\n\n"
+            markdown_content += f"### Content\n\n{content}"
+
+            # Update the markdown widget with the content
+            content_widget = self.query_one("#embeddings-management-view-content", Markdown)
+            await content_widget.update(markdown_content)
+
+            # Also show a brief notification
+            self.app_instance.notify("Embedding details loaded", severity="information", timeout=3)
 
         except Exception as e:
             self.app_instance.log.error(f"Failed to view embedding details: {e}", exc_info=True)

@@ -1,17 +1,6 @@
 # Chroma_Lib.py
 #
 from __future__ import annotations
-
-import hashlib
-import re
-
-from chromadb.errors import ChromaError, InvalidDimensionException
-
-from tldw_chatbook.Chunking.Chunk_Lib import chunk_for_embedding
-from tldw_chatbook.Embeddings.Embeddings_Lib import EmbeddingFactory, EmbeddingConfigSchema
-from tldw_chatbook.LLM_Calls.Summarization_General_Lib import analyze
-from tldw_chatbook.config import get_chachanotes_db_path
-
 """Light‑weight ChromaDB helper for single‑user, local‑first apps.
 
 Key simplifications vs. the original:
@@ -29,16 +18,22 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union, Sequence
 from itertools import islice
 import threading
+import hashlib
+import re
 #
 # Third-Party Libraries
 import numpy as np
 import chromadb
 from chromadb import Settings
+from chromadb.errors import ChromaError, InvalidDimensionException
 from chromadb.api.models import Collection
 from chromadb.api.types import QueryResult
 from loguru import logger
 #
 # Local Imports
+from tldw_chatbook.Chunking.Chunk_Lib import chunk_for_embedding
+from tldw_chatbook.Embeddings.Embeddings_Lib import EmbeddingFactory, EmbeddingConfigSchema
+from tldw_chatbook.LLM_Calls.Summarization_General_Lib import analyze
 #
 ########################################################################################################################
 #
@@ -73,51 +68,83 @@ class ChromaDBManager:
             raise ValueError("user_embedding_config cannot be empty for ChromaDBManager.")
 
         self.user_id = str(user_id)
-        # Store the raw config for components that might need the full structure
         self.raw_user_embedding_config = user_embedding_config
-        self._lock = threading.RLock()  # Instance lock for ChromaDB operations
-        self._inferred_dimensions: Dict[str, int] = {} # NEW: Cache for inferred model dimensions
+        self._lock = threading.RLock()
+        self._inferred_dimensions: Dict[str, int] = {}
 
-        # Initialize EmbeddingFactory
-        # The `user_embedding_config` should have an "embedding_config" key matching EmbeddingConfigSchema
-        embeddings_config_dict = self.raw_user_embedding_config.get("embedding_config")
+        # ======================================================================
+        # THE FIX IS HERE: Resiliently find the correct config section.
+        # This handles the malformed configuration object from your logs.
+        # ======================================================================
+
+        embeddings_config_dict = None
+
+        # Priority 1: Check if the top-level 'embedding_config' is the correct one.
+        # A correct one MUST contain a 'models' sub-dictionary.
+        top_level_embed_config = user_embedding_config.get("embedding_config")
+        if isinstance(top_level_embed_config, dict) and "models" in top_level_embed_config:
+            logger.info("Found a valid, structured [embedding_config] at the top level.")
+            embeddings_config_dict = top_level_embed_config
+        else:
+            # If the top-level one is wrong (like in your logs), log it and look elsewhere.
+            if top_level_embed_config is not None:
+                logger.warning(
+                    f"Ignoring invalid/flat [embedding_config] at top level. "
+                    f"Keys found: {list(top_level_embed_config.keys())}"
+                )
+
+            # Priority 2: Look inside the 'COMPREHENSIVE_CONFIG_RAW' key, which the logs show exists.
+            logger.info("Searching for [embedding_config] inside [COMPREHENSIVE_CONFIG_RAW] as a fallback.")
+            comprehensive_config = user_embedding_config.get("COMPREHENSIVE_CONFIG_RAW", {})
+            nested_embed_config = comprehensive_config.get("embedding_config")
+
+            if isinstance(nested_embed_config, dict) and "models" in nested_embed_config:
+                logger.info("Found a valid, structured [embedding_config] inside [COMPREHENSIVE_CONFIG_RAW].")
+                embeddings_config_dict = nested_embed_config
+
+        # Final check: If we still haven't found a valid config, we must fail.
         if not embeddings_config_dict:
             logger.critical(
-                "embedding_config not found in user_embedding_config. EmbeddingFactory cannot be initialized.")
-            raise ValueError("embedding_config not configured in application settings.")
+                "Could not find a valid 'embedding_config' section with a 'models' sub-table in any known location. "
+                "The application cannot initialize embedding features."
+            )
+            raise ValueError(
+                "A valid 'embedding_config' with a 'models' dictionary was not found in application settings.")
+
+        # ======================================================================
+        # END OF FIX
+        # ======================================================================
 
         try:
             self.embedding_factory = EmbeddingFactory(cfg=embeddings_config_dict)
-            # IMPROVEMENT: Access config via a public property instead of a private attribute.
-            # This assumes you add the following property to your EmbeddingFactory class:
-            # @property
-            # def config(self) -> EmbeddingConfigSchema:
-            #     return self._cfg
             self.embedding_config_schema: EmbeddingConfigSchema = self.embedding_factory.config
         except Exception as e:
             logger.critical(f"Failed to initialize EmbeddingFactory for user '{self.user_id}': {e}", exc_info=True)
             raise RuntimeError(f"EmbeddingFactory initialization failed: {e}") from e
 
-        # Get the base directory for all user data from the central CLI configuration.
-        try:
-            # This function from config.py resolves the user's data directory.
-            # We take its parent to get the root folder for all user data.
-            user_db_base_dir = get_chachanotes_db_path().parent
-        except Exception as e:
-            logger.critical(f"Failed to determine user DB base directory from config.py: {e}", exc_info=True)
-            raise RuntimeError("Could not establish the base directory for user data.") from e
+        # This part of your code seems to be using an old key. Let's make it more robust too.
+        user_db_base_dir_str = user_embedding_config.get("database", {}).get("USER_DB_BASE_DIR")
+        if not user_db_base_dir_str:
+            # Fallback for the other structure shown in your logs
+            user_db_base_dir_str = user_embedding_config.get("USER_DB_BASE_DIR")
 
-        # Construct the specific path for this user's ChromaDB storage.
-        self.user_chroma_path: Path = (user_db_base_dir / self.user_id / "chroma_storage").resolve()
+        if not user_db_base_dir_str:
+            logger.critical("Could not find USER_DB_BASE_DIR in config. ChromaDBManager cannot be initialized.")
+            raise ValueError("USER_DB_BASE_DIR not configured.")
+
+        # Resolve path correctly, handling '~' which is common in configs
+        self.user_chroma_path: Path = (
+                    Path(user_db_base_dir_str).expanduser() / self.user_id / "chroma_storage").resolve()
         try:
             self.user_chroma_path.mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            logger.critical(f"Failed to create ChromaDB path {self.user_chroma_path} for '{self.user_id}': {e}", exc_info=True)
+            logger.critical(f"Failed to create ChromaDB path {self.user_chroma_path} for '{self.user_id}': {e}",
+                            exc_info=True)
             raise RuntimeError(f"Could not create ChromaDB storage directory: {e}") from e
 
         logger.info(f"ChromaDBManager for user '{self.user_id}' path: {self.user_chroma_path}")
 
-        chroma_client_settings_config = self.raw_user_embedding_config.get("chroma_client_settings", {})
+        chroma_client_settings_config = user_embedding_config.get("chroma_client_settings", {})
         try:
             self.client = chromadb.PersistentClient(
                 path=str(self.user_chroma_path),
@@ -127,7 +154,8 @@ class ChromaDBManager:
                 )
             )
         except Exception as e:
-            logger.critical(f"Failed to init ChromaDB Client for '{self.user_id}' at {self.user_chroma_path}: {e}", exc_info=True)
+            logger.critical(f"Failed to init ChromaDB Client for '{self.user_id}' at {self.user_chroma_path}: {e}",
+                            exc_info=True)
             raise RuntimeError(f"ChromaDB client initialization failed: {e}") from e
 
         self.default_embedding_model_id = self.embedding_config_schema.default_model_id
@@ -138,7 +166,8 @@ class ChromaDBManager:
                 "Operations will require explicit 'embedding_model_id_override' or collection-defined model."
             )
 
-        prompts_conf = self.raw_user_embedding_config.get("prompts", {})
+        # Use the correctly found embeddings_config_dict from now on
+        prompts_conf = embeddings_config_dict.get("prompts", user_embedding_config.get("prompts", {}))
         self.situate_context_prompt_template = prompts_conf.get(
             "situate_context_template",
             "<document>\n{doc_content}\n</document>\n\n\n\n\n"
@@ -147,9 +176,7 @@ class ChromaDBManager:
             "for the purposes of improving search retrieval of the chunk.\n"
             "Answer only with the succinct context and nothing else."
         )
-        # Get default LLM for contextualization from the main embedding_config section,
-        # not the specific model configs
-        self.default_llm_for_contextualization = self.raw_user_embedding_config.get("embedding_config", {}).get(
+        self.default_llm_for_contextualization = embeddings_config_dict.get(
             "default_llm_for_contextualization", "gpt-3.5-turbo"
         )
 

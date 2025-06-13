@@ -33,6 +33,48 @@ class ChatWindow(Container):
         super().__init__(**kwargs)
         self.app_instance = app_instance
 
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        """
+        Central handler for button presses in the ChatWindow.
+        Delegates to the appropriate handler in chat_events.py.
+        """
+        from ..Event_Handlers.Chat_Events import chat_events
+        from ..Event_Handlers.Chat_Events import chat_events_sidebar
+
+        button_id = event.button.id
+        if not button_id:
+            return
+
+        # Map of button IDs to their handler functions
+        button_handlers = {
+            "send-chat": chat_events.handle_chat_send_button_pressed,
+            "respond-for-me-button": chat_events.handle_respond_for_me_button_pressed,
+            "stop-chat-generation": chat_events.handle_stop_chat_generation_pressed,
+            "toggle-chat-left-sidebar": chat_events.handle_chat_tab_sidebar_toggle,
+            "toggle-chat-right-sidebar": chat_events.handle_chat_tab_sidebar_toggle,
+            "chat-new-conversation-button": chat_events.handle_chat_new_conversation_button_pressed,
+            "chat-save-current-chat-button": chat_events.handle_chat_save_current_chat_button_pressed,
+            "chat-save-conversation-details-button": chat_events.handle_chat_save_details_button_pressed,
+            "chat-conversation-load-selected-button": chat_events.handle_chat_load_selected_button_pressed,
+            "chat-prompt-load-selected-button": chat_events.handle_chat_view_selected_prompt_button_pressed,
+            "chat-prompt-copy-system-button": chat_events.handle_chat_copy_system_prompt_button_pressed,
+            "chat-prompt-copy-user-button": chat_events.handle_chat_copy_user_prompt_button_pressed,
+            "chat-load-character-button": chat_events.handle_chat_load_character_button_pressed,
+            "chat-clear-active-character-button": chat_events.handle_chat_clear_active_character_button_pressed,
+            "chat-apply-template-button": chat_events.handle_chat_apply_template_button_pressed,
+        }
+
+        # Add sidebar button handlers
+        button_handlers.update(chat_events_sidebar.CHAT_SIDEBAR_BUTTON_HANDLERS)
+
+        # Check if we have a handler for this button
+        handler = button_handlers.get(button_id)
+        if handler:
+            # Call the handler with the app instance and event
+            await handler(self.app_instance, event)
+            # Stop the event from propagating
+            event.stop()
+
 
     def compose(self) -> ComposeResult:
         # Settings Sidebar (Left)
