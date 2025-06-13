@@ -24,11 +24,15 @@ if TYPE_CHECKING:
     from ..app import TldwCli
 try:
     from ..Embeddings.Embeddings_Lib import *
+    EMBEDDINGS_GENERATION_AVAILABLE = True
+    logger.info("✅ Embeddings Generation dependencies found. Feature is enabled.")
 except (ImportError, ModuleNotFoundError) as e:
     EMBEDDINGS_GENERATION_AVAILABLE = False
     logger.warning(f"Embeddings Generation depenedencies not found, features related will be disabled. Reason: {e}")
 try:
     from ..Embeddings.Chroma_Lib import *
+    VECTORDB_AVAILABLE = True
+    logger.info("✅ Vector Database dependencies found. Feature is enabled.")
 except (ImportError, ModuleNotFoundError) as e:
     VECTORDB_AVAILABLE = False
     logger.warning(f"Vector Database depenedencies not found, features related will be disabled. Reason: {e}")
@@ -138,8 +142,14 @@ class SearchWindow(Container):
                 yield Button("Web Search", id=SEARCH_NAV_WEB_SEARCH, classes="search-nav-button")
             else:
                 yield Button("Web Search", id="search-nav-web-search-disabled", classes="search-nav-button disabled")
-            yield Button("Embeddings Creation", id=SEARCH_NAV_EMBEDDINGS_CREATION, classes="search-nav-button")
-            yield Button("Embeddings Management", id=SEARCH_NAV_EMBEDDINGS_MANAGEMENT, classes="search-nav-button")
+            if EMBEDDINGS_GENERATION_AVAILABLE and VECTORDB_AVAILABLE:
+                yield Button("Embeddings Creation", id=SEARCH_NAV_EMBEDDINGS_CREATION, classes="search-nav-button")
+            else:
+                yield Button("Embeddings Creation", id="search-nav-embeddings-creation-disabled", classes="search-nav-button disabled")
+            if VECTORDB_AVAILABLE:
+                yield Button("Embeddings Management", id=SEARCH_NAV_EMBEDDINGS_MANAGEMENT, classes="search-nav-button")
+            else:
+                yield Button("Embeddings Management", id="search-nav-embeddings-management-disabled", classes="search-nav-button disabled")
 
         with Container(id="search-content-pane", classes="search-content-pane"):
             yield Container(id=SEARCH_VIEW_RAG_QA, classes="search-view-area",)
@@ -150,141 +160,153 @@ class SearchWindow(Container):
                             #children=[Static("RAG Management Content - Coming Soon!")])
 
             # --- Embeddings Creation View (enhanced layout) ---
-            with Container(id=SEARCH_VIEW_EMBEDDINGS_CREATION, classes="search-view-area"):
-                with VerticalScroll(classes="search-form-container"):
-                    yield Static("Create Embeddings for All Content", classes="search-view-title")
+            if EMBEDDINGS_GENERATION_AVAILABLE and VECTORDB_AVAILABLE:
+                with Container(id=SEARCH_VIEW_EMBEDDINGS_CREATION, classes="search-view-area"):
+                    with VerticalScroll(classes="search-form-container"):
+                        yield Static("Create Embeddings for All Content", classes="search-view-title")
 
-                    yield Markdown("Select a database and configure embedding settings below. Embeddings allow semantic search and retrieval of your content.", id="creation-help-text")
+                        yield Markdown("Select a database and configure embedding settings below. Embeddings allow semantic search and retrieval of your content.", id="creation-help-text")
 
-                    yield Static("Database Selection", classes="search-section-title")
-                    with Horizontal(classes="search-form-row"):
-                        yield Static("Content Source:", classes="search-form-label")
-                        yield Select(
-                            [("Media DB", "media_db"), ("RAG Chat DB", "rag_chat_db"),
-                             ("Character Chat DB", "char_chat_db")],
-                            id="creation-db-select",
-                            prompt="Select Content Source...",
-                            value="media_db"
-                        )
-                    with Horizontal(classes="search-form-row"):
-                        yield Static("Database Path:", classes="search-form-label")
-                        yield Input(id="creation-db-path-display", disabled=True, value="Path will appear here")
-                    with Horizontal(classes="search-form-row"):
-                        yield Static("Collection Name:", classes="search-form-label")
-                        yield Input(id="creation-collection-name-input", placeholder="Enter a name for the collection...")
-
-                    yield Static("Embedding Model", classes="search-section-title")
-                    with Horizontal(classes="search-form-row"):
-                        yield Static("Provider:", classes="search-form-label")
-                        yield Select([], id="creation-embedding-provider-select", prompt="Select Provider...")
-                    with Horizontal(classes="search-form-row"):
-                        yield Static("Model:", classes="search-form-label")
-                        yield Select([], id="creation-model-select", prompt="Select Model...")
-                    with Horizontal(classes="search-form-row"):
-                        yield Static("Custom Model:", classes="search-form-label")
-                        yield Input(id="creation-custom-model-input", placeholder="Custom HuggingFace Model Name...",
-                                    classes="hidden")
-                    with Horizontal(classes="search-form-row"):
-                        yield Static("API URL:", classes="search-form-label")
-                        yield Input(id="creation-api-url-input", placeholder="http://localhost:8080/v1/embeddings",
-                                    classes="hidden")
-
-                    yield Static("Chunking Options", classes="search-section-title")
-                    yield Markdown("Chunking divides your content into smaller pieces for better retrieval. Adjust these settings based on your content type.", id="chunking-help-text")
-                    with Horizontal(classes="search-form-row"):
-                        yield Static("Method:", classes="search-form-label")
-                        yield Select([("By Words", "words"), ("By Sentences", "sentences")],
-                                     id="creation-chunk-method-select", value="words")
-                    with Horizontal(classes="search-form-row"):
-                        yield Static("Max Size:", classes="search-form-label")
-                        yield Input(id="creation-chunk-size-input", value="400", type="integer")
-                    with Horizontal(classes="search-form-row"):
-                        yield Static("Overlap:", classes="search-form-label")
-                        yield Input(id="creation-chunk-overlap-input", value="200", type="integer")
-                    with Horizontal(classes="search-form-row"):
-                        yield Static("Adaptive:", classes="search-form-label")
-                        yield Checkbox("Use adaptive chunking (recommended)", id="creation-adaptive-chunking-checkbox")
-
-                    yield Static("", classes="search-section-title")
-                    yield Button("Create All Embeddings", id="creation-create-all-button", variant="primary")
-                    yield Markdown("Status: Ready to create embeddings. Click the button above to start the process.", id="creation-status-output")
-
-            # --- Embeddings Management View (Two-Pane layout, enhanced for better UX) ---
-            with Container(id=SEARCH_VIEW_EMBEDDINGS_MANAGEMENT, classes="search-view-area"):
-                with Horizontal():
-                    # Left Pane - Selection and Status
-                    with Vertical(classes="search-management-left-pane"):
-                        yield Static("Manage Embeddings", classes="search-view-title")
-                        yield Markdown("Select a database and item to view, update, or delete its embeddings.", id="mgmt-help-text")
-
-                        yield Static("Database & Item Selection", classes="search-section-title")
+                        yield Static("Database Selection", classes="search-section-title")
                         with Horizontal(classes="search-form-row"):
-                            yield Static("Database:", classes="search-form-label")
+                            yield Static("Content Source:", classes="search-form-label")
                             yield Select(
                                 [("Media DB", "media_db"), ("RAG Chat DB", "rag_chat_db"),
                                  ("Character Chat DB", "char_chat_db")],
-                                id="mgmt-db-select",
+                                id="creation-db-select",
                                 prompt="Select Content Source...",
                                 value="media_db"
                             )
-
                         with Horizontal(classes="search-form-row"):
-                            yield Static("", classes="search-form-label")
-                            yield Button("Refresh Item List", id="mgmt-refresh-list-button", variant="primary")
-
+                            yield Static("Database Path:", classes="search-form-label")
+                            yield Input(id="creation-db-path-display", disabled=True, value="Path will appear here")
                         with Horizontal(classes="search-form-row"):
-                            yield Static("Item:", classes="search-form-label")
-                            yield Select([], id="mgmt-item-select", prompt="Select an item...")
-
-                        yield Static("Embedding Status", classes="search-section-title")
-                        yield Markdown("Select an item above to see its embedding status.", id="mgmt-embedding-status-md")
-
-                        yield Static("Embedding Metadata", classes="search-section-title")
-                        yield Markdown("Metadata will appear here when an item is selected.", id="mgmt-embedding-metadata-md")
-
-                    # Right Pane - Update Configuration
-                    with Vertical(classes="search-management-right-pane"):
-                        yield Static("Update Configuration", classes="search-view-title")
-                        yield Markdown("Configure the embedding settings for the selected item.", id="mgmt-update-help-text")
+                            yield Static("Collection Name:", classes="search-form-label")
+                            yield Input(id="creation-collection-name-input", placeholder="Enter a name for the collection...")
 
                         yield Static("Embedding Model", classes="search-section-title")
                         with Horizontal(classes="search-form-row"):
                             yield Static("Provider:", classes="search-form-label")
-                            yield Select([], id="mgmt-embedding-provider-select", prompt="Select Provider...")
+                            yield Select([], id="creation-embedding-provider-select", prompt="Select Provider...")
                         with Horizontal(classes="search-form-row"):
                             yield Static("Model:", classes="search-form-label")
-                            yield Select([], id="mgmt-model-select", prompt="Select Model...")
+                            yield Select([], id="creation-model-select", prompt="Select Model...")
                         with Horizontal(classes="search-form-row"):
                             yield Static("Custom Model:", classes="search-form-label")
-                            yield Input(id="mgmt-custom-model-input", placeholder="Custom HuggingFace Model Name...",
+                            yield Input(id="creation-custom-model-input", placeholder="Custom HuggingFace Model Name...",
                                         classes="hidden")
                         with Horizontal(classes="search-form-row"):
                             yield Static("API URL:", classes="search-form-label")
-                            yield Input(id="mgmt-api-url-input", placeholder="http://localhost:8080/v1/embeddings",
+                            yield Input(id="creation-api-url-input", placeholder="http://localhost:8080/v1/embeddings",
                                         classes="hidden")
 
                         yield Static("Chunking Options", classes="search-section-title")
-                        yield Markdown("Configure how content is divided into chunks for embedding.", id="mgmt-chunking-help-text")
+                        yield Markdown("Chunking divides your content into smaller pieces for better retrieval. Adjust these settings based on your content type.", id="chunking-help-text")
                         with Horizontal(classes="search-form-row"):
                             yield Static("Method:", classes="search-form-label")
                             yield Select([("By Words", "words"), ("By Sentences", "sentences")],
-                                         id="mgmt-chunk-method-select", value="words")
+                                         id="creation-chunk-method-select", value="words")
                         with Horizontal(classes="search-form-row"):
                             yield Static("Max Size:", classes="search-form-label")
-                            yield Input(id="mgmt-chunk-size-input", value="400", type="integer")
+                            yield Input(id="creation-chunk-size-input", value="400", type="integer")
                         with Horizontal(classes="search-form-row"):
                             yield Static("Overlap:", classes="search-form-label")
-                            yield Input(id="mgmt-chunk-overlap-input", value="200", type="integer")
+                            yield Input(id="creation-chunk-overlap-input", value="200", type="integer")
                         with Horizontal(classes="search-form-row"):
                             yield Static("Adaptive:", classes="search-form-label")
-                            yield Checkbox("Use adaptive chunking (recommended)", id="mgmt-adaptive-chunking-checkbox")
+                            yield Checkbox("Use adaptive chunking (recommended)", id="creation-adaptive-chunking-checkbox")
 
-                        yield Static("Actions", classes="search-section-title")
-                        with Horizontal(classes="search-button-row"):
-                            yield Button("Update Embedding", id="mgmt-update-embedding-button", variant="success")
-                            yield Button("Delete Embedding", id="mgmt-delete-embedding-button", variant="error")
+                        yield Static("", classes="search-section-title")
+                        yield Button("Create All Embeddings", id="creation-create-all-button", variant="primary")
+                        yield Markdown("Status: Ready to create embeddings. Click the button above to start the process.", id="creation-status-output")
+            else:
+                with Container(id=SEARCH_VIEW_EMBEDDINGS_CREATION, classes="search-view-area"):
+                    with VerticalScroll():
+                        yield Markdown("### Embeddings Creation Is Not Currently Available\n\nThe required dependencies for embeddings creation are not installed. Please install the necessary packages to use this feature.")
 
-                        yield Markdown("Status: Select an item from the left panel to update or delete its embeddings.", id="mgmt-status-output")
+            # --- Embeddings Management View (Two-Pane layout, enhanced for better UX) ---
+            if VECTORDB_AVAILABLE:
+                with Container(id=SEARCH_VIEW_EMBEDDINGS_MANAGEMENT, classes="search-view-area"):
+                    with Horizontal():
+                        # Left Pane - Selection and Status
+                        with Vertical(classes="search-management-left-pane"):
+                            with VerticalScroll():
+                                yield Static("Manage Embeddings", classes="search-view-title")
+                                yield Markdown("Select a database and item to view, update, or delete its embeddings.", id="mgmt-help-text")
+
+                                yield Static("Database & Item Selection", classes="search-section-title")
+                                with Horizontal(classes="search-form-row"):
+                                    yield Static("Database:", classes="search-form-label")
+                                    yield Select(
+                                        [("Media DB", "media_db"), ("RAG Chat DB", "rag_chat_db"),
+                                         ("Character Chat DB", "char_chat_db")],
+                                        id="mgmt-db-select",
+                                        prompt="Select Content Source...",
+                                        value="media_db"
+                                    )
+
+                                with Horizontal(classes="search-form-row"):
+                                    yield Static("", classes="search-form-label")
+                                    yield Button("Refresh Item List", id="mgmt-refresh-list-button", variant="primary")
+
+                                with Horizontal(classes="search-form-row"):
+                                    yield Static("Item:", classes="search-form-label")
+                                    yield Select([], id="mgmt-item-select", prompt="Select an item...")
+
+                                yield Static("Embedding Status", classes="search-section-title")
+                                yield Markdown("Select an item above to see its embedding status.", id="mgmt-embedding-status-md")
+
+                                yield Static("Embedding Metadata", classes="search-section-title")
+                                yield Markdown("Metadata will appear here when an item is selected.", id="mgmt-embedding-metadata-md")
+
+                        # Right Pane - Update Configuration
+                        with Vertical(classes="search-management-right-pane"):
+                            with VerticalScroll():
+                                yield Static("Update Configuration", classes="search-view-title")
+                                yield Markdown("Configure the embedding settings for the selected item.", id="mgmt-update-help-text")
+
+                                yield Static("Embedding Model", classes="search-section-title")
+                                with Horizontal(classes="search-form-row"):
+                                    yield Static("Provider:", classes="search-form-label")
+                                    yield Select([], id="mgmt-embedding-provider-select", prompt="Select Provider...")
+                                with Horizontal(classes="search-form-row"):
+                                    yield Static("Model:", classes="search-form-label")
+                                    yield Select([], id="mgmt-model-select", prompt="Select Model...")
+                                with Horizontal(classes="search-form-row"):
+                                    yield Static("Custom Model:", classes="search-form-label")
+                                    yield Input(id="mgmt-custom-model-input", placeholder="Custom HuggingFace Model Name...",
+                                                classes="hidden")
+                                with Horizontal(classes="search-form-row"):
+                                    yield Static("API URL:", classes="search-form-label")
+                                    yield Input(id="mgmt-api-url-input", placeholder="http://localhost:8080/v1/embeddings",
+                                                classes="hidden")
+
+                                yield Static("Chunking Options", classes="search-section-title")
+                                yield Markdown("Configure how content is divided into chunks for embedding.", id="mgmt-chunking-help-text")
+                                with Horizontal(classes="search-form-row"):
+                                    yield Static("Method:", classes="search-form-label")
+                                    yield Select([("By Words", "words"), ("By Sentences", "sentences")],
+                                                 id="mgmt-chunk-method-select", value="words")
+                                with Horizontal(classes="search-form-row"):
+                                    yield Static("Max Size:", classes="search-form-label")
+                                    yield Input(id="mgmt-chunk-size-input", value="400", type="integer")
+                                with Horizontal(classes="search-form-row"):
+                                    yield Static("Overlap:", classes="search-form-label")
+                                    yield Input(id="mgmt-chunk-overlap-input", value="200", type="integer")
+                                with Horizontal(classes="search-form-row"):
+                                    yield Static("Adaptive:", classes="search-form-label")
+                                    yield Checkbox("Use adaptive chunking (recommended)", id="mgmt-adaptive-chunking-checkbox")
+
+                                yield Static("Actions", classes="search-section-title")
+                                with Horizontal(classes="search-button-row"):
+                                    yield Button("Update Embedding", id="mgmt-update-embedding-button", variant="success")
+                                    yield Button("Delete Embedding", id="mgmt-delete-embedding-button", variant="error")
+
+                                yield Markdown("Status: Select an item from the left panel to update or delete its embeddings.", id="mgmt-status-output")
+            else:
+                with Container(id=SEARCH_VIEW_EMBEDDINGS_MANAGEMENT, classes="search-view-area"):
+                    with VerticalScroll():
+                        yield Markdown("### Embeddings Management Is Not Currently Available\n\nThe required dependencies for vector database management are not installed. Please install the necessary packages to use this feature.")
 
             if WEB_SEARCH_AVAILABLE:
                 with Container(id=SEARCH_VIEW_WEB_SEARCH, classes="search-view-area"):
