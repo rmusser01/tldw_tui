@@ -3143,6 +3143,59 @@ class MediaDatabase:
             logger.error(f"Unexpected error fetching media by title '{title}': {e}", exc_info=True)
             raise DatabaseError(f"Unexpected error fetching media by title: {e}") from e
 
+    def get_all_active_media_for_selection_dropdown(self, limit: int = 200, offset: int = 0) -> List[Dict[str, Any]]:
+        """
+        Retrieves a list of active (not deleted, not trash) media items,
+        suitable for populating a selection dropdown.
+
+        Returns essential fields: 'id' (integer PK) and 'title'.
+        Orders by last_modified date descending, then by title ascending.
+
+        Args:
+            limit (int): The maximum number of media items to return. Defaults to 200.
+            offset (int): The number of media items to skip. Defaults to 0.
+
+        Returns:
+            List[Dict[str, Any]]: A list of dictionaries, where each dictionary
+                                  contains 'id' and 'title' of a media item.
+                                  Returns an empty list if no items are found or on error.
+
+        Raises:
+            DatabaseError: For SQLite errors during query execution.
+        """
+        logging.debug(f"Fetching active media for dropdown: limit={limit}, offset={offset} from DB '{self.db_path_str}'")
+        query = """
+            SELECT
+                id,           -- The integer primary key
+                title         -- The title of the media
+            FROM
+                Media
+            WHERE
+                deleted = 0
+                AND is_trash = 0
+            ORDER BY
+                last_modified DESC, -- Show most recent first
+                title ASC           -- Then by title for consistent ordering
+            LIMIT ? OFFSET ?
+        """
+        params = (limit, offset)
+        results: List[Dict[str, Any]] = []
+        try:
+            cursor = self.execute_query(query, params)
+            rows = cursor.fetchall()
+            for row in rows:
+                results.append(dict(row)) # Convert sqlite3.Row to dict
+            logging.info(f"Fetched {len(results)} active media items for dropdown from DB '{self.db_path_str}'.")
+            return results
+        except sqlite3.Error as e: # Catch specific SQLite errors
+            logging.error(f"SQLite error fetching active media for dropdown from DB '{self.db_path_str}': {e}", exc_info=True)
+            # Depending on your DatabaseError definition, you might wrap it here
+            # For example, if DatabaseError is your custom base:
+            raise DatabaseError(f"Failed to fetch active media for dropdown: {e}") from e
+        except Exception as e: # Catch any other unexpected Python errors
+            logging.error(f"Unexpected error fetching active media for dropdown from DB '{self.db_path_str}': {e}", exc_info=True)
+            raise DatabaseError(f"An unexpected error occurred while fetching active media: {e}") from e
+
     def get_paginated_files(self, page: int = 1, results_per_page: int = 50) -> Tuple[List[sqlite3.Row], int, int, int]:
         """
         Fetches a paginated list of active media items (id, title, type) from this database instance.
@@ -3819,6 +3872,84 @@ class MediaDatabase:
                     f"An unexpected error occurred while processing chunks for media_id {media_id}: {e}") from e
             else:
                 raise
+    # ============================= End of Chunking-related Functions ===================================================
+
+    # ============================= Embeddings-related Functions ===================================================
+    # Method 1: Get all active media for embedding
+    def get_all_active_media_for_embedding(self, limit: Optional[int] = None, offset: Optional[int] = 0) -> List[
+        Dict[str, Any]]:
+        """
+        Retrieves all active (non-deleted, non-trash) media items suitable for embedding.
+        Selects only id, uuid, title, and content.
+        """
+        logger.debug(
+            f"Fetching all active media for embedding (limit={limit}, offset={offset}) from DB: {self.db_path_str}")
+        query = "SELECT id, uuid, title, content FROM Media WHERE deleted = 0 AND is_trash = 0 ORDER BY id"
+        params = []
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+            if offset is not None and offset > 0:
+                query += " OFFSET ?"
+                params.append(offset)
+        try:
+            cursor = self.execute_query(query, tuple(params))
+            return [dict(row) for row in cursor.fetchall() if row['content']]  # Ensure content exists
+        except Exception as e:
+            logger.error(f"Error fetching all active media for embedding: {e}", exc_info=True)
+            raise DatabaseError(f"Failed to fetch all active media: {e}") from e
+
+    # Method 2: Get specific media items by their DB IDs
+    def get_media_by_ids_for_embedding(self, media_db_ids: List[int]) -> List[Dict[str, Any]]:
+        """
+        Retrieves specific media items by their database IDs, suitable for embedding.
+        Selects id, uuid, title, content. Only returns active items.
+        """
+        if not media_db_ids:
+            return []
+        logger.debug(f"Fetching media by DB IDs for embedding: {media_db_ids} from DB: {self.db_path_str}")
+        placeholders = ','.join('?' * len(media_db_ids))
+        query = f"SELECT id, uuid, title, content FROM Media WHERE id IN ({placeholders}) AND deleted = 0 AND is_trash = 0"
+        try:
+            cursor = self.execute_query(query, tuple(media_db_ids))
+            return [dict(row) for row in cursor.fetchall() if row['content']]
+        except Exception as e:
+            logger.error(f"Error fetching media by IDs for embedding: {e}", exc_info=True)
+            raise DatabaseError(f"Failed to fetch media by IDs: {e}") from e
+
+    # Method 3: Search media items by keyword (simplified for embedding - gets content)
+    def search_media_by_keyword_for_embedding(self, keyword: str, limit: int = 1000) -> List[Dict[str, Any]]:
+        """
+        Searches media items by keyword in title or content (FTS) and returns them for embedding.
+        Selects id, uuid, title, content. Only returns active items.
+        """
+        logger.debug(
+            f"Searching media by keyword for embedding: '{keyword}' (limit={limit}) from DB: {self.db_path_str}")
+        # This uses your existing complex search, but we only care about items that matched.
+        # For simplicity, we'll just get the results and then re-fetch content if search_media_db doesn't return it.
+        # Ideally, search_media_db would have an option to include full content.
+
+        # Using your existing search_media_db. Ensure it returns 'id'.
+        # If it doesn't return 'content', we'll need a second query.
+        results_overview, total_matches = self.search_media_db(
+            search_query=keyword,
+            search_fields=["title", "content"],  # Focus on text fields
+            results_per_page=limit,
+            page=1,
+            include_deleted=False,
+            include_trash=False
+        )
+
+        if not results_overview:
+            return []
+
+        media_ids_found = [item['id'] for item in results_overview if 'id' in item]
+        if not media_ids_found:
+            return []
+
+        # Now fetch the full items with content for these IDs
+        return self.get_media_by_ids_for_embedding(media_ids_found)
+    # ============================= End of Embedding-related Functions ===================================================
 
 
 # =========================================================================

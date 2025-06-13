@@ -1986,6 +1986,54 @@ UPDATE db_schema_version
             raise
         return None # Should not be reached
 
+    def list_all_active_conversations(self, limit: int = 1000, offset: int = 0) -> List[Dict[str, Any]]:
+        """
+        Lists all active (not soft-deleted) conversations.
+
+        Orders conversations by their last modification date in descending order,
+        so more recently active or created conversations appear first.
+
+        Args:
+            limit: The maximum number of conversations to return. Defaults to 1000.
+            offset: The number of conversations to skip before starting to return results.
+                    Defaults to 0.
+
+        Returns:
+            A list of dictionaries, where each dictionary represents an active conversation.
+            Includes fields like 'id', 'title', 'character_id', 'last_modified', 'created_at'.
+            Returns an empty list if no active conversations are found or if an error occurs.
+
+        Raises:
+            CharactersRAGDBError: For database query errors.
+        """
+        logger.debug(f"Listing all active conversations: limit={limit}, offset={offset}")
+        query = """
+                SELECT id, \
+                       root_id, \
+                       character_id, \
+                       title, \
+                       rating, \
+                       created_at, \
+                       last_modified, \
+                       version, \
+                       client_id
+                FROM conversations
+                WHERE deleted = 0
+                ORDER BY last_modified DESC, id DESC LIMIT ? \
+                OFFSET ? \
+                """
+        try:
+            cursor = self.execute_query(query, (limit, offset))
+            conversations = [dict(row) for row in cursor.fetchall()]
+            logger.info(f"Found {len(conversations)} active conversations (limit {limit}, offset {offset}).")
+            return conversations
+        except CharactersRAGDBError as e:
+            logger.error(f"Database error listing all active conversations: {e}", exc_info=True)
+            raise  # Re-raise the specific error
+        except Exception as e:  # Catch any other unexpected errors
+            logger.error(f"Unexpected error listing all active conversations: {e}", exc_info=True)
+            raise CharactersRAGDBError(f"Unexpected error listing conversations: {e}") from e
+
     def get_conversation_by_id(self, conversation_id: str) -> Optional[Dict[str, Any]]:
         """
         Retrieves a specific conversation by its UUID.

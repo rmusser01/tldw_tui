@@ -1324,6 +1324,8 @@ top_p = 0.9
 min_p = 0.0 # Check if API supports this
 top_k = 100 # Check if API supports this
 
+      
+      
 # ==========================================================
 # Embedding Configuration
 # ==========================================================
@@ -1331,10 +1333,11 @@ top_k = 100 # Check if API supports this
 default_model_id = "e5-small-v2"
 default_llm_for_contextualization = "gpt-3.5-turbo"
 
+    # --- HuggingFace Models ---
     [embedding_config.models.e5-small-v2]
     provider = "huggingface"
     model_name_or_path = "intfloat/e5-small-v2"
-    dimension = 1024
+    dimension = 384
     trust_remote_code = false
     max_length = 512
 
@@ -1345,12 +1348,45 @@ default_llm_for_contextualization = "gpt-3.5-turbo"
     trust_remote_code = false
     max_length = 512
 
-    [embedding_config.models.openai-ada]
-    provider = "openai"       # The key is 'provider'
+    # --- Official OpenAI Models ---
+    [embedding_config.models.openai-ada-002]
+    provider = "openai"
     model_name_or_path = "text-embedding-ada-002"
     dimension = 1536
-    # For OpenAI, set the API key via an environment variable named OPENAI_API_KEY
-    api_key = ""
+    api_key = "YOUR_OPENAI_API_KEY_OR_LEAVE_BLANK_IF_ENV_VAR_SET" # User fills this or sets ENV
+
+    [embedding_config.models.openai-text-embedding-3-small]
+    provider = "openai"
+    model_name_or_path = "text-embedding-3-small" # Common model name
+    dimension = 1536 # Or 512, 1536 depending on how you use it
+    api_key = "YOUR_OPENAI_API_KEY_OR_LEAVE_BLANK_IF_ENV_VAR_SET"
+
+    # --- Placeholder for a Local OpenAI-Compatible Server ---
+    # The user needs to edit this section for their specific local setup.
+    # The 'key' (e.g., "my-local-nomic-model") is what will appear in the UI's model dropdown
+    # when "Local OpenAI-Compliant Server" provider is selected.
+    [embedding_config.models.my-local-nomic-model]
+    provider = "openai" # CRITICAL: This tells EmbeddingFactory to use OpenAICfg
+    model_name_or_path = "nomic-ai/nomic-embed-text-v1" # The actual model name the LOCAL SERVER uses/expects
+    base_url = "http://localhost:8080/v1" # The base URL of THE LOCAL SERVER's OpenAI-compatible API
+    dimension = 768 # CRITICAL: User MUST provide the correct dimension for this model
+    # api_key can be omitted if the local server doesn't require one, or set to a dummy value.
+    # api_key = "not-needed-for-local"
+
+    # --- Another Local Example (e.g., for a Llama.cpp server with embeddings) ---
+    [embedding_config.models.local-llama-cpp-embeddings]
+    provider = "openai"
+    model_name_or_path = "llama-2-7b-chat.Q4_K_M.gguf" # Or whatever model name the server endpoint expects
+    base_url = "http://localhost:8000/v1" # Common port for Llama.cpp server's OpenAI API
+    dimension = 4096 # Example dimension for Llama-2 base models
+    # api_key = "sk-xxxxxxxxxxxxxxxxx" # If your Llama.cpp server is configured with an API key
+
+# You can add more local model configurations following the pattern above.
+# The key part is `provider = "openai"` and providing the correct `base_url` and `dimension`.
+
+    
+
+    
 
 
 # --- Sections below are placeholders based on config.txt, integrate as needed ---
