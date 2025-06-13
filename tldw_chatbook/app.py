@@ -30,6 +30,7 @@ from textual.css.query import QueryError
 from pathlib import Path
 
 from tldw_chatbook.Utils.text import slugify
+from tldw_chatbook.css.Themes.themes import ALL_THEMES
 #
 # --- Local API library Imports ---
 from .Event_Handlers.LLM_Management_Events import (llm_management_events, llm_management_events_mlx_lm,
@@ -1198,6 +1199,10 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
         # Schedule setup to run after initial rendering
         self.call_after_refresh(self._post_mount_setup)
         self.call_after_refresh(self.hide_inactive_windows)
+
+        # Load up dem themes
+        for theme_name in ALL_THEMES:
+            self.register_theme(theme_name)
 
     def hide_inactive_windows(self) -> None:
         """Hides all windows that are not the current active tab."""
