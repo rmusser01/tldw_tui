@@ -946,65 +946,30 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
     # --- Watcher for Search Tab Active Sub-View ---
     # ##################################################
     def watch_search_active_sub_tab(self, old_sub_tab: Optional[str], new_sub_tab: Optional[str]) -> None:
-        if not self._ui_ready:
-            self.loguru_logger.debug(
-                f"watch_search_active_sub_tab: UI not ready. Old: {old_sub_tab}, New: {new_sub_tab}.")
-            return
-        if not new_sub_tab:  # If new_sub_tab is None (e.g. on initial load before set)
-            self.loguru_logger.debug(f"watch_search_active_sub_tab: new_sub_tab is None. Old: {old_sub_tab}.")
-            # Optionally hide all if new_sub_tab is explicitly set to None to clear view
-            if old_sub_tab:  # If there was an old tab, ensure it's hidden and button deactivated
-                try:
-                    self.query_one(f"#{old_sub_tab.replace('-view-', '-nav-')}", Button).remove_class(
-                        "-active-search-sub-view")
-                    self.query_one(f"#{old_sub_tab}", Container).styles.display = "none"
-                except QueryError:
-                    pass  # It might already be gone or not exist
+        """Shows the correct sub-tab view in the Search tab and hides others."""
+        if not self._ui_ready or not new_sub_tab:
             return
 
-        self.loguru_logger.debug(f"Search active sub-tab changing from '{old_sub_tab}' to: '{new_sub_tab}'")
-
+        self.loguru_logger.debug(f"Search sub-tab watcher: Changing from '{old_sub_tab}' to '{new_sub_tab}'")
         try:
-            search_content_pane = self.query_one("#search-content-pane")
-            search_nav_pane = self.query_one("#search-left-nav-pane")
+            # First, find the parent content pane
+            content_pane = self.query_one("#search-content-pane")
 
-            # Hide all search view areas first
-            for view_area in search_content_pane.query(".search-view-area"):
-                view_area.styles.display = "none"
+            # Iterate through all direct children that are view areas
+            for view in content_pane.query(".search-view-area"):
+                # Show the view if its ID matches the new sub-tab, otherwise hide it.
+                view.styles.display = "block" if view.id == new_sub_tab else "none"
 
-            # Deactivate all nav buttons in search tab
-            for nav_button in search_nav_pane.query(".search-nav-button"):
-                nav_button.remove_class("-active-search-sub-view")
+            # Also update the active button style
+            nav_pane = self.query_one("#search-left-nav-pane")
+            for button in nav_pane.query(".search-nav-button"):
+                button_id_as_view = button.id.replace("-nav-", "-view-")
+                button.set_class(button_id_as_view == new_sub_tab, "-active-search-sub-view")
 
-            # Show the selected view and activate its button
-            target_view_id_selector = f"#{new_sub_tab}"
-            view_to_show = self.query_one(target_view_id_selector, Container)
-            view_to_show.styles.display = "block"  # Or "flex" etc. if needed by content
-
-            # Activate corresponding button
-            # Button ID is like "search-nav-..." and view ID is "search-view-..."
-            button_id_to_activate = new_sub_tab.replace("-view-", "-nav-")
-            try:
-                active_button = self.query_one(f"#{button_id_to_activate}", Button)
-                active_button.add_class("-active-search-sub-view")
-            except QueryError:
-                self.loguru_logger.warning(
-                    f"Could not find button '{button_id_to_activate}' to activate for sub-tab '{new_sub_tab}'.")
-
-            self.loguru_logger.info(f"Switched Search sub-tab view to: {new_sub_tab}")
-
-            # Optional: Focus an element within the newly shown view
-            # try:
-            #     first_focusable = view_to_show.query(Input, TextArea, Button)[0]
-            #     self.set_timer(0.1, first_focusable.focus)
-            # except IndexError:
-            #     pass # No focusable element
-            # except QueryError: # If view_to_show doesn't exist (should not happen if previous query_one succeeded)
-            #     self.loguru_logger.error(f"Cannot focus in {new_sub_tab}, view not found after successful query.")
+            self.loguru_logger.info(f"Switched search sub-tab view to: {new_sub_tab}")
 
         except QueryError as e:
-            self.loguru_logger.error(f"UI component not found during Search sub-tab view switch: {e}",
-                                     exc_info=True)
+            self.loguru_logger.error(f"UI component not found during Search sub-tab switch: {e}", exc_info=True)
         except Exception as e_watch:
             self.loguru_logger.error(f"Unexpected error in watch_search_active_sub_tab: {e_watch}", exc_info=True)
 
@@ -1480,6 +1445,15 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
                 self.loguru_logger.debug(f"Switched to Search tab, activating initial sub-tab view: {self._initial_search_sub_tab_view}")
                 # Use call_later to ensure the UI for SearchWindow is fully composed and ready
                 self.call_later(setattr, self, 'search_active_sub_tab', self._initial_search_sub_tab_view)
+
+            # Explicitly initialize the SearchWindow views
+            try:
+                search_window = self.query_one(SearchWindow)
+                self.call_after_refresh(search_window._initialize_embeddings_creation_view)
+                self.call_after_refresh(search_window._refresh_collections_list)
+                self.loguru_logger.debug("Initialized SearchWindow views after tab activation")
+            except Exception as e:
+                self.loguru_logger.error(f"Failed to initialize SearchWindow views: {e}", exc_info=True)
         elif new_tab == TAB_INGEST:
             if not self.ingest_active_view:
                 self.loguru_logger.debug(

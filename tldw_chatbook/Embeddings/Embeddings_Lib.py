@@ -39,7 +39,7 @@ from typing import (Any, Annotated, Callable, Dict, List, Literal, Optional,
 import numpy as np
 import requests
 import torch
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from torch import Tensor
 from torch.nn.functional import normalize
 from transformers import AutoModel, AutoTokenizer
@@ -57,11 +57,21 @@ LOGGER.addHandler(logging.NullHandler())
 # Configuration schema (with Discriminated Union)
 ###############################################################################
 
-###############################################################################
-# Configuration schema (with Discriminated Union)
-###############################################################################
-
 PoolingFn = Callable[[Tensor, Tensor], Tensor]
+
+class EmbeddingConfigSchema(BaseModel):
+    default_model_id: Optional[str] = None
+    models: Dict[str, ModelCfg]
+
+    @model_validator(mode='after')
+    def check_default_model_exists(self) -> 'EmbeddingConfigSchema':
+        """Ensures the default_model_id refers to a model defined in the models dict."""
+        if self.default_model_id and self.default_model_id not in self.models:
+            raise ValueError(
+                f"default_model_id '{self.default_model_id}' is not a valid key in the 'models' dictionary. "
+                f"Available models are: {list(self.models.keys())}"
+            )
+        return self
 
 
 def _masked_mean(last_hidden: Tensor, attn: Tensor) -> Tensor:

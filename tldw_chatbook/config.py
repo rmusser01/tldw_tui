@@ -1324,13 +1324,21 @@ top_p = 0.9
 min_p = 0.0 # Check if API supports this
 top_k = 100 # Check if API supports this
 
+# ==========================================================
 # Embedding Configuration
+# ==========================================================
 [embedding_config]
 default_model_id = "e5-small-v2"
 default_llm_for_contextualization = "gpt-3.5-turbo"
 
-    # Define each model under the 'models' sub-table
     [embedding_config.models.e5-small-v2]
+    provider = "huggingface"
+    model_name_or_path = "intfloat/e5-small-v2"
+    dimension = 1024
+    trust_remote_code = false
+    max_length = 512
+
+    [embedding_config.models.multilingual-e5-large-instruct]
     provider = "huggingface"
     model_name_or_path = "intfloat/multilingual-e5-large-instruct"
     dimension = 1024
@@ -1338,10 +1346,12 @@ default_llm_for_contextualization = "gpt-3.5-turbo"
     max_length = 512
 
     [embedding_config.models.openai-ada]
-    provider = "openai"
+    provider = "openai"       # The key is 'provider'
     model_name_or_path = "text-embedding-ada-002"
     dimension = 1536
-    api_key = "<API_KEY_HERE>>" # Or set OPENAI_API_KEY environment variable
+    # For OpenAI, set the API key via an environment variable named OPENAI_API_KEY
+    api_key = ""
+
 
 # --- Sections below are placeholders based on config.txt, integrate as needed ---
 # [tts_settings]

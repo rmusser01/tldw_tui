@@ -51,10 +51,7 @@ async def handle_copy_logs_button_pressed(app: 'TldwCli', event: Button.Pressed)
         else:
             app.notify("Log is empty, nothing to copy.", title="Clipboard", severity="warning", timeout=4)
 
-    # except app.query_one("QueryError"): # <--- THIS IS ALSO WRONG
-    # `QueryError` is an exception type, not something to query.
-    # You need to import it and use it directly in the except block.
-    except QueryError:  # <--- CORRECT WAY TO CATCH QueryError
+    except QueryError:
         app.notify("Log widget not found. Cannot copy.", title="Error", severity="error", timeout=4)
         logger.error("Could not find #app-log-display to copy logs.")
     except AttributeError as ae:
