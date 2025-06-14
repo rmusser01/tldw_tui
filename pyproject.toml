@@ -45,6 +45,12 @@ dependencies = [
 
 # --- Optional Dependencies ---
 [project.optional-dependencies]
+coding_map = [
+    "grep_ast",
+    "pygments",
+    "tqdm",
+
+]
 chunker = [
     "langdetect",
     "nltk",

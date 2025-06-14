@@ -20,7 +20,7 @@ from textual.widgets import Input, RichLog, TextArea, Button
 from textual.css.query import QueryError
 #
 # Local Imports
-from tldw_chatbook.Constants import LLAMA_CPP_SERVER_ARGS_HELP_TEXT, LLAMAFILE_SERVER_ARGS_HELP_TEXT
+from tldw_chatbook.Constants import LLAMA_CPP_SERVER_ARGS_HELP_TEXT, LLAMAFILE_SERVER_ARGS_HELP_TEXT, MLX_LM_SERVER_ARGS_HELP_TEXT
 #
 if TYPE_CHECKING:
     from tldw_chatbook.app import TldwCli
@@ -981,6 +981,16 @@ async def populate_llm_help_texts(app: 'TldwCli') -> None:
         app.loguru_logger.error("Failed to find #llamafile-args-help-display widget.")
     except Exception as e:
         app.loguru_logger.error(f"Error populating Llamafile help: {e}", exc_info=True)
+    try:
+        # MLX-LM
+        mlx_help_widget = app.query_one("#mlx-args-help-display", RichLog)
+        mlx_help_widget.clear()  # Clear existing content
+        mlx_help_widget.write(MLX_LM_SERVER_ARGS_HELP_TEXT)  # Write new content
+        app.loguru_logger.debug("Populated MLX-LM args help.")
+    except QueryError:
+        app.loguru_logger.error("Failed to find #mlx-args-help-display widget.")
+    except Exception as e:
+        app.loguru_logger.error(f"Error populating MLX-LM help: {e}", exc_info=True)
 
 # --- Button Handler Map ---
 LLM_MANAGEMENT_BUTTON_HANDLERS = {

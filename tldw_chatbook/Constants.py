@@ -1970,5 +1970,61 @@ LLAMAFILE_SERVER_ARGS_HELP_TEXT = """
 
 
 #
+# MLX-LM Server Arguments Help Text
+MLX_LM_SERVER_ARGS_HELP_TEXT = """
+[bold cyan]--- MLX-LM Server Arguments ---[/]
+
+[bold]--model MODEL[/]
+  Path to the model directory or HuggingFace model ID
+  (e.g., [italic]--model mlx-community/Nous-Hermes-2-Mistral-7B-DPO-4bit-MLX[/])
+
+[bold]--host HOST[/]
+  Host address to bind the server to (default: 127.0.0.1)
+  (e.g., [italic]--host 0.0.0.0[/])
+
+[bold]--port PORT[/]
+  Port to run the server on (default: 8080)
+  (e.g., [italic]--port 8000[/])
+
+[bold]--max-tokens N[/]
+  Maximum number of tokens to generate (default: 100)
+  (e.g., [italic]--max-tokens 512[/])
+
+[bold]--temperature TEMP[/]
+  Sampling temperature (default: 0.8)
+  (e.g., [italic]--temperature 0.7[/])
+
+[bold]--top-p P[/]
+  Top-p sampling (default: 0.9)
+  (e.g., [italic]--top-p 0.95[/])
+
+[bold]--top-k K[/]
+  Top-k sampling (default: 40)
+  (e.g., [italic]--top-k 50[/])
+
+[bold]--seed SEED[/]
+  Random seed for reproducibility (default: None)
+  (e.g., [italic]--seed 42[/])
+
+[bold]--batch-size N[/]
+  Batch size for inference (default: 1)
+  (e.g., [italic]--batch-size 4[/])
+
+[bold]--quantization {int8,int4,fp16,fp32}[/]
+  Quantization method to use (default: None)
+  (e.g., [italic]--quantization int4[/])
+
+[bold]--device {cpu,gpu}[/]
+  Device to run inference on (default: auto-detect)
+  (e.g., [italic]--device gpu[/])
+
+[bold]--trust-remote-code[/]
+  Trust remote code when loading models from HuggingFace
+
+[bold]--revision REVISION[/]
+  Specific model revision to use from HuggingFace
+  (e.g., [italic]--revision main[/])
+"""
+
 # End of Constants.py
 ########################################################################################################################
