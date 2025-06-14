@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Dict, Any, Optional
 import logging
 
 # 3rd-party Libraries
+from loguru import logger as loguru_logger
 from textual.widgets import ListItem, Input, ListView, TextArea, Button, Label
 from textual.css.query import QueryError
 from textual.app import App
@@ -23,7 +24,6 @@ if TYPE_CHECKING:
 #
 # Globals
 #
-logger = logging.getLogger(__name__)  # Standard practice for logging
 RESULTS_PER_PAGE = 20
 #
 ###########################################################################################################################
@@ -45,7 +45,7 @@ def _clear_and_disable_media_display(app: 'TldwCli'):
         app.query_one("#chat-media-copy-author-button", Button).disabled = True
         app.query_one("#chat-media-copy-url-button", Button).disabled = True
     except QueryError as e:
-         logger.warning(f"Could not find a media display/copy widget to clear/disable: {e}")
+         loguru_logger.warning(f"Could not find a media display/copy widget to clear/disable: {e}")
 
 
 async def perform_media_sidebar_search(app: 'TldwCli', search_term: str = ""):
@@ -53,11 +53,11 @@ async def perform_media_sidebar_search(app: 'TldwCli', search_term: str = ""):
     Performs a search for media items based on the given search term and populates the results.
     This function is used by tests and is a simplified version of perform_media_search.
     """
-    logger.debug(f"Performing media sidebar search with term: '{search_term}'")
+    loguru_logger.debug(f"Performing media sidebar search with term: '{search_term}'")
     try:
         results_list_view = app.query_one("#chat-media-search-results-listview", ListView)
     except QueryError as e:
-        logger.error(f"Error querying media search UI elements: {e}")
+        loguru_logger.error(f"Error querying media search UI elements: {e}")
         app.notify(f"Error accessing media search UI: {e}", severity="error")
         return
 
@@ -65,11 +65,11 @@ async def perform_media_sidebar_search(app: 'TldwCli', search_term: str = ""):
     _clear_and_disable_media_display(app)
 
     if not search_term.strip():
-        logger.debug("Search term is empty, clearing results.")
+        loguru_logger.debug("Search term is empty, clearing results.")
         return
 
     if not app.media_db:
-        logger.error("app.media_db is not available.")
+        loguru_logger.error("app.media_db is not available.")
         app.notify("Media database service not initialized.", severity="error")
         return
 
@@ -100,10 +100,10 @@ async def perform_media_sidebar_search(app: 'TldwCli', search_term: str = ""):
                     setattr(list_item, 'media_data', item_dict)
                     await results_list_view.append(list_item)
                 else:
-                    logger.warning(f"Skipping non-dictionary item from DB search results: {item_dict}")
+                    loguru_logger.warning(f"Skipping non-dictionary item from DB search results: {item_dict}")
 
     except Exception as e:
-        logger.error(f"Exception during media search: {e}", exc_info=True)
+        loguru_logger.error(f"Exception during media search: {e}", exc_info=True)
         app.notify(f"Error during media search: {e}", severity="error")
         await results_list_view.clear()
         # FIX: Await the async append method.
@@ -114,7 +114,7 @@ async def perform_media_search(app: 'TldwCli'):
     """
     Performs a search for media items based on sidebar inputs and populates the results.
     """
-    logger.debug("Performing media search in chat sidebar.")
+    loguru_logger.debug("Performing media search in chat sidebar.")
     try:
         results_list_view = app.query_one("#chat-media-search-results-listview", ListView)
         search_input = app.query_one("#chat-media-search-input", Input)
@@ -123,7 +123,7 @@ async def perform_media_search(app: 'TldwCli'):
         prev_button = app.query_one("#chat-media-prev-page-button", Button)
         next_button = app.query_one("#chat-media-next-page-button", Button)
     except QueryError as e:
-        logger.error(f"Error querying media search UI elements: {e}")
+        loguru_logger.error(f"Error querying media search UI elements: {e}")
         app.notify(f"Error accessing media search UI: {e}", severity="error")
         return
 
@@ -133,7 +133,7 @@ async def perform_media_search(app: 'TldwCli'):
     search_term = search_input.value.strip()
     keywords_str = keyword_input.value.strip()
     keywords_list = [kw.strip() for kw in keywords_str.split(',') if kw.strip()]
-    logger.debug(f"Media Search - Term: '{search_term}', Keywords: {keywords_list}")
+    loguru_logger.debug(f"Media Search - Term: '{search_term}', Keywords: {keywords_list}")
 
     # Store the original search term for LIKE queries
     original_search_term = search_term
@@ -141,7 +141,7 @@ async def perform_media_search(app: 'TldwCli'):
     # For very short search terms (1-2 characters), skip exact phrase matching
     # as it's likely to be too restrictive for partial matches
     if search_term and len(search_term) <= 2:
-        logger.debug(f"Short search term '{search_term}' detected, skipping exact phrase matching")
+        loguru_logger.debug(f"Short search term '{search_term}' detected, skipping exact phrase matching")
         # Keep the original search term for LIKE queries
         pass
     # For longer search terms, if they don't already have quotes and don't contain any special characters,
@@ -151,18 +151,18 @@ async def perform_media_search(app: 'TldwCli'):
         if not any(char in search_term for char in '*+-()'):
             # Wrap in quotes for exact phrase matching
             exact_search_term = f'"{search_term}"'
-            logger.debug(f"Converting search term to exact phrase: '{exact_search_term}'")
+            loguru_logger.debug(f"Converting search term to exact phrase: '{exact_search_term}'")
             search_term = exact_search_term
 
 
     if not app.media_db:
-        logger.error("app.media_db is not available.")
+        loguru_logger.error("app.media_db is not available.")
         app.notify("Media database service not initialized.", severity="error")
         return
 
     try:
         if not app.media_db:
-            logger.error("app.media_db is not available.")
+            loguru_logger.error("app.media_db is not available.")
             app.notify("Media database service not initialized.", severity="error")
             return
 
@@ -173,16 +173,16 @@ async def perform_media_search(app: 'TldwCli'):
 
         # If no search criteria provided, we'll do a general search without keyword filtering
         if not keywords_list and not search_term:
-            logger.debug("No search term or keywords provided, performing general search")
+            loguru_logger.debug("No search term or keywords provided, performing general search")
             # We'll leave both search_query and must_have_keywords as None to get all results
 
-        logger.debug(f"Media Search - Requesting page: {app.media_search_current_page}")
-        # logger.debug(f"Searching media DB with term: '{search_term}', fields: {search_fields}, types: {media_types_filter}") # This is a bit redundant with the one above
+        loguru_logger.debug(f"Media Search - Requesting page: {app.media_search_current_page}")
+        # loguru_logger.debug(f"Searching media DB with term: '{search_term}', fields: {search_fields}, types: {media_types_filter}") # This is a bit redundant with the one above
 
         # Only apply keyword filtering if keywords were explicitly provided
         must_have_keywords_param = keywords_list if keywords_list else None
 
-        logger.debug(f"Media Search - Parameters: search_query={search_term if search_term else 'None'}, original_term={original_search_term if original_search_term else 'None'}, must_have_keywords={must_have_keywords_param}")
+        loguru_logger.debug(f"Media Search - Parameters: search_query={search_term if search_term else 'None'}, original_term={original_search_term if original_search_term else 'None'}, must_have_keywords={must_have_keywords_param}")
 
         # Try with the exact phrase search first (quoted term)
         media_items, total_matches = db_instance.search_media_db(
@@ -202,7 +202,7 @@ async def perform_media_search(app: 'TldwCli'):
 
         # If no results with exact phrase, try with the original term (without quotes)
         if total_matches == 0 and search_term != original_search_term:
-            logger.debug(f"No results with exact phrase search, trying with original term: '{original_search_term}'")
+            loguru_logger.debug(f"No results with exact phrase search, trying with original term: '{original_search_term}'")
             media_items, total_matches = db_instance.search_media_db(
                 search_query=original_search_term,
                 search_fields=search_fields,
@@ -217,7 +217,7 @@ async def perform_media_search(app: 'TldwCli'):
                 include_trash=False,
                 include_deleted=False,
             )
-        logger.debug(f"Media Search - DB returned total_matches: {total_matches}, items_for_page: {len(media_items)}")
+        loguru_logger.debug(f"Media Search - DB returned total_matches: {total_matches}, items_for_page: {len(media_items)}")
 
         # Calculate total pages
         if total_matches > 0:
@@ -225,8 +225,8 @@ async def perform_media_search(app: 'TldwCli'):
         else:
             app.media_search_total_pages = 1 # Ensure at least 1 page even if no results
 
-        logger.debug(f"Media Search - Calculated total_pages: {app.media_search_total_pages}")
-        # logger.info(f"Media search: current_page={app.media_search_current_page}, total_matches={total_matches}, total_pages={app.media_search_total_pages}") # logger.info is a bit verbose for this
+        loguru_logger.debug(f"Media Search - Calculated total_pages: {app.media_search_total_pages}")
+        # loguru_logger.info(f"Media search: current_page={app.media_search_current_page}, total_matches={total_matches}, total_pages={app.media_search_total_pages}") # loguru_logger.info is a bit verbose for this
 
         # Update page label
         page_label.update(f"Page {app.media_search_current_page}/{app.media_search_total_pages}")
@@ -234,7 +234,7 @@ async def perform_media_search(app: 'TldwCli'):
         # Enable/disable pagination buttons
         prev_button.disabled = app.media_search_current_page == 1
         next_button.disabled = app.media_search_current_page >= app.media_search_total_pages
-        logger.debug(f"Media Search - Prev button disabled: {prev_button.disabled}, Next button disabled: {next_button.disabled}")
+        loguru_logger.debug(f"Media Search - Prev button disabled: {prev_button.disabled}, Next button disabled: {next_button.disabled}")
 
         if not media_items:
             # FIX: Await the async append method.
@@ -248,9 +248,9 @@ async def perform_media_search(app: 'TldwCli'):
             if media_ids:
                 try:
                     keywords_map = db_instance.fetch_keywords_for_media_batch(media_ids)
-                    logger.debug(f"Fetched keywords for {len(keywords_map)} media items")
+                    loguru_logger.debug(f"Fetched keywords for {len(keywords_map)} media items")
                 except Exception as e:
-                    logger.error(f"Error fetching keywords batch: {e}")
+                    loguru_logger.error(f"Error fetching keywords batch: {e}")
                     # Continue without keywords if fetching fails
 
             for item_dict in media_items:
@@ -271,10 +271,10 @@ async def perform_media_search(app: 'TldwCli'):
                     setattr(list_item, 'media_data', item_dict)
                     await results_list_view.append(list_item)
                 else:
-                    logger.warning(f"Skipping non-dictionary item from DB search results: {item_dict}")
+                    loguru_logger.warning(f"Skipping non-dictionary item from DB search results: {item_dict}")
 
     except Exception as e:
-        logger.error(f"Exception during media search: {e}", exc_info=True)
+        loguru_logger.error(f"Exception during media search: {e}", exc_info=True)
         app.notify(f"Error during media search: {e}", severity="error")
         await results_list_view.clear()
         # FIX: Await the async append method.
@@ -285,7 +285,7 @@ async def handle_chat_media_sidebar_input_changed(app: 'TldwCli'):
     """
     Handles changes in the media search input, debouncing the search.
     """
-    logger.debug("Media search input changed, debouncing search.")
+    loguru_logger.debug("Media search input changed, debouncing search.")
 
     async def debounced_search():
         app.media_search_current_page = 1  # Reset to page 1 for new search
@@ -297,7 +297,7 @@ async def handle_media_item_selected(app: 'TldwCli', list_item: ListItem) -> Non
     """
     Loads the selected media item's details into the review display.
     """
-    logger.debug("Media item selected in ListView.")
+    loguru_logger.debug("Media item selected in ListView.")
     _clear_and_disable_media_display(app)  # Clear previous state
 
     if not hasattr(list_item, 'media_data'):
@@ -319,7 +319,7 @@ async def handle_media_item_selected(app: 'TldwCli', list_item: ListItem) -> Non
         return
 
     app.current_sidebar_media_item = full_media_data
-    logger.info(f"Loaded media ID {media_id} into sidebar for review.")
+    loguru_logger.info(f"Loaded media ID {media_id} into sidebar for review.")
 
     try:
         title = full_media_data.get('title', '')
@@ -338,7 +338,7 @@ async def handle_media_item_selected(app: 'TldwCli', list_item: ListItem) -> Non
         app.query_one("#chat-media-copy-author-button", Button).disabled = not bool(author)
         app.query_one("#chat-media-copy-url-button", Button).disabled = not bool(url)
     except QueryError as e:
-        logger.error(f"Error populating media detail widgets: {e}")
+        loguru_logger.error(f"Error populating media detail widgets: {e}")
 
 
 async def handle_media_page_change(app: 'TldwCli', direction: int):
@@ -348,30 +348,30 @@ async def handle_media_page_change(app: 'TldwCli', direction: int):
         app.media_search_current_page = new_page
         await perform_media_search(app)
     else:
-        logger.debug(f"Page change to {new_page} blocked (out of bounds).")
+        loguru_logger.debug(f"Page change to {new_page} blocked (out of bounds).")
 
 
 async def handle_chat_media_copy_title_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Copies the title of the currently loaded sidebar media to clipboard."""
-    logger.debug("Copy Title button pressed.")
+    loguru_logger.debug("Copy Title button pressed.")
     if app.current_sidebar_media_item and app.current_sidebar_media_item.get('title'):
         title = str(app.current_sidebar_media_item['title'])
         app.copy_to_clipboard(title)
         app.notify("Title copied to clipboard.")
-        logger.info(f"Copied title: '{title}'")
+        loguru_logger.info(f"Copied title: '{title}'")
     else:
         app.notify("No media title to copy.", severity="warning")
-        logger.warning("No media title available to copy.")
+        loguru_logger.warning("No media title available to copy.")
 
 
 async def handle_chat_media_copy_content_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Copies the content of the currently loaded sidebar media to clipboard."""
-    logger.debug("Copy Content button pressed.")
+    loguru_logger.debug("Copy Content button pressed.")
     if app.current_sidebar_media_item and app.current_sidebar_media_item.get('content'):
         content = str(app.current_sidebar_media_item['content'])
         app.copy_to_clipboard(content)
         app.notify("Content copied to clipboard.")
-        logger.info("Copied content (length: %s)", len(content))
+        loguru_logger.info("Copied content (length: {})", len(content))
     else:
         app.notify("No media content to copy.", severity="warning")
         logger.warning("No media content available to copy.")

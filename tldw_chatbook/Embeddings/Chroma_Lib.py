@@ -1,17 +1,6 @@
 # Chroma_Lib.py
 #
 from __future__ import annotations
-
-import hashlib
-import re
-
-from chromadb.errors import ChromaError, InvalidDimensionException
-
-from tldw_chatbook.Chunking.Chunk_Lib import chunk_for_embedding
-from tldw_chatbook.Embeddings.Embeddings_Lib import EmbeddingFactory, EmbeddingConfigSchema
-from tldw_chatbook.LLM_Calls.Summarization_General_Lib import analyze
-from tldw_chatbook.config import get_chachanotes_db_path
-
 """Light‑weight ChromaDB helper for single‑user, local‑first apps.
 
 Key simplifications vs. the original:
@@ -29,16 +18,25 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union, Sequence
 from itertools import islice
 import threading
+import hashlib
+import re
 #
 # Third-Party Libraries
 import numpy as np
 import chromadb
 from chromadb import Settings
+from chromadb.errors import ChromaError, InvalidDimensionException
 from chromadb.api.models import Collection
 from chromadb.api.types import QueryResult
 from loguru import logger
+
+# Configure logger with context
+logger = logger.bind(module="Chroma_Lib")
 #
 # Local Imports
+from tldw_chatbook.Chunking.Chunk_Lib import chunk_for_embedding
+from tldw_chatbook.Embeddings.Embeddings_Lib import EmbeddingFactory, EmbeddingConfigSchema
+from tldw_chatbook.LLM_Calls.Summarization_General_Lib import analyze
 #
 ########################################################################################################################
 #
@@ -73,51 +71,83 @@ class ChromaDBManager:
             raise ValueError("user_embedding_config cannot be empty for ChromaDBManager.")
 
         self.user_id = str(user_id)
-        # Store the raw config for components that might need the full structure
         self.raw_user_embedding_config = user_embedding_config
-        self._lock = threading.RLock()  # Instance lock for ChromaDB operations
-        self._inferred_dimensions: Dict[str, int] = {} # NEW: Cache for inferred model dimensions
+        self._lock = threading.RLock()
+        self._inferred_dimensions: Dict[str, int] = {}
 
-        # Initialize EmbeddingFactory
-        # The `user_embedding_config` should have an "embedding_config" key matching EmbeddingConfigSchema
-        embeddings_config_dict = self.raw_user_embedding_config.get("embedding_config")
+        # ======================================================================
+        # THE FIX IS HERE: Resiliently find the correct config section.
+        # This handles the malformed configuration object from your logs.
+        # ======================================================================
+
+        embeddings_config_dict = None
+
+        # Priority 1: Check if the top-level 'embedding_config' is the correct one.
+        # A correct one MUST contain a 'models' sub-dictionary.
+        top_level_embed_config = user_embedding_config.get("embedding_config")
+        if isinstance(top_level_embed_config, dict) and "models" in top_level_embed_config:
+            logger.info("Found a valid, structured [embedding_config] at the top level.")
+            embeddings_config_dict = top_level_embed_config
+        else:
+            # If the top-level one is wrong (like in your logs), log it and look elsewhere.
+            if top_level_embed_config is not None:
+                logger.warning(
+                    f"Ignoring invalid/flat [embedding_config] at top level. "
+                    f"Keys found: {list(top_level_embed_config.keys())}"
+                )
+
+            # Priority 2: Look inside the 'COMPREHENSIVE_CONFIG_RAW' key, which the logs show exists.
+            logger.info("Searching for [embedding_config] inside [COMPREHENSIVE_CONFIG_RAW] as a fallback.")
+            comprehensive_config = user_embedding_config.get("COMPREHENSIVE_CONFIG_RAW", {})
+            nested_embed_config = comprehensive_config.get("embedding_config")
+
+            if isinstance(nested_embed_config, dict) and "models" in nested_embed_config:
+                logger.info("Found a valid, structured [embedding_config] inside [COMPREHENSIVE_CONFIG_RAW].")
+                embeddings_config_dict = nested_embed_config
+
+        # Final check: If we still haven't found a valid config, we must fail.
         if not embeddings_config_dict:
             logger.critical(
-                "embedding_config not found in user_embedding_config. EmbeddingFactory cannot be initialized.")
-            raise ValueError("embedding_config not configured in application settings.")
+                "Could not find a valid 'embedding_config' section with a 'models' sub-table in any known location. "
+                "The application cannot initialize embedding features."
+            )
+            raise ValueError(
+                "A valid 'embedding_config' with a 'models' dictionary was not found in application settings.")
+
+        # ======================================================================
+        # END OF FIX
+        # ======================================================================
 
         try:
             self.embedding_factory = EmbeddingFactory(cfg=embeddings_config_dict)
-            # IMPROVEMENT: Access config via a public property instead of a private attribute.
-            # This assumes you add the following property to your EmbeddingFactory class:
-            # @property
-            # def config(self) -> EmbeddingConfigSchema:
-            #     return self._cfg
             self.embedding_config_schema: EmbeddingConfigSchema = self.embedding_factory.config
         except Exception as e:
             logger.critical(f"Failed to initialize EmbeddingFactory for user '{self.user_id}': {e}", exc_info=True)
             raise RuntimeError(f"EmbeddingFactory initialization failed: {e}") from e
 
-        # Get the base directory for all user data from the central CLI configuration.
-        try:
-            # This function from config.py resolves the user's data directory.
-            # We take its parent to get the root folder for all user data.
-            user_db_base_dir = get_chachanotes_db_path().parent
-        except Exception as e:
-            logger.critical(f"Failed to determine user DB base directory from config.py: {e}", exc_info=True)
-            raise RuntimeError("Could not establish the base directory for user data.") from e
+        # This part of your code seems to be using an old key. Let's make it more robust too.
+        user_db_base_dir_str = user_embedding_config.get("database", {}).get("USER_DB_BASE_DIR")
+        if not user_db_base_dir_str:
+            # Fallback for the other structure shown in your logs
+            user_db_base_dir_str = user_embedding_config.get("USER_DB_BASE_DIR")
 
-        # Construct the specific path for this user's ChromaDB storage.
-        self.user_chroma_path: Path = (user_db_base_dir / self.user_id / "chroma_storage").resolve()
+        if not user_db_base_dir_str:
+            logger.critical("Could not find USER_DB_BASE_DIR in config. ChromaDBManager cannot be initialized.")
+            raise ValueError("USER_DB_BASE_DIR not configured.")
+
+        # Resolve path correctly, handling '~' which is common in configs
+        self.user_chroma_path: Path = (
+                    Path(user_db_base_dir_str).expanduser() / self.user_id / "chroma_storage").resolve()
         try:
             self.user_chroma_path.mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            logger.critical(f"Failed to create ChromaDB path {self.user_chroma_path} for '{self.user_id}': {e}", exc_info=True)
+            logger.critical(f"Failed to create ChromaDB path {self.user_chroma_path} for '{self.user_id}': {e}",
+                            exc_info=True)
             raise RuntimeError(f"Could not create ChromaDB storage directory: {e}") from e
 
         logger.info(f"ChromaDBManager for user '{self.user_id}' path: {self.user_chroma_path}")
 
-        chroma_client_settings_config = self.raw_user_embedding_config.get("chroma_client_settings", {})
+        chroma_client_settings_config = user_embedding_config.get("chroma_client_settings", {})
         try:
             self.client = chromadb.PersistentClient(
                 path=str(self.user_chroma_path),
@@ -127,7 +157,8 @@ class ChromaDBManager:
                 )
             )
         except Exception as e:
-            logger.critical(f"Failed to init ChromaDB Client for '{self.user_id}' at {self.user_chroma_path}: {e}", exc_info=True)
+            logger.critical(f"Failed to init ChromaDB Client for '{self.user_id}' at {self.user_chroma_path}: {e}",
+                            exc_info=True)
             raise RuntimeError(f"ChromaDB client initialization failed: {e}") from e
 
         self.default_embedding_model_id = self.embedding_config_schema.default_model_id
@@ -138,7 +169,8 @@ class ChromaDBManager:
                 "Operations will require explicit 'embedding_model_id_override' or collection-defined model."
             )
 
-        prompts_conf = self.raw_user_embedding_config.get("prompts", {})
+        # Use the correctly found embeddings_config_dict from now on
+        prompts_conf = embeddings_config_dict.get("prompts", user_embedding_config.get("prompts", {}))
         self.situate_context_prompt_template = prompts_conf.get(
             "situate_context_template",
             "<document>\n{doc_content}\n</document>\n\n\n\n\n"
@@ -147,9 +179,7 @@ class ChromaDBManager:
             "for the purposes of improving search retrieval of the chunk.\n"
             "Answer only with the succinct context and nothing else."
         )
-        # Get default LLM for contextualization from the main embedding_config section,
-        # not the specific model configs
-        self.default_llm_for_contextualization = self.raw_user_embedding_config.get("embedding_config", {}).get(
+        self.default_llm_for_contextualization = embeddings_config_dict.get(
             "default_llm_for_contextualization", "gpt-3.5-turbo"
         )
 
@@ -434,57 +464,96 @@ class ChromaDBManager:
                                   create_contextualized: bool = False,
                                   llm_model_for_context: Optional[str] = None,
                                   chunk_options: Optional[Dict] = None):
+        """
+        Process content by chunking it and storing embeddings in ChromaDB.
+
+        Args:
+            content: The text content to process
+            media_id: Unique identifier for the media
+            file_name: Name of the file or content source
+            collection_name: Optional name of collection to store in (uses default if None)
+            embedding_model_id_override: Optional model ID to use for embeddings
+            create_embeddings: Whether to create embeddings (default True)
+            create_contextualized: Whether to add context summaries to chunks (default False)
+            llm_model_for_context: Optional LLM model to use for contextualization
+            chunk_options: Optional configuration for chunking algorithm
+
+        Raises:
+            ValueError: If embedding model ID cannot be resolved
+            RuntimeError: If embedding generation fails
+        """
+        logger.debug(f"process_and_store_content: Starting for media_id={media_id}, file_name={file_name}")
+        logger.debug(f"process_and_store_content: Parameters - collection_name={collection_name}, " +
+                    f"embedding_model_id_override={embedding_model_id_override}, create_embeddings={create_embeddings}, " +
+                    f"create_contextualized={create_contextualized}, llm_model_for_context={llm_model_for_context}")
+
         _collection_name_for_ops = collection_name or self.get_user_default_collection_name()
+        logger.debug(f"process_and_store_content: Using collection name: {_collection_name_for_ops}")
+
         target_collection_obj = self.get_or_create_collection(_collection_name_for_ops)
         actual_collection_name = target_collection_obj.name
+        logger.debug(f"process_and_store_content: Got collection object with name: {actual_collection_name}")
 
         current_op_embedding_model_id = self._resolve_embedding_model_id(
             actual_collection_name, embedding_model_id_override
         )
+        logger.debug(f"process_and_store_content: Resolved embedding model ID: {current_op_embedding_model_id}")
 
         if create_embeddings and not current_op_embedding_model_id:
             msg = "Cannot create embeddings: No embedding model ID resolved."
-            logger.error(f"User '{self.user_id}': Media_id {media_id}. {msg}")
+            logger.error(f"process_and_store_content: User '{self.user_id}': Media_id {media_id}. {msg}")
             raise ValueError(msg)
 
         effective_llm_model_for_context = llm_model_for_context or self.default_llm_for_contextualization
 
         logger.info(
-            f"User '{self.user_id}': Processing media_id {media_id} for collection '{actual_collection_name}' "
+            f"process_and_store_content: User '{self.user_id}': Processing media_id {media_id} for collection '{actual_collection_name}' "
             f"Embed Model: '{current_op_embedding_model_id or 'N/A'}'. Contextualize: {create_contextualized} "
             f"(LLM: '{effective_llm_model_for_context if create_contextualized else 'N/A'}')."
         )
         try:
+            logger.debug(f"process_and_store_content: Chunking content for media_id {media_id}")
             chunks = chunk_for_embedding(content, file_name, custom_chunk_options=chunk_options or {})
             if not chunks:
-                logger.warning(f"User '{self.user_id}': No chunks for media_id {media_id}. Skipping.")
+                logger.warning(f"process_and_store_content: User '{self.user_id}': No chunks generated for media_id {media_id}. Skipping.")
                 return
+
+            logger.info(f"process_and_store_content: Generated {len(chunks)} chunks for media_id {media_id}")
 
             if create_embeddings:
                 docs_for_chroma, texts_for_embedding_generation = [], []
-                for chunk in chunks:
+
+                logger.debug(f"process_and_store_content: Preparing chunks for embedding, contextualized={create_contextualized}")
+                for i, chunk in enumerate(chunks):
                     chunk_text = chunk['text']
                     docs_for_chroma.append(chunk_text)
+
                     if create_contextualized:
+                        logger.debug(f"process_and_store_content: Creating context summary for chunk {i+1}/{len(chunks)}")
                         context_summary = self.situate_context(effective_llm_model_for_context, content, chunk_text)
                         texts_for_embedding_generation.append(f"{chunk_text}\n\nContextual Summary: {context_summary}")
+                        logger.debug(f"process_and_store_content: Added contextualized text for chunk {i+1}, summary length: {len(context_summary)}")
                     else:
                         texts_for_embedding_generation.append(chunk_text)
 
                 if not texts_for_embedding_generation:
-                    logger.warning(f"User '{self.user_id}': No texts to embed for media_id {media_id}.")
+                    logger.warning(f"process_and_store_content: User '{self.user_id}': No texts to embed for media_id {media_id}.")
                     return
 
+                logger.info(f"process_and_store_content: Generating embeddings for {len(texts_for_embedding_generation)} texts")
                 try:
+                    logger.debug(f"process_and_store_content: Calling embedding_factory.embed with model {current_op_embedding_model_id}")
                     embeddings_array: np.ndarray = self.embedding_factory.embed(
                         texts=texts_for_embedding_generation,
                         model_id=current_op_embedding_model_id,
                         as_list=False
                     ) # type: ignore
+                    logger.debug(f"process_and_store_content: Successfully generated embeddings with shape {embeddings_array.shape}")
                 except (IOError, ValueError) as e:
-                    logger.error(f"User '{self.user_id}': EmbeddingFactory error for media_id {media_id}: {e}", exc_info=True)
+                    logger.error(f"process_and_store_content: User '{self.user_id}': EmbeddingFactory error for media_id {media_id}: {e}", exc_info=True)
                     raise RuntimeError(f"Failed to generate embeddings: {e}") from e
 
+                logger.debug(f"process_and_store_content: Preparing metadata for {len(chunks)} chunks")
                 ids = [f"{media_id}_chunk_{i}" for i in range(len(chunks))]
                 metadatas = []
                 for i, chunk_info in enumerate(chunks):
@@ -500,6 +569,7 @@ class ChromaDBManager:
                         if len(context_part) > 1: meta["contextual_summary_ref"] = context_part[1][:500]
                     metadatas.append(meta)
 
+                logger.info(f"process_and_store_content: Storing {len(ids)} chunks in ChromaDB collection '{actual_collection_name}'")
                 self.store_in_chroma(
                     collection_name=actual_collection_name,
                     texts=docs_for_chroma,
@@ -508,21 +578,21 @@ class ChromaDBManager:
                     metadatas=metadatas,
                     embedding_model_id_for_dim_check=current_op_embedding_model_id
                 )
-            logger.info(f"User '{self.user_id}': Finished processing media_id {media_id}")
+            logger.info(f"process_and_store_content: User '{self.user_id}': Successfully finished processing media_id {media_id}")
 
         except ValueError as ve:
             logger.error(
-                f"User '{self.user_id}': Input/config error (media {media_id}, coll '{actual_collection_name}'): {ve}",
+                f"process_and_store_content: User '{self.user_id}': Input/config error (media {media_id}, coll '{actual_collection_name}'): {ve}",
                 exc_info=True)
             raise
         except RuntimeError as rte:
             logger.error(
-                f"User '{self.user_id}': Runtime error (media {media_id}, coll '{actual_collection_name}'): {rte}",
+                f"process_and_store_content: User '{self.user_id}': Runtime error (media {media_id}, coll '{actual_collection_name}'): {rte}",
                 exc_info=True)
             raise
         except Exception as e:
             logger.error(
-                f"User '{self.user_id}': Unexpected error (media {media_id}, coll '{actual_collection_name}'): {e}",
+                f"process_and_store_content: User '{self.user_id}': Unexpected error (media {media_id}, coll '{actual_collection_name}'): {e}",
                 exc_info=True)
             raise
 
@@ -671,46 +741,87 @@ class ChromaDBManager:
                       where_filter: Optional[Dict[str, Any]] = None,
                       include_fields: Optional[List[ChromaIncludeLiteral]] = None
                       ) -> List[Dict[str, Any]]:
+        """
+        Search for similar vectors in a ChromaDB collection.
+
+        Args:
+            query: The text query to search for
+            collection_name: Optional name of collection to search in (uses default if None)
+            k: Maximum number of results to return
+            embedding_model_id_override: Optional model ID to use for query embedding
+            where_filter: Optional filter to apply to the search
+            include_fields: Optional list of fields to include in the results
+
+        Returns:
+            List of dictionaries containing search results
+
+        Raises:
+            ValueError: If embedding model ID cannot be resolved
+            RuntimeError: If search operation fails
+        """
+        logger.debug(f"vector_search: Starting search with query='{query[:50]}...'")
+        logger.debug(f"vector_search: Parameters - collection_name={collection_name}, k={k}, " +
+                    f"embedding_model_id_override={embedding_model_id_override}, " +
+                    f"where_filter={where_filter}, include_fields={include_fields}")
+
         _collection_name_for_ops = collection_name or self.get_user_default_collection_name()
+        logger.debug(f"vector_search: Using collection name: {_collection_name_for_ops}")
 
         query_embedding_model_id = self._resolve_embedding_model_id(_collection_name_for_ops, embedding_model_id_override)
+        logger.debug(f"vector_search: Resolved embedding model ID: {query_embedding_model_id}")
+
         if not query_embedding_model_id:
             msg = "Cannot search: No embedding model ID resolved (override, collection metadata, or manager default)."
-            logger.error(f"User '{self.user_id}': Collection '{_collection_name_for_ops}'. {msg}")
+            logger.error(f"vector_search: User '{self.user_id}': Collection '{_collection_name_for_ops}'. {msg}")
             raise ValueError(msg)
 
         effective_include_fields: List[ChromaIncludeLiteral] = include_fields or ["documents", "metadatas", "distances"]
+        logger.debug(f"vector_search: Using include fields: {effective_include_fields}")
 
         with self._lock:
+            logger.debug(f"vector_search: Acquired lock for collection access")
             try:
                 current_collection = self.get_or_create_collection(_collection_name_for_ops)
-                logger.info(f"User '{self.user_id}': Vector search in '{current_collection.name}' for query: '{query[:50]}...' using model '{query_embedding_model_id}'.")
+                logger.info(f"vector_search: User '{self.user_id}': Vector search in '{current_collection.name}' for query: '{query[:50]}...' using model '{query_embedding_model_id}'")
 
+                logger.debug(f"vector_search: Generating embedding for query using model {query_embedding_model_id}")
                 query_embedding_np: np.ndarray = self.embedding_factory.embed_one(
                     text=query, model_id=query_embedding_model_id, as_list=False
                 )  # type: ignore
+
                 if query_embedding_np is None or query_embedding_np.ndim != 1 or query_embedding_np.size == 0:
+                    logger.error(f"vector_search: Failed to generate valid embedding for query")
                     raise ValueError(f"Failed to generate valid 1D embedding for query.")
+
+                logger.debug(f"vector_search: Successfully generated query embedding with dimension {query_embedding_np.size}")
 
                 num_items_in_collection = current_collection.count()
                 n_results_param = min(k, num_items_in_collection) if num_items_in_collection > 0 else k
+                logger.debug(f"vector_search: Collection has {num_items_in_collection} items, requesting {n_results_param} results")
 
+                cleaned_where_filter = self._clean_metadata(where_filter) if where_filter else None
+                if where_filter:
+                    logger.debug(f"vector_search: Using where filter: {cleaned_where_filter}")
+
+                logger.debug(f"vector_search: Executing query against ChromaDB collection")
                 results: QueryResult = current_collection.query(
                     query_embeddings=[query_embedding_np.tolist()],
                     n_results=n_results_param,
-                    where=self._clean_metadata(where_filter) if where_filter else None,
+                    where=cleaned_where_filter,
                     include=[f for f in effective_include_fields if f != "ids"]  # type: ignore
                 )
+                logger.debug(f"vector_search: Query executed successfully")
 
                 # --- CORRECTED RESULT PARSING LOGIC ---
                 output: List[Dict[str, Any]] = []
                 # `results['ids']` is a list containing one list of IDs (for our one query)
                 ids_list = results.get("ids", [[]])[0]
                 if not ids_list:
-                    logger.info(f"User '{self.user_id}': No results for query in '{current_collection.name}'.")
+                    logger.info(f"vector_search: User '{self.user_id}': No results found for query in '{current_collection.name}'")
                     return []
 
                 num_results = len(ids_list)
+                logger.debug(f"vector_search: Processing {num_results} results from ChromaDB")
 
                 # Map Chroma's API field names to our desired output keys
                 field_map = {"documents": "content", "metadatas": "metadata", "distances": "distance",
@@ -723,10 +834,13 @@ class ChromaDBManager:
                     str(api_field): (results.get(api_field) or [[None] * num_results])[0]
                     for api_field in field_map.keys()
                 }
+                logger.debug(f"vector_search: Pre-processed result data for fields: {list(processed_data.keys())}")
 
                 for i, item_id in enumerate(ids_list):
                     if item_id is None:
+                        logger.debug(f"vector_search: Skipping result {i+1} with None ID")
                         continue
+
                     current_item: Dict[str, Any] = {"id": item_id}
                     for api_field, output_key in field_map.items():
                         if api_field in effective_include_fields:
@@ -734,23 +848,29 @@ class ChromaDBManager:
                             value = processed_data[api_field][i] if processed_data[api_field] and i < len(processed_data[api_field]) else None
                             if value is not None:
                                 current_item[output_key] = value
-                    output.append(current_item)
 
-                logger.info(f"User '{self.user_id}': Found {len(output)} results for query in '{current_collection.name}'.")
+                    output.append(current_item)
+                    logger.debug(f"vector_search: Processed result {i+1}/{num_results}, ID={item_id}")
+
+                logger.info(f"vector_search: User '{self.user_id}': Found {len(output)} results for query in '{current_collection.name}'")
+                if len(output) > 0:
+                    top_distance = output[0].get("distance", "N/A")
+                    logger.debug(f"vector_search: Top result has distance {top_distance}")
+
                 return output
 
             except (ValueError, RuntimeError) as e:
-                logger.error(f"User '{self.user_id}': Error during vector search in '{_collection_name_for_ops}': {e}", exc_info=True)
+                logger.error(f"vector_search: User '{self.user_id}': Error during vector search in '{_collection_name_for_ops}': {e}", exc_info=True)
                 raise
             except (ChromaError) as e:
                 if self._is_collection_not_found_error(e):
-                    logger.warning(f"User '{self.user_id}': Collection '{_collection_name_for_ops}' not found during search. Returning empty.")
+                    logger.warning(f"vector_search: User '{self.user_id}': Collection '{_collection_name_for_ops}' not found during search. Returning empty.")
                     return []
                 else:
-                    logger.error(f"User '{self.user_id}': ChromaDB-related error during search in '{_collection_name_for_ops}': {e}", exc_info=True)
+                    logger.error(f"vector_search: User '{self.user_id}': ChromaDB-related error during search in '{_collection_name_for_ops}': {e}", exc_info=True)
                     raise RuntimeError(f"ChromaDB operation failed during vector search: {e}") from e
             except Exception as e:
-                logger.error(f"User '{self.user_id}': Unexpected error during search in '{_collection_name_for_ops}': {e}", exc_info=True)
+                logger.error(f"vector_search: User '{self.user_id}': Unexpected error during search in '{_collection_name_for_ops}': {e}", exc_info=True)
                 raise RuntimeError(f"Unexpected error during vector search: {e}") from e
 
     def reset_chroma_collection(self, collection_name: Optional[str] = None, new_metadata: Optional[Dict[str, Any]] = None):

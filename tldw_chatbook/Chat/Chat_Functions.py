@@ -32,6 +32,9 @@ from loguru import logger
 import requests
 from pydantic import BaseModel, Field
 
+# Configure logger with context
+logger = logger.bind(module="Chat_Functions")
+
 #
 # Local Imports
 from .Chat_Deps import ChatBadRequestError, ChatConfigurationError, ChatAPIError, \
@@ -68,7 +71,7 @@ def approximate_token_count(history):
         total_tokens = len(total_text.split())
         return total_tokens
     except Exception as e:
-        logging.error(f"Error calculating token count: {str(e)}")
+        logger.error(f"Error calculating token count: {str(e)}")
         return 0
 
 # FIXME - Validate below
@@ -570,13 +573,13 @@ def chat_api_call(
         requests.exceptions.RequestException: For network errors during the request.
     """
     endpoint_lower = api_endpoint.lower()
-    logging.info(f"Chat API Call - Routing to endpoint: {endpoint_lower}")
+    logger.info(f"Chat API Call - Routing to endpoint: {endpoint_lower}")
     log_counter("chat_api_call_attempt", labels={"api_endpoint": endpoint_lower})
     start_time = time.time()
 
     handler = API_CALL_HANDLERS.get(endpoint_lower)
     if not handler:
-        logging.error(f"Unsupported API endpoint requested: {api_endpoint}")
+        logger.error(f"Unsupported API endpoint requested: {api_endpoint}")
         raise ValueError(f"Unsupported API endpoint: {api_endpoint}")
 
     params_map = PROVIDER_PARAM_MAP.get(endpoint_lower, {})
@@ -620,10 +623,10 @@ def chat_api_call(
              pass # Specific handling for Cohere's prompt is assumed to be within chat_with_cohere
 
     if call_kwargs.get(params_map.get('api_key', 'api_key')) and isinstance(call_kwargs.get(params_map.get('api_key', 'api_key')), str) and len(call_kwargs.get(params_map.get('api_key', 'api_key'))) > 8:
-         logging.info(f"Debug - Chat API Call - API Key: {call_kwargs[params_map.get('api_key', 'api_key')][:4]}...{call_kwargs[params_map.get('api_key', 'api_key')][-4:]}")
+         logger.info(f"Debug - Chat API Call - API Key: {call_kwargs[params_map.get('api_key', 'api_key')][:4]}...{call_kwargs[params_map.get('api_key', 'api_key')][-4:]}")
 
     try:
-        logging.debug(f"Calling handler {handler.__name__} with kwargs: { {k: (type(v) if k != params_map.get('api_key') else 'key_hidden') for k,v in call_kwargs.items()} }")
+        logger.debug(f"Calling handler {handler.__name__} with kwargs: { {k: (type(v) if k != params_map.get('api_key') else 'key_hidden') for k,v in call_kwargs.items()} }")
         response = handler(**call_kwargs)
 
         call_duration = time.time() - start_time
@@ -631,11 +634,11 @@ def chat_api_call(
         log_counter("chat_api_call_success", labels={"api_endpoint": endpoint_lower})
 
         if isinstance(response, str):
-             logging.debug(f"Debug - Chat API Call - Response (first 500 chars): {response[:500]}...")
+             logger.debug(f"Debug - Chat API Call - Response (first 500 chars): {response[:500]}...")
         elif hasattr(response, '__iter__') and not isinstance(response, (str, bytes, dict)):
-             logging.debug(f"Debug - Chat API Call - Response: Streaming Generator")
+             logger.debug(f"Debug - Chat API Call - Response: Streaming Generator")
         else:
-             logging.debug(f"Debug - Chat API Call - Response Type: {type(response)}")
+             logger.debug(f"Debug - Chat API Call - Response Type: {type(response)}")
         return response
 
     # --- Exception Mapping (copied from your original, ensure it's still relevant) ---
@@ -646,9 +649,9 @@ def chat_api_call(
 
         # Log safely first
         try:
-            logging.error("%s. Details: %s", log_message_base, error_text[:500], exc_info=False)
+            logger.error("%s. Details: %s", log_message_base, error_text[:500], exc_info=False)
         except Exception as log_e:
-            logging.error(f"Error during logging HTTPError details: {log_e}")
+            logger.error(f"Error during logging HTTPError details: {log_e}")
 
         detail_message = f"API call to {endpoint_lower} failed with status {status_code}. Response: {error_text[:200]}"
         if status_code == 401:
@@ -669,26 +672,26 @@ def chat_api_call(
                                message=f"Unexpected HTTP status {status_code} from {endpoint_lower}. Detail: {error_text[:200]}",
                                status_code=status_code)
     except requests.exceptions.RequestException as e:
-        logging.error(f"Network error connecting to {endpoint_lower}: {e}", exc_info=False)
+        logger.error(f"Network error connecting to {endpoint_lower}: {e}", exc_info=False)
         raise ChatProviderError(provider=endpoint_lower, message=f"Network error: {e}", status_code=504)
     except (ChatAuthenticationError, ChatRateLimitError, ChatBadRequestError, ChatConfigurationError, ChatProviderError,
             ChatAPIError) as e_chat_direct:
         # This catches cases where the handler itself has already processed an error
         # (e.g. non-HTTP error, or it decided to raise a specific Chat*Error type)
         # and raises one of our custom exceptions.
-        logging.error(
+        logger.error(
             f"Handler for {endpoint_lower} directly raised: {type(e_chat_direct).__name__} - {e_chat_direct.message}",
             exc_info=True if e_chat_direct.status_code >= 500 else False)
         raise e_chat_direct  # Re-raise the specific error
     except (ValueError, TypeError, KeyError) as e:
-        logging.error(f"Value/Type/Key error during chat API call setup for {endpoint_lower}: {e}", exc_info=True)
+        logger.error(f"Value/Type/Key error during chat API call setup for {endpoint_lower}: {e}", exc_info=True)
         error_type = "Configuration/Parameter Error"
         if "Unsupported API endpoint" in str(e):
             raise ChatConfigurationError(provider=endpoint_lower, message=f"Unsupported API endpoint: {endpoint_lower}")
         else:
             raise ChatBadRequestError(provider=endpoint_lower, message=f"{error_type} for {endpoint_lower}: {e}")
     except Exception as e:
-        logging.exception(
+        logger.exception(
             f"Unexpected internal error in chat_api_call for {endpoint_lower}: {e}")
         raise ChatAPIError(provider=endpoint_lower,
                            message=f"An unexpected internal error occurred in chat_api_call for {endpoint_lower}: {str(e)}",

@@ -18,6 +18,9 @@ import yaml
 from PIL import Image  # For image processing
 from loguru import logger
 # from PIL.Image import Image as PILImage # More specific for type hints if needed
+
+# Configure logger with context
+logger = logger.bind(module="Character_Chat_Lib")
 #
 # Local Imports
 from tldw_chatbook.DB.ChaChaNotes_DB import CharactersRAGDB, CharactersRAGDBError, ConflictError, InputError

@@ -41,16 +41,16 @@ if TYPE_CHECKING:
 
 async def handle_chat_tab_sidebar_toggle(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles sidebar toggles specific to the Chat tab."""
-    logger = getattr(app, 'loguru_logger', logging)
+    loguru_logger.debug(f"Chat tab sidebar toggle button pressed: {event.button.id}")
     button_id = event.button.id
     if button_id == "toggle-chat-left-sidebar":
         app.chat_sidebar_collapsed = not app.chat_sidebar_collapsed
-        logger.debug("Chat tab settings sidebar (left) now %s", "collapsed" if app.chat_sidebar_collapsed else "expanded")
+        loguru_logger.debug("Chat tab settings sidebar (left) now %s", "collapsed" if app.chat_sidebar_collapsed else "expanded")
     elif button_id == "toggle-chat-right-sidebar":
         app.chat_right_sidebar_collapsed = not app.chat_right_sidebar_collapsed
-        logger.debug("Chat tab character sidebar (right) now %s", "collapsed" if app.chat_right_sidebar_collapsed else "expanded")
+        loguru_logger.debug("Chat tab character sidebar (right) now %s", "collapsed" if app.chat_right_sidebar_collapsed else "expanded")
     else:
-        logger.warning(f"Unhandled sidebar toggle button ID '{button_id}' in Chat tab handler.")
+        loguru_logger.warning(f"Unhandled sidebar toggle button ID '{button_id}' in Chat tab handler.")
 
 async def handle_chat_send_button_pressed(app: 'TldwCli', event: Button.Pressed) -> None:
     """Handles the send button press for the main chat tab."""
@@ -376,6 +376,20 @@ async def handle_chat_send_button_pressed(app: 'TldwCli', event: Button.Pressed)
     # --- 11. Prepare and Dispatch API Call via Worker ---
     loguru_logger.debug(f"Dispatching API call to worker. Current message: '{message_text_from_input[:50]}...', History items: {len(chat_history_for_api)}")
 
+    # Log API parameters for debugging
+    api_params = {
+        "provider": selected_provider,
+        "model": selected_model,
+        "temperature": temperature,
+        "top_p": top_p,
+        "min_p": min_p,
+        "top_k": top_k,
+        "max_tokens": llm_max_tokens_value,
+        "streaming": should_stream,
+        "system_prompt_length": len(final_system_prompt_for_api) if final_system_prompt_for_api else 0
+    }
+    loguru_logger.debug(f"API parameters: {api_params}")
+
     # Set current_chat_is_streaming before running the worker
     app.current_chat_is_streaming = should_stream
     loguru_logger.info(f"Set app.current_chat_is_streaming to: {should_stream}")
@@ -427,7 +441,7 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
     db = app.notes_service._get_db(app.notes_user_id) if app.notes_service else None
 
     if "edit-button" in button_classes:
-        logging.info("Action: Edit clicked for %s message: '%s...'", message_role, message_text[:50])
+        loguru_logger.info("Action: Edit clicked for %s message: '%s...'", message_role, message_text[:50])
         is_editing = getattr(action_widget, "_editing", False)
         static_text_widget: Static = action_widget.query_one(".message-text", Static)
 
@@ -440,7 +454,7 @@ async def handle_chat_action_button_pressed(app: 'TldwCli', button: Button, acti
             editor.focus()
             action_widget._editing = True
             button.label = get_char(EMOJI_SAVE_EDIT, FALLBACK_SAVE_EDIT)
-            logging.debug("Editing started.")
+            loguru_logger.debug("Editing started.")
         else:  # Stop editing and save
             try:
                 editor: TextArea = action_widget.query_one("#edit-area", TextArea)

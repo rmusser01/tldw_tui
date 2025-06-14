@@ -1064,7 +1064,6 @@ MetricsScreen Label.-info-message {
     layout: horizontal;
     height: auto;
     margin-top: 1;
-    align-horizontal: right; /* Align buttons to the right */
 }
 .button_container Button {
     margin-left: 1; /* Space between buttons */
@@ -1305,90 +1304,7 @@ MetricsScreen Label.-info-message {
 
 
 
-/* ----------------------------- ************************* ----------------------------- */
-/* --- Search Tab (RAG/Embeddings) --- */
-#search-window { /* Matches TAB_SEARCH, .window class provides layout: horizontal */
-    /* No explicit layout needed here if .window handles it */
-}
 
-.search-nav-pane { /* Style for the left navigation pane in Search Tab */
-    dock: left;
-    width: 25%;
-    min-width: 25;
-    max-width: 60;
-    height: 100%;
-    background: $boost;
-    padding: 1;
-    border-right: thick $background-darken-1;
-    overflow-y: auto;
-    overflow-x: hidden;
-}
-
-.search-nav-pane .search-nav-button { /* Style for navigation buttons in Search Tab */
-    width: 100%;
-    margin-bottom: 1;
-    border: none;
-    height: 3;
-}
-.search-nav-pane .search-nav-button:hover {
-    background: $accent 80%; /* Example: accent color with 80% opacity */
-}
-/* Active state for selected search nav button */
-.search-nav-pane .search-nav-button.-active-search-sub-view {
-    background: $accent;
-    color: $text;
-    text-style: bold;
-}
-
-.search-content-pane { /* Style for the right content display area in Search Tab */
-    width: 1fr;
-    height: 100%;
-    padding: 1 2;
-    overflow-y: auto;
-}
-
-.search-view-area { /* Common class for individual content areas in Search Tab */
-    width: 100%;
-    height: 100%;
-    /* display: none; /* All initially hidden, watcher will show one */
-    /* align: center middle; /* Useful if content is just a Static placeholder */
-}
-
-/* Center placeholder text inside view areas if they are simple Statics for now */
-.search-view-area Static {
-    width: 100%;
-    height: 100%;
-    align: center middle;
-}
-
-/* Web Search Specific Styles within Search Tab */
-#search-view-web-search {
-    /* Overriding the generic .search-view-area Static centering if needed */
-    /* For direct children like Input, Button, VerticalScroll, default layout (vertical) should be fine. */
-    padding: 1; /* Add some padding inside the web search view area */
-}
-
-#search-view-web-search > Input#web-search-input { /* Target Input directly inside */
-    margin-bottom: 1; /* Space below the input field */
-    width: 100%;
-}
-
-/* .search-action-button is used by #web-search-button */
-.search-action-button {
-    width: 100%;
-    margin-bottom: 1; /* Space below the button */
-    /* height: 3; /* Optional: Standard button height */
-}
-
-#search-view-web-search > VerticalScroll > Markdown#web-search-results { /* Target Markdown inside VS */
-    width: 100%; /* Take full width */
-    height: 1fr; /* Take remaining vertical space within its parent VerticalScroll */
-    border: round $primary-background-lighten-2;
-    padding: 1;
-    background: $surface; /* A slightly different background for the results area */
-}
-/* --- End of Search Tab --- */
-/* ----------------------------- ************************* ----------------------------- */
 
 
 
@@ -1443,26 +1359,7 @@ MetricsScreen Label.-info-message {
 /* Hover state for the toggle button if needed, can inherit from general .sidebar-toggle if class is added */
 /* #toggle-evals-sidebar:hover { background: $surface; } */
 
-/* Common sidebar elements within EvalsSidebar (if not covered by global .sidebar-title etc.) */
-#evals-sidebar .sidebar-title { /* Already styled globally, but can be overridden */
-    /* text-style: bold underline; */
-    /* text-align: center; */
-    /* width: 100%; */
-    /* margin-bottom: 1; */
-}
-
-#evals-sidebar Collapsible {
-    margin-bottom: 1; /* Space between collapsibles */
-}
-
-#evals-sidebar .collapsible-content-placeholder { /* From EvalsSidebar.py */
-    padding: 1;
-    background: $panel-lighten-1;
-    border: round $surface;
-    color: $text-muted;
-    text-align: center; /* Center placeholder text */
-}
-/* --- End Evals Tab --- */
+/* --- End Evals Tab (Old Implementation) --- */
 /* ----------------------------- ************************* ----------------------------- */
 
 
@@ -1616,7 +1513,24 @@ AppFooterStatus {
 /* --- End of Window Footer Widget --- */
 /* ----------------------------- ************************* ----------------------------- */
 
+/* ----------------------------- ************************* ----------------------------- */
+/* --- Utility/Not-Tab Specific --- */
 
+.disabled {
+    /* Make the button semi-transparent. This is the most effective way
+       to show it's inactive and works just like web CSS. */
+    opacity: 0.6;
+
+    /* To achieve a "grayscale" effect, we manually set the colors
+       to be less vibrant, using Textual's design tokens for theming. */
+    background: $panel-darken-2;
+    color: $text-muted;
+
+    /* You can also ensure the border is muted. */
+    border: round $primary-darken-2;
+}
+/* --- End of Utility/Not-Tab Specific --- */
+/* ----------------------------- ************************* ----------------------------- */
 
 /* Chat Sidebar Media Search Section Specific Styles */
 #chat-media-collapsible .sidebar-listview {
@@ -1652,19 +1566,160 @@ AppFooterStatus {
 .detail-field-container .copy-button { width: auto; height: 1; border: none; }
 .detail-textarea { height: 5; margin-bottom: 1; }
 .detail-textarea.content-display { height: 10; }
+
+
+/* ----------------------------- ************************* ----------------------------- */
+/* --- Search Tab (RAG/Embeddings) --- */
+#search-window { /* Matches TAB_SEARCH, .window class provides layout: horizontal */
+    /* No explicit layout needed here if .window handles it */
+}
+
+.search-nav-pane { /* Style for the left navigation pane in Search Tab */
+    dock: left;
+    width: 25%;
+    min-width: 25;
+    max-width: 60;
+    height: 100%;
+    background: $boost;
+    padding: 1;
+    border-right: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.search-nav-pane .search-nav-button { /* Style for navigation buttons in Search Tab */
+    width: 100%;
+    margin-bottom: 1;
+    border: none;
+    height: 3;
+}
+.search-nav-pane .search-nav-button:hover {
+    background: $accent 80%; /* Example: accent color with 80% opacity */
+}
+/* Active state for selected search nav button */
+.search-nav-pane .search-nav-button.-active-search-sub-view {
+    background: $accent;
+    color: $text;
+    text-style: bold;
+}
+.search-content-pane { /* Style for the right content display area in Search Tab */
+    width: 1fr;
+    height: 100%;
+    padding: 1 2;
+    overflow: auto; /* Changed from overflow-y: auto to allow both horizontal and vertical scrolling if needed */
+}
+
+/* -------------------------------------------------------------------------------------- */
+
+/* Web Search Specific Styles within Search Tab */
+#search-view-web-search {
+    /* Overriding the generic .search-view-area Static centering if needed */
+    /* For direct children like Input, Button, VerticalScroll, default layout (vertical) should be fine. */
+    padding: 1; /* Add some padding inside the web search view area */
+}
+
+#search-view-web-search > Input#web-search-input { /* Target Input directly inside */
+    margin-bottom: 1; /* Space below the input field */
+    width: 100%;
+}
+
+/* .search-action-button is used by #web-search-button */
+.search-action-button {
+    width: 100%;
+    margin-bottom: 1; /* Space below the button */
+    /* height: 3; /* Optional: Standard button height */
+}
+
+#search-view-web-search > VerticalScroll > Markdown#web-search-results { /* Target Markdown inside VS */
+    width: 100%; /* Take full width */
+    height: 1fr; /* Take remaining vertical space within its parent VerticalScroll */
+    border: round $primary-background-lighten-2;
+    padding: 1;
+    background: $surface; /* A slightly different background for the results area */
+}
+
+/* Embeddings Creation View Styles */
+#search-view-embeddings-creation {
+    padding: 1;
+}
+
+.search-form-container {
+    width: 100%;
+    margin: 0 0;
+}
+
+.search-view-title {
+    text-style: bold;
+    text-align: center;
+    background: blue 30%;
+    color: $text;
+    padding: 1;
+    margin-bottom: 2;
+    border: round $accent-darken-1;
+}
+
+.search-section-title {
+    text-style: bold;
+    margin-top: 2;
+    margin-bottom: 1;
+    background: $primary-background-lighten-1;
+    padding: 0 1;
+    border-left: thick $accent;
+}
+
+.search-form-row {
+    margin-bottom: 1;
+    height: 3;
+    align: left middle;
+}
+
+.search-form-label {
+    width: 30%;
+    padding-right: 1;
+    text-align: right;
+}
+
+/* Embeddings Management View Styles */
+#search-view-embeddings-management {
+    padding: 1;
+}
+
+.search-management-left-pane {
+    width: 45%;
+    padding-right: 1;
+    border-right: solid $background-darken-1;
+}
+
+.search-management-right-pane {
+    width: 55%;
+    padding-left: 1;
+}
+
+.search-button-row {
+    margin-top: 2;
+    align-horizontal: center;
+}
+
+.search-button-row Button {
+    margin: 0 1;
+}
+
+/* Status output styling */
+#creation-status-output, #mgmt-status-output {
+    margin-top: 2;
+    border: round $primary-background-lighten-2;
+    padding: 1;
+    background: $surface;
+}
+
+/* --- End of Search Tab --- */
+/* ----------------------------- ************************* ----------------------------- */
     """
 #
 #
 #
 ##########################################################################################################################
 
-##########################################################################################################################
-
-
-
-
-
-##########################################################################################################################
 
 
 
@@ -1915,6 +1970,61 @@ LLAMAFILE_SERVER_ARGS_HELP_TEXT = """
 
 
 #
+# MLX-LM Server Arguments Help Text
+MLX_LM_SERVER_ARGS_HELP_TEXT = """
+[bold cyan]--- MLX-LM Server Arguments ---[/]
+
+[bold]--model MODEL[/]
+  Path to the model directory or HuggingFace model ID
+  (e.g., [italic]--model mlx-community/Nous-Hermes-2-Mistral-7B-DPO-4bit-MLX[/])
+
+[bold]--host HOST[/]
+  Host address to bind the server to (default: 127.0.0.1)
+  (e.g., [italic]--host 0.0.0.0[/])
+
+[bold]--port PORT[/]
+  Port to run the server on (default: 8080)
+  (e.g., [italic]--port 8000[/])
+
+[bold]--max-tokens N[/]
+  Maximum number of tokens to generate (default: 100)
+  (e.g., [italic]--max-tokens 512[/])
+
+[bold]--temperature TEMP[/]
+  Sampling temperature (default: 0.8)
+  (e.g., [italic]--temperature 0.7[/])
+
+[bold]--top-p P[/]
+  Top-p sampling (default: 0.9)
+  (e.g., [italic]--top-p 0.95[/])
+
+[bold]--top-k K[/]
+  Top-k sampling (default: 40)
+  (e.g., [italic]--top-k 50[/])
+
+[bold]--seed SEED[/]
+  Random seed for reproducibility (default: None)
+  (e.g., [italic]--seed 42[/])
+
+[bold]--batch-size N[/]
+  Batch size for inference (default: 1)
+  (e.g., [italic]--batch-size 4[/])
+
+[bold]--quantization {int8,int4,fp16,fp32}[/]
+  Quantization method to use (default: None)
+  (e.g., [italic]--quantization int4[/])
+
+[bold]--device {cpu,gpu}[/]
+  Device to run inference on (default: auto-detect)
+  (e.g., [italic]--device gpu[/])
+
+[bold]--trust-remote-code[/]
+  Trust remote code when loading models from HuggingFace
+
+[bold]--revision REVISION[/]
+  Specific model revision to use from HuggingFace
+  (e.g., [italic]--revision main[/])
+"""
+
 # End of Constants.py
 ########################################################################################################################
-

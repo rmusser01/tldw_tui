@@ -224,11 +224,21 @@ class LLMManagementWindow(Container):
             with Container(id="llm-view-mlx-lm", classes="llm-view-area"):
                 with VerticalScroll():
                     yield Label("MLX Model Path (HuggingFace ID or local path):", classes="label")
-                    yield Input(id="mlx-model-path", placeholder="e.g., mlx-community/Nous-Hermes-2-Mistral-7B-DPO-4bit-MLX", classes="input_field")
+                    with Container(classes="input_container"):
+                        yield Input(id="mlx-model-path", placeholder="e.g., mlx-community/Nous-Hermes-2-Mistral-7B-DPO-4bit-MLX")
+                        yield Button("Browse", id="mlx-browse-model-button", classes="browse_button")
                     yield Label("Host:", classes="label")
                     yield Input(id="mlx-host", value="127.0.0.1", classes="input_field")
                     yield Label("Port:", classes="label")
                     yield Input(id="mlx-port", value="8080", classes="input_field")
+                    with Collapsible(title="Common MLX-LM Server Arguments", collapsed=True,
+                                    id="mlx-args-help-collapsible"):
+                        yield RichLog(
+                            id="mlx-args-help-display",
+                            markup=True,
+                            highlight=False,
+                            classes="help-text-display"
+                        )
                     yield Label("Additional Server Arguments:", classes="label")
                     yield TextArea(id="mlx-additional-args", classes="additional_args_textarea", language="bash", theme="vscode_dark")
                     with Container(classes="button_container"):

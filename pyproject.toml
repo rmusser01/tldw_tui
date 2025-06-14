@@ -45,6 +45,12 @@ dependencies = [
 
 # --- Optional Dependencies ---
 [project.optional-dependencies]
+coding_map = [
+    "grep_ast",
+    "pygments",
+    "tqdm",
+
+]
 chunker = [
     "langdetect",
     "nltk",
@@ -53,6 +59,12 @@ chunker = [
     "transformers",
     "tqdm",
     "jieba",
+]
+embeddings_rag = [
+    "torch",
+    "numpy",
+    "pydantic",
+    "transformers",
 ]
 websearch = [
     "lxml",

@@ -9,6 +9,7 @@ import os
 import shlex
 import subprocess
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
 #
 # 3rd-party Imports
@@ -19,6 +20,8 @@ from textual.widgets import Input, RichLog, TextArea, Button
 # Local Imports
 if TYPE_CHECKING:
     from tldw_chatbook.app import TldwCli
+from tldw_chatbook.Third_Party.textual_fspicker import FileOpen, Filters
+from tldw_chatbook.Event_Handlers.LLM_Management_Events.llm_management_events import _make_path_update_callback
 #
 ########################################################################################################################
 #
@@ -225,10 +228,29 @@ async def handle_stop_mlx_server_button_pressed(app: "TldwCli", event: Button.Pr
             log_output_widget.write(f"An unexpected error occurred while stopping the server: {e}")
         app.notify(f"An unexpected error occurred: {e}", severity="error")
 
+async def handle_mlx_browse_model_button_pressed(app: "TldwCli", event: Button.Pressed) -> None:
+    """Handle the MLX-LM browse model button press."""
+    logger = getattr(app, "loguru_logger", logging.getLogger(__name__))
+    logger.debug("MLX-LM browse model button pressed.")
+
+    # Define filters for model files or directories
+    model_filters = Filters(
+        ("All files (*.*)", lambda p: True),
+    )
+    await app.push_screen(
+        FileOpen(
+            location=str(Path.home()),
+            title="Select MLX-LM Model or Directory",
+            filters=model_filters,
+        ),
+        callback=_make_path_update_callback(app, "mlx-model-path"),
+    )
+
 # --- Button Handler Map ---
 MLX_LM_BUTTON_HANDLERS = {
     "mlx-start-server-button": handle_start_mlx_server_button_pressed,
     "mlx-stop-server-button": handle_stop_mlx_server_button_pressed,
+    "mlx-browse-model-button": handle_mlx_browse_model_button_pressed,
 }
 
 #
