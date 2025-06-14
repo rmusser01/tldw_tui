@@ -208,6 +208,7 @@ def load_settings() -> Dict:
     processing_section = get_toml_section('Processing')
     chunking_section = get_toml_section('Chunking')
     embeddings_section = get_toml_section('Embeddings')
+    embedding_config_section = get_toml_section('embedding_config')  # Get the [embedding_config] table
     chat_dicts_section = get_toml_section('ChatDictionaries')
     auto_save_section = get_toml_section('AutoSave')
     stt_settings_section = get_toml_section('STTSettings')
@@ -629,7 +630,8 @@ def load_settings() -> Dict:
             'embedding_api_url': _get_typed_value(embeddings_section, 'embedding_api_url', "http://localhost:8080/v1/embeddings"),
             'embedding_api_key': _get_typed_value(embeddings_section, 'embedding_api_key', ''),
             'chunk_size': _get_typed_value(embeddings_section, 'chunk_size', 400, int), # This was 'chunk_size' in old Embeddings, also in Chunking
-            'chunk_overlap': _get_typed_value(embeddings_section, 'overlap', 200, int) # This was 'overlap' in old Embeddings
+            'chunk_overlap': _get_typed_value(embeddings_section, 'overlap', 200, int), # This was 'overlap' in old Embeddings
+            'models': embedding_config_section.get('models', {})  # Include the models from the embedding_config section
         },
         "auto_save": {
             'save_character_chats': _get_typed_value(auto_save_section, 'save_character_chats', False, bool),
@@ -997,7 +999,7 @@ local_mlx_lm = ["None"]
     retries = 3
     retry_delay = 5
     streaming = false
-    
+
     [api_settings.google]
     api_key_env_var = "GOOGLE_API_KEY"
     api_key = "<API_KEY_HERE>"
@@ -1214,7 +1216,7 @@ local_mlx_lm = ["None"]
     retry_delay = 5
     streaming = false
     system_prompt = "You are a helpful AI assistant"
-    
+
     [api_settings.local_llamacpp] # Matches key in [providers]
     #api_key_env_var = "local_llamacpp_API_KEY"
     api_url = "http://localhost:8001/v1/chat/completions"
@@ -1324,8 +1326,8 @@ top_p = 0.9
 min_p = 0.0 # Check if API supports this
 top_k = 100 # Check if API supports this
 
-      
-      
+
+
 # ==========================================================
 # Embedding Configuration
 # ==========================================================
@@ -1384,9 +1386,9 @@ default_llm_for_contextualization = "gpt-3.5-turbo"
 # You can add more local model configurations following the pattern above.
 # The key part is `provider = "openai"` and providing the correct `base_url` and `dimension`.
 
-    
 
-    
+
+
 
 
 # --- Sections below are placeholders based on config.txt, integrate as needed ---

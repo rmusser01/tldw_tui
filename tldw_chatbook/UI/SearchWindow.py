@@ -82,9 +82,9 @@ class SearchWindow(Container):
 
     # Database display name mapping
     DB_DISPLAY_NAMES = {
-        "media_db": "Media DB",
-        "rag_chat_db": "RAG Chat DB",
-        "char_chat_db": "Character Chat DB"
+        "media_db": "Media Items",
+        "rag_chat_db": "Chat Items",
+        "char_chat_db": "Note Items"
     }
 
     def __init__(self, app_instance: 'TldwCli', **kwargs):
