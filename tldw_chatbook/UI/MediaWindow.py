@@ -31,6 +31,7 @@ MEDIA_SUB_TABS = [
     ("Ebooks", "ebooks"),
     ("Websites", "websites"),
     ("MediaWiki", "mediawiki"),
+    ("Analysis Review", "analysis-review"),
     ("Placeholder", "placeholder")
 ]
 
@@ -132,6 +133,9 @@ class MediaWindow(Container):
                     type_slug = slugify(media_type_display_name)
                     yield Button(media_type_display_name, id=f"media-nav-{type_slug}", classes="media-nav-button")
 
+                # Add Analysis Review button explicitly
+                yield Button("Analysis Review", id="media-nav-analysis-review", classes="media-nav-button")
+
         # Main Content Pane
         with Container(classes="media-content-pane", id="media-content-pane"):
             yield Button(
@@ -185,6 +189,27 @@ class MediaWindow(Container):
                         yield Label("\nContent", id="details-content-header")
                         # Use a read-only TextArea for the main content block for better scrolling and selection
                         yield TextArea(id="details-content-area", read_only=True)
+
+            # Create a special view for Analysis Review
+            with Horizontal(id="media-view-analysis-review", classes="media-view-area"):
+                # --- LEFT PANE ---
+                with VerticalScroll(classes="media-content-left-pane"):
+                    yield Label("Analysis Review", classes="pane-title")
+                    yield Input(placeholder="Search in Analysis Review...",
+                                id="media-search-input-analysis-review", classes="sidebar-input media-search-input")
+                    yield ListView(id="media-list-view-analysis-review", classes="sidebar-listview media-items-list")
+                    with Horizontal(classes="media-pagination-bar"):
+                        yield Button("Previous", id="media-prev-page-button-analysis-review", disabled=True)
+                        yield Label("Page 1 / 1", id="media-page-label-analysis-review", classes="media-page-label")
+                        yield Button("Next", id="media-next-page-button-analysis-review", disabled=True)
+
+                # --- RIGHT PANE ---
+                with VerticalScroll(classes="media-content-right-pane"):
+                    yield Markdown(
+                        "Select an item from the list to see its analysis.",
+                        id="media-details-display-analysis-review",
+                        classes="media-details-theme"
+                    )
 
             # Hide all views by default; app.py watcher will manage visibility
             for view_area in self.query(".media-view-area"):
