@@ -1359,26 +1359,7 @@ MetricsScreen Label.-info-message {
 /* Hover state for the toggle button if needed, can inherit from general .sidebar-toggle if class is added */
 /* #toggle-evals-sidebar:hover { background: $surface; } */
 
-/* Common sidebar elements within EvalsSidebar (if not covered by global .sidebar-title etc.) */
-#evals-sidebar .sidebar-title { /* Already styled globally, but can be overridden */
-    /* text-style: bold underline; */
-    /* text-align: center; */
-    /* width: 100%; */
-    /* margin-bottom: 1; */
-}
-
-#evals-sidebar Collapsible {
-    margin-bottom: 1; /* Space between collapsibles */
-}
-
-#evals-sidebar .collapsible-content-placeholder { /* From EvalsSidebar.py */
-    padding: 1;
-    background: $panel-lighten-1;
-    border: round $surface;
-    color: $text-muted;
-    text-align: center; /* Center placeholder text */
-}
-/* --- End Evals Tab --- */
+/* --- End Evals Tab (Old Implementation) --- */
 /* ----------------------------- ************************* ----------------------------- */
 
 
@@ -1991,4 +1972,3 @@ LLAMAFILE_SERVER_ARGS_HELP_TEXT = """
 #
 # End of Constants.py
 ########################################################################################################################
-

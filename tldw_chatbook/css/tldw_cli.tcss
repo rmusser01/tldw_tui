@@ -1310,26 +1310,7 @@ MetricsScreen Label.-info-message {
 /* Hover state for the toggle button if needed, can inherit from general .sidebar-toggle if class is added */
 /* #toggle-evals-sidebar:hover { background: $surface; } */
 
-/* Common sidebar elements within EvalsSidebar (if not covered by global .sidebar-title etc.) */
-#evals-sidebar .sidebar-title { /* Already styled globally, but can be overridden */
-    /* text-style: bold underline; */
-    /* text-align: center; */
-    /* width: 100%; */
-    /* margin-bottom: 1; */
-}
-
-#evals-sidebar Collapsible {
-    margin-bottom: 1; /* Space between collapsibles */
-}
-
-#evals-sidebar .collapsible-content-placeholder { /* From EvalsSidebar.py */
-    padding: 1;
-    background: $panel-lighten-1;
-    border: round $surface;
-    color: $text-muted;
-    text-align: center; /* Center placeholder text */
-}
-/* --- End Evals Tab --- */
+/* --- End Evals Tab (Old Implementation) --- */
 /* ----------------------------- ************************* ----------------------------- */
 
 
@@ -1385,6 +1366,61 @@ MetricsScreen Label.-info-message {
     height: 100%; /* Or auto if content dictates height */
 }
 /* --- End of Coding Tab --- */
+/* ----------------------------- ************************* ----------------------------- */
+
+
+
+/* ----------------------------- ************************* ----------------------------- */
+/* --- Evals Tab --- */
+#evals-window { /* Matches TAB_EVALS */
+    layout: horizontal; /* Main layout for this tab */
+}
+
+.evals-nav-pane {
+    dock: left;
+    width: 25%; /* Adjust as needed */
+    min-width: 20; /* Example min-width */
+    max-width: 50; /* Example max-width */
+    height: 100%;
+    background: $boost; /* Or a different background */
+    padding: 1;
+    border-right: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.evals-nav-pane.collapsed {
+    width: 0 !important;
+    min-width: 0 !important;
+    border-right: none !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    display: none !important; /* Ensures it doesn't take space or grab focus */
+}
+
+.evals-nav-pane .evals-nav-button { /* Style for navigation buttons */
+    width: 100%;
+    margin-bottom: 1;
+    border: none;
+    height: 3;
+}
+
+.evals-nav-pane .evals-nav-button:hover {
+    background: $accent 75%; /* Example hover, distinct from other navs */
+}
+
+.evals-content-pane {
+    width: 1fr; /* Takes remaining horizontal space */
+    height: 100%;
+    padding: 1 2; /* Padding for the content area */
+    overflow-y: auto; /* If content within sub-views might scroll */
+}
+
+.evals-view-area { /* Class for individual content areas in Evals tab */
+    width: 100%;
+    height: 100%; /* Or auto if content dictates height */
+}
+/* --- End of Evals Tab --- */
 /* ----------------------------- ************************* ----------------------------- */
 
 

@@ -1568,12 +1568,13 @@ class TldwCli(App[None]):  # Specify return type for run() if needed, None is co
             self.loguru_logger.debug("watch_evals_sidebar_collapsed: UI not ready.")
             return
         try:
-            sidebar = self.query_one("#evals-sidebar") # ID from EvalsWindow.py
-            sidebar.set_class(collapsed, "collapsed") # Assumes "collapsed" class handles display: none
-            # Alternatively: sidebar.display = not collapsed
+            sidebar = self.query_one("#evals-nav-pane") # Updated ID from new EvalsWindow implementation
+            toggle_button = self.query_one("#evals-sidebar-toggle-button")
+            sidebar.set_class(collapsed, "collapsed")
+            toggle_button.set_class(collapsed, "collapsed")
             self.loguru_logger.debug(f"Evals sidebar collapsed state: {collapsed}, class set/removed.")
         except QueryError:
-            self.loguru_logger.error("Evals sidebar (#evals-sidebar) not found for collapse toggle.")
+            self.loguru_logger.error("Evals sidebar (#evals-nav-pane) not found for collapse toggle.")
         except Exception as e:
             self.loguru_logger.error(f"Error toggling Evals sidebar: {e}", exc_info=True)
 
