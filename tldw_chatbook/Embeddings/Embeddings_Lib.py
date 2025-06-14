@@ -27,7 +27,6 @@ Key Features & Fixes in this Version
 #
 # Imports
 import asyncio
-import logging
 import random
 import threading
 import time
@@ -39,6 +38,7 @@ from typing import (Any, Annotated, Callable, Dict, List, Literal, Optional,
 import numpy as np
 import requests
 import torch
+from loguru import logger
 from pydantic import BaseModel, Field, field_validator, model_validator, HttpUrl, ValidationError
 from torch import Tensor
 from torch.nn.functional import normalize
@@ -50,8 +50,8 @@ from transformers import AutoModel, AutoTokenizer
 #
 __all__ = ["EmbeddingFactory", "EmbeddingConfigSchema"]
 #
-logger = logging.getLogger("embeddings_lib")
-logger.addHandler(logging.NullHandler())
+# Configure logger with context
+logger = logger.bind(module="Embeddings_Lib")
 #
 ###############################################################################
 # Configuration schema (with Discriminated Union)
@@ -304,44 +304,98 @@ class EmbeddingFactory:
         return self._cfg
 
     def _build(self, model_id: str) -> CacheRecord:
+        """
+        Build and initialize a model for embedding.
+
+        Args:
+            model_id: The ID of the model to build
+
+        Returns:
+            CacheRecord containing the embedding function and cleanup function
+
+        Raises:
+            TypeError: If the model specification doesn't match the provider type
+            ValueError: If the provider is not supported
+        """
+        logger.debug(f"_build: Building model {model_id}")
+
         spec = self._get_spec(model_id)
+        logger.debug(f"_build: Got specification for model {model_id}, provider={spec.provider}")
+
         t0 = time.perf_counter()
         if spec.provider == "huggingface":
             # Ensure spec is correctly typed for HFModelCfg
             if not isinstance(spec, HFModelCfg):
+                logger.error(f"_build: Type mismatch for model {model_id} - expected HFModelCfg, got {type(spec)}")
                 raise TypeError(f"Expected HFModelCfg for provider 'huggingface', got {type(spec)} for model_id '{model_id}'")
-            hf = _HuggingFaceEmbedder(spec)
-            rec = CacheRecord(embed=hf.embed, close=hf.close, last=time.monotonic())
+
+            logger.info(f"_build: Initializing HuggingFace model {model_id} (path: {spec.model_name_or_path})")
+            try:
+                hf = _HuggingFaceEmbedder(spec)
+                rec = CacheRecord(embed=hf.embed, close=hf.close, last=time.monotonic())
+                logger.debug(f"_build: Successfully created HuggingFace embedder for {model_id}")
+            except Exception as e:
+                logger.error(f"_build: Failed to initialize HuggingFace model {model_id}: {e}", exc_info=True)
+                raise
+
         elif spec.provider == "openai":
             # Ensure spec is correctly typed for OpenAICfg
             if not isinstance(spec, OpenAICfg):
+                logger.error(f"_build: Type mismatch for model {model_id} - expected OpenAICfg, got {type(spec)}")
                 raise TypeError(f"Expected OpenAICfg for provider 'openai', got {type(spec)} for model_id '{model_id}'")
-            fn = _openai_embedder(spec) # CHANGED: Pass the whole spec object
-            rec = CacheRecord(embed=fn, close=None, last=time.monotonic())
+
+            logger.info(f"_build: Initializing OpenAI model {model_id} (model: {spec.model_name_or_path})")
+            try:
+                fn = _openai_embedder(spec) # Pass the whole spec object
+                rec = CacheRecord(embed=fn, close=None, last=time.monotonic())
+                logger.debug(f"_build: Successfully created OpenAI embedder for {model_id}")
+            except Exception as e:
+                logger.error(f"_build: Failed to initialize OpenAI model {model_id}: {e}", exc_info=True)
+                raise
+
         else:
             # This should ideally not be reached if Pydantic validation is working with discriminated unions
             # However, it's a good safeguard.
+            logger.error(f"_build: Unsupported provider '{spec.provider}' for model {model_id}")
             raise ValueError(f"Unsupported provider: {spec.provider} for model_id '{model_id}'")
-        logger.debug("load %s in %.2fs", model_id, time.perf_counter() - t0)
+
+        build_time = time.perf_counter() - t0
+        logger.info(f"_build: Loaded model {model_id} in {build_time:.2f}s")
         return rec
 
     def embed(
             self, texts: List[str], *, model_id: Optional[str] = None, as_list: bool = False
     ):
+        """
+        Embed a list of texts using the specified model or the default model.
+
+        Args:
+            texts: List of strings to embed
+            model_id: Optional model ID to use (falls back to default_model_id)
+            as_list: If True, return embeddings as list of lists instead of numpy array
+
+        Returns:
+            Embeddings as numpy array or list of lists
+        """
+        logger.debug(f"embed: Called with {len(texts)} texts, model_id={model_id}, as_list={as_list}")
+
         model_id_to_use = model_id or self._cfg.default_model_id
         if not model_id_to_use:
+            logger.error("embed: No model_id provided and no default_model_id is set")
             raise ValueError("No model_id provided and no default_model_id is set.")
 
         if not texts:
+            logger.debug("embed: Empty texts list provided, returning empty result")
             return [] if as_list else np.empty((0, 0), dtype=np.float32)
 
         # --- The lock must be held during the embedding call to prevent use-after-free ---
+        logger.debug(f"embed: Acquiring lock for model {model_id_to_use}")
         with self._lock:
             # First, check for idle models to evict.
             now = time.monotonic()
             for mid, rec in list(self._cache.items()):
                 if now - rec["last"] > self._idle:
-                    logger.debug("idle evict %s", mid)
+                    logger.debug(f"embed: Idle evicting model {mid} (unused for {now - rec['last']:.1f}s)")
                     self._cache.pop(mid)
                     if rec["close"]:
                         rec["close"]()
@@ -349,14 +403,19 @@ class EmbeddingFactory:
             # Now, get the model, building it if it doesn't exist.
             rec = self._cache.get(model_id_to_use)
             if rec is None:
+                logger.info(f"embed: Model {model_id_to_use} not in cache, will build it")
                 # If we need to load a model, make space for it *first*.
                 while len(self._cache) >= self._max_cached:
                     lru_mid, lru_rec = self._cache.popitem(last=False)
-                    logger.debug("LRU evict %s to make space", lru_mid)
+                    logger.debug(f"embed: LRU evicting model {lru_mid} to make space for {model_id_to_use}")
                     if lru_rec["close"]:
                         lru_rec["close"]()
+                logger.debug(f"embed: Building model {model_id_to_use}")
                 rec = self._build(model_id_to_use)
                 self._cache[model_id_to_use] = rec
+                logger.info(f"embed: Successfully built and cached model {model_id_to_use}")
+            else:
+                logger.debug(f"embed: Using cached model {model_id_to_use}")
 
             # Mark as most recently used and get the function to call.
             rec["last"] = time.monotonic()
@@ -366,9 +425,16 @@ class EmbeddingFactory:
             # The embedding call itself is now inside the lock. This serializes
             # all embedding calls, but guarantees that the model cannot be
             # evicted by another thread while it is in use.
+            logger.debug(f"embed: Starting embedding of {len(texts)} texts with model {model_id_to_use}")
             t0 = time.perf_counter()
             result = embed_fn(texts, as_list=as_list)
-            logger.debug("embed %s %d texts in %.3fs", model_id_to_use, len(texts), time.perf_counter() - t0)
+            elapsed = time.perf_counter() - t0
+            logger.debug(f"embed: Completed embedding {len(texts)} texts with model {model_id_to_use} in {elapsed:.3f}s")
+
+            # Log more details for larger batches or slower operations
+            if len(texts) > 10 or elapsed > 1.0:
+                logger.info(f"embed: Embedded {len(texts)} texts with model {model_id_to_use} in {elapsed:.3f}s ({elapsed/len(texts):.3f}s per text)")
+
             return result
         # The lock is released only after the work is complete.
 

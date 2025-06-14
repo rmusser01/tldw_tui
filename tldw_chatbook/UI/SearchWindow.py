@@ -12,6 +12,9 @@ from textual.widgets import Static, Button, Input, Markdown, Select, Checkbox
 from typing import TYPE_CHECKING,Optional, Tuple
 import asyncio
 from loguru import logger
+
+# Configure logger with context
+logger = logger.bind(module="SearchWindow")
 #
 # Local Imports
 from tldw_chatbook.Embeddings.Chroma_Lib import ChromaDBManager
@@ -107,24 +110,29 @@ class SearchWindow(Container):
 
         for view in self.query(".search-view-area"):
             view.display = False
+            logger.debug(f"SearchWindow.on_mount: Setting view {view.id} display to False")
 
         initial_sub_tab = self.app_instance.search_active_sub_tab or SEARCH_VIEW_EMBEDDINGS_CREATION
         self.app_instance.search_active_sub_tab = initial_sub_tab  # Ensure it's set
+        logger.debug(f"SearchWindow.on_mount: Initial active sub-tab set to {initial_sub_tab}")
 
         nav_button_id = initial_sub_tab.replace("-view-", "-nav-")
         try:
             nav_button = self.query_one(f"#{nav_button_id}")
             nav_button.add_class("-active-search-sub-view")
+            logger.debug(f"SearchWindow.on_mount: Added active class to nav button {nav_button_id}")
         except Exception as e:
-            logger.warning(f"Could not set active class for nav button {nav_button_id}: {e}")
+            logger.warning(f"SearchWindow.on_mount: Could not set active class for nav button {nav_button_id}: {e}")
 
         try:
             active_view = self.query_one(f"#{initial_sub_tab}")
             active_view.display = True
+            logger.debug(f"SearchWindow.on_mount: Set display=True for active view {initial_sub_tab}")
         except Exception as e:
-            logger.error(f"Could not display initial active view {initial_sub_tab}: {e}")
+            logger.error(f"SearchWindow.on_mount: Could not display initial active view {initial_sub_tab}: {e}")
             return
 
+        logger.info(f"SearchWindow.on_mount: Initializing view {initial_sub_tab}")
         if initial_sub_tab == SEARCH_VIEW_EMBEDDINGS_CREATION:
             await self._initialize_embeddings_creation_view()
         elif initial_sub_tab == SEARCH_VIEW_EMBEDDINGS_MANAGEMENT:
@@ -1229,32 +1237,46 @@ class SearchWindow(Container):
         """
         Loads data based on db_type and selection, then creates and stores embeddings.
         """
-        logger.info(f"Creating embeddings for {db_type}, collection '{collection_name}', model '{embedding_model_id_override}', mode '{selection_mode}'")
-        status_output = self.query_one("#creation-status-output", Markdown)
+        logger.info(f"_create_embeddings: Starting embedding creation for {db_type}, collection '{collection_name}', model '{embedding_model_id_override}', mode '{selection_mode}'")
+        logger.debug(f"_create_embeddings: Parameters - db_type={db_type}, db_path={db_path}, collection_name={collection_name}, " +
+                    f"embedding_model_id_override={embedding_model_id_override}, selection_mode={selection_mode}, " +
+                    f"keyword={keyword}, selected_item_ids={selected_item_ids}, chunk_options={chunk_options}")
 
+        status_output = self.query_one("#creation-status-output", Markdown)
+        logger.debug("_create_embeddings: Retrieved status_output widget")
+
+        logger.debug(f"_create_embeddings: Loading items for embedding with selection_mode={selection_mode}")
         items_to_embed = await self._load_items_for_embedding(
             db_type, selection_mode, keyword, selected_item_ids
         )
 
         if not items_to_embed:
             await status_output.update(f"ℹ️ No items found in {self.DB_DISPLAY_NAMES.get(db_type, db_type)} matching selection criteria. Nothing to embed.")
-            logger.warning(f"No items to embed for {db_type} with mode {selection_mode}.")
+            logger.warning(f"_create_embeddings: No items to embed for {db_type} with mode {selection_mode}")
             return
 
+        logger.info(f"_create_embeddings: Found {len(items_to_embed)} items to embed")
         await status_output.update(f"⏳ Found {len(items_to_embed)} items. Processing embeddings with model '{embedding_model_id_override}'...")
 
         # ---- Step 2: Process each item with ChromaDBManager ----
+        logger.debug("_create_embeddings: Getting ChromaDB manager")
         chroma_manager = await self._get_chroma_manager()
+        if not chroma_manager:
+            logger.error("_create_embeddings: Failed to get ChromaDB manager")
+            await status_output.update("❌ Error: ChromaDB manager not available")
+            return
+
         successful_embeds = 0
         failed_embeds = 0
 
-        for item_data in items_to_embed:
+        logger.info(f"_create_embeddings: Beginning to process {len(items_to_embed)} items for embedding")
+        for idx, item_data in enumerate(items_to_embed):
             item_id = item_data.get("id") # This is the original item's ID (e.g., Media.id, Note.id)
             item_content = item_data.get("content")
             item_filename = item_data.get("filename", str(item_id))
 
             if not item_id or not item_content:
-                logger.warning(f"Skipping item due to missing ID or content: {item_data}")
+                logger.warning(f"_create_embeddings: Skipping item {idx+1}/{len(items_to_embed)} due to missing ID or content: {item_data}")
                 failed_embeds += 1
                 continue
 
@@ -1262,10 +1284,12 @@ class SearchWindow(Container):
                 # Update UI before blocking call
                 current_status_msg = f"⏳ Embedding '{item_filename}' (ID: {item_id}). Processed: {successful_embeds+failed_embeds}/{len(items_to_embed)}"
                 await status_output.update(current_status_msg)
-                logger.info(current_status_msg)
+                logger.info(f"_create_embeddings: {current_status_msg}")
+                logger.debug(f"_create_embeddings: Processing item {idx+1}/{len(items_to_embed)}, ID={item_id}, filename={item_filename}")
 
                 # process_and_store_content is synchronous, run in thread for TUI
                 # Pass self.app_instance.app_config as user_embedding_config if ChromaDBManager needs it for situate_context's LLM call
+                logger.debug(f"_create_embeddings: Calling process_and_store_content for item {item_id}")
                 await asyncio.to_thread(
                     chroma_manager.process_and_store_content,
                     content=item_content,
@@ -1279,18 +1303,18 @@ class SearchWindow(Container):
                     chunk_options=chunk_options
                 )
                 successful_embeds += 1
-                logger.info(f"Successfully processed and stored embeddings for item ID '{item_id}' into collection '{collection_name}'.")
+                logger.info(f"_create_embeddings: Successfully processed and stored embeddings for item ID '{item_id}' into collection '{collection_name}'")
             except Exception as e_process:
                 failed_embeds += 1
-                logger.error(f"Failed to process item ID '{item_id}': {e_process}", exc_info=True)
+                logger.error(f"_create_embeddings: Failed to process item ID '{item_id}': {e_process}", exc_info=True)
                 await status_output.update(f"⚠️ Error embedding '{item_filename}': {escape(str(e_process))[:100]}...")
                 await asyncio.sleep(0.2) # Brief pause for UI update
 
         final_status_message = f"✅ Embedding process complete for collection '{collection_name}'. Successful: {successful_embeds}, Failed: {failed_embeds}."
         if failed_embeds > 0:
             final_status_message += " Check logs for details on failures."
+        logger.info(f"_create_embeddings: {final_status_message}")
         await status_output.update(final_status_message)
-        logger.info(final_status_message)
 
 
     async def _check_and_display_embedding_status(self) -> None:

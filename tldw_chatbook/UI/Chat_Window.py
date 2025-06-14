@@ -5,6 +5,7 @@
 from typing import TYPE_CHECKING
 #
 # 3rd-Party Imports
+from loguru import logger
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, VerticalScroll
 from textual.widgets import Button, TextArea
@@ -15,6 +16,9 @@ from ..Widgets.chat_right_sidebar import create_chat_right_sidebar
 from ..Constants import TAB_CHAT
 from ..Utils.Emoji_Handling import get_char, EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE, EMOJI_SEND, FALLBACK_SEND, \
     EMOJI_CHARACTER_ICON, FALLBACK_CHARACTER_ICON, EMOJI_STOP, FALLBACK_STOP
+
+# Configure logger with context
+logger = logger.bind(module="Chat_Window")
 
 #
 if TYPE_CHECKING:
@@ -32,6 +36,7 @@ class ChatWindow(Container):
     def __init__(self, app_instance: 'TldwCli', **kwargs):
         super().__init__(**kwargs)
         self.app_instance = app_instance
+        logger.debug("ChatWindow initialized.")
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """
@@ -43,7 +48,10 @@ class ChatWindow(Container):
 
         button_id = event.button.id
         if not button_id:
+            logger.warning("Button pressed with no ID")
             return
+
+        logger.debug(f"Button pressed: {button_id}")
 
         # Map of button IDs to their handler functions
         button_handlers = {
@@ -70,13 +78,17 @@ class ChatWindow(Container):
         # Check if we have a handler for this button
         handler = button_handlers.get(button_id)
         if handler:
+            logger.debug(f"Calling handler for button: {button_id}")
             # Call the handler with the app instance and event
             await handler(self.app_instance, event)
             # Stop the event from propagating
             event.stop()
+        else:
+            logger.warning(f"No handler found for button: {button_id}")
 
 
     def compose(self) -> ComposeResult:
+        logger.debug("Composing ChatWindow UI")
         # Settings Sidebar (Left)
         yield from create_settings_sidebar(TAB_CHAT, self.app_instance.app_config)
 
@@ -89,7 +101,7 @@ class ChatWindow(Container):
                 yield TextArea(id="chat-input", classes="chat-input")
                 yield Button(get_char(EMOJI_SEND, FALLBACK_SEND), id="send-chat", classes="send-button")
                 yield Button("💡", id="respond-for-me-button", classes="action-button suggest-button") # Suggest button
-                self.app_instance.loguru_logger.debug("ChatWindow: 'respond-for-me-button' composed.")
+                logger.debug("'respond-for-me-button' composed.")
                 yield Button(get_char(EMOJI_STOP, FALLBACK_STOP), id="stop-chat-generation", classes="stop-button",
                              disabled=True)
                 yield Button(get_char(EMOJI_CHARACTER_ICON, FALLBACK_CHARACTER_ICON), id="toggle-chat-right-sidebar",

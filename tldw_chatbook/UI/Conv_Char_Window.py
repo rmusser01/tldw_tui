@@ -5,6 +5,7 @@
 from typing import TYPE_CHECKING
 #
 # Third-Party Imports
+from loguru import logger
 from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll, Horizontal
 from textual.widgets import Static, Button, Input, ListView, Select, Collapsible, Label, TextArea
@@ -14,6 +15,9 @@ from textual.widgets import Static, Button, Input, ListView, Select, Collapsible
 from ..Utils.Emoji_Handling import get_char, EMOJI_SIDEBAR_TOGGLE, FALLBACK_SIDEBAR_TOGGLE
 from ..Widgets.settings_sidebar import create_settings_sidebar
 from ..Constants import TAB_CCP
+
+# Configure logger with context
+logger = logger.bind(module="Conv_Char_Window")
 
 if TYPE_CHECKING:
     from ..app import TldwCli
@@ -30,8 +34,10 @@ class CCPWindow(Container):
     def __init__(self, app_instance: 'TldwCli', **kwargs):
         super().__init__(**kwargs)
         self.app_instance = app_instance
+        logger.debug("CCPWindow initialized.")
 
     def compose(self) -> ComposeResult:
+        logger.debug("Composing CCPWindow UI")
         # Left Pane
         with VerticalScroll(id="conv-char-left-pane", classes="cc-left-pane"):
             yield Static("CCP Menu", classes="sidebar-title cc-section-title-text")
@@ -58,6 +64,7 @@ class CCPWindow(Container):
                      classes="cc-sidebar-toggle-button")
 
         # Center Pane
+        logger.debug("Composing center pane")
         with VerticalScroll(id="conv-char-center-pane", classes="cc-center-pane"):
             # Container for conversation messages
             with Container(id="ccp-conversation-messages-view", classes="ccp-view-area"):
@@ -134,6 +141,7 @@ class CCPWindow(Container):
                      id="toggle-conv-char-right-sidebar", classes="cc-sidebar-toggle-button")
 
         # Right Pane
+        logger.debug("Composing right pane")
         with VerticalScroll(id="conv-char-right-pane", classes="cc-right-pane"):
             yield Static("Details & Settings", classes="sidebar-title") # This title is for the whole pane
 
