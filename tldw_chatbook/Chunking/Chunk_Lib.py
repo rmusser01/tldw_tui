@@ -325,13 +325,14 @@ class Chunker:
 
 
     def _chunk_text_by_words(self, text: str, max_words: int, overlap: int, language: str) -> List[str]:
-        logger.debug(f"Chunking by words: max_words={max_words}, overlap={overlap}, language='{language}'")
+        logger.info(f"Chunking by words: max_words={max_words}, overlap={overlap}, language='{language}'")
         # Language-specific word tokenization
         words: List[str]
         if language.startswith('zh'):  # Chinese
             try:
                 import jieba
                 words = list(jieba.cut(text))
+                logger.debug(f"Using jieba for Chinese word tokenization, found {len(words)} words")
             except ImportError:
                 logger.warning("jieba library not found for Chinese word tokenization. Falling back to space splitting.")
                 words = text.split()
@@ -371,11 +372,13 @@ class Chunker:
             chunks.append(' '.join(chunk_words))
             logger.debug(f"Created word chunk {len(chunks)} with {len(chunk_words)} words")
 
-        return self._post_process_chunks(chunks)
+        processed_chunks = self._post_process_chunks(chunks)
+        logger.info(f"Word chunking complete: created {len(processed_chunks)} chunks from {len(words)} words")
+        return processed_chunks
 
 
     def _chunk_text_by_sentences(self, text: str, max_sentences: int, overlap: int, language: str) -> List[str]:
-        logger.debug(f"Chunking by sentences: max_sentences={max_sentences}, overlap={overlap}, lang='{language}'")
+        logger.info(f"Chunking by sentences: max_sentences={max_sentences}, overlap={overlap}, lang='{language}'")
         sentences: List[str]
 
         if language.startswith('zh'):
@@ -445,11 +448,15 @@ class Chunker:
         for i in range(0, len(sentences), step):
             chunk_sentences = sentences[i : i + max_sentences]
             chunks.append(' '.join(chunk_sentences))
-        return self._post_process_chunks(chunks)
+            logger.debug(f"Created sentence chunk {len(chunks)} with {len(chunk_sentences)} sentences")
+
+        processed_chunks = self._post_process_chunks(chunks)
+        logger.info(f"Sentence chunking complete: created {len(processed_chunks)} chunks from {len(sentences)} sentences")
+        return processed_chunks
 
 
     def _chunk_text_by_paragraphs(self, text: str, max_paragraphs: int, overlap: int) -> List[str]:
-        logger.debug(f"Chunking by paragraphs: max_paragraphs={max_paragraphs}, overlap={overlap}")
+        logger.info(f"Chunking by paragraphs: max_paragraphs={max_paragraphs}, overlap={overlap}")
         # Split by one or more empty lines (common paragraph delimiter)
         paragraphs = re.split(r'\n\s*\n+', text)
         paragraphs = [p.strip() for p in paragraphs if p.strip()] # Remove empty paragraphs
@@ -470,7 +477,11 @@ class Chunker:
         for i in range(0, len(paragraphs), step):
             chunk_paragraphs = paragraphs[i : i + max_paragraphs]
             chunks.append('\n\n'.join(chunk_paragraphs)) # Join with double newline to preserve paragraph structure
-        return self._post_process_chunks(chunks) # post_process_chunks strips leading/trailing, which is fine
+            logger.debug(f"Created paragraph chunk {len(chunks)} with {len(chunk_paragraphs)} paragraphs")
+
+        processed_chunks = self._post_process_chunks(chunks) # post_process_chunks strips leading/trailing, which is fine
+        logger.info(f"Paragraph chunking complete: created {len(processed_chunks)} chunks from {len(paragraphs)} paragraphs")
+        return processed_chunks
 
 
     def _chunk_text_by_tokens(self, text: str, max_tokens: int, overlap: int) -> List[str]:
@@ -479,7 +490,7 @@ class Chunker:
             logger.error("Tokenizer not available for token-based chunking.")
             raise ChunkingError("Tokenizer not loaded, cannot use 'tokens' chunking method.")
 
-        logger.debug(f"Chunking by tokens: max_tokens={max_tokens}, overlap_tokens={overlap} (token overlap)")
+        logger.info(f"Chunking by tokens: max_tokens={max_tokens}, overlap_tokens={overlap} (token overlap)")
         if max_tokens <= 0:
             logger.warning("max_tokens must be positive. Returning single chunk or empty.")
             return [text] if text.strip() else []
@@ -501,7 +512,11 @@ class Chunker:
             chunk_token_ids = tokens[i : i + max_tokens]
             chunk_text = self.tokenizer.decode(chunk_token_ids, skip_special_tokens=True) # skip_special_tokens might be an option
             chunks.append(chunk_text)
-        return self._post_process_chunks(chunks)
+            logger.debug(f"Created token chunk {len(chunks)} with {len(chunk_token_ids)} tokens")
+
+        processed_chunks = self._post_process_chunks(chunks)
+        logger.info(f"Token chunking complete: created {len(processed_chunks)} chunks from {len(tokens)} tokens")
+        return processed_chunks
 
 
     # --- Adaptive Chunking Methods ---
@@ -1357,8 +1372,9 @@ def improved_chunking_process(text: str,
                               llm_call_function_for_chunker: Optional[Callable] = None,
                               llm_api_config_for_chunker: Optional[Dict[str, Any]] = None
                               ) -> List[Dict[str, Any]]:
-    logger.debug("Improved chunking process started...")
+    logger.info("Improved chunking process started...")
     logger.debug(f"Received chunk_options_dict: {chunk_options_dict}")
+    logger.debug(f"Text length: {len(text)} characters, tokenizer: {tokenizer_name_or_path}")
 
     chunker_instance = Chunker(options=chunk_options_dict,
                                tokenizer_name_or_path=tokenizer_name_or_path,
@@ -1421,8 +1437,10 @@ def improved_chunking_process(text: str,
 
     chunks_with_metadata_list = []
     total_chunks_count = len(raw_chunks)
+    logger.info(f"Processing {total_chunks_count} chunks for metadata enrichment")
     try:
         for i, chunk_item in enumerate(raw_chunks):
+            logger.debug(f"Processing chunk {i+1}/{total_chunks_count}")
             actual_text_content: str
             is_json_chunk = False
             chunk_specific_metadata = {} # Initialize
@@ -1464,6 +1482,7 @@ def improved_chunking_process(text: str,
             })
 
         logger.debug(f"Successfully created metadata for all {len(chunks_with_metadata_list)} chunks")
+        logger.info(f"Improved chunking process completed: {len(chunks_with_metadata_list)} chunks created using method '{effective_options['method']}', language: {effective_options.get('language', 'unknown')}")
         return chunks_with_metadata_list
     except Exception as e:
         logger.error(f"Error creating chunk metadata: {e}", exc_info=True)

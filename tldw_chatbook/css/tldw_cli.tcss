@@ -1335,6 +1335,61 @@ MetricsScreen Label.-info-message {
 
 
 /* ----------------------------- ************************* ----------------------------- */
+/* --- Coding Tab --- */
+#coding-window { /* Matches TAB_CODING */
+    layout: horizontal; /* Main layout for this tab */
+}
+
+.coding-nav-pane {
+    dock: left;
+    width: 25%; /* Adjust as needed */
+    min-width: 20; /* Example min-width */
+    max-width: 50; /* Example max-width */
+    height: 100%;
+    background: $boost; /* Or a different background */
+    padding: 1;
+    border-right: thick $background-darken-1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.coding-nav-pane.collapsed {
+    width: 0 !important;
+    min-width: 0 !important;
+    border-right: none !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    display: none !important; /* Ensures it doesn't take space or grab focus */
+}
+
+.coding-nav-pane .coding-nav-button { /* Style for navigation buttons */
+    width: 100%;
+    margin-bottom: 1;
+    border: none;
+    height: 3;
+}
+
+.coding-nav-pane .coding-nav-button:hover {
+    background: $accent 75%; /* Example hover, distinct from other navs */
+}
+
+.coding-content-pane {
+    width: 1fr; /* Takes remaining horizontal space */
+    height: 100%;
+    padding: 1 2; /* Padding for the content area */
+    overflow-y: auto; /* If content within sub-views might scroll */
+}
+
+.coding-view-area { /* Class for individual content areas in Coding tab */
+    width: 100%;
+    height: 100%; /* Or auto if content dictates height */
+}
+/* --- End of Coding Tab --- */
+/* ----------------------------- ************************* ----------------------------- */
+
+
+
+/* ----------------------------- ************************* ----------------------------- */
 /* --- Media Tab Specific Options --- */
 .ingest-form-scrollable {
     height: 1fr; /* Allow scrolling within the form area */
