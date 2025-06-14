@@ -2,6 +2,7 @@
 #
 #
 # Imports
+from __future__ import annotations
 from rich.markup import escape
 from textual import on
 from textual.app import ComposeResult
@@ -338,6 +339,8 @@ class SearchWindow(Container):
 
     async def _get_chroma_manager(self) -> "ChromaDBManager":
         """Get or create a ChromaDBManager instance using the app's configuration."""
+        if not VECTORDB_AVAILABLE:
+            raise RuntimeError("Vector-database functionality is disabled in this environment.")
         if self._chroma_manager is None:
             logger.info("ChromaDBManager instance not found, creating a new one.")
             try:
@@ -1237,6 +1240,10 @@ class SearchWindow(Container):
         """
         Loads data based on db_type and selection, then creates and stores embeddings.
         """
+        if not EMBEDDINGS_GENERATION_AVAILABLE:
+            await self.query_one("#creation-status-output", Markdown).update(
+                "⚠️ Embedding generation is disabled because dependencies are missing.")
+            return
         logger.info(f"_create_embeddings: Starting embedding creation for {db_type}, collection '{collection_name}', model '{embedding_model_id_override}', mode '{selection_mode}'")
         logger.debug(f"_create_embeddings: Parameters - db_type={db_type}, db_path={db_path}, collection_name={collection_name}, " +
                     f"embedding_model_id_override={embedding_model_id_override}, selection_mode={selection_mode}, " +
