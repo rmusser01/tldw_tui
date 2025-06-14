@@ -290,18 +290,6 @@ Footer { dock: bottom; height: 1; background: $accent-darken-1; }
     align: center top;
 }
 
-/* Right Pane Styling */
-.cc-right-pane {
-    width: 25%; /* Keep 25% or 30% - adjust as needed */
-    min-width: 20; /* ADD a minimum width */
-    height: 100%;
-    background: $boost;
-    padding: 1;
-    border-left: thick $background-darken-1;
-    overflow-y: auto;
-    overflow-x: hidden;
-}
-
 /* ADD THIS: Collapsed state for the CCP tab's right pane */
 .cc-right-pane.collapsed {
     width: 0 !important;
