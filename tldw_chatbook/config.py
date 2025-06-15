@@ -1327,6 +1327,16 @@ min_p = 0.0 # Check if API supports this
 top_k = 100 # Check if API supports this
 
 
+# ==========================================================
+# Default/Template Prompts
+# ==========================================================
+[Prompts]
+# Default prompts used by various functions. These can be overridden by user settings.
+sub_question_generation_prompt = "Based on the user query and chat history, generate up to 3 sub-questions to gather more specific information. Format as a numbered list."
+search_result_relevance_eval_prompt = "Evaluate the relevance of the following search result snippet to the query. Score from 1 (not relevant) to 5 (highly relevant)."
+analyze_search_results_prompt = "Analyze the provided search results and synthesize a comprehensive answer to the original query."
+situate_chunk_context_prompt = "You are an AI assistant. Please follow the instructions provided in the input text carefully and accurately."
+
 
 # ==========================================================
 # Embedding Configuration
@@ -1702,6 +1712,8 @@ APP_CONFIG = settings.get("APP_TTS_CONFIG", DEFAULT_APP_TTS_CONFIG) # Fallback i
 DATABASE_CONFIG = settings.get("APP_DATABASE_CONFIG", DEFAULT_DATABASE_CONFIG)
 RAG_SEARCH_CONFIG = settings.get("APP_RAG_SEARCH_CONFIG", DEFAULT_RAG_SEARCH_CONFIG)
 
+# --- Default Prompts ---
+CONFIG_PROMPT_SITUATE_CHUNK_CONTEXT = settings.get("prompts_strings", {}).get("situate_chunk_context_prompt", "You are an AI assistant. Please follow the instructions provided in the input text carefully and accurately.")
 
 # --- Load CLI Config and Initialize Databases on module import ---
 # The `settings` global variable is now the result of the unified load_settings()
