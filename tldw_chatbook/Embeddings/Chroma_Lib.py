@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from tldw_chatbook import config
+from tldw_chatbook.config import CONFIG_PROMPT_SITUATE_CHUNK_CONTEXT
 
 """Light‑weight ChromaDB helper for single‑user, local‑first apps.
 
@@ -432,14 +433,14 @@ class ChromaDBManager:
 
     def situate_context(self, api_name_for_context: str, doc_content: str, chunk_content: str) -> str:
         prompt = self.situate_context_prompt_template.format(doc_content=doc_content, chunk_content=chunk_content)
-        system_message = CONFIG_PROMPT_SITUATE_CHUNK_CONTEXT if hasattr(config, 'CONFIG_PROMPT_SITUATE_CHUNK_CONTEXT') else "You are an AI assistant. Please follow the instructions provided in the input text carefully and accurately.",
+        system_message = CONFIG_PROMPT_SITUATE_CHUNK_CONTEXT
         try:
             response = analyze(
                 api_name=api_name_for_context,
                 input_data=prompt,  # The fully formatted string from the template is the main input
                 custom_prompt_arg=None,  # Instructions are already included in the input_data
                 # system_message=None,  # Use the default system message from analyze
-                system_message="You are an AI assistant. Please follow the instructions provided in the input text carefully and accurately.",
+                system_message=system_message,
                 # Override analyze's default system message
                 api_key=None,  # Let analyze handle API key resolution or use its defaults
                 temp=None,  # Let analyze use its default temperature or configured one
