@@ -1,6 +1,9 @@
 # Chroma_Lib.py
 #
 from __future__ import annotations
+
+from tldw_chatbook import config
+
 """Light‑weight ChromaDB helper for single‑user, local‑first apps.
 
 Key simplifications vs. the original:
@@ -429,23 +432,21 @@ class ChromaDBManager:
 
     def situate_context(self, api_name_for_context: str, doc_content: str, chunk_content: str) -> str:
         prompt = self.situate_context_prompt_template.format(doc_content=doc_content, chunk_content=chunk_content)
+        system_message = CONFIG_PROMPT_SITUATE_CHUNK_CONTEXT if hasattr(config, 'CONFIG_PROMPT_SITUATE_CHUNK_CONTEXT') else "You are an AI assistant. Please follow the instructions provided in the input text carefully and accurately.",
         try:
-            # FIXME
             response = analyze(
                 api_name=api_name_for_context,
-                prompt=prompt,
-                user_embedding_config=self.raw_user_embedding_config  # Pass the main config
+                input_data=prompt,  # The fully formatted string from the template is the main input
+                custom_prompt_arg=None,  # Instructions are already included in the input_data
+                # system_message=None,  # Use the default system message from analyze
+                system_message="You are an AI assistant. Please follow the instructions provided in the input text carefully and accurately.",
+                # Override analyze's default system message
+                api_key=None,  # Let analyze handle API key resolution or use its defaults
+                temp=None,  # Let analyze use its default temperature or configured one
+                streaming=False,  # We expect a single string output, not a stream
+                recursive_summarization=False,  # Not applicable for this task
+                chunked_summarization=False  # Not applicable for this task
             )
-            # api_name: str,
-            # input_data: Any,
-            # custom_prompt_arg: Optional[str],
-            # api_key: Optional[str] = None,
-            # system_message: Optional[str] = None,
-            # temp: Optional[float] = None,
-            # streaming: bool = False,
-            # recursive_summarization: bool = False,
-            # chunked_summarization: bool = False,  # Summarize chunks separately & combine
-            # chunk_options: Optional[dict] = None
             return response.strip() if response else ""
         except Exception as e:
             logger.error(f"User '{self.user_id}': Error in situate_context with LLM '{api_name_for_context}': {e}",

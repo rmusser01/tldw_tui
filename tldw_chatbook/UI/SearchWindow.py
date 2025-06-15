@@ -7,12 +7,15 @@ from rich.markup import escape
 from textual import on
 from textual.app import ComposeResult
 from textual.containers import Container, Vertical, Horizontal, VerticalScroll
+from textual.css.query import QueryError
 from textual.widgets import Static, Button, Input, Markdown, Select, Checkbox
 #
 # Third-Party Libraries
 from typing import TYPE_CHECKING,Optional, Tuple
 import asyncio
 from loguru import logger
+
+from ..Notes.Notes_Library import NotesInteropService
 
 # Configure logger with context
 logger = logger.bind(module="SearchWindow")
@@ -1079,100 +1082,180 @@ class SearchWindow(Container):
                                         selection_mode: str,
                                         keyword: Optional[str],
                                         selected_item_db_ids: Optional[List[str]]
-                                        # These are original DB item IDs (e.g. Media.id as str)
                                         ) -> List[Dict[str, Any]]:
         """
         Loads items from the specified database based on selection criteria.
-        Returns a list of dicts, each with 'id' (original DB item ID), 'content', 'filename'.
+        Returns a list of dicts, each with 'id' (original DB item ID as string),
+        'content', and 'filename'.
         """
         items_to_embed: List[Dict[str, Any]] = []
         logger.info(
-            f"Loading items from DB type: {db_type}, mode: {selection_mode}, keyword: '{keyword}', selected_ids: {selected_item_db_ids}")
-        status_output = self.query_one("#creation-status-output", Markdown)
-        load_successful = True  # Flag to track if loading for the current db_type was successful
+            f"Loading items for embedding. DB Type: '{db_type}', Mode: '{selection_mode}', Keyword: '{keyword}', Selected IDs: {selected_item_db_ids}"
+        )
+
+        try:
+            status_output = self.query_one("#creation-status-output", Markdown)
+        except QueryError:
+            logger.error("Could not find #creation-status-output widget. Status updates will be missing.")
+            # Non-critical, proceed with logging, but notify the user if possible.
+            self.app_instance.notify("Error: Status display widget not found.", severity="error")
+            status_output = None  # So we can check for it before updating
+
+        async def update_status(message: str):
+            if status_output:
+                await status_output.update(message)
+            logger.info(message)
 
         if db_type == "media_db":
             if not self.app_instance.media_db:
-                logger.error("MediaDatabase instance not available in app.")
-                await status_output.update("❌ Media DB not initialized.")
-                return [] # Return empty on critical init failure
+                logger.error("MediaDatabase instance (self.app_instance.media_db) is not available.")
+                await update_status("❌ Error: Media DB not initialized. Cannot load media items.")
+                return []
 
             media_db_instance: MediaDatabase = self.app_instance.media_db
             raw_media_items: List[Dict[str, Any]] = []
+
             try:
                 if selection_mode == "all":
-                    await status_output.update(f"⏳ Loading ALL items from Media DB...")
-                    # YOU NEED TO IMPLEMENT/VERIFY THESE METHODS IN MediaDatabase
-                    # Example: raw_media_items = await asyncio.to_thread(media_db_instance.get_all_media_for_embedding, limit=10000)
-                    logger.warning("Placeholder: MediaDB get_all_active_media_for_embedding not implemented.")
-                    raw_media_items = [
-                        {"id": 1, "uuid": "uuid_media_1", "title": "Placeholder Media 1", "content": "Content of placeholder media 1."},
-                        {"id": 2, "uuid": "uuid_media_2", "title": "Placeholder Media 2", "content": "Content of placeholder media 2."}
-                    ]
+                    await update_status(
+                        f"⏳ Loading ALL items from Media DB ({self.DB_DISPLAY_NAMES.get(db_type, db_type)})...")
+                    # Assuming a method like 'get_all_media_for_embedding' exists in MediaDatabase.
+                    # This method should return a list of dictionaries, each representing a media item
+                    # and containing at least 'id', 'content', and 'title'.
+                    # The limit is arbitrary here; adjust as necessary or make it configurable.
+                    raw_media_items = await asyncio.to_thread(
+                        media_db_instance.search_media_db,  # Using search_media_db as a generic fetcher
+                        search_query=None,  # No specific query for "all"
+                        media_types=None,  # All types
+                        search_fields=['id', 'title', 'content'],  # Ensure these are fetched
+                        sort_by="id_asc",  # Or any consistent sort
+                        page=1,
+                        results_per_page=10000,  # Large number to fetch "all" (consider pagination for very large DBs)
+                        include_trash=False,
+                        include_deleted=False
+                    )
+                    if isinstance(raw_media_items, tuple):  # search_media_db returns (results, total_matches)
+                        raw_media_items = raw_media_items[0]
+
+
                 elif selection_mode == "individual" and selected_item_db_ids:
-                    await status_output.update(f"⏳ Loading {len(selected_item_db_ids)} selected item(s) from Media DB...")
-                    int_ids = [int(sid) for sid in selected_item_db_ids if sid.isdigit()]
-                    if int_ids:
-                        # Example: raw_media_items = await asyncio.to_thread(media_db_instance.get_media_by_ids_for_embedding, int_ids)
-                        logger.warning("Placeholder: MediaDB get_media_by_ids_for_embedding not implemented.")
-                        if 1 in int_ids: raw_media_items.append({"id": 1, "uuid": "uuid_media_1", "title": "Placeholder Media 1", "content": "Content of placeholder media 1."})
+                    await update_status(f"⏳ Loading {len(selected_item_db_ids)} selected item(s) from Media DB...")
+                    valid_ids_to_fetch: List[int] = []
+                    for item_id_str in selected_item_db_ids:
+                        try:
+                            valid_ids_to_fetch.append(int(item_id_str))
+                        except ValueError:
+                            logger.warning(f"Invalid media item ID format: '{item_id_str}'. Skipping.")
+
+                    if valid_ids_to_fetch:
+                        # Assuming a method like 'get_media_by_ids_for_embedding' exists.
+                        # It should take a list of integer IDs and return a list of media item dicts.
+                        # For now, fetching one by one if a batch method isn't available.
+                        for mid in valid_ids_to_fetch:
+                            item = await asyncio.to_thread(media_db_instance.get_media_by_id, mid)
+                            if item:
+                                raw_media_items.append(item)
+                    else:
+                        logger.warning("No valid numeric IDs provided for individual media item selection.")
+
                 elif selection_mode == "keyword" and keyword:
-                    await status_output.update(f"⏳ Searching Media DB for keyword '{keyword}'...")
-                    # Example: raw_media_items = await asyncio.to_thread(media_db_instance.search_media_by_keyword_for_embedding, keyword, limit=1000)
-                    logger.warning("Placeholder: MediaDB search_media_by_keyword_for_embedding not implemented.")
-                    if "placeholder" in keyword.lower(): raw_media_items.append({"id": 1, "uuid": "uuid_media_1", "title": "Placeholder Media 1", "content": "Content of placeholder media 1."})
+                    await update_status(f"⏳ Searching Media DB for items matching keyword '{keyword}'...")
+                    # Assuming 'search_media_by_keyword_for_embedding' exists, or adapting search_media_db.
+                    # This method should return media items whose content or title matches the keyword.
+                    raw_media_items_tuple = await asyncio.to_thread(
+                        media_db_instance.search_media_db,
+                        search_query=keyword,
+                        media_types=None,  # Search all types
+                        search_fields=['title', 'content'],  # Fields to search within
+                        sort_by="last_modified_desc",
+                        page=1,
+                        results_per_page=1000,  # Limit results for keyword search
+                        include_trash=False,
+                        include_deleted=False
+                    )
+                    raw_media_items = raw_media_items_tuple[0]
 
                 for item in raw_media_items:
-                    if item.get("content"):
+                    item_id = item.get("id")
+                    item_content = item.get("content")
+                    if item_id is not None and item_content:  # Ensure both ID and content are present
                         items_to_embed.append({
-                            "id": str(item["id"]),
-                            "content": item["content"],
-                            "filename": item.get("title", f"media_{item['id']}")
+                            "id": str(item_id),  # Ensure ID is string
+                            "content": item_content,
+                            "filename": item.get("title", f"media_item_{item_id}")
                         })
-            except Exception as e:
-                logger.error(f"Error loading media items: {e}", exc_info=True)
-                await status_output.update(f"❌ Error loading media: {escape(str(e))}")
-                return [] # Return empty on error
+                    else:
+                        logger.warning(
+                            f"Skipping media item due to missing ID or content: {item.get('id', 'Unknown ID')}")
 
-        elif db_type == "char_chat_db":  # For Notes from ChaChaNotes_DB
-            if not self.app_instance.notes_service: # notes_service uses CharactersRAGDB
-                logger.error("NotesService instance not available in app.")
-                await status_output.update("❌ Notes service (ChaChaNotes DB) not initialized.")
+            except MediaDatabaseError as e:
+                logger.error(f"MediaDatabaseError while loading media items: {e}", exc_info=True)
+                await update_status(f"❌ Database Error: Failed to load media items. {escape(str(e))}")
+                return []
+            except Exception as e:
+                logger.error(f"Unexpected error loading media items: {e}", exc_info=True)
+                await update_status(f"❌ Error: Failed to load media items. {escape(str(e))}")
                 return []
 
-            notes_service = self.app_instance.notes_service
-            user_id = self.app_instance.notes_user_id # Assuming user context for notes
+        elif db_type == "char_chat_db":  # Notes from ChaChaNotes_DB via NotesInteropService
+            if not self.app_instance.notes_service:
+                logger.error("NotesService (self.app_instance.notes_service) is not available.")
+                await update_status("❌ Error: Notes service not initialized. Cannot load notes.")
+                return []
+
+            notes_service: NotesInteropService = self.app_instance.notes_service
+            user_id = self.app_instance.notes_user_id
             raw_notes_data: List[Dict[str, Any]] = []
 
             try:
                 if selection_mode == "all":
-                    await status_output.update(f"⏳ Loading ALL notes for user '{user_id}'...")
-                    raw_notes_data = await asyncio.to_thread(notes_service.list_notes, user_id=user_id, limit=10000)
+                    await update_status(
+                        f"⏳ Loading ALL notes for user '{user_id}' ({self.DB_DISPLAY_NAMES.get(db_type, db_type)})...")
+                    raw_notes_data = await asyncio.to_thread(notes_service.list_notes, user_id=user_id,
+                                                             limit=10000)  # High limit for "all"
+
                 elif selection_mode == "individual" and selected_item_db_ids:
-                    await status_output.update(f"⏳ Loading {len(selected_item_db_ids)} selected note(s)...")
-                    for note_id_str in selected_item_db_ids: # note_id_str is the UUID from ChaChaNotes
-                        note = await asyncio.to_thread(notes_service.get_note_by_id, user_id=user_id, note_id=note_id_str)
-                        if note: raw_notes_data.append(note)
+                    await update_status(f"⏳ Loading {len(selected_item_db_ids)} selected note(s)...")
+                    for note_id_str in selected_item_db_ids:  # note_id_str is the UUID from ChaChaNotes
+                        note = await asyncio.to_thread(notes_service.get_note_by_id, user_id=user_id,
+                                                       note_id=note_id_str)
+                        if note:
+                            raw_notes_data.append(note)
+                        else:
+                            logger.warning(f"Note with ID '{note_id_str}' not found for user '{user_id}'.")
+
                 elif selection_mode == "keyword" and keyword:
-                    await status_output.update(f"⏳ Searching notes with keyword '{keyword}' for user '{user_id}'...")
-                    raw_notes_data = await asyncio.to_thread(notes_service.search_notes, user_id=user_id, search_term=keyword, limit=1000)
+                    await update_status(f"⏳ Searching notes with keyword '{keyword}' for user '{user_id}'...")
+                    raw_notes_data = await asyncio.to_thread(notes_service.search_notes, user_id=user_id,
+                                                             search_term=keyword,
+                                                             limit=1000)  # Limit for keyword search
 
                 for note_item in raw_notes_data:
-                    if note_item.get("content"):
+                    note_id = note_item.get("id")
+                    note_content = note_item.get("content")
+                    if note_id and note_content:  # Ensure both ID (already string) and content
                         items_to_embed.append({
-                            "id": note_item["id"], # Note ID is UUID (string)
-                            "content": note_item["content"],
-                            "filename": note_item.get("title", f"note_{note_item['id']}")
+                            "id": note_id,
+                            "content": note_content,
+                            "filename": note_item.get("title", f"note_{note_id}")
                         })
+                    else:
+                        logger.warning(
+                            f"Skipping note due to missing ID or content: {note_item.get('id', 'Unknown ID')}")
+
+            except CharactersRAGDBError as e:  # Assuming NotesService uses this error type
+                logger.error(f"CharactersRAGDBError while loading notes: {e}", exc_info=True)
+                await update_status(f"❌ Database Error: Failed to load notes. {escape(str(e))}")
+                return []
             except Exception as e:
-                logger.error(f"Error loading notes from ChaChaNotes DB: {e}", exc_info=True)
-                await status_output.update(f"❌ Error loading notes: {escape(str(e))}")
+                logger.error(f"Unexpected error loading notes: {e}", exc_info=True)
+                await update_status(f"❌ Error: Failed to load notes. {escape(str(e))}")
                 return []
 
-        elif db_type == "rag_chat_db": # For Conversations from ChaChaNotes_DB
-            if not self.app_instance.chachanotes_db: # Direct use of CharactersRAGDB instance
-                logger.error("ChaChaNotes_DB (CharactersRAGDB) instance not available in app.")
-                await status_output.update("❌ Chat DB (ChaChaNotes) not initialized.")
+        elif db_type == "rag_chat_db":  # Conversations from ChaChaNotes_DB via CharactersRAGDB
+            if not self.app_instance.chachanotes_db:
+                logger.error("CharactersRAGDB instance (self.app_instance.chachanotes_db) is not available.")
+                await update_status("❌ Error: Chat DB not initialized. Cannot load conversations.")
                 return []
 
             chat_db: CharactersRAGDB = self.app_instance.chachanotes_db
@@ -1180,52 +1263,76 @@ class SearchWindow(Container):
 
             try:
                 if selection_mode == "all":
-                    await status_output.update(f"⏳ Loading ALL conversations from Chat DB...")
+                    await update_status(
+                        f"⏳ Loading ALL conversations from Chat DB ({self.DB_DISPLAY_NAMES.get(db_type, db_type)})...")
                     raw_conv_data = await asyncio.to_thread(chat_db.list_all_active_conversations, limit=10000)
 
                 elif selection_mode == "individual" and selected_item_db_ids:
-                    await status_output.update(f"⏳ Loading {len(selected_item_db_ids)} selected conversation(s)...")
-                    for conv_id_str in selected_item_db_ids: # conv_id_str is UUID
+                    await update_status(f"⏳ Loading {len(selected_item_db_ids)} selected conversation(s)...")
+                    for conv_id_str in selected_item_db_ids:  # conv_id_str is UUID
                         conv = await asyncio.to_thread(chat_db.get_conversation_by_id, conversation_id=conv_id_str)
-                        if conv: raw_conv_data.append(conv)
-                elif selection_mode == "keyword" and keyword: # Search conversations by title
-                    await status_output.update(f"⏳ Searching conversations by title '{keyword}'...")
-                    raw_conv_data = await asyncio.to_thread(chat_db.search_conversations_by_title, title_query=keyword, limit=1000)
+                        if conv:
+                            raw_conv_data.append(conv)
+                        else:
+                            logger.warning(f"Conversation with ID '{conv_id_str}' not found.")
 
-                # For each conversation, concatenate messages to form content
+                elif selection_mode == "keyword" and keyword:
+                    await update_status(f"⏳ Searching conversations by title matching '{keyword}'...")
+                    raw_conv_data = await asyncio.to_thread(chat_db.search_conversations_by_title, title_query=keyword,
+                                                            limit=1000)
+
                 for conv_item in raw_conv_data:
-                    conv_id = conv_item["id"]
-                    messages = await asyncio.to_thread(chat_db.get_messages_for_conversation, conversation_id=conv_id, limit=500, order_by_timestamp="ASC") # Fetch many messages
+                    conv_id = conv_item.get("id")
+                    if not conv_id:
+                        logger.warning(
+                            f"Skipping conversation due to missing ID: {conv_item.get('title', 'Untitled Conversation')}")
+                        continue
 
-                    full_conv_content = []
+                    messages = await asyncio.to_thread(chat_db.get_messages_for_conversation, conversation_id=conv_id,
+                                                       limit=1000,
+                                                       order_by_timestamp="ASC")  # Fetch a good number of messages
+
+                    full_conv_content_parts = []
                     for msg in messages:
                         sender = msg.get("sender", "Unknown")
                         content_text = msg.get("content", "")
-                        if content_text: # Only include messages with text content
-                             full_conv_content.append(f"{sender}: {content_text}")
+                        if content_text:  # Only include messages with actual text content
+                            full_conv_content_parts.append(f"{sender}: {content_text}")
 
-                    if full_conv_content:
+                    if full_conv_content_parts:
+                        concatenated_content = "\n\n".join(full_conv_content_parts)  # Separate messages clearly
                         items_to_embed.append({
-                            "id": conv_id, # Conversation ID (UUID string)
-                            "content": "\n".join(full_conv_content),
+                            "id": conv_id,
+                            "content": concatenated_content,
                             "filename": conv_item.get("title", f"conversation_{conv_id}")
                         })
                     else:
-                        logger.info(f"Conversation ID {conv_id} has no text messages to embed.")
+                        logger.info(
+                            f"Conversation ID '{conv_id}' (Title: {conv_item.get('title', 'N/A')}) has no textual messages to embed.")
 
+            except CharactersRAGDBError as e:
+                logger.error(f"CharactersRAGDBError while loading conversations: {e}", exc_info=True)
+                await update_status(f"❌ Database Error: Failed to load conversations. {escape(str(e))}")
+                return []
             except Exception as e:
-                logger.error(f"Error loading conversations from ChaChaNotes DB: {e}", exc_info=True)
-                await status_output.update(f"❌ Error loading conversations: {escape(str(e))}")
+                logger.error(f"Unexpected error loading conversations: {e}", exc_info=True)
+                await update_status(f"❌ Error: Failed to load conversations. {escape(str(e))}")
                 return []
         else:
-            logger.error(f"Unknown db_type for loading items: {db_type}")
-            await status_output.update(f"❌ Unsupported database source: {db_type}")
+            logger.error(f"Unknown db_type '{db_type}' encountered in _load_items_for_embedding.")
+            await update_status(f"❌ Error: Unsupported database source '{db_type}'.")
             return []
 
         if items_to_embed:
-            logger.info(f"Successfully loaded {len(items_to_embed)} items for embedding from {db_type}.")
+            logger.info(
+                f"Successfully loaded {len(items_to_embed)} items for embedding from {self.DB_DISPLAY_NAMES.get(db_type, db_type)}.")
+            await update_status(
+                f"ℹ️ Loaded {len(items_to_embed)} items from {self.DB_DISPLAY_NAMES.get(db_type, db_type)} for processing.")
         else:
-            logger.info(f"No items loaded for embedding from {db_type} with current criteria.")
+            logger.info(
+                f"No items loaded for embedding from {self.DB_DISPLAY_NAMES.get(db_type, db_type)} with current criteria.")
+            await update_status(
+                f"ℹ️ No items found in {self.DB_DISPLAY_NAMES.get(db_type, db_type)} matching your selection.")
 
         return items_to_embed
 
